@@ -1,0 +1,29 @@
+kind: Pod
+apiVersion: v1
+spec:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: mthreads.com/gpu.product
+            operator: In
+            values:
+            - S3000
+  containers:
+  - name: main
+    tty: true
+    image: sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev:v0.1
+    imagePullPolicy: IfNotPresent
+    env:
+    - name: TARGET_DEVICE
+      value: musa
+    command:
+    - sleep
+    args:
+    - infinity
+    resources:
+      limits:
+        cpu: "2"
+        memory: "4Gi"
+        mthreads.com/gpu: "1"
