@@ -30,7 +30,7 @@ pipeline {
       }
       steps {
         container('main') {
-          sh '/bin/bash --login -c "conda run -n py39 /bin/bash tools/lint/pylint.sh"'
+          sh '/opt/conda/condabin/conda run -n test_environment /bin/bash tools/lint/pylint.sh'
         }
       }
     }
@@ -43,7 +43,7 @@ pipeline {
       }
       steps {
         container('main') {
-          sh '/bin/bash --login -c "conda run -n py39 /bin/bash scripts/run_unittest.sh"'
+          sh '/opt/conda/condabin/conda run -n test_environment /bin/bash scripts/run_unittest.sh'
         }
       }
     }
