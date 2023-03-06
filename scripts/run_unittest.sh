@@ -2,8 +2,8 @@
 
 set -exo pipefail
 
-# Install perfmax
-python setup.py install
+# Install torch musa
+python3 setup.py install
 
 # Unit tests
-python -m unittest discover tests/unittest "test_*.py"
+python3 -m unittest discover tests/unittest "test_*.py"
