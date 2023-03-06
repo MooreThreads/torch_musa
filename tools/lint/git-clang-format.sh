@@ -41,15 +41,15 @@ cleanup()
 }
 trap cleanup 0
 
-CLANG_FORMAT=clang-format-10
+CLANG_FORMAT=clang-format-11
 
-if [ -x "$(command -v clang-format-10)" ]; then
-    CLANG_FORMAT=clang-format-10
+if [ -x "$(command -v clang-format-11)" ]; then
+    CLANG_FORMAT=clang-format-11
 elif [ -x "$(command -v clang-format)" ]; then
-    echo "clang-format might be different from clang-format-10, expect potential difference."
+    echo "clang-format might be different from clang-format-11, expect potential difference."
     CLANG_FORMAT=clang-format
 else
-    echo "Cannot find clang-format-10"
+    echo "Cannot find clang-format-11"
     exit 1
 fi
 
@@ -58,22 +58,22 @@ ${CLANG_FORMAT} --version
 
 if [[ "$INPLACE_FORMAT" == "true" ]]; then
     echo "Running inplace git-clang-format against $REVISION"
-    git-${CLANG_FORMAT} --extensions h,mm,c,cc --binary=${CLANG_FORMAT} "$REVISION"
+    git-${CLANG_FORMAT} --extensions h,inc,c,cpp,mu,muh --binary=${CLANG_FORMAT} "$REVISION"
     exit 0
 fi
 
 if [[ "$LINT_ALL_FILES" == "true" ]]; then
     echo "Running git-clang-format against all C++ files"
-    git-${CLANG_FORMAT} --diff --extensions h,inc,c,cpp --binary=${CLANG_FORMAT} "$REVISION" 1> /tmp/$$.clang-format.txt
+    git-${CLANG_FORMAT} --diff --extensions h,inc,c,cpp,mu,muh --binary=${CLANG_FORMAT} "$REVISION" 1> /tmp/$$.clang-format.txt
 else
     echo "Running git-clang-format against $REVISION"
-    git-${CLANG_FORMAT} --diff --extensions h,inc,c,cpp --binary=${CLANG_FORMAT} "$REVISION" 1> /tmp/$$.clang-format.txt
+    git-${CLANG_FORMAT} --diff --extensions h,inc,c,cpp,mu,muh --binary=${CLANG_FORMAT} "$REVISION" 1> /tmp/$$.clang-format.txt
 fi
 
 echo "---------clang-format log----------"
 cat /tmp/$$.clang-format.txt
 echo ""
 if grep --quiet -E "diff" < /tmp/$$.clang-format.txt; then
-    echo "clang-format lint error found. Consider running clang-format-10 on these files to fix them."
+    echo "clang-format lint error found. Consider running clang-format-11 on these files to fix them."
     exit 1
 fi

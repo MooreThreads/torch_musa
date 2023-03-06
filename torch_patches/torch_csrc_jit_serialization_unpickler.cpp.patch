@@ -1,0 +1,20 @@
+diff --git a/torch/csrc/jit/serialization/unpickler.cpp b/torch/csrc/jit/serialization/unpickler.cpp
+index 056865b..ac8eb34 100644
+--- a/torch/csrc/jit/serialization/unpickler.cpp
++++ b/torch/csrc/jit/serialization/unpickler.cpp
+@@ -538,11 +538,13 @@ PickleOpCode Unpickler::readInstruction() {
+       }
+ 
+       if (device.is_cuda() || device.is_xpu() || device.is_meta() ||
+-          device.is_hpu()) {
++          device.is_hpu() || device.is_privateuseone()) {
+         tensor = tensor.to(device, tensor.scalar_type());
+       } else if (device.type() != DeviceType::CPU) {
+         AT_ERROR(
+-            "supported devices include CPU, CUDA and HPU, however got ",
++            "supported devices include CPU, CUDA ,HPU and ",
++            c10::get_privateuse1_backend(),
++            " however got ",
+             DeviceTypeName(device.type(), false));
+       }
+       stack_.emplace_back(std::move(tensor));

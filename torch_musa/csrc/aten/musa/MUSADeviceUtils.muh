@@ -1,0 +1,32 @@
+#ifndef TORCH_MUSA_CSRC_CORE_MUSADEVICEUTILS_H_
+#define TORCH_MUSA_CSRC_CORE_MUSADEVICEUTILS_H_
+
+#include <musa.h>
+
+namespace at {
+namespace musa {
+
+template <typename T>
+__device__ __forceinline__ T WARP_SHFL(
+    T value,
+    int srcLane,
+    int width = warpSize,
+    unsigned int mask = 0xffffffff) {
+  // __shfl has been deprecated by musa.
+  return __shfl_sync(mask, value, srcLane, width);
+}
+
+template <typename T>
+__device__ __forceinline__ T WARP_SHFL_XOR(
+    T value,
+    int laneMask,
+    int width = warpSize,
+    unsigned int mask = 0xffffffff) {
+  // DITTO. __shfl_xor has been deprecated.
+  return __shfl_xor_sync(mask, value, laneMask, width);
+}
+
+} // namespace musa
+} // namespace at
+
+#endif // TORCH_MUSA_CSRC_CORE_MUSADEVICEUTILS_H_
