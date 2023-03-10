@@ -41,15 +41,15 @@ cleanup()
 }
 trap cleanup 0
 
-CLANG_FORMAT=clang-format-10
+CLANG_FORMAT=clang-format-11
 
-if [ -x "$(command -v clang-format-10)" ]; then
-    CLANG_FORMAT=clang-format-10
+if [ -x "$(command -v clang-format-11)" ]; then
+    CLANG_FORMAT=clang-format-11
 elif [ -x "$(command -v clang-format)" ]; then
-    echo "clang-format might be different from clang-format-10, expect potential difference."
+    echo "clang-format might be different from clang-format-11, expect potential difference."
     CLANG_FORMAT=clang-format
 else
-    echo "Cannot find clang-format-10"
+    echo "Cannot find clang-format-11"
     exit 1
 fi
 

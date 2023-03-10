@@ -31,6 +31,7 @@ pipeline {
       steps {
         container('main') {
           sh '/opt/conda/condabin/conda run -n test_environment /bin/bash tools/lint/pylint.sh'
+          sh '/opt/conda/condabin/conda run -n test_environment /bin/bash tools/lint/git-clang-format.sh --rev origin/main'
         }
       }
     }
