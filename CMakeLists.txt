@@ -149,6 +149,7 @@ if(MUDNN_FOUND)
 else()
   message(WARNING, "Cannot find MUDNN, using default MUDNN_PATH=/usr/local/mudnn.")
   list(APPEND DEPENDENT_INCLUDE_DIRS "/usr/local/mudnn/include/cc")
+  list(APPEND DEPENDENT_LIBRARIES "/usr/local/mudnn/lib64/libmudnn.so")
 endif()
 
 find_package(MUSAToolkits)
@@ -159,6 +160,7 @@ else()
   # set default musa_toolkits path
   message(WARNING, "Cannot find MUSAToolkits, using default MUSATOOLKITS_PATH=/usr/local/musa")
   list(APPEND DEPENDENT_INCLUDE_DIRS "/usr/local/musa/include/")
+  list(APPEND DEPENDENT_LIBRARIES "/usr/local/musa/lib/libmusart.so")
 endif()
 
 include_directories(${PROJECT_SOURCE_DIR})
@@ -185,8 +187,6 @@ endif()
 add_subdirectory(${PROJECT_SOURCE_DIR}/torch_musa/csrc)
 set(CPP_SRCS ${MUSA_CSRCS})
 add_library(${PLUGIN_NAME} SHARED ${CPP_SRCS})
-
-link_directories(${MTDNN_LIB_PATH})
 
 target_link_libraries(${PLUGIN_NAME} PUBLIC ${DEPENDENT_LIBRARIES})
 

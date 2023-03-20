@@ -32,7 +32,7 @@ pipeline {
           }
           steps {
             container('main') {
-              sh '/opt/conda/condabin/conda run -n test_environment /bin/bash tools/lint/pylint.sh'
+              sh '/opt/conda/condabin/conda run -n test_environment --no-capture-output /bin/bash tools/lint/pylint.sh'
             }
           }
         }
@@ -45,7 +45,7 @@ pipeline {
           }
           steps {
             container('main') {
-              sh '/opt/conda/condabin/conda run -n test_environment /bin/bash tools/lint/git-clang-format.sh --rev origin/main'
+              sh '/opt/conda/condabin/conda run -n test_environment --no-capture-output /bin/bash tools/lint/git-clang-format.sh --rev origin/main'
             }
           }
         }
@@ -60,7 +60,7 @@ pipeline {
       }
       steps {
         container('main') {
-          sh '/opt/conda/condabin/conda run -n test_environment /bin/bash build.sh'
+          sh '/opt/conda/condabin/conda run -n test_environment --no-capture-output /bin/bash build.sh'
         }
       }
     }
@@ -73,7 +73,7 @@ pipeline {
       }
       steps {
         container('main') {
-          sh '/opt/conda/condabin/conda run -n test_environment /bin/bash scripts/run_unittest.sh'
+          sh '/opt/conda/condabin/conda run -n test_environment --no-capture-output /bin/bash scripts/run_unittest.sh'
         }
       }
     }
