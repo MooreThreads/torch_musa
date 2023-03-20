@@ -1,6 +1,8 @@
 ![Torch MUSA_Logo](https://github.mthreads.com/mthreads/torch_musa/blob/main/docs/source/img/torch_musa.png)
-
 --------------------------------------------------------------------------------
+
+[![Build Status](https://jenkins-aidev.mthreads.com/buildStatus/icon?job=torch_musa%2Fmain)](https://jenkins-aidev.mthreads.com/job/torch_musa/job/main/)
+
 
 Musa PyTorch is an extension that adds Moore Threads's MUSA as a standalone PyTorch backend
 
@@ -91,6 +93,7 @@ docker run -it --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-si
 ```
 
 ## Getting Started
+The following is a simple example that demonstrates the usage of torch musa.
 ```bash
 import torch
 import torch_musa
