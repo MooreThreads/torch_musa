@@ -3,9 +3,9 @@ import os
 import sysconfig
 from typing import Optional, Dict, cast
 from setup_helpers.env import IS_LINUX
-from setup_helpers.numpy_ import (USE_NUMPY, NUMPY_INCLUDE_DIR)
+from setup_helpers.numpy_ import USE_NUMPY, NUMPY_INCLUDE_DIR
 from setup_helpers.cmake import CMake
-                                       
+
 
 def _mkdir_p(d: str) -> None:
     try:
@@ -14,6 +14,7 @@ def _mkdir_p(d: str) -> None:
         raise RuntimeError(
             f"Failed to create folder {os.path.abspath(d)}: {e.strerror}"
         ) from e
+
 
 class CMakeManager(CMake):
     """Manages cmake.
@@ -58,7 +59,9 @@ class CMakeManager(CMake):
 
         args = []
         if not IS_LINUX:
-            raise Exception("Building error: torch_musa could be built only on Linux now, please check your operation system!")
+            raise Exception(
+                "Building error: torch_musa could be built only on Linux now, please check your operation system!"
+            )
         base_dir = os.path.dirname(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         )
@@ -178,4 +181,3 @@ class CMakeManager(CMake):
                     print(e, file=sys.stderr)
         args.append(base_dir)
         self.run(args, env=my_env)
-

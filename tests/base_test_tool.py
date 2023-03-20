@@ -1,13 +1,22 @@
+"""Some basic functions for tests."""
+# pylint: disable=too-few-public-methods, too-many-locals, too-many-statements
+# pylint: disable=unused-import, too-many-branches, not-callable
+
+from contextlib import ExitStack, nullcontext
+from typing import Callable
+
+import types
 import numpy as np
 import torch as pt
-from contextlib import ExitStack, nullcontext
+
 import torch_musa
 
 
-class Comparator(object):
+class Comparator():
     """
     Base class used for comparing MUSA results and CPU golden results.
     """
+
     def __init__(self):
         self._comparator = None
 
@@ -23,12 +32,17 @@ class Comparator(object):
 
         """
         if self._comparator is None:
-            raise NotImplemented
-        else:
-            return self._comparator(result, golden)
+            raise NotImplementedError("Comparator is not implemented by a subclass")
+
+        if not isinstance(self._comparator, (Callable, types.LambdaType)):
+            raise TypeError("self._comparator must be a callable type")
+
+        return self._comparator(result, golden)
 
 
 class DefaultComparator(Comparator):
+    """The default comparator"""
+
     def __init__(self, abs_diff=1e-3, rel_diff=1e-5, equal_nan=False):
         """
         Use both relative and absolute tolerance to compare the result and golden.
@@ -40,17 +54,19 @@ class DefaultComparator(Comparator):
 
 
 class AbsDiffComparator(Comparator):
+    """The absolute difference comparator."""
+
     def __init__(self, abs_diff=1e-3):
         """
         Use absolute tolerance to compare the result and golden.
         """
         super().__init__()
-        self._comparator = (
-            lambda result, golden: np.abs(golden - result).max() < abs_diff
-        )
+        self._comparator = lambda result, golden: np.abs(golden - result).max() < abs_diff
 
 
 class RelDiffComparator(Comparator):
+    """The relative difference comparator."""
+
     def __init__(self, rel_diff=1e-3):
         """
         Use relative tolerance to compare the result and golden.
@@ -60,7 +76,8 @@ class RelDiffComparator(Comparator):
             lambda result, golden: np.abs((golden - result) / golden).max() < rel_diff
         )
 
-class OpTest(object):
+
+class OpTest:
     """Infrastructure used for handling with op test.
 
     Args:
@@ -70,13 +87,18 @@ class OpTest(object):
         ignored_result_indices (list): Indices of results which will be ignored when comparing.
 
     """
+
     def __init__(
-        self, func=None, input_args=[], comparators=[DefaultComparator(equal_nan=True)], ignored_result_indices=[]
+        self,
+        func=None,
+        input_args=None,
+        comparators=DefaultComparator(equal_nan=True),
+        ignored_result_indices=None,
     ):
         assert func is not None, "no function defined."
         self._func = func
         self._input_args = input_args
-        self._comparators = comparators
+        self._comparators = [comparators]
         self._ignored_result_indices = ignored_result_indices
 
     def _call_func(self, inputs, device, train: bool = False, test_out: bool = False):
@@ -95,9 +117,9 @@ class OpTest(object):
 
         res = []
         grad = []
-        mode_context = (nullcontext() if train else pt.set_grad_enabled(False))
+        mode_context = nullcontext() if train else pt.set_grad_enabled(False)
         with ExitStack() as stack:
-            stack.enter_context(mode_context)
+            stack.entereducecontext(mode_context)
             for k in self._input_args:
                 if isinstance(self._input_args[k], pt.Tensor):
                     self._input_args[k] = self._input_args[k].to(device)
@@ -106,32 +128,33 @@ class OpTest(object):
                 elif isinstance(self._input_args[k], list):
                     for i in range(len(self._input_args[k])):
                         if isinstance(self._input_args[k][i], np.ndarray):
-                            self._input_args[k][i] = pt.Tensor(
-                                self._input_args[k][i]
-                            ).to(device)
+                            self._input_args[k][i] = pt.Tensor(self._input_args[k][i]).to(device)
                             self._input_args[k][i].retain_grad()
                             if self._input_args[k][i].grad is not None:
                                 self._input_args[k][i].grad.zero_()
 
-                if train and isinstance(self._input_args[k], pt.Tensor) and \
-                    self._input_args[k].requires_grad:
+                if (
+                    train
+                    and isinstance(self._input_args[k], pt.Tensor)
+                    and self._input_args[k].requires_grad
+                ):
                     self._input_args[k].retain_grad()
                     if self._input_args[k].grad is not None:
                         self._input_args[k].grad.zero_()
 
             if inputs is None:
-                r_ = self._func(**self._input_args)
+                reduce = self._func(**self._input_args)
                 if train:
-                    r_.sum().backward()
+                    reduce.sum().backward()
             elif isinstance(inputs, list):
-                inputs_list = list()
-                for index, value in enumerate(inputs):
+                inputs_list = []
+                for _, value in enumerate(inputs):
                     if isinstance(value, pt.Tensor):
                         inputs_list.append(value.to(device))
                     if isinstance(value, np.ndarray):
                         tensor = pt.from_numpy(value).to(device)
                         inputs_list.append(tensor)
-                r_ = self._func(*inputs_list)
+                reduce = self._func(*inputs_list)
             elif isinstance(inputs, dict):
                 for k in inputs:
                     if isinstance(inputs[k], pt.Tensor):
@@ -140,33 +163,36 @@ class OpTest(object):
                         inputs[k] = pt.from_numpy(inputs[k]).to(device)
                     if train and inputs[k].requires_grad:
                         inputs[k].retain_grad()
-                        if type(inputs[k].grad) != type(None):
+                        if inputs[k].grad:
                             inputs[k].grad.zero_()
-                f_ = self._func(**self._input_args)
-                f_.to(device)
-                r_ = f_(**inputs)
+                func = self._func(**self._input_args)
+                func.to(device)
+                reduce = func(**inputs)
                 if train:
-                    r_.sum().backward()
-                    for k, v in inputs.items():
-                        if v.requires_grad:
-                            grad.append(v.grad.cpu().detach().numpy())
+                    reduce.sum().backward()
+                    for _, val in inputs.items():
+                        if val.requires_grad:
+                            grad.append(val.grad.cpu().detach().numpy())
             else:
                 if isinstance(inputs, pt.Tensor):
                     inputs = inputs.to(device)
                 if isinstance(inputs, np.ndarray):
                     inputs = pt.from_numpy(inputs).to(device)
-                r_ = self._func(inputs)
+                reduce = self._func(inputs)
 
             for k in self._input_args:
-                if train and isinstance(self._input_args[k], pt.Tensor) and \
-                    self._input_args[k].requires_grad:
-                        grad.append(self._input_args[k].grad.cpu().detach().numpy())
+                if (
+                    train
+                    and isinstance(self._input_args[k], pt.Tensor)
+                    and self._input_args[k].requires_grad
+                ):
+                    grad.append(self._input_args[k].grad.cpu().detach().numpy())
 
-            if isinstance(r_, tuple) or isinstance(r_, list):
-                for r in r_:
-                    res.append(r.to("cpu").detach().numpy())
+            if isinstance(reduce, (tuple, list)):
+                for val in reduce:
+                    res.append(val.to("cpu").detach().numpy())
             else:
-                res.append(r_.to("cpu").detach().numpy())
+                res.append(reduce.to("cpu").detach().numpy())
             if test_out and "out" in self._input_args:
                 res.append(self._input_args["out"].to("cpu").detach().numpy())
             for i in grad:

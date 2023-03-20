@@ -1,6 +1,7 @@
 """Imports the torch musa adaption facilities."""
 
 import torch
+
 try:
     import torch_musa._MUSAC
 except ImportError as err:
