@@ -1,0 +1,7 @@
+# Python dependencies required for development
+cmake==3.25.2
+cffi==1.15.1
+ninja==1.11.1
+mkl==2023.0.0
+mkl-include==2023.0.0
+mkl-devel==2023.0.0

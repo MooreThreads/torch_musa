@@ -1,0 +1,24 @@
+diff --git a/torch/serialization.py b/torch/serialization.py
+index 83ab0fd2c1..21972a1018 100644
+--- a/torch/serialization.py
++++ b/torch/serialization.py
+@@ -157,8 +157,19 @@ def _cuda_deserialize(obj, location):
+             return obj.cuda(device)
+ 
+ 
++def _musa_tag(obj):
++    if obj.device.type == 'mtgpu':
++        return 'mtgpu:' + str(obj.device.index)
++
++# TODO(songtao.liu): support multi-GPU in the future.
++def _musa_deserialize(obj, location):
++    if location.startswith('mtgpu'):
++        return obj.mtgpu()
++
++
+ register_package(10, _cpu_tag, _cpu_deserialize)
+ register_package(20, _cuda_tag, _cuda_deserialize)
++register_package(21, _musa_tag, _musa_deserialize)
+ 
+ 
+ def location_tag(storage: Union[Storage, torch.storage._TypedStorage, torch._UntypedStorage]):

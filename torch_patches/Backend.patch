@@ -1,0 +1,57 @@
+diff --git a/c10/core/Backend.h b/c10/core/Backend.h
+index a8ad60f8c9..d0f4c10387 100644
+--- a/c10/core/Backend.h
++++ b/c10/core/Backend.h
+@@ -53,7 +53,7 @@ enum class Backend {
+   MPS,
+   HPU,
+   Lazy,
+-  PrivateUse1,
++  MUSA,
+   NumOptions
+ };
+ 
+@@ -108,9 +108,9 @@ static inline Backend dispatchKeyToBackend(DispatchKey t) {
+     return Backend::QuantizedXPU;
+   } else if (t == DispatchKey::HPU || t == DispatchKey::AutogradHPU) {
+     return Backend::HPU;
+-  } else if (t == DispatchKey::PrivateUse1) {
+-    return Backend::PrivateUse1;
+-  } else if (t == DispatchKey::Undefined) {
++  } else if (t == DispatchKey::PrivateUse1){
++    return Backend::MUSA;
++  }else if (t == DispatchKey::Undefined) {
+     return Backend::Undefined;
+   } else {
+     TORCH_CHECK(false, "Unrecognized tensor type ID: ", t);
+@@ -169,7 +169,7 @@ static inline DispatchKey backendToDispatchKey(Backend b) {
+       return DispatchKey::MPS;
+     case Backend::HPU:
+       return DispatchKey::HPU;
+-    case Backend::PrivateUse1:
++    case Backend::MUSA:
+       return DispatchKey::PrivateUse1;
+     default:
+       throw std::runtime_error("Unknown backend");
+@@ -225,8 +225,8 @@ static inline DeviceType backendToDeviceType(Backend b) {
+       return DeviceType::MPS;
+     case Backend::HPU:
+       return DeviceType::HPU;
+-    case Backend::PrivateUse1:
+-      return DeviceType::PrivateUse1;
++    case Backend::MUSA:
++      return DeviceType::MTGPU;
+     case Backend::Undefined:
+       TORCH_CHECK(false, "Undefined backend is not a valid device type");
+     default:
+@@ -287,8 +287,8 @@ static inline const char* toString(Backend b) {
+       return "QuantizedXPU";
+     case Backend::HPU:
+       return "HPU";
+-    case Backend::PrivateUse1:
+-      return "PrivateUseOne";
++    case Backend::MUSA:
++      return "musa";
+     default:
+       return "UNKNOWN_BACKEND";
+   }

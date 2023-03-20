@@ -1,0 +1,18 @@
+diff --git a/torch/storage.py b/torch/storage.py
+index e03971c2b1..955198d541 100644
+--- a/torch/storage.py
++++ b/torch/storage.py
+@@ -112,6 +112,13 @@ class _StorageBase(object):
+         else:
+             return self
+ 
++    def mtgpu(self):
++        """Returns a MTGPU copy of this storage if it's not already on the MTGPU"""
++        if self.device.type != 'cpu':
++            return torch._UntypedStorage(self.size(), device="mtgpu").copy_(self, False)
++        else:
++            return self
++
+     def _to(self, dtype):
+         if not isinstance(dtype, torch.dtype):
+             raise TypeError(f"Argument 'dtype' must be torch.dtype, not {type(dtype)}")

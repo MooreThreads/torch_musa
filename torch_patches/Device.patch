@@ -1,0 +1,29 @@
+diff --git a/c10/core/Device.cpp b/c10/core/Device.cpp
+index 5cd474774c..a6d9eced5e 100644
+--- a/c10/core/Device.cpp
++++ b/c10/core/Device.cpp
+@@ -36,7 +36,7 @@ DeviceType parse_type(const std::string& device_string) {
+           {"mps", DeviceType::MPS},
+           {"meta", DeviceType::Meta},
+           {"hpu", DeviceType::HPU},
+-          {"privateuseone", DeviceType::PrivateUse1},
++          {"mtgpu", DeviceType::MTGPU},
+       }};
+   auto device = std::find_if(
+       types.begin(),
+diff --git a/c10/core/Device.h b/c10/core/Device.h
+index 774cf404da..ef1861df51 100644
+--- a/c10/core/Device.h
++++ b/c10/core/Device.h
+@@ -121,6 +121,11 @@ struct C10_API Device final {
+     return type_ == DeviceType::CPU;
+   }
+ 
++  /// Return true if the device is of MTGPU type.
++  bool is_mtgpu() const noexcept {
++    return type_ == DeviceType::MTGPU;
++  }
++
+   /// Return true if the device supports arbirtary strides.
+   bool supports_as_strided() const noexcept {
+     return type_ != DeviceType::XLA && type_ != DeviceType::Lazy;
