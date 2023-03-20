@@ -21,6 +21,36 @@ pipeline {
   agent none
 
   stages {
+    stage('Lint') {
+      parallel {
+        stage('Python Lint') {
+          agent {
+            kubernetes {
+              yamlFile "${env.TEMPLATE_FILE}"
+              defaultContainer "main"
+            }
+          }
+          steps {
+            container('main') {
+              sh '/opt/conda/condabin/conda run -n test_environment /bin/bash tools/lint/pylint.sh'
+            }
+          }
+        }
+        stage('C++ Lint') {
+          agent {
+            kubernetes {
+              yamlFile "${env.TEMPLATE_FILE}"
+              defaultContainer "main"
+            }
+          }
+          steps {
+            container('main') {
+              sh '/opt/conda/condabin/conda run -n test_environment /bin/bash tools/lint/git-clang-format.sh --rev origin/main'
+            }
+          }
+        }
+      }
+    }
     stage('Build') {
       agent {
         kubernetes {
@@ -30,8 +60,7 @@ pipeline {
       }
       steps {
         container('main') {
-          sh '/opt/conda/condabin/conda run -n test_environment /bin/bash tools/lint/pylint.sh'
-          sh '/opt/conda/condabin/conda run -n test_environment /bin/bash tools/lint/git-clang-format.sh --rev origin/main'
+          sh '/opt/conda/condabin/conda run -n test_environment /bin/bash build.sh'
         }
       }
     }
@@ -50,4 +79,3 @@ pipeline {
     }
   }
 }
-

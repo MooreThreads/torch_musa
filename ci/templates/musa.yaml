@@ -24,6 +24,6 @@ spec:
     - infinity
     resources:
       limits:
-        cpu: "2"
-        memory: "4Gi"
+        cpu: "32"
+        memory: "128Gi"
         mthreads.com/gpu: "1"

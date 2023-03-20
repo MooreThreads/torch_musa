@@ -72,12 +72,12 @@ clone_pytorch() {
 }
 
 apply_patches() {
-  # check if patching have been done
+  # check if patching has been done
   if [ -f "${PYTORCH_PATH}/c10/core/DeviceType.h" ]; then
     mtgpu_patch_flag=`(grep -rnIi "DeviceType::MTGPU" $PYTORCH_PATH/c10/core/DeviceType.h || true)`
     if [ "$mtgpu_patch_flag"x != ""x ]; then
       if [ ${FORCE_PATCH} -eq 0 ]; then
-        echo -e "\033[34mInfo: patches have been applied to Pytorch already. Skip patching! \033[0m"
+        echo -e "\033[34mInfo: patches have been applied to PyTorch already. Skip patching! \033[0m"
         return
       fi
     fi
@@ -104,6 +104,7 @@ apply_patches() {
 }
 
 build_pytorch() {
+  echo -e "\033[34mBuilding PyTorch...\033[0m"
   if [ ! -d ${PYTORCH_PATH} ]; then
     echo -e "\033[34mAn error occurred while building PyTorch, the specified PyTorch \
              repo ${PYTORCH_PATH} does not exist \033[0m"
@@ -126,17 +127,21 @@ build_pytorch() {
 }
 
 clean_pytorch() {
+  echo -e "\033[34mCleaning PyTorch...\033[0m"
   pushd ${PYTORCH_REPO_PATH}
   python setup.py clean
   popd
 }
 
 clean_torch_musa() {
+  echo -e "\033[34mCleaning torch_musa...\033[0m"
   pushd ${TORCH_MUSA_HOME}
   python setup.py clean
   popd
 }
+
 build_torch_musa() {
+  echo -e "\033[34mBuilding torch_musa...\033[0m"
   pushd ${TORCH_MUSA_HOME}
   if [ $BUILD_WHEEL -eq 1 ]; then
     rm -rf dist
