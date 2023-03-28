@@ -12,7 +12,7 @@ import torch as pt
 import torch_musa
 
 
-class Comparator():
+class Comparator:
     """
     Base class used for comparing MUSA results and CPU golden results.
     """
@@ -22,14 +22,11 @@ class Comparator():
 
     def __call__(self, result, golden):
         """Compare MUSA results and CPU results.
-
         Args:
             result: MUSA result.
             golden: CPU result.
-
         Returns:
             A bool value indicating whether computing result is right.
-
         """
         if self._comparator is None:
             raise NotImplementedError("Comparator is not implemented by a subclass")
@@ -61,7 +58,9 @@ class AbsDiffComparator(Comparator):
         Use absolute tolerance to compare the result and golden.
         """
         super().__init__()
-        self._comparator = lambda result, golden: np.abs(golden - result).max() < abs_diff
+        self._comparator = (
+            lambda result, golden: np.abs(golden - result).max() < abs_diff
+        )
 
 
 class RelDiffComparator(Comparator):
@@ -79,13 +78,11 @@ class RelDiffComparator(Comparator):
 
 class OpTest:
     """Infrastructure used for handling with op test.
-
     Args:
         func (function): Function used to invoke op.
         input_args (list): Input arguments for op.
         comparators (list): Comparator used to compare results.
         ignored_result_indices (list): Indices of results which will be ignored when comparing.
-
     """
 
     def __init__(
@@ -103,23 +100,20 @@ class OpTest:
 
     def _call_func(self, inputs, device, train: bool = False, test_out: bool = False):
         """Run op on specific device.
-
         Args:
             inputs (dict): Inputs arguments for op.
             device (str): Device where op will be ran.
             train (bool): Whether to test backward.
             test_out (bool): Whether to test op in out-of-place.
-
         Returns:
             Computing result in numpy format.
-
         """
 
         res = []
         grad = []
         mode_context = nullcontext() if train else pt.set_grad_enabled(False)
         with ExitStack() as stack:
-            stack.entereducecontext(mode_context)
+            stack.enter_context(mode_context)
             for k in self._input_args:
                 if isinstance(self._input_args[k], pt.Tensor):
                     self._input_args[k] = self._input_args[k].to(device)
@@ -128,7 +122,9 @@ class OpTest:
                 elif isinstance(self._input_args[k], list):
                     for i in range(len(self._input_args[k])):
                         if isinstance(self._input_args[k][i], np.ndarray):
-                            self._input_args[k][i] = pt.Tensor(self._input_args[k][i]).to(device)
+                            self._input_args[k][i] = pt.Tensor(
+                                self._input_args[k][i]
+                            ).to(device)
                             self._input_args[k][i].retain_grad()
                             if self._input_args[k][i].grad is not None:
                                 self._input_args[k][i].grad.zero_()
@@ -201,21 +197,18 @@ class OpTest:
 
     def __call__(self, inputs, train: bool = False, test_out: bool = False):
         """Run op and compare computing results.
-
         Args:
             inputs (dict): Inputs arguments for op.
             train (bool): Whether to test backward.
             test_out (bool): Whether to test op in out-of-place.
-
         Returns:
             None.
-
         """
 
         cpu_res = self._call_func(inputs, "cpu", train, test_out)
-        mtgpu_res = self._call_func(inputs, "mtgpu", train, test_out)
+        mtgpu_res = self._call_func(inputs, "musa", train, test_out)
         for i, (m_r, c_r) in enumerate(zip(mtgpu_res, cpu_res)):
-            if i in self._ignored_result_indices:
+            if self._ignored_result_indices and i in self._ignored_result_indices:
                 continue
             for comparator in self._comparators:
                 assert c_r.shape == m_r.shape

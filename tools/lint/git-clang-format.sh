@@ -58,7 +58,7 @@ ${CLANG_FORMAT} --version
 
 if [[ "$INPLACE_FORMAT" == "true" ]]; then
     echo "Running inplace git-clang-format against $REVISION"
-    git-${CLANG_FORMAT} --extensions h,mm,c,cc --binary=${CLANG_FORMAT} "$REVISION"
+    git-${CLANG_FORMAT} --extensions h,inc,c,cpp --binary=${CLANG_FORMAT} "$REVISION"
     exit 0
 fi
 
@@ -74,6 +74,6 @@ echo "---------clang-format log----------"
 cat /tmp/$$.clang-format.txt
 echo ""
 if grep --quiet -E "diff" < /tmp/$$.clang-format.txt; then
-    echo "clang-format lint error found. Consider running clang-format-10 on these files to fix them."
+    echo "clang-format lint error found. Consider running clang-format-11 on these files to fix them."
     exit 1
 fi

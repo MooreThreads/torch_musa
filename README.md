@@ -31,7 +31,7 @@ Musa PyTorch is an extension that adds Moore Threads's MUSA as a standalone PyTo
 #### Prerequisites
 - [MUSA ToolKit](https://github.mthreads.com/mthreads/musa_toolkit)
 - [MUDNN](https://github.mthreads.com/mthreads/muDNN)
-- [PyTorch Source Code](https://github.com/pytorch/pytorch/tree/v1.12.0)
+- [PyTorch Source Code](https://github.com/pytorch/pytorch/tree/v2.0.0)
 
 #### Install Dependencies
 
@@ -46,7 +46,7 @@ pip install -r requirements.txt
 export MUDNN_PATH=path/to/mudnn  # eg: MUDNN_PATH=/home/muDNN/build/mudnn
 export MUSATOOLKITS_PATH=path/to/musa_toolkits  # defalut value is /usr/local/musa/
 export LD_LIBRARY_PATH=$MUDNN_PATH/lib64:$MUSATOOLKITS_PATH/lib:$LD_LIBRARY_PATH
-# if PYTORCH_REPO_PATH is not set, PyTorch-v1.12.0 will be downloaded outside this directory when building with build.sh
+# if PYTORCH_REPO_PATH is not set, PyTorch-v2.0.0 will be downloaded outside this directory when building with build.sh
 export PYTORCH_REPO_PATH=path/to/PyTorch source code 
 ```
 
@@ -93,13 +93,12 @@ docker run -it --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-si
 ```
 
 ## Getting Started
-The following is a simple example that demonstrates the usage of torch musa.
 ```bash
 import torch
 import torch_musa
 
-a = torch.tensor([1.2, 2.3], dtype=torch.float32, device='mtgpu')
-b = torch.tensor([1.8, 1.2], dtype=torch.float32, device='mtgpu')
+a = torch.tensor([1.2, 2.3], dtype=torch.float32, device='musa')
+b = torch.tensor([1.8, 1.2], dtype=torch.float32, device='musa')
 c = a + b
 ```
 

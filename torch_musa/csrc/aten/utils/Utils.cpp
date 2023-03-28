@@ -13,12 +13,13 @@
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
-#include "torch_musa/csrc/c10/Allocator.h"
+#include "torch_musa/csrc/core/Allocator.h"
 
 #include <mudnn.h>
 
 namespace at {
 namespace native {
+namespace musa {
 
 void ConfigFormat(Tensor& t, muTensor& mt, bool auto_contiguous) {
   if (t.is_contiguous()) {
@@ -34,7 +35,7 @@ void ConfigFormat(Tensor& t, muTensor& mt, bool auto_contiguous) {
       mt.SetFormat(::musa::dnn::Tensor::Format::NDHWC);
     }
   } else if (auto_contiguous) {
-    t = MusaContiguous(t);
+    t = Contiguous(t);
     mt.SetAddr(t.data_ptr());
     if (t.dim() == 4) {
       mt.SetFormat(::musa::dnn::Tensor::Format::NCHW);
@@ -48,41 +49,34 @@ void ConfigFormat(Tensor& t, muTensor& mt, bool auto_contiguous) {
 
 namespace {
 inline void SetTensorTypeAndAddr(const Tensor& t, muTensor& m_t) {
-  auto offset = t.storage_offset();
   auto t_type = t.scalar_type();
   switch (t_type) {
     case ScalarType::Float:
       m_t.SetType(muTensor::Type::FLOAT);
-      m_t.SetAddr(reinterpret_cast<float*>(t.data_ptr()) - offset);
-      return;
+      break;
     case ScalarType::Int:
       m_t.SetType(muTensor::Type::INT32);
-      m_t.SetAddr(reinterpret_cast<int*>(t.data_ptr()) - offset);
-      return;
+      break;
     case ScalarType::Long:
       m_t.SetType(muTensor::Type::INT64);
-      m_t.SetAddr(reinterpret_cast<int64_t*>(t.data_ptr()) - offset);
-      return;
+      break;
     case ScalarType::Double:
       m_t.SetType(muTensor::Type::DOUBLE);
-      m_t.SetAddr(reinterpret_cast<double*>(t.data_ptr()) - offset);
-      return;
+      break;
     case ScalarType::Bool:
       m_t.SetType(muTensor::Type::BOOL);
-      m_t.SetAddr(reinterpret_cast<bool*>(t.data_ptr()) - offset);
-      return;
+      break;
     case ScalarType::Char:
       m_t.SetType(muTensor::Type::BOOL);
-      m_t.SetAddr(reinterpret_cast<char*>(t.data_ptr()) - offset);
-      return;
+      break;
     case ScalarType::Byte:
       m_t.SetType(muTensor::Type::UINT8);
-      m_t.SetAddr(reinterpret_cast<uint8_t*>(t.data_ptr()) - offset);
-      return;
+      break;
     default:
       TORCH_CHECK(false, "Unsupported tensor dtype: ", t);
       throw;
   }
+  m_t.SetAddr(t.data_ptr());
 }
 
 } // namespace
@@ -103,24 +97,25 @@ muTensor CreateEmptyMUTensor() {
   return rst;
 }
 
-void musaInternalMemFree(void* ptr) {
+void InternalMemFree(void* ptr) {
   if (!ptr) {
     return;
   }
-  musa::AutoGrowthBestFitAllocator::get_allocator()->FreeImpl(ptr);
+  ::musa::AutoGrowthBestFitAllocator::get_allocator()->FreeImpl(ptr);
 }
 
-::musa::dnn::MemoryHandler musaInternalMemAlloc(size_t s) {
+::musa::dnn::MemoryHandler InternalMemAlloc(size_t s) {
   void* data = nullptr;
   if (s) {
-    musa::AutoGrowthBestFitAllocator::get_allocator()->AllocateImpl(s, &data);
+    ::musa::AutoGrowthBestFitAllocator::get_allocator()->AllocateImpl(s, &data);
   }
-  return ::musa::dnn::MemoryHandler(data, musaInternalMemFree);
+  return ::musa::dnn::MemoryHandler(data, InternalMemFree);
 }
 
 void Synchronize() {
   musaDeviceSynchronize();
 }
 
+} // namespace musa
 } // namespace native
 } // namespace at

@@ -13,11 +13,13 @@ spec:
   containers:
   - name: main
     tty: true
-    image: sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev:v0.1.4
-    imagePullPolicy: IfNotPresent
+    image: sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev:v0.1.5
+    imagePullPolicy: Always
     env:
     - name: TARGET_DEVICE
       value: musa
+    - name: PYTORCH_REPO_PATH
+      value: /home/pytorch
     command:
     - sleep
     args:

@@ -1,7 +1,7 @@
 FILE(GLOB _CSRCS
     aten/ops/*.cpp
     aten/utils/*.cpp
-    c10/*.cpp
+        core/*.cpp
     )
 
 LIST(APPEND MUSA_CSRCS ${_CSRCS})

@@ -24,6 +24,7 @@
 
 namespace at {
 namespace native {
+namespace musa {
 
 namespace {
 
@@ -201,8 +202,8 @@ void mtgpu_impl_datacast(const Tensor& tensor_self, const Tensor& tensor_src) {
   muHandle h;
   ::musa::dnn::Unary op;
 
-  Tensor src_contig = MusaContiguous(tensor_src);
-  Tensor dst_contig = MusaContiguous(tensor_self);
+  Tensor src_contig = Contiguous(tensor_src);
+  Tensor dst_contig = Contiguous(tensor_self);
 
   auto in_ = CreateMUTensor(src_contig);
   auto out_ = CreateMUTensor(dst_contig);
@@ -223,8 +224,6 @@ inline void mtgpu_impl_copy(
     const Tensor& tensor_src,
     Memcpy_type copy_type) {
   muHandle h;
-  size_t d_offset = 0;
-  void* dev_ptr = nullptr;
 
   // Since we already check the equivalance of src & dst sizes, so we do not
   // need to check nbytes here.
@@ -234,16 +233,10 @@ inline void mtgpu_impl_copy(
   }
   if (copy_type == Memcpy_type::MEMCPY_HOST_TO_DEVICE) { // cpu -> mtgpu
     // Note: tensor.data_ptr() will return the type void*
-    d_offset = tensor_self.storage_offset() * tensor_self.itemsize();
-    dev_ptr = static_cast<char*>(tensor_self.data_ptr()) - d_offset;
     if (tensor_self.dtype() != tensor_src.dtype()) {
       // Note: when H2D copy, tensor_src and tensor_self have different
       // dtypes, type conversions are performed on the CPU for CPU->GPU copies.
       auto cpu_cast_result = tensor_src.to(tensor_self.dtype());
-      auto malloc_res = musaMalloc(&dev_ptr, capacity);
-      TORCH_CHECK(
-          malloc_res == ::musaError::musaSuccess,
-          "Musa Tensor Allocate failed!");
       auto musa_self = CreateMUTensor(tensor_self, true);
       auto result = musa_self.CopyFrom(
           cpu_cast_result.data_ptr(), capacity, musaMemcpyHostToDevice, h);
@@ -251,10 +244,6 @@ inline void mtgpu_impl_copy(
           result == ::musa::dnn::Status::SUCCESS,
           "Copy(MEMCPY_HOST_TO_DEVICE)");
     } else {
-      auto malloc_res = musaMalloc(&dev_ptr, capacity);
-      TORCH_CHECK(
-          malloc_res == ::musaError::musaSuccess,
-          "Musa Tensor Allocate failed!");
       auto musa_self = CreateMUTensor(tensor_self, true);
       auto result = musa_self.CopyFrom(
           tensor_src.data_ptr(), capacity, musaMemcpyHostToDevice, h);
@@ -263,8 +252,6 @@ inline void mtgpu_impl_copy(
           "Copy(MEMCPY_HOST_TO_DEVICE)");
     }
   } else if (copy_type == Memcpy_type::MEMCPY_DEVICE_TO_HOST) { // mtgpu -> cpu
-    d_offset = tensor_src.storage_offset() * tensor_src.itemsize();
-    dev_ptr = static_cast<char*>(tensor_src.data_ptr()) - d_offset;
     if (tensor_self.dtype() != tensor_src.dtype()) {
       // Note: when D2H copy, tensor_src and tensor_self have different
       // dtypes, type conversions are performed on the CPU for CPU->GPU copies.
@@ -272,9 +259,9 @@ inline void mtgpu_impl_copy(
       cpu_tensor.copy_(tensor_src);
       tensor_self.copy_(cpu_tensor);
     } else {
-      auto musa_self = CreateMUTensor(tensor_src, true);
-      auto result = musa_self.CopyTo(
-          tensor_self.data_ptr(), capacity, musaMemcpyDeviceToHost, h);
+      auto musa_self = CreateMUTensor(tensor_self, true);
+      auto result = musa_self.CopyFrom(
+          tensor_src.data_ptr(), capacity, musaMemcpyDeviceToHost, h);
       TORCH_CHECK(
           result == ::musa::dnn::Status::SUCCESS,
           "Copy(MEMCPY_DEVICE_TO_HOST)");
@@ -296,8 +283,7 @@ Tensor mtgpu_copy_from(
   // At least one of src and dst should be MTGPU, otherwise it is impossible
   // to fall into this function!
   TORCH_INTERNAL_ASSERT(
-      src.device().type() == DeviceType::MTGPU ||
-      self.device().type() == DeviceType::MTGPU);
+      src.device().type() == kMUSA || self.device().type() == kMUSA);
 
   Memcpy_type copy_type = src.device().type() == DeviceType::CPU
       ? Memcpy_type::MEMCPY_HOST_TO_DEVICE
@@ -351,5 +337,6 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("_copy_from", &mtgpu_copy_from);
 }
 
+} // namespace musa
 } // namespace native
 } // namespace at

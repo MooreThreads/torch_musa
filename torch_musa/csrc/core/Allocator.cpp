@@ -8,7 +8,8 @@
 #pragma GCC diagnostic pop
 
 #include <mudnn.h>
-#include <torch_musa/csrc/c10/Allocator.h>
+#include <torch_musa/csrc/core/Allocator.h>
+#include "torch_musa/csrc/aten/utils/Utils.h"
 
 using ::musa::dnn::Tensor;
 
@@ -25,7 +26,8 @@ struct C10_API DefaultMTGPUAllocator final : at::Allocator {
     }
     // TODO(songtao.liu): complete the device index selection for distributed
     // training.
-    return {data, data, &ReportAndDelete, at::Device(at::DeviceType::MTGPU, 0)};
+    return {
+        data, data, &ReportAndDelete, at::Device(at::native::musa::kMUSA, 0)};
   }
 
   static void ReportAndDelete(void* ptr) {
@@ -46,5 +48,5 @@ at::Allocator* GetDefaultMTGPUAllocator() {
   return &g_mtgpu_alloc;
 }
 
-REGISTER_ALLOCATOR(DeviceType::MTGPU, &g_mtgpu_alloc);
+REGISTER_ALLOCATOR(at::native::musa::kMUSA, &g_mtgpu_alloc);
 } // namespace c10

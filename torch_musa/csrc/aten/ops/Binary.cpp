@@ -18,11 +18,11 @@
 
 namespace at {
 namespace native {
-namespace {
+namespace musa {
 using BINARY_MODE = ::musa::dnn::Binary::Mode;
 using UNARY_MODE = ::musa::dnn::Unary::Mode;
 
-void MusaBinaryCall(
+void BinaryCall(
     const std::string& op_name,
     Tensor& output,
     const Tensor& self,
@@ -56,7 +56,7 @@ inline bool IsComparisonOp(const BINARY_MODE m) {
       m == BINARY_MODE::GT || m == BINARY_MODE::LE || m == BINARY_MODE::LT;
 }
 
-Tensor MusaBinary(
+Tensor Binary(
     const std::string op_name,
     const Tensor& self,
     const Tensor& other,
@@ -85,8 +85,8 @@ Tensor MusaBinary(
     }
   }
 
-  Tensor self_ = MusaContiguous(self);
-  Tensor other_ = MusaContiguous(other);
+  Tensor self_ = Contiguous(self);
+  Tensor other_ = Contiguous(other);
 
   // In some special case that 'other' is scalar and on cpu, UnaryOp could take
   // the place of BinaryOp to optimize performance. such as:
@@ -111,10 +111,10 @@ Tensor MusaBinary(
     // 1. deal with other or self tensor on cpu
     // 2. deal with other and self tensor shape isn't same
     if (other.dim() == 0) {
-      other_ = at::full_like(self_, other.item(), DeviceType::MTGPU);
+      other_ = at::full_like(self_, other.item(), kMUSA);
     }
     if (self.dim() == 0) {
-      self_ = at::full_like(other_, self.item(), DeviceType::MTGPU);
+      self_ = at::full_like(other_, self.item(), kMUSA);
     }
   }
 
@@ -128,7 +128,7 @@ Tensor MusaBinary(
         other.sizes(),
         "}.");
     if (self.dim() == 0) {
-      output = MusaContiguous(self);
+      output = Contiguous(self);
     } else {
       output = self_;
     }
@@ -157,7 +157,7 @@ Tensor MusaBinary(
           output_sizes,
           ScalarType::Bool,
           c10::nullopt,
-          DeviceType::MTGPU,
+          kMUSA,
           c10::nullopt,
           at::MemoryFormat::Contiguous);
     } else {
@@ -165,7 +165,7 @@ Tensor MusaBinary(
           output_sizes,
           self_.scalar_type(),
           c10::nullopt,
-          DeviceType::MTGPU,
+          kMUSA,
           c10::nullopt,
           at::MemoryFormat::Contiguous);
     }
@@ -209,12 +209,12 @@ Tensor MusaBinary(
     auto mt_input = CreateMUTensor(self_);
     CHECK_MUDNN_STATUS(uop.Run(h, mt_output, mt_input), "Run " + op_name);
   } else {
-    MusaBinaryCall(op_name, output, self_, other_, m, alpha_scalar);
+    BinaryCall(op_name, output, self_, other_, m, alpha_scalar);
   }
   return inplace ? self.copy_(output) : output;
 }
 
-Tensor MusaBinarycommonDtype(
+Tensor BinarycommonDtype(
     const std::string& op_name,
     const Tensor& self,
     const Tensor& other,
@@ -224,10 +224,10 @@ Tensor MusaBinarycommonDtype(
   alpha_check(commonDtype, alpha_scalar);
   Tensor self_ = self.to(commonDtype);
   Tensor other_ = other.to(commonDtype);
-  return MusaBinary(op_name, self_, other_, m, alpha_scalar);
+  return Binary(op_name, self_, other_, m, alpha_scalar);
 }
 
-void MusaBinarycommonDtype_(
+void BinarycommonDtype_(
     const std::string& op_name,
     const Tensor& self,
     const Tensor& other,
@@ -236,11 +236,11 @@ void MusaBinarycommonDtype_(
   auto commonDtype = at::result_type(self, other);
   alpha_check(commonDtype, alpha_scalar);
   Tensor other_ = other.to(commonDtype);
-  MusaBinary(op_name, self, other_, m, alpha_scalar, true);
+  Binary(op_name, self, other_, m, alpha_scalar, true);
   return;
 }
 
-void MusaBinarycommonDtypeCall(
+void BinarycommonDtypeCall(
     const std::string& op_name,
     const Tensor& self,
     const Tensor& other,
@@ -249,44 +249,43 @@ void MusaBinarycommonDtypeCall(
     BINARY_MODE m) {
   auto commonDtype = at::result_type(self, other);
   alpha_check(commonDtype, alpha_scalar);
-  Tensor self_ = MusaContiguous(self.to(commonDtype));
-  Tensor other_ = MusaContiguous(other.to(commonDtype));
-  MusaBinaryCall(op_name, output, self_, other_, m, alpha_scalar);
+  Tensor self_ = Contiguous(self.to(commonDtype));
+  Tensor other_ = Contiguous(other.to(commonDtype));
+  BinaryCall(op_name, output, self_, other_, m, alpha_scalar);
 }
 
-Tensor MusaAddTensor(
+Tensor AddTensor(
     const Tensor& self,
     const Tensor& other,
     Scalar const& alpha_scalar) {
-  return MusaBinarycommonDtype(
+  return BinarycommonDtype(
       __func__, self, other, alpha_scalar, BINARY_MODE::ADD);
 }
 
-Tensor& MusaAdd_Tensor(
+Tensor& Add_Tensor(
     Tensor& self,
     const Tensor& other,
     Scalar const& alpha_scalar) {
-  MusaBinarycommonDtype_(__func__, self, other, alpha_scalar, BINARY_MODE::ADD);
+  BinarycommonDtype_(__func__, self, other, alpha_scalar, BINARY_MODE::ADD);
   return self;
 }
 
-Tensor& MusaAdd_out(
+Tensor& Add_out(
     const Tensor& self,
     const Tensor& other,
     Scalar const& alpha_scalar,
     Tensor& output) {
-  MusaBinarycommonDtypeCall(
+  BinarycommonDtypeCall(
       __func__, self, other, alpha_scalar, output, BINARY_MODE::ADD);
   return output;
 }
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("add.Tensor", &MusaAddTensor);
-  m.impl("add_.Tensor", &MusaAdd_Tensor);
-  m.impl("add.out", &MusaAdd_out);
+  m.impl("add.Tensor", &AddTensor);
+  m.impl("add_.Tensor", &Add_Tensor);
+  m.impl("add.out", &Add_out);
 }
 
-} // namespace
-
+} // namespace musa
 } // namespace native
 } // namespace at

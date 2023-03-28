@@ -60,7 +60,7 @@ pipeline {
       }
       steps {
         container('main') {
-          sh '/opt/conda/condabin/conda run -n test_environment --no-capture-output /bin/bash build.sh'
+          sh '/bin/bash --login build.sh'
         }
       }
     }
@@ -73,7 +73,7 @@ pipeline {
       }
       steps {
         container('main') {
-          sh '/opt/conda/condabin/conda run -n test_environment --no-capture-output /bin/bash scripts/run_unittest.sh'
+          sh '/bin/bash --login scripts/run_unittest.sh'
         }
       }
     }

@@ -100,7 +100,13 @@ def configure_extension_build():
         extra_compile_args += ["-g"]
         extra_link_args += ["-g"]
 
-    use_asan = os.getenv("USE_ASAN", default="").upper() in ["ON", "1", "YES", "TRUE", "Y"]
+    use_asan = os.getenv("USE_ASAN", default="").upper() in [
+        "ON",
+        "1",
+        "YES",
+        "TRUE",
+        "Y",
+    ]
 
     if use_asan:
         extra_compile_args += ["-fsanitize=address"]
@@ -127,9 +133,15 @@ setup(
     url="https://github.mthreads.com/mthreads/torch_musa",
     author="Moore Threads PyTorch AI Dev Team",
     packages=find_packages(exclude=["build"]),
-    ext_modules=[configure_extension_build()],
+    ext_modules=[
+        configure_extension_build(),
+    ],
     package_dir={"": os.path.relpath(BASE_DIR)},
-    package_data={"torch_musa": ["lib/*.so*"]},
+    package_data={
+        "torch_musa": [
+            "lib/*.so*",
+        ],
+    },
     extras_require={},
     cmdclass={"build_ext": Build, "clean": Clean, "install": Install},
 )

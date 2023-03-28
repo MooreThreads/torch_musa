@@ -13,6 +13,8 @@
 
 namespace at {
 namespace native {
+namespace musa {
+
 Tensor empty_mtgpu(
     IntArrayRef size,
     c10::optional<ScalarType> dtype_opt,
@@ -21,11 +23,12 @@ Tensor empty_mtgpu(
     c10::optional<bool> pin_memory_opt,
     c10::optional<c10::MemoryFormat> memory_format_opt);
 
-// MusaContiguous create new tensor when self tensor's storage_offset > 0 and
+// Contiguous create new tensor when self tensor's storage_offset > 0 and
 // not contiguous
-Tensor MusaContiguous(
+Tensor Contiguous(
     const Tensor& self,
     MemoryFormat memory_format = MemoryFormat::Contiguous);
 
+} // namespace musa
 } // namespace native
 } // namespace at

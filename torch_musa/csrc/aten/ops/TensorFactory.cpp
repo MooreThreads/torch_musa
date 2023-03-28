@@ -18,6 +18,7 @@
 #pragma GCC diagnostic pop
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
+#include "torch_musa/csrc/aten/utils/Utils.h"
 
 #include <mudnn.h>
 
@@ -38,19 +39,20 @@ Tensor empty_mtgpu(
   bool pin_memory = pinned_memory_or_default(pin_memory_opt);
 
   TORCH_CHECK(pin_memory == false, "MTGPU only support not pinned memory");
-  TORCH_CHECK(device.type() == DeviceType::MTGPU, "Device isn't MTGPU!");
+  TORCH_CHECK(device.type() == at::native::musa::kMUSA, "Device isn't MTGPU!");
   c10::Allocator* allocator;
 
-  allocator = c10::GetAllocator(DeviceType::MTGPU);
+  allocator = c10::GetAllocator(at::native::musa::kMUSA);
 
   auto dtype = dtype_or_default(dtype_opt);
-  constexpr c10::DispatchKeySet mtgpu_ks(c10::DispatchKey::PrivateUse1);
+  constexpr c10::DispatchKeySet mtgpu_ks(at::native::musa::kMUSAKey);
   return empty_generic(size, allocator, mtgpu_ks, dtype, memory_format_opt);
 }
 
 } // namespace detail
 
 namespace native {
+namespace musa {
 
 // function: resize tensor to a new size
 void resize_bytes_mtgpu(StorageImpl* storage, size_t size_bytes) {
@@ -91,7 +93,7 @@ static inline void maybe_resize_storage_mtgpu(
     auto new_storage = c10::make_intrusive<StorageImpl>(
         StorageImpl::use_byte_size_t(),
         new_size_bytes,
-        c10::GetAllocator(DeviceType::MTGPU),
+        c10::GetAllocator(kMUSA),
         true);
     self->set_storage_keep_dtype(std::move(new_storage));
   } else if (new_size_bytes > storage.nbytes()) {
@@ -147,9 +149,9 @@ Tensor empty_strided_mtgpu(
     c10::optional<Device> device_opt,
     c10::optional<bool> pin_memory_opt) {
   check_size_nonnegative(size);
-  auto t = at::native::empty_mtgpu(
+  auto t = at::native::musa::empty_mtgpu(
       {0}, dtype_opt, layout_opt, device_opt, pin_memory_opt, c10::nullopt);
-  at::native::resize_impl_mtgpu_(t.unsafeGetTensorImpl(), size, stride);
+  at::native::musa::resize_impl_mtgpu_(t.unsafeGetTensorImpl(), size, stride);
   return t;
 }
 
@@ -176,10 +178,7 @@ const Tensor& resize_mtgpu_(
 Tensor& set_mtgpu_(Tensor& result) {
   caffe2::TypeMeta dtype = result.dtype();
   Storage storage(
-      Storage::use_byte_size_t(),
-      0,
-      c10::GetAllocator(DeviceType::MTGPU),
-      true);
+      Storage::use_byte_size_t(), 0, c10::GetAllocator(kMUSA), true);
   result.set_(storage, 0, {0}, {});
   TORCH_INTERNAL_ASSERT(dtype == result.dtype());
   return result;
@@ -203,7 +202,7 @@ Tensor& set_storage_mtgpu_(
   c10::optional<IntArrayRef> stride_opt = stride.data() != nullptr
       ? c10::optional<IntArrayRef>(stride)
       : c10::nullopt;
-  at::native::resize_impl_mtgpu_(
+  at::native::musa::resize_impl_mtgpu_(
       result.unsafeGetTensorImpl(), size, stride_opt);
   return result;
 }
@@ -219,7 +218,7 @@ Tensor& set_tensor_(Tensor& result, const Tensor& source) {
   return result;
 }
 
-Tensor MusaContiguous(const Tensor& self, MemoryFormat memory_format) {
+Tensor Contiguous(const Tensor& self, MemoryFormat memory_format) {
   if (self.is_contiguous(memory_format) && !self.storage_offset() &&
       (self.dim() == 0 || (self.dim() != 0 && self.stride(-1) == 1))) {
     return self;
@@ -240,5 +239,6 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("set_.source_Tensor", &set_tensor_);
 }
 
+} // namespace musa
 } // namespace native
 } // namespace at

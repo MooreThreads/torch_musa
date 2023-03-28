@@ -52,7 +52,7 @@ def test_add(input_data, data_type, other_scalar):
     )
     cpu_result_numpy = cpu_result.detach().numpy()
     mtgpu_result = (
-        torch.tensor(input_data["input"].astype(data_type), device="mtgpu")
+        torch.tensor(input_data["input"].astype(data_type), device="musa")
         + other_scalar
     )
     mtgpu_result_numpy = mtgpu_result.cpu().detach().numpy()
