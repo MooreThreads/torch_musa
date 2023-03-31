@@ -1,15 +1,18 @@
-#pragma once
+#ifndef ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUALLOCATOR_H_
+#define ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUALLOCATOR_H_
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wunused-variable"
-#pragma GCC diagnostic ignored "-Wunused"
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <ATen/ATen.h>
-#include <list>
+#include <c10/core/CPUAllocator.h>
+#include <c10/core/DeviceType.h>
 #pragma GCC diagnostic pop
 
 #include <mudnn.h>
+#include <musa_runtime.h>
+#include <list>
 
 namespace musa {
 class AutoGrowthBestFitAllocator {
@@ -28,7 +31,7 @@ class AutoGrowthBestFitAllocator {
     } else {
       auto result = musaMalloc(ptr, size);
       TORCH_CHECK(
-          result == ::musaError::musaSuccess, "Musa Tensor Allocate failed!");
+          result == ::musaError::musaSuccess, " Tensor Allocate failed!");
       if (break_down_) {
         return;
       }
@@ -46,7 +49,7 @@ class AutoGrowthBestFitAllocator {
     if (it == blocks_.end()) {
       auto result = musaFree(ptr);
       TORCH_CHECK(
-          result == ::musaError::musaSuccess, "Musa Tensor Release failed!");
+          result == ::musaError::musaSuccess, " Tensor Release failed!");
     } else {
       free_blocks_.emplace(it->second, it->first);
     }
@@ -67,7 +70,7 @@ class AutoGrowthBestFitAllocator {
     for (auto b : blocks_) {
       auto result = musaFree(b.first);
       TORCH_CHECK(
-          result == ::musaError::musaSuccess, "Musa Tensor Release failed!");
+          result == ::musaError::musaSuccess, " Tensor Release failed!");
     }
   }
 
@@ -79,3 +82,4 @@ class AutoGrowthBestFitAllocator {
   std::mutex lock_;
 };
 } // namespace musa
+#endif // ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUALLOCATOR_H_

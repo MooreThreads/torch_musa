@@ -1,12 +1,12 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wunused-variable"
-#pragma GCC diagnostic ignored "-Wunused"
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/NativeFunctions.h>
 #include <ATen/native/Resize.h>
+#include <torch/extension.h>
 #include <torch/library.h>
 #pragma GCC diagnostic pop
 
@@ -24,30 +24,29 @@ namespace musa {
 void ConfigFormat(Tensor& t, muTensor& mt, bool auto_contiguous) {
   if (t.is_contiguous()) {
     if (t.dim() == 4) {
-      mt.SetFormat(::musa::dnn::Tensor::Format::NCHW);
+      mt.SetFormat(muTensor::Format::NCHW);
     } else if (t.dim() == 5) {
-      mt.SetFormat(::musa::dnn::Tensor::Format::NCDHW);
+      mt.SetFormat(muTensor::Format::NCDHW);
     }
   } else if (t.is_contiguous(at::MemoryFormat::ChannelsLast)) {
     if (t.dim() == 4) {
-      mt.SetFormat(::musa::dnn::Tensor::Format::NHWC);
+      mt.SetFormat(muTensor::Format::NHWC);
     } else if (t.dim() == 5) {
-      mt.SetFormat(::musa::dnn::Tensor::Format::NDHWC);
+      mt.SetFormat(muTensor::Format::NDHWC);
     }
   } else if (auto_contiguous) {
     t = Contiguous(t);
     mt.SetAddr(t.data_ptr());
     if (t.dim() == 4) {
-      mt.SetFormat(::musa::dnn::Tensor::Format::NCHW);
+      mt.SetFormat(muTensor::Format::NCHW);
     } else if (t.dim() == 5) {
-      mt.SetFormat(::musa::dnn::Tensor::Format::NCDHW);
+      mt.SetFormat(muTensor::Format::NCDHW);
     }
   } else {
     TORCH_CHECK(false, "Failed to config MTensor format");
   }
 }
 
-namespace {
 inline void SetTensorTypeAndAddr(const Tensor& t, muTensor& m_t) {
   auto t_type = t.scalar_type();
   switch (t_type) {
@@ -78,8 +77,6 @@ inline void SetTensorTypeAndAddr(const Tensor& t, muTensor& m_t) {
   }
   m_t.SetAddr(t.data_ptr());
 }
-
-} // namespace
 
 muTensor CreateMUTensor(const Tensor& t, bool use_stride) {
   muTensor rst;
@@ -119,3 +116,11 @@ void Synchronize() {
 } // namespace musa
 } // namespace native
 } // namespace at
+
+void PySynchronize(PyObject* obj) {
+  auto m = py::handle(obj).cast<py::module>();
+  m.def(
+      "synchronize",
+      &at::native::musa::Synchronize,
+      "synchronize device(MUSA)");
+}

@@ -70,8 +70,14 @@ Tensor& Fill(Tensor& self, const Scalar& value) {
   return self;
 }
 
+Tensor& Zero_(Tensor& self) {
+  FillCall(self, 0);
+  return self;
+}
+
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("fill_.Scalar", &Fill);
+  m.impl("zero_", &Zero_);
 }
 
 } // namespace musa

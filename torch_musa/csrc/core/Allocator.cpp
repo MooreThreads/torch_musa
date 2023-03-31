@@ -1,17 +1,6 @@
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wunused-variable"
-#pragma GCC diagnostic ignored "-Wunused"
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#include <c10/core/CPUAllocator.h>
-#include <c10/core/DeviceType.h>
-#pragma GCC diagnostic pop
-
+#include "torch_musa/csrc/core/Allocator.h"
 #include <mudnn.h>
-#include <torch_musa/csrc/core/Allocator.h>
 #include "torch_musa/csrc/aten/utils/Utils.h"
-
-using ::musa::dnn::Tensor;
 
 namespace c10 {
 

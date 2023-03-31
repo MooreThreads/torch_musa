@@ -1,7 +1,6 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wunused-variable"
-#pragma GCC diagnostic ignored "-Wunused"
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <ATen/ATen.h>
 #include <ATen/Config.h>
@@ -29,7 +28,7 @@ void BinaryCall(
     const Tensor& other,
     BINARY_MODE m = BINARY_MODE::ADD,
     const Scalar alpha_scalar = 1) {
-  ::musa::dnn::Handle h;
+  muHandle h;
   Tensor other_tmp = alpha_scalar.equal(1) ? other : at::empty_like(other);
   auto other_mt = CreateMUTensor(other_tmp);
 
@@ -45,10 +44,11 @@ void BinaryCall(
   output.resize_(output_sizes);
 
   ::musa::dnn::Binary bop;
-  auto self_ = CreateMUTensor(self);
+  auto contiguous_self = CreateMUTensor(self);
   auto om = CreateMUTensor(output);
   CHECK_MUDNN_STATUS(bop.SetMode(m), "SetMode");
-  CHECK_MUDNN_STATUS(bop.Run(h, om, self_, other_mt), "Run " + op_name);
+  CHECK_MUDNN_STATUS(
+      bop.Run(h, om, contiguous_self, other_mt), "Run " + op_name);
 }
 
 inline bool IsComparisonOp(const BINARY_MODE m) {
@@ -85,8 +85,8 @@ Tensor Binary(
     }
   }
 
-  Tensor self_ = Contiguous(self);
-  Tensor other_ = Contiguous(other);
+  Tensor contiguous_self = Contiguous(self);
+  Tensor contiguous_other = Contiguous(other);
 
   // In some special case that 'other' is scalar and on cpu, UnaryOp could take
   // the place of BinaryOp to optimize performance. such as:
@@ -111,10 +111,10 @@ Tensor Binary(
     // 1. deal with other or self tensor on cpu
     // 2. deal with other and self tensor shape isn't same
     if (other.dim() == 0) {
-      other_ = at::full_like(self_, other.item(), kMUSA);
+      contiguous_other = at::full_like(contiguous_self, other.item(), kMUSA);
     }
     if (self.dim() == 0) {
-      self_ = at::full_like(other_, self.item(), kMUSA);
+      contiguous_self = at::full_like(contiguous_other, self.item(), kMUSA);
     }
   }
 
@@ -130,7 +130,7 @@ Tensor Binary(
     if (self.dim() == 0) {
       output = Contiguous(self);
     } else {
-      output = self_;
+      output = contiguous_self;
     }
   } else {
     auto output_sizes = infer_size_dimvector(self.sizes(), other.sizes());
@@ -163,7 +163,7 @@ Tensor Binary(
     } else {
       output = empty_mtgpu(
           output_sizes,
-          self_.scalar_type(),
+          contiguous_self.scalar_type(),
           c10::nullopt,
           kMUSA,
           c10::nullopt,
@@ -172,9 +172,9 @@ Tensor Binary(
   }
 
   if (optimize_scalar_unary) {
-    ::musa::dnn::Handle h;
+    muHandle h;
     ::musa::dnn::Unary uop;
-    auto other_scalar = other_.item();
+    auto other_scalar = contiguous_other.item();
     auto ConvertBinaryModeToString = [](BINARY_MODE mode) -> std::string {
       switch (mode) {
         case BINARY_MODE::ADD:
@@ -206,10 +206,11 @@ Tensor Binary(
       CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::DIV), "SetMode");
     }
     auto mt_output = CreateMUTensor(output);
-    auto mt_input = CreateMUTensor(self_);
+    auto mt_input = CreateMUTensor(contiguous_self);
     CHECK_MUDNN_STATUS(uop.Run(h, mt_output, mt_input), "Run " + op_name);
   } else {
-    BinaryCall(op_name, output, self_, other_, m, alpha_scalar);
+    BinaryCall(
+        op_name, output, contiguous_self, contiguous_other, m, alpha_scalar);
   }
   return inplace ? self.copy_(output) : output;
 }
@@ -220,23 +221,23 @@ Tensor BinarycommonDtype(
     const Tensor& other,
     Scalar const& alpha_scalar,
     BINARY_MODE m) {
-  auto commonDtype = at::result_type(self, other);
-  alpha_check(commonDtype, alpha_scalar);
-  Tensor self_ = self.to(commonDtype);
-  Tensor other_ = other.to(commonDtype);
-  return Binary(op_name, self_, other_, m, alpha_scalar);
+  auto common_dtype = at::result_type(self, other);
+  alpha_check(common_dtype, alpha_scalar);
+  Tensor contiguous_self = self.to(common_dtype);
+  Tensor contiguous_other = other.to(common_dtype);
+  return Binary(op_name, contiguous_self, contiguous_other, m, alpha_scalar);
 }
 
-void BinarycommonDtype_(
+void BinarycommonDtypeInternal(
     const std::string& op_name,
     const Tensor& self,
     const Tensor& other,
     Scalar const& alpha_scalar,
     BINARY_MODE m) {
-  auto commonDtype = at::result_type(self, other);
-  alpha_check(commonDtype, alpha_scalar);
-  Tensor other_ = other.to(commonDtype);
-  Binary(op_name, self, other_, m, alpha_scalar, true);
+  auto common_dtype = at::result_type(self, other);
+  alpha_check(common_dtype, alpha_scalar);
+  Tensor contiguous_other = other.to(common_dtype);
+  Binary(op_name, self, contiguous_other, m, alpha_scalar, true);
   return;
 }
 
@@ -247,11 +248,12 @@ void BinarycommonDtypeCall(
     Scalar const& alpha_scalar,
     Tensor& output,
     BINARY_MODE m) {
-  auto commonDtype = at::result_type(self, other);
-  alpha_check(commonDtype, alpha_scalar);
-  Tensor self_ = Contiguous(self.to(commonDtype));
-  Tensor other_ = Contiguous(other.to(commonDtype));
-  BinaryCall(op_name, output, self_, other_, m, alpha_scalar);
+  auto common_dtype = at::result_type(self, other);
+  alpha_check(common_dtype, alpha_scalar);
+  Tensor contiguous_self = Contiguous(self.to(common_dtype));
+  Tensor contiguous_other = Contiguous(other.to(common_dtype));
+  BinaryCall(
+      op_name, output, contiguous_self, contiguous_other, m, alpha_scalar);
 }
 
 Tensor AddTensor(
@@ -266,7 +268,8 @@ Tensor& Add_Tensor(
     Tensor& self,
     const Tensor& other,
     Scalar const& alpha_scalar) {
-  BinarycommonDtype_(__func__, self, other, alpha_scalar, BINARY_MODE::ADD);
+  BinarycommonDtypeInternal(
+      __func__, self, other, alpha_scalar, BINARY_MODE::ADD);
   return self;
 }
 
@@ -280,10 +283,216 @@ Tensor& Add_out(
   return output;
 }
 
+Tensor SubTensor(
+    const Tensor& self,
+    const Tensor& other,
+    Scalar const& alpha_scalar) {
+  return BinarycommonDtype(
+      __func__, self, other, alpha_scalar, BINARY_MODE::SUB);
+}
+
+Tensor& Sub_Tensor(
+    Tensor& self,
+    const Tensor& other,
+    Scalar const& alpha_scalar) {
+  BinarycommonDtypeInternal(
+      __func__, self, other, alpha_scalar, BINARY_MODE::SUB);
+  return self;
+}
+
+Tensor& Sub_out(
+    const Tensor& self,
+    const Tensor& other,
+    Scalar const& alpha_scalar,
+    Tensor& output) {
+  BinarycommonDtypeCall(
+      __func__, self, other, alpha_scalar, output, BINARY_MODE::SUB);
+  return output;
+}
+
+Tensor MulTensor(const Tensor& self, const Tensor& other) {
+  return BinarycommonDtype(__func__, self, other, 1, BINARY_MODE::MUL);
+}
+
+Tensor& Mul_Tensor(Tensor& self, const Tensor& other) {
+  BinarycommonDtypeInternal(__func__, self, other, 1, BINARY_MODE::MUL);
+  return self;
+}
+
+Tensor& Mul_out(const Tensor& self, const Tensor& other, Tensor& output) {
+  BinarycommonDtypeCall(__func__, self, other, 1, output, BINARY_MODE::MUL);
+  return output;
+}
+
+Tensor EqualTensor(const Tensor& self, const Tensor& other) {
+  return BinarycommonDtype(__func__, self, other, 1, BINARY_MODE::EQ);
+}
+
+Tensor& Equal_Tensor(Tensor& self, const Tensor& other) {
+  BinarycommonDtypeInternal(__func__, self, other, 1, BINARY_MODE::EQ);
+  return self;
+}
+
+Tensor& Equal_out(const Tensor& self, const Tensor& other, Tensor& output) {
+  BinarycommonDtypeCall(__func__, self, other, 1, output, BINARY_MODE::EQ);
+  return output;
+}
+
+Tensor NotEqualTensor(const Tensor& self, const Tensor& other) {
+  return BinarycommonDtype(__func__, self, other, 1, BINARY_MODE::NE);
+}
+
+Tensor& NotEqual_Tensor(Tensor& self, const Tensor& other) {
+  BinarycommonDtypeInternal(__func__, self, other, 1, BINARY_MODE::NE);
+  return self;
+}
+
+Tensor& NotEqual_out(const Tensor& self, const Tensor& other, Tensor& output) {
+  BinarycommonDtypeCall(__func__, self, other, 1, output, BINARY_MODE::NE);
+  return output;
+}
+
+Tensor GreaterTensor(const Tensor& self, const Tensor& other) {
+  return BinarycommonDtype(__func__, self, other, 1, BINARY_MODE::GT);
+}
+
+Tensor& Greater_Tensor(Tensor& self, const Tensor& other) {
+  BinarycommonDtypeInternal(__func__, self, other, 1, BINARY_MODE::GT);
+  return self;
+}
+
+Tensor& Greater_out(const Tensor& self, const Tensor& other, Tensor& output) {
+  BinarycommonDtypeCall(__func__, self, other, 1, output, BINARY_MODE::GT);
+  return output;
+}
+
+Tensor GreaterEqualTensor(const Tensor& self, const Tensor& other) {
+  return BinarycommonDtype(__func__, self, other, 1, BINARY_MODE::GE);
+}
+
+Tensor& GreaterEqual_Tensor(Tensor& self, const Tensor& other) {
+  BinarycommonDtypeInternal(__func__, self, other, 1, BINARY_MODE::GE);
+  return self;
+}
+
+Tensor& GreaterEqual_out(
+    const Tensor& self,
+    const Tensor& other,
+    Tensor& output) {
+  BinarycommonDtypeCall(__func__, self, other, 1, output, BINARY_MODE::GE);
+  return output;
+}
+
+Tensor DivTensor(const Tensor& self, const Tensor& other) {
+  return BinarycommonDtype(__func__, self, other, 1, BINARY_MODE::TRUEDIV);
+}
+
+Tensor& Div_Tensor(Tensor& self, const Tensor& other) {
+  BinarycommonDtypeInternal(__func__, self, other, 1, BINARY_MODE::TRUEDIV);
+  return self;
+}
+
+Tensor& Div_out(const Tensor& self, const Tensor& other, Tensor& output) {
+  BinarycommonDtypeCall(__func__, self, other, 1, output, BINARY_MODE::TRUEDIV);
+  return output;
+}
+
+Tensor& Div_out_mode(
+    const Tensor& self,
+    const Tensor& other,
+    c10::optional<c10::string_view> rounding_mode,
+    Tensor& output) {
+  if (!rounding_mode.has_value()) {
+    BinarycommonDtypeCall(
+        __func__, self, other, 1, output, BINARY_MODE::TRUEDIV);
+  } else if (*rounding_mode == "trunc") {
+    BinarycommonDtypeCall(
+        __func__, self, other, 1, output, BINARY_MODE::TRUNCATEDIV);
+  } else if (*rounding_mode == "floor") {
+    BinarycommonDtypeCall(
+        __func__, self, other, 1, output, BINARY_MODE::FLOORDIV);
+  }
+  return output;
+}
+
+Tensor DivTensor_mode(
+    const Tensor& self,
+    const Tensor& other,
+    c10::optional<c10::string_view> rounding_mode) {
+  if (!rounding_mode.has_value()) {
+    return BinarycommonDtype(__func__, self, other, 1, BINARY_MODE::TRUEDIV);
+  } else if (*rounding_mode == "trunc") {
+    return BinarycommonDtype(
+        __func__, self, other, 1, BINARY_MODE::TRUNCATEDIV);
+  } else if (*rounding_mode == "floor") {
+    return BinarycommonDtype(__func__, self, other, 1, BINARY_MODE::FLOORDIV);
+  } else {
+    return self;
+  }
+}
+
+Tensor& Div_Tensor_mode(
+    Tensor& self,
+    const Tensor& other,
+    c10::optional<c10::string_view> rounding_mode) {
+  if (!rounding_mode.has_value()) {
+    BinarycommonDtypeInternal(__func__, self, other, 1, BINARY_MODE::TRUEDIV);
+  } else if (*rounding_mode == "trunc") {
+    BinarycommonDtypeInternal(
+        __func__, self, other, 1, BINARY_MODE::TRUNCATEDIV);
+  } else if (*rounding_mode == "floor") {
+    BinarycommonDtypeInternal(__func__, self, other, 1, BINARY_MODE::FLOORDIV);
+  }
+  return self;
+}
+
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("add.Tensor", &AddTensor);
   m.impl("add_.Tensor", &Add_Tensor);
   m.impl("add.out", &Add_out);
+
+  m.impl("div.Tensor", &DivTensor);
+  m.impl("div.Tensor_mode", &DivTensor_mode);
+  m.impl("div_.Tensor_mode", &Div_Tensor_mode);
+  m.impl("div_.Tensor", &Div_Tensor);
+  m.impl("div.out", &Div_out);
+  m.impl("div.out_mode", &Div_out_mode);
+
+  m.impl("eq.Tensor", &EqualTensor);
+  m.impl("eq_.Tensor", &Equal_Tensor);
+  m.impl("eq.Tensor_out", &Equal_out);
+
+  m.impl("ge.Tensor", &GreaterEqualTensor);
+  m.impl("ge_.Tensor", &GreaterEqual_Tensor);
+  m.impl("ge.Tensor_out", &GreaterEqual_out);
+  // greater_equal, alias for torch.ge
+  m.impl("greater_equal.Tensor", &GreaterEqualTensor);
+  m.impl("greater_equal_.Tensor", &GreaterEqual_Tensor);
+  m.impl("greater_equal.Tensor_out", &GreaterEqual_out);
+
+  m.impl("gt.Tensor", &GreaterTensor);
+  m.impl("gt_.Tensor", &Greater_Tensor);
+  m.impl("gt.Tensor_out", &Greater_out);
+  // greater, alias for torch.gt
+  m.impl("greater.Tensor", &GreaterTensor);
+  m.impl("greater_.Tensor", &Greater_Tensor);
+  m.impl("greater.Tensor_out", &Greater_out);
+
+  m.impl("mul.Tensor", &MulTensor);
+  m.impl("mul_.Tensor", &Mul_Tensor);
+  m.impl("mul.out", &Mul_out);
+
+  m.impl("ne.Tensor", &NotEqualTensor);
+  m.impl("ne_.Tensor", &NotEqual_Tensor);
+  m.impl("ne.Tensor_out", &NotEqual_out);
+  // not_equal, alias for torch.ne
+  m.impl("not_equal.Tensor", &NotEqualTensor);
+  m.impl("not_equal_.Tensor", &NotEqual_Tensor);
+  m.impl("not_equal.Tensor_out", &NotEqual_out);
+
+  m.impl("sub.Tensor", &SubTensor);
+  m.impl("sub_.Tensor", &Sub_Tensor);
+  m.impl("sub.out", &Sub_out);
 }
 
 } // namespace musa

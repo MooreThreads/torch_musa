@@ -1,7 +1,6 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wunused-variable"
-#pragma GCC diagnostic ignored "-Wunused"
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <ATen/ATen.h>
 #include <ATen/Dispatch.h>
@@ -33,7 +32,9 @@ Tensor empty_mtgpu(
     c10::optional<Device> device_opt,
     c10::optional<bool> pin_memory_opt,
     c10::optional<c10::MemoryFormat> memory_format_opt) {
-  (void)layout_opt;
+  if (layout_opt.has_value()) {
+    LOG(INFO) << "layout_opt is invalid in empty_mtgpu";
+  }
   auto device = device_or_default(device_opt);
 
   bool pin_memory = pinned_memory_or_default(pin_memory_opt);
@@ -162,15 +163,15 @@ const Tensor& resize_mtgpu_(
   if (self.has_names()) {
     return resize_named_tensor_(self, size, optional_memory_format);
   }
-  auto* self_ = self.unsafeGetTensorImpl();
-  resize_impl_mtgpu_(self_, size, /*strides=*/c10::nullopt);
+  auto* contiguous_self = self.unsafeGetTensorImpl();
+  resize_impl_mtgpu_(contiguous_self, size, /*strides=*/c10::nullopt);
   if (optional_memory_format.has_value()) {
     auto memory_format = optional_memory_format.value();
     TORCH_CHECK(
         memory_format != MemoryFormat::Preserve,
         "Unsupported memory format",
         memory_format);
-    self_->empty_tensor_restride(memory_format);
+    contiguous_self->empty_tensor_restride(memory_format);
   }
   return self;
 }

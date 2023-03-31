@@ -1,7 +1,6 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wunused-variable"
-#pragma GCC diagnostic ignored "-Wunused"
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <ATen/ATen.h>
 #include <ATen/Dispatch.h>
@@ -156,15 +155,15 @@ void mtgpu_impl_copy_d2d(const Tensor& tensor_self, const Tensor& tensor_src) {
   ::musa::dnn::Permute op;
   auto dst_offset = tensor_self.storage_offset();
   auto src_offset = tensor_src.storage_offset();
-  auto out_ = CreateMUTensor(tensor_self, true);
-  auto in_ = CreateMUTensor(tensor_src, true);
+  auto contiguous_out = CreateMUTensor(tensor_self, true);
+  auto contiguous_in = CreateMUTensor(tensor_src, true);
   if (dst_offset || src_offset) {
     CHECK_MUDNN_STATUS(
         op.SetSrcOffset(static_cast<int>(src_offset)), "SetSrcOffset");
     CHECK_MUDNN_STATUS(
         op.SetDstOffset(static_cast<int>(dst_offset)), "SetDstOffset");
   }
-  CHECK_MUDNN_STATUS(op.Run(h, out_, in_), "Run");
+  CHECK_MUDNN_STATUS(op.Run(h, contiguous_out, contiguous_in), "Run");
 }
 
 void mtgpu_impl_datacast(const Tensor& tensor_self, const Tensor& tensor_src) {
@@ -176,8 +175,7 @@ void mtgpu_impl_datacast(const Tensor& tensor_self, const Tensor& tensor_src) {
     mtgpu_impl_copy_d2d(tensor_self, tensor_src);
     return;
   }
-  // TODO(caizhi): Since MTDNN does not support Double Cast, it needs to be
-  // implemented on the CPU here. This will be improved when adapting MUDNN.
+  // mudnn doest not support double cast
   if (tensor_src.dtype() == ScalarType::Double ||
       tensor_self.dtype() == ScalarType::Double) {
     const std::unordered_set<ScalarType> double_cast_set = {
@@ -205,16 +203,16 @@ void mtgpu_impl_datacast(const Tensor& tensor_self, const Tensor& tensor_src) {
   Tensor src_contig = Contiguous(tensor_src);
   Tensor dst_contig = Contiguous(tensor_self);
 
-  auto in_ = CreateMUTensor(src_contig);
-  auto out_ = CreateMUTensor(dst_contig);
+  auto contiguous_in = CreateMUTensor(src_contig);
+  auto contiguous_out = CreateMUTensor(dst_contig);
 
   // data cast float2bool
   if (tensor_src.dtype() == ScalarType::Float &&
       tensor_self.dtype() == ScalarType::Bool) {
-    out_.SetType(muTensor::Type::INT8);
+    contiguous_out.SetType(muTensor::Type::INT8);
   }
   CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::CAST), "SetMode");
-  CHECK_MUDNN_STATUS(op.Run(h, out_, in_), "Run");
+  CHECK_MUDNN_STATUS(op.Run(h, contiguous_out, contiguous_in), "Run");
 }
 
 // Note: both cpyfromdevice and cpytodevice will go to this copy_from function!
@@ -277,7 +275,7 @@ Tensor mtgpu_copy_from(
     const Tensor& src,
     const Tensor& self,
     bool non_blocking) {
-  (void)non_blocking;
+  TORCH_CHECK(!non_blocking, "non_blocking is invalid in mtgpu!");
   // For all cases, the source and destination's sizes should be the same.
   TORCH_INTERNAL_ASSERT(self.sizes() == src.sizes());
   // At least one of src and dst should be MTGPU, otherwise it is impossible
@@ -315,7 +313,6 @@ Tensor mtgpu_copy_from(
         ? src_temp
         : src_temp.clone(MemoryFormat::Contiguous);
 
-    // TODO(guandong.lu): expand_as have strided_as op, remember to implement!
     mtgpu_impl_copy(dst_contig, src_contig, copy_type);
 
     if (!dst_contig.is_same(dst)) {

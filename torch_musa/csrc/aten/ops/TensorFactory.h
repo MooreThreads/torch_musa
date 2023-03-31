@@ -1,4 +1,5 @@
-#pragma once
+#ifndef ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUTENSORFACTORY_H_
+#define ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUTENSORFACTORY_H_
 
 #include <ATen/ATen.h>
 #include <ATen/Dispatch.h>
@@ -32,3 +33,5 @@ Tensor Contiguous(
 } // namespace musa
 } // namespace native
 } // namespace at
+
+#endif // ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUTENSORFACTORY_H_
