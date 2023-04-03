@@ -3,10 +3,9 @@
 import torch
 import numpy as np
 import pytest
-
-from base_test_tool import DefaultComparator
-
 import torch_musa
+
+from torch_musa import testing
 
 input_data = [
     {"input": np.random.randn(10), "other": np.random.randn(10)},
@@ -56,7 +55,7 @@ def test_add(input_data, data_type, other_scalar):
         + other_scalar
     )
     mtgpu_result_numpy = mtgpu_result.cpu().detach().numpy()
-    comparator = DefaultComparator()
+    comparator = testing.DefaultComparator()
     assert cpu_result.shape == mtgpu_result.shape
     assert cpu_result.dtype == mtgpu_result.dtype
     assert comparator(mtgpu_result_numpy, cpu_result_numpy)

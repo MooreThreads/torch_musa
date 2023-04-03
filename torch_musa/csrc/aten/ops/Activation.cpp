@@ -1,8 +1,6 @@
 #pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wunused-variable"
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/NativeFunctions.h>
@@ -10,6 +8,8 @@
 #include <torch/library.h>
 #include <torch/torch.h>
 #include <limits>
+
+// Restore disabled warnings
 #pragma GCC diagnostic pop
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
@@ -55,9 +55,13 @@ void UnaryBoolOut(
   });
 }
 
-// TODO(songtao.liu): muDNN requres bool tensor for lt/le... output,
+// TODO(songtao.liu): muDNN requires bool tensor for lt/le... output,
 // which cannot be autocast in muDNN now.
-Tensor UnaryBool(const Tensor& input, const Scalar& value, UNARY_MODE mode) {
+Tensor UnaryBool(
+    const std::string& op_name,
+    const Tensor& input,
+    const Scalar& value,
+    UNARY_MODE mode) {
   // as le/lt/ne/eq/gt/ge... ops return bool type
   Tensor output = empty_mtgpu(
       input.sizes().vec(),
@@ -66,7 +70,7 @@ Tensor UnaryBool(const Tensor& input, const Scalar& value, UNARY_MODE mode) {
       kMUSA,
       c10::nullopt,
       at::MemoryFormat::Contiguous);
-  UnaryBoolOut(__func__, output, input, value, mode);
+  UnaryBoolOut(op_name, output, input, value, mode);
   return output;
 }
 
@@ -108,143 +112,42 @@ Tensor Relu(const Tensor& input) {
 }
 
 Tensor& Relu_(Tensor& input) {
-  Unary_("relu_", input, [](::musa::dnn::Unary& op) {
+  Unary_("__func__", input, [](::musa::dnn::Unary& op) {
     CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::RELU), "SetMode");
   });
   return input;
 }
 
-Tensor& LeScalarOut(const Tensor& self, const Scalar& value, Tensor& output) {
-  UnaryBoolOut(__func__, output, self, value, UNARY_MODE::LE);
-  return output;
-}
+#define SCALAR_COMPARISON(op_name, mode)                         \
+  Tensor& op_name##Out(                                          \
+      const Tensor& self, const Scalar& value, Tensor& output) { \
+    UnaryBoolOut(__func__, output, self, value, mode);           \
+    return output;                                               \
+  }                                                              \
+                                                                 \
+  Tensor op_name(const Tensor& self, const Scalar& value) {      \
+    Tensor output = empty_mtgpu(                                 \
+        self.sizes().vec(),                                      \
+        ScalarType::Bool,                                        \
+        c10::nullopt,                                            \
+        kMUSA,                                                   \
+        c10::nullopt,                                            \
+        at::MemoryFormat::Contiguous);                           \
+    op_name##Out(self, value, output);                           \
+    return output;                                               \
+  }                                                              \
+                                                                 \
+  Tensor& op_name##_(Tensor& self, const Scalar& value) {        \
+    self = UnaryBool(__func__, self, value, mode);               \
+    return self;                                                 \
+  }
 
-Tensor LeScalar(const Tensor& self, const Scalar& value) {
-  Tensor output = empty_mtgpu(
-      self.sizes().vec(),
-      ScalarType::Bool,
-      c10::nullopt,
-      kMUSA,
-      c10::nullopt,
-      at::MemoryFormat::Contiguous);
-  LeScalarOut(self, value, output);
-  return output;
-}
-
-Tensor& LeScalar_(Tensor& self, const Scalar& value) {
-  self = UnaryBool(self, value, UNARY_MODE::LE);
-  return self;
-}
-
-Tensor& LtScalarOut(const Tensor& self, const Scalar& value, Tensor& output) {
-  UnaryBoolOut(__func__, output, self, value, UNARY_MODE::LT);
-  return output;
-}
-
-Tensor LtScalar(const Tensor& self, const Scalar& value) {
-  Tensor output = empty_mtgpu(
-      self.sizes().vec(),
-      ScalarType::Bool,
-      c10::nullopt,
-      kMUSA,
-      c10::nullopt,
-      at::MemoryFormat::Contiguous);
-  LtScalarOut(self, value, output);
-  return output;
-}
-
-Tensor& LtScalar_(Tensor& self, const Scalar& value) {
-  self = UnaryBool(self, value, UNARY_MODE::LT);
-  return self;
-}
-
-Tensor& GeScalarOut(const Tensor& self, const Scalar& value, Tensor& output) {
-  UnaryBoolOut(__func__, output, self, value, UNARY_MODE::GE);
-  return output;
-}
-
-Tensor GeScalar(const Tensor& self, const Scalar& value) {
-  Tensor output = empty_mtgpu(
-      self.sizes().vec(),
-      ScalarType::Bool,
-      c10::nullopt,
-      kMUSA,
-      c10::nullopt,
-      at::MemoryFormat::Contiguous);
-  GeScalarOut(self, value, output);
-  return output;
-}
-
-Tensor& GeScalar_(Tensor& self, const Scalar& value) {
-  self = UnaryBool(self, value, UNARY_MODE::GE);
-  return self;
-}
-
-Tensor& GtScalarOut(const Tensor& self, const Scalar& value, Tensor& output) {
-  UnaryBoolOut(__func__, output, self, value, UNARY_MODE::GT);
-  return output;
-}
-
-Tensor GtScalar(const Tensor& self, const Scalar& value) {
-  Tensor output = empty_mtgpu(
-      self.sizes().vec(),
-      ScalarType::Bool,
-      c10::nullopt,
-      kMUSA,
-      c10::nullopt,
-      at::MemoryFormat::Contiguous);
-  GtScalarOut(self, value, output);
-  return output;
-}
-
-Tensor& GtScalar_(Tensor& self, const Scalar& value) {
-  self = UnaryBool(self, value, UNARY_MODE::GT);
-  return self;
-}
-
-Tensor& NeScalarOut(const Tensor& self, const Scalar& value, Tensor& output) {
-  UnaryBoolOut(__func__, output, self, value, UNARY_MODE::NE);
-  return output;
-}
-
-Tensor NeScalar(const Tensor& self, const Scalar& value) {
-  Tensor output = empty_mtgpu(
-      self.sizes().vec(),
-      ScalarType::Bool,
-      c10::nullopt,
-      kMUSA,
-      c10::nullopt,
-      at::MemoryFormat::Contiguous);
-  NeScalarOut(self, value, output);
-  return output;
-}
-
-Tensor& NeScalar_(Tensor& self, const Scalar& value) {
-  self = UnaryBool(self, value, UNARY_MODE::NE);
-  return self;
-}
-
-Tensor& EqScalarOut(const Tensor& self, const Scalar& value, Tensor& output) {
-  UnaryBoolOut(__func__, output, self, value, UNARY_MODE::EQ);
-  return output;
-}
-
-Tensor EqScalar(const Tensor& self, const Scalar& value) {
-  Tensor output = empty_mtgpu(
-      self.sizes().vec(),
-      ScalarType::Bool,
-      c10::nullopt,
-      kMUSA,
-      c10::nullopt,
-      at::MemoryFormat::Contiguous);
-  EqScalarOut(self, value, output);
-  return output;
-}
-
-Tensor& EqScalar_(Tensor& self, const Scalar& value) {
-  self = UnaryBool(self, value, UNARY_MODE::EQ);
-  return self;
-}
+SCALAR_COMPARISON(LeScalar, UNARY_MODE::LE)
+SCALAR_COMPARISON(LtScalar, UNARY_MODE::LT)
+SCALAR_COMPARISON(GeScalar, UNARY_MODE::GE)
+SCALAR_COMPARISON(GtScalar, UNARY_MODE::GT)
+SCALAR_COMPARISON(EqScalar, UNARY_MODE::EQ)
+SCALAR_COMPARISON(NeScalar, UNARY_MODE::NE)
 
 Tensor& ThresholdGradInputBwd(
     const Tensor& grad_output,
@@ -324,7 +227,7 @@ Tensor Sqrt(const Tensor& input) {
 }
 
 Tensor& SqrtOut(const Tensor& input, Tensor& output) {
-  UnaryOut("sqrt.out", output, input, [](::musa::dnn::Unary& op) {
+  UnaryOut("__func__", output, input, [](::musa::dnn::Unary& op) {
     CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::SQRT), "SetMode");
   });
   return output;
@@ -364,6 +267,7 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("sqrt", &Sqrt);
   m.impl("sqrt.out", &SqrtOut);
 }
+
 } // namespace musa
 } // namespace native
 } // namespace at

@@ -1,6 +1,4 @@
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <ATen/ATen.h>
 #include <ATen/Config.h>
@@ -8,7 +6,6 @@
 #include <ATen/NativeFunctions.h>
 #include <ATen/native/Pool.h>
 #include <torch/library.h>
-#pragma GCC diagnostic pop
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
@@ -446,8 +443,6 @@ std::tuple<Tensor&, Tensor&> MaxPool2dIndicesOut(
   return std::tuple<Tensor&, Tensor&>(output, indices);
 }
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
 Tensor& MaxPool2dIndicesBwdOut(
     const Tensor& grad_output,
     const Tensor& self,
@@ -458,7 +453,6 @@ Tensor& MaxPool2dIndicesBwdOut(
     bool ceil_mode,
     const Tensor& indices,
     Tensor& grad_input) {
-#pragma GCC diagnostic pop
   if (ceil_mode) {
     C10_LOG_FIRST_N(WARNING, 1)
         << "ceil_mode is invalid in MusaMaxPool2dIndicesBwdOut";
@@ -648,6 +642,9 @@ Tensor AdaptiveAvgPool2dBwd(const Tensor& grad_output, const Tensor& input) {
   PoolCallBwd(grad_output, params, grad_input, nullptr);
   return grad_input;
 }
+
+// Restore disabled warnings.
+#pragma GCC diagnostic pop
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("_adaptive_avg_pool2d", &AdaptiveAvgPool2d);

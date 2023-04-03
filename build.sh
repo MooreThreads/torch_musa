@@ -126,6 +126,7 @@ main() {
     build_pytorch
   fi
   if [ ${BUILD_TORCH_MUSA} -eq 1 ]; then
+    clean_torch_musa
     build_torch_musa
   fi
 }

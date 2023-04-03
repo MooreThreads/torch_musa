@@ -3,9 +3,8 @@
 import torch
 import numpy as np
 import pytest
-from base_test_tool import OpTest
-
 import torch_musa
+from torch_musa import testing
 
 # Note: muDNN doesn't support float64 or bool for this operator.
 # We should enable these two types after fill is implemented with MUSA.
@@ -20,7 +19,7 @@ input_data = [
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("data_type", data_type)
 def test_fill(input_data, data_type):
-    test = OpTest(
+    test = testing.OpTest(
         func=torch.fill,
         input_args={
             "input": input_data["input"].astype(data_type),

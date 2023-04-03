@@ -1,6 +1,4 @@
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <ATen/ATen.h>
 #include <ATen/Config.h>
@@ -10,9 +8,10 @@
 #include <ATen/TensorUtils.h>
 #include <ATen/WrapDimUtils.h>
 #include <torch/library.h>
+
+// Restore disabled warnings
 #pragma GCC diagnostic pop
 
-#include "torch_musa/csrc/aten/functions/Functions.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
@@ -22,7 +21,7 @@ namespace at {
 namespace native {
 namespace musa {
 
-::std::tuple<at::Tensor&, at::Tensor&> NllLossOut(
+std::tuple<at::Tensor&, at::Tensor&> NllLossOut(
     const at::Tensor& input,
     const at::Tensor& target,
     const c10::optional<at::Tensor>& weight,
@@ -130,7 +129,7 @@ namespace musa {
   return std::forward_as_tuple(output, total_weight);
 }
 
-::std::tuple<at::Tensor, at::Tensor> NllLoss(
+std::tuple<at::Tensor, at::Tensor> NllLoss(
     const at::Tensor& input,
     const at::Tensor& target,
     const c10::optional<at::Tensor>& weight,

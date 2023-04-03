@@ -9,8 +9,6 @@ import types
 import numpy as np
 import torch as pt
 
-import torch_musa
-
 
 class Comparator:
     """

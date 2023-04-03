@@ -1,6 +1,5 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <ATen/ATen.h>
 #include <ATen/Config.h>
@@ -8,6 +7,8 @@
 #include <ATen/NativeFunctions.h>
 #include <ATen/native/BinaryOps.h>
 #include <torch/library.h>
+
+// Restore disabled warnings
 #pragma GCC diagnostic pop
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
@@ -256,146 +257,54 @@ void BinarycommonDtypeCall(
       op_name, output, contiguous_self, contiguous_other, m, alpha_scalar);
 }
 
-Tensor AddTensor(
-    const Tensor& self,
-    const Tensor& other,
-    Scalar const& alpha_scalar) {
-  return BinarycommonDtype(
-      __func__, self, other, alpha_scalar, BINARY_MODE::ADD);
-}
+// TODO(mt-ai): All the binary operations should be moved to the musa
+// implementation and compiled using mcc.
+#define DEFINE_BINARY_SCALAR_OP(op_name, mode)                                \
+  Tensor op_name##Tensor(                                                     \
+      const Tensor& self, const Tensor& other, Scalar const& alpha_scalar) {  \
+    return BinarycommonDtype(__func__, self, other, alpha_scalar, mode);      \
+  }                                                                           \
+                                                                              \
+  Tensor& op_name##_Tensor(                                                   \
+      Tensor& self, const Tensor& other, Scalar const& alpha_scalar) {        \
+    BinarycommonDtypeInternal(__func__, self, other, alpha_scalar, mode);     \
+    return self;                                                              \
+  }                                                                           \
+                                                                              \
+  Tensor& op_name##_out(                                                      \
+      const Tensor& self,                                                     \
+      const Tensor& other,                                                    \
+      Scalar const& alpha_scalar,                                             \
+      Tensor& output) {                                                       \
+    BinarycommonDtypeCall(__func__, self, other, alpha_scalar, output, mode); \
+    return output;                                                            \
+  }
 
-Tensor& Add_Tensor(
-    Tensor& self,
-    const Tensor& other,
-    Scalar const& alpha_scalar) {
-  BinarycommonDtypeInternal(
-      __func__, self, other, alpha_scalar, BINARY_MODE::ADD);
-  return self;
-}
+DEFINE_BINARY_SCALAR_OP(Add, BINARY_MODE::ADD)
+DEFINE_BINARY_SCALAR_OP(Sub, BINARY_MODE::SUB)
 
-Tensor& Add_out(
-    const Tensor& self,
-    const Tensor& other,
-    Scalar const& alpha_scalar,
-    Tensor& output) {
-  BinarycommonDtypeCall(
-      __func__, self, other, alpha_scalar, output, BINARY_MODE::ADD);
-  return output;
-}
+#define DEFINE_BINARY_OP(op_name, mode)                             \
+  Tensor op_name##Tensor(const Tensor& self, const Tensor& other) { \
+    return BinarycommonDtype(__func__, self, other, 1, mode);       \
+  }                                                                 \
+                                                                    \
+  Tensor& op_name##_Tensor(Tensor& self, const Tensor& other) {     \
+    BinarycommonDtypeInternal(__func__, self, other, 1, mode);      \
+    return self;                                                    \
+  }                                                                 \
+                                                                    \
+  Tensor& op_name##_out(                                            \
+      const Tensor& self, const Tensor& other, Tensor& output) {    \
+    BinarycommonDtypeCall(__func__, self, other, 1, output, mode);  \
+    return output;                                                  \
+  }
 
-Tensor SubTensor(
-    const Tensor& self,
-    const Tensor& other,
-    Scalar const& alpha_scalar) {
-  return BinarycommonDtype(
-      __func__, self, other, alpha_scalar, BINARY_MODE::SUB);
-}
-
-Tensor& Sub_Tensor(
-    Tensor& self,
-    const Tensor& other,
-    Scalar const& alpha_scalar) {
-  BinarycommonDtypeInternal(
-      __func__, self, other, alpha_scalar, BINARY_MODE::SUB);
-  return self;
-}
-
-Tensor& Sub_out(
-    const Tensor& self,
-    const Tensor& other,
-    Scalar const& alpha_scalar,
-    Tensor& output) {
-  BinarycommonDtypeCall(
-      __func__, self, other, alpha_scalar, output, BINARY_MODE::SUB);
-  return output;
-}
-
-Tensor MulTensor(const Tensor& self, const Tensor& other) {
-  return BinarycommonDtype(__func__, self, other, 1, BINARY_MODE::MUL);
-}
-
-Tensor& Mul_Tensor(Tensor& self, const Tensor& other) {
-  BinarycommonDtypeInternal(__func__, self, other, 1, BINARY_MODE::MUL);
-  return self;
-}
-
-Tensor& Mul_out(const Tensor& self, const Tensor& other, Tensor& output) {
-  BinarycommonDtypeCall(__func__, self, other, 1, output, BINARY_MODE::MUL);
-  return output;
-}
-
-Tensor EqualTensor(const Tensor& self, const Tensor& other) {
-  return BinarycommonDtype(__func__, self, other, 1, BINARY_MODE::EQ);
-}
-
-Tensor& Equal_Tensor(Tensor& self, const Tensor& other) {
-  BinarycommonDtypeInternal(__func__, self, other, 1, BINARY_MODE::EQ);
-  return self;
-}
-
-Tensor& Equal_out(const Tensor& self, const Tensor& other, Tensor& output) {
-  BinarycommonDtypeCall(__func__, self, other, 1, output, BINARY_MODE::EQ);
-  return output;
-}
-
-Tensor NotEqualTensor(const Tensor& self, const Tensor& other) {
-  return BinarycommonDtype(__func__, self, other, 1, BINARY_MODE::NE);
-}
-
-Tensor& NotEqual_Tensor(Tensor& self, const Tensor& other) {
-  BinarycommonDtypeInternal(__func__, self, other, 1, BINARY_MODE::NE);
-  return self;
-}
-
-Tensor& NotEqual_out(const Tensor& self, const Tensor& other, Tensor& output) {
-  BinarycommonDtypeCall(__func__, self, other, 1, output, BINARY_MODE::NE);
-  return output;
-}
-
-Tensor GreaterTensor(const Tensor& self, const Tensor& other) {
-  return BinarycommonDtype(__func__, self, other, 1, BINARY_MODE::GT);
-}
-
-Tensor& Greater_Tensor(Tensor& self, const Tensor& other) {
-  BinarycommonDtypeInternal(__func__, self, other, 1, BINARY_MODE::GT);
-  return self;
-}
-
-Tensor& Greater_out(const Tensor& self, const Tensor& other, Tensor& output) {
-  BinarycommonDtypeCall(__func__, self, other, 1, output, BINARY_MODE::GT);
-  return output;
-}
-
-Tensor GreaterEqualTensor(const Tensor& self, const Tensor& other) {
-  return BinarycommonDtype(__func__, self, other, 1, BINARY_MODE::GE);
-}
-
-Tensor& GreaterEqual_Tensor(Tensor& self, const Tensor& other) {
-  BinarycommonDtypeInternal(__func__, self, other, 1, BINARY_MODE::GE);
-  return self;
-}
-
-Tensor& GreaterEqual_out(
-    const Tensor& self,
-    const Tensor& other,
-    Tensor& output) {
-  BinarycommonDtypeCall(__func__, self, other, 1, output, BINARY_MODE::GE);
-  return output;
-}
-
-Tensor DivTensor(const Tensor& self, const Tensor& other) {
-  return BinarycommonDtype(__func__, self, other, 1, BINARY_MODE::TRUEDIV);
-}
-
-Tensor& Div_Tensor(Tensor& self, const Tensor& other) {
-  BinarycommonDtypeInternal(__func__, self, other, 1, BINARY_MODE::TRUEDIV);
-  return self;
-}
-
-Tensor& Div_out(const Tensor& self, const Tensor& other, Tensor& output) {
-  BinarycommonDtypeCall(__func__, self, other, 1, output, BINARY_MODE::TRUEDIV);
-  return output;
-}
+DEFINE_BINARY_OP(Mul, BINARY_MODE::MUL)
+DEFINE_BINARY_OP(Div, BINARY_MODE::TRUEDIV)
+DEFINE_BINARY_OP(Equal, BINARY_MODE::EQ)
+DEFINE_BINARY_OP(NotEqual, BINARY_MODE::NE)
+DEFINE_BINARY_OP(Greater, BINARY_MODE::GT)
+DEFINE_BINARY_OP(GreaterEqual, BINARY_MODE::GE)
 
 Tensor& Div_out_mode(
     const Tensor& self,

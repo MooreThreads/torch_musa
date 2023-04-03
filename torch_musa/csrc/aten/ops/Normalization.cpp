@@ -1,12 +1,12 @@
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/NativeFunctions.h>
 #include <ATen/native/layer_norm.h>
 #include <torch/library.h>
+
+// Restore disabled warnings
 #pragma GCC diagnostic pop
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
@@ -31,7 +31,7 @@ void check_dims_match_num_input_features(
       actual);
 }
 
-::std::tuple<Tensor, Tensor, Tensor> BatchNorm(
+std::tuple<Tensor, Tensor, Tensor> BatchNorm(
     const Tensor& input,
     const c10::optional<Tensor>& weight_opt,
     const c10::optional<Tensor>& bias_opt,
