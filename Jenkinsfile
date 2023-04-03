@@ -11,12 +11,12 @@ class PodTemplateFiles {
 
 pipeline {
   parameters {
-    choice(name: 'HARDWARD_PLATFORM', choices: ['MThreads GPU'], description: 'Target hardware platform')
+    choice(name: 'HARDWARE_PLATFORM', choices: ['MThreads GPU'], description: 'Target hardware platform')
   }
 
   agent {
     kubernetes {
-      yamlFile "${new PodTemplateFiles().getPodTemplateFile(HARDWARD_PLATFORM)}"
+      yamlFile "${new PodTemplateFiles().getPodTemplateFile(params.HARDWARE_PLATFORM)}"
       defaultContainer "main"
     }
   }
@@ -51,6 +51,13 @@ pipeline {
       steps {
         container('main') {
           sh '/bin/bash --login scripts/run_unittest.sh'
+        }
+      }
+    }
+    stage('Integration Test') {
+      steps {
+        container('main') {
+          sh '/bin/bash --login scripts/run_integration_test.sh'
         }
       }
     }
