@@ -53,10 +53,6 @@ class CMakeManager(CMake):
         if rerun and os.path.isfile(self._cmake_cache_file):
             os.remove(self._cmake_cache_file)
 
-        if os.path.exists(self._cmake_cache_file):
-            # Everything's in place. Do not rerun.
-            return
-
         args = []
         if not IS_LINUX:
             raise Exception(
