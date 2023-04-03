@@ -9,6 +9,9 @@ from setuptools.command.install import install as Install
 
 from torch.utils.cpp_extension import CppExtension  # pylint: disable=C0411
 from torch.utils.cpp_extension import BuildExtension as Build  # pylint: disable=C0411
+import multiprocessing
+if os.getenv("MAX_JOBS") is None:
+    os.environ["MAX_JOBS"] = str(multiprocessing.cpu_count())
 
 CLEAN_MODE = False
 for i, arg in enumerate(sys.argv):
