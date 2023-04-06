@@ -10,7 +10,7 @@
 #pragma GCC diagnostic pop
 
 #include <mudnn.h>
-#include <pybind11/pybind11.h>
+#include "torch_musa/csrc/core/MUSAException.h"
 
 namespace at {
 namespace native {
@@ -84,8 +84,5 @@ void Synchronize();
 } // namespace musa
 } // namespace native
 } // namespace at
-
-namespace py = pybind11;
-void PySynchronize();
 
 #endif // ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUUTILS_H_

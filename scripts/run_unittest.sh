@@ -3,3 +3,4 @@ set -exo pipefail
 
 # Unit tests
 pytest -s tests/unittest/operator
+pytest -s tests/unittest/core

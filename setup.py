@@ -10,6 +10,7 @@ from setuptools.command.install import install as Install
 from torch.utils.cpp_extension import CppExtension  # pylint: disable=C0411
 from torch.utils.cpp_extension import BuildExtension as Build  # pylint: disable=C0411
 import multiprocessing
+
 if os.getenv("MAX_JOBS") is None:
     os.environ["MAX_JOBS"] = str(multiprocessing.cpu_count())
 
@@ -88,6 +89,7 @@ def configure_extension_build():
         return
     extra_link_args = []
     extra_compile_args = [
+        "-std=c++14",
         "-Wall",
         "-Wextra",
         "-Werror",
@@ -119,7 +121,7 @@ def configure_extension_build():
     cpp_extension = CppExtension(
         name="torch_musa._MUSAC",
         sources=torch_musa_sources,
-        libraries=["torch_musa"],
+        libraries=["musa_python"],
         include_dirs=[],
         extra_compile_args=extra_compile_args,
         library_dirs=[os.path.join(BASE_DIR, "torch_musa/lib")],

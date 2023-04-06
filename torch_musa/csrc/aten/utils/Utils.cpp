@@ -110,11 +110,3 @@ void Synchronize() {
 } // namespace musa
 } // namespace native
 } // namespace at
-
-void PySynchronize(PyObject* obj) {
-  auto m = py::handle(obj).cast<py::module>();
-  m.def(
-      "synchronize",
-      &at::native::musa::Synchronize,
-      "synchronize device(MUSA)");
-}

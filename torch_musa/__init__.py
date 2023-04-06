@@ -4,6 +4,16 @@
 import torch
 
 torch.utils.rename_privateuse1_backend("musa")
+
+from .core.device import Device as device
+from .core.device import (
+    set_device,
+    current_device,
+    is_available,
+    device_count,
+    synchronize,
+)
+
 try:
     import torch_musa._MUSAC
 except ImportError as err:

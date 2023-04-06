@@ -1,6 +1,8 @@
 #include "torch_musa/csrc/core/Allocator.h"
 #include <mudnn.h>
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/core/Device.h"
+#include "torch_musa/csrc/core/MUSAException.h"
 
 namespace c10 {
 
@@ -13,10 +15,13 @@ struct C10_API DefaultMTGPUAllocator final : at::Allocator {
       musa::AutoGrowthBestFitAllocator::get_allocator()->AllocateImpl(
           nbytes, &data);
     }
-    // TODO(songtao.liu): complete the device index selection for distributed
-    // training.
+    int device;
+    TORCH_MUSARUNTIME_CHECK(musaGetDevice(&device));
     return {
-        data, data, &ReportAndDelete, at::Device(at::native::musa::kMUSA, 0)};
+        data,
+        data,
+        &ReportAndDelete,
+        at::Device(at::native::musa::kMUSA, device)};
   }
 
   static void ReportAndDelete(void* ptr) {

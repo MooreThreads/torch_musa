@@ -136,7 +136,7 @@ endif()
 
 #=============================================================
 
-set(PLUGIN_NAME torch_musa)
+set(PLUGIN_NAME "musa_python")
 set(MUSA_CSRCS)
 
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/modules)
