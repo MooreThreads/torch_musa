@@ -152,19 +152,19 @@ Tensor& SoftmaxBwdInternal(
       grad_output.device().type() == kMUSA,
       "Device of grad_output tensor of ",
       std::string(op_name),
-      " must be MTGPU, but now is ",
+      " must be MUSA, but now is ",
       grad_output.device());
   TORCH_CHECK(
       output.device().type() == kMUSA,
       "Device of output tensor of ",
       std::string(op_name),
-      " must be MTGPU, but now is ",
+      " must be MUSA, but now is ",
       output.device());
   TORCH_CHECK(
       grad_input.device().type() == kMUSA,
       "Device of grad_input tensor of ",
       std::string(op_name),
-      " must be MTGPU, but now is ",
+      " must be MUSA, but now is ",
       grad_input.device());
   TORCH_CHECK(
       grad_output.scalar_type() == at::ScalarType::Float,
@@ -181,8 +181,8 @@ Tensor& SoftmaxBwdInternal(
 
   grad_input.resize_(grad_output.sizes());
 
-  auto contiguous_grad_output = grad_output.expect_contiguous();
-  auto contiguous_output = output.expect_contiguous();
+  auto contiguous_grad_output = Contiguous(grad_output);
+  auto contiguous_output = Contiguous(output);
 
   const TensorArg grad_arg{grad_output, "grad", 0};
   const TensorArg output_arg{output, "output", 1};
@@ -194,8 +194,8 @@ Tensor& SoftmaxBwdInternal(
   }
   muHandle h;
   ::musa::dnn::Softmax softmax;
-  auto mt_grad_output = CreateMUTensor(*contiguous_grad_output);
-  auto mt_output = CreateMUTensor(*contiguous_output);
+  auto mt_grad_output = CreateMUTensor(contiguous_grad_output);
+  auto mt_output = CreateMUTensor(contiguous_output);
   auto mt_grad_input = CreateMUTensor(grad_input);
   CHECK_MUDNN_STATUS(softmax.SetDim(static_cast<int>(dim)), "SetDim");
   CHECK_MUDNN_STATUS(

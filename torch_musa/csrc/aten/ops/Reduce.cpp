@@ -137,10 +137,10 @@ Tensor& MeanOut(
     c10::optional<ScalarType> dtype,
     Tensor& output) {
   if (keepdim) {
-    C10_LOG_FIRST_N(WARNING, 1) << "keepdim is invalid in MusaMeanOut";
+    C10_LOG_FIRST_N(WARNING, 1) << "keepdim is invalid in MeanOut";
   }
   if (dtype.has_value()) {
-    C10_LOG_FIRST_N(WARNING, 1) << "dtype is invalid in MusaMeanOut";
+    C10_LOG_FIRST_N(WARNING, 1) << "dtype is invalid in MeanOut";
   }
   ReduceCall(output, self, dim.value(), ::musa::dnn::Reduce::Mode::MEAN);
   return output;
@@ -166,10 +166,10 @@ Tensor& MeanNamesDimOut(
     c10::optional<ScalarType> dtype,
     Tensor& output) {
   if (keepdim) {
-    C10_LOG_FIRST_N(WARNING, 1) << "keepdim is invalid in MusaMeanNamesDimOut";
+    C10_LOG_FIRST_N(WARNING, 1) << "keepdim is invalid in MeanNamesDimOut";
   }
   if (dtype.has_value()) {
-    C10_LOG_FIRST_N(WARNING, 1) << "dtype is invalid in MusaMeanNamesDimOut";
+    C10_LOG_FIRST_N(WARNING, 1) << "dtype is invalid in MeanNamesDimOut";
   }
   ReduceCall(
       output,
@@ -191,13 +191,63 @@ Tensor& SumIntListOut(
     optional<ScalarType> opt_dtype,
     Tensor& output) {
   if (!keepdim) {
-    C10_LOG_FIRST_N(WARNING, 1) << "keepdim is invalid in MusaSumIntListOut";
+    C10_LOG_FIRST_N(WARNING, 1) << "keepdim is invalid in SumIntListOut";
   }
   if (opt_dtype.has_value()) {
-    C10_LOG_FIRST_N(WARNING, 1) << "opt_dtype is invalid in MusaSumIntListOut";
+    C10_LOG_FIRST_N(WARNING, 1) << "opt_dtype is invalid in SumIntListOut";
   }
   ReduceCall(output, self, dim.value(), ::musa::dnn::Reduce::Mode::ADD);
   return output;
+}
+
+Tensor& NormDtypeOut(
+    const Tensor& self,
+    const c10::optional<at::Scalar>& p,
+    at::IntArrayRef dim,
+    bool keepdim,
+    at::ScalarType dtype,
+    at::Tensor& out) {
+  TORCH_CHECK(
+      self.device().type() == kMUSA,
+      "Device of input tensor of Norm.out must be MUSA, but now is ",
+      self.device());
+  TORCH_CHECK(
+      self.scalar_type() == at::ScalarType::Float,
+      "Dtype of input tensor of Norm.out only support Float32, ",
+      "but now it is ",
+      self.scalar_type());
+  TORCH_CHECK(
+      dtype == at::ScalarType::Float,
+      "Dtype of input tensor of Norm.out only support Float32, ",
+      "but now it is ",
+      self.scalar_type());
+  auto out_dtype = out.scalar_type();
+
+  // special case for type promotion in mixed precision, improves computational
+  // efficiency.
+  const bool gpu_lowp_to_f32 =
+      (self.scalar_type() == kHalf || self.scalar_type() == kBFloat16) &&
+      out_dtype == kFloat;
+
+  out = Reduction(
+      self,
+      dim,
+      keepdim,
+      gpu_lowp_to_f32 ? self.scalar_type() : out_dtype,
+      ::musa::dnn::Reduce::Mode::NORM,
+      p,
+      true);
+  return out;
+}
+
+Tensor& NormOut(
+    const Tensor& self,
+    const c10::optional<at::Scalar>& p,
+    at::IntArrayRef dim,
+    bool keepdim,
+    Tensor& out) {
+  out = NormDtypeOut(self, p, dim, keepdim, self.scalar_type(), out);
+  return out;
 }
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
@@ -208,6 +258,8 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("mean.names_out", &MeanNamesDimOut);
   m.impl("sum", &Sum);
   m.impl("sum.IntList_out", &SumIntListOut);
+  m.impl("norm.out", &NormOut);
+  m.impl("norm.dtype_out", &NormDtypeOut);
 }
 
 } // namespace musa

@@ -43,6 +43,9 @@ pipeline {
     stage('Build') {
       steps {
         container('main') {
+          sh 'wget --no-check-certificate http://oss.mthreads.com/release-ci/computeQA/ai/newest/mudnn.tar -P ./daily_mudnn'
+          sh 'tar -xvf ./daily_mudnn/mudnn.tar -C ./daily_mudnn'
+          sh 'cd ./daily_mudnn/mudnn && bash install_mudnn.sh && cd -'
           sh '/bin/bash --login build.sh'
         }
       }

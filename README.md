@@ -89,7 +89,7 @@ python setup.py install
 ### Docker Image
 
 ```bash
-docker run -it --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev:v0.1.4 /bin/bash
+docker run -it --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev:v0.1.6 /bin/bash
 ```
 
 ## Getting Started

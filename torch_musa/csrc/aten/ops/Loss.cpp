@@ -31,27 +31,27 @@ std::tuple<at::Tensor&, at::Tensor&> NllLossOut(
     at::Tensor& total_weight) {
   TORCH_CHECK(
       input.device().type() == kMUSA,
-      "Device of input tensor of NllLoss must be MTGPU, but now is ",
+      "Device of input tensor of NllLoss must be MUSA, but now is ",
       input.device());
   TORCH_CHECK(
       target.device().type() == kMUSA,
-      "Device of target tensor of NllLoss must be MTGPU, but now is ",
+      "Device of target tensor of NllLoss must be MUSA, but now is ",
       target.device());
   TORCH_CHECK(
       output.device().type() == kMUSA,
-      "Device of output tensor of NllLoss must be MTGPU, but now is ",
+      "Device of output tensor of NllLoss must be MUSA, but now is ",
       output.device());
   TORCH_CHECK(
       total_weight.device().type() == kMUSA,
-      "Device of total_weight tensor of NllLoss must be MTGPU, but now is ",
+      "Device of total_weight tensor of NllLoss must be MUSA, but now is ",
       total_weight.device());
   TORCH_CHECK(
       input.scalar_type() == at::ScalarType::Float,
       "Dtype of input tensor of NllLoss only support Float32, but now it is ",
       input.scalar_type());
 
-  auto contiguous_input = input.expect_contiguous();
-  auto contiguous_target = target.expect_contiguous();
+  auto contiguous_input = Contiguous(input);
+  auto contiguous_target = Contiguous(target);
   TORCH_CHECK(
       input.dim() > 0 && input.dim() <= 2, "input tensor should be 1D or 2D");
   TORCH_CHECK(
@@ -72,7 +72,7 @@ std::tuple<at::Tensor&, at::Tensor&> NllLossOut(
     has_weight = true;
     TORCH_CHECK(
         weight.value().device().type() == kMUSA,
-        "Device of weight tensor of NllLoss must be MTGPU, but now is ",
+        "Device of weight tensor of NllLoss must be MUSA, but now is ",
         weight.value().device());
     TORCH_CHECK(
         weight.value().scalar_type() == at::ScalarType::Float,
@@ -101,14 +101,14 @@ std::tuple<at::Tensor&, at::Tensor&> NllLossOut(
 
   muHandle h;
   ::musa::dnn::NLLLoss nll_loss_op;
-  auto mt_input = CreateMUTensor(*contiguous_input);
-  auto mt_target = CreateMUTensor(*contiguous_target);
+  auto mt_input = CreateMUTensor(contiguous_input);
+  auto mt_target = CreateMUTensor(contiguous_target);
   auto mt_output = CreateMUTensor(output);
   auto mt_total_weight = CreateMUTensor(total_weight);
   muTensor mt_weight;
   if (has_weight) {
-    auto contiguous_weight = weight.value().expect_contiguous();
-    mt_weight = CreateMUTensor(*contiguous_weight);
+    auto contiguous_weight = Contiguous(weight.value());
+    mt_weight = CreateMUTensor(contiguous_weight);
   }
   CHECK_MUDNN_STATUS(
       nll_loss_op.SetReductionMode(
@@ -153,25 +153,25 @@ at::Tensor& NllLossBwdGradInput(
     at::Tensor& grad_input) {
   TORCH_CHECK(
       grad_output.device().type() == kMUSA,
-      "Device of grad_output tensor of NllLossBackward must be MTGPU, ",
+      "Device of grad_output tensor of NllLossBackward must be MUSA, ",
       "but now is ",
       grad_output.device());
   TORCH_CHECK(
       input.device().type() == kMUSA,
-      "Device of input tensor of NllLossBackward must be MTGPU, but now is ",
+      "Device of input tensor of NllLossBackward must be MUSA, but now is ",
       input.device());
   TORCH_CHECK(
       target.device().type() == kMUSA,
-      "Device of target tensor of NllLossBackward must be MTGPU, but now is ",
+      "Device of target tensor of NllLossBackward must be MUSA, but now is ",
       target.device());
   TORCH_CHECK(
       total_weight.device().type() == kMUSA,
-      "Device of total_weight tensor of NllLossBackward must be MTGPU, ",
+      "Device of total_weight tensor of NllLossBackward must be MUSA, ",
       "but now is ",
       total_weight.device());
   TORCH_CHECK(
       grad_input.device().type() == kMUSA,
-      "Device of grad_input tensor of NllLossBackward must be MTGPU, ",
+      "Device of grad_input tensor of NllLossBackward must be MUSA, ",
       "but now is ",
       grad_input.device());
   TORCH_CHECK(
@@ -184,10 +184,10 @@ at::Tensor& NllLossBwdGradInput(
       "Dtype of input tensor of NllLossBackward only support Float32, ",
       "but now it is ",
       input.scalar_type());
-  auto contiguous_grad_output = grad_output.expect_contiguous();
-  auto contiguous_input = input.expect_contiguous();
-  auto contiguous_target = target.expect_contiguous();
-  auto contiguous_total_weight = total_weight.expect_contiguous();
+  auto contiguous_grad_output = Contiguous(grad_output);
+  auto contiguous_input = Contiguous(input);
+  auto contiguous_target = Contiguous(target);
+  auto contiguous_total_weight = Contiguous(total_weight);
 
   TORCH_CHECK(
       input.dim() > 0 && input.dim() <= 2, "input tensor should be 1D or 2D");
@@ -215,7 +215,7 @@ at::Tensor& NllLossBwdGradInput(
     has_weight = true;
     TORCH_CHECK(
         weight.value().device().type() == kMUSA,
-        "Device of weight tensor of NllLossBackward must be MTGPU, but now is ",
+        "Device of weight tensor of NllLossBackward must be MUSA, but now is ",
         weight.value().device());
     TORCH_CHECK(
         weight.value().scalar_type() == at::ScalarType::Float,
@@ -241,14 +241,14 @@ at::Tensor& NllLossBwdGradInput(
 
   muHandle h;
   ::musa::dnn::NLLLoss nll_loss_op;
-  auto mt_target = CreateMUTensor(*contiguous_target);
-  auto mt_grad_output = CreateMUTensor(*contiguous_grad_output);
-  auto mt_total_weight = CreateMUTensor(*contiguous_total_weight);
+  auto mt_target = CreateMUTensor(contiguous_target);
+  auto mt_grad_output = CreateMUTensor(contiguous_grad_output);
+  auto mt_total_weight = CreateMUTensor(contiguous_total_weight);
   auto mt_grad_input = CreateMUTensor(grad_input);
   muTensor mt_weight;
   if (has_weight) {
-    auto contiguous_weight = weight.value().expect_contiguous();
-    mt_weight = CreateMUTensor(*contiguous_weight);
+    auto contiguous_weight = Contiguous(weight.value());
+    mt_weight = CreateMUTensor(contiguous_weight);
   }
   CHECK_MUDNN_STATUS(
       nll_loss_op.SetReductionMode(

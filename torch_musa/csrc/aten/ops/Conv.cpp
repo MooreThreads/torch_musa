@@ -217,12 +217,12 @@ Tensor Convolution(
     int64_t groups) {
   TORCH_CHECK(
       weight.device().type() == kMUSA,
-      "Device of weight tensor of Convolution must be MTGPU, ",
+      "Device of weight tensor of Convolution must be MUSA, ",
       "but now is ",
       weight.device());
   TORCH_CHECK(
       input.device().type() == kMUSA,
-      "Device of weight tensor of Convolution must be MTGPU, but now is",
+      "Device of weight tensor of Convolution must be MUSA, but now is",
       input.device());
   TORCH_CHECK(
       weight.scalar_type() == at::ScalarType::Float,
@@ -260,7 +260,7 @@ Tensor Convolution(
       transposed,
       output_padding,
       groups);
-  return result_host.to("mtgpu");
+  return result_host.to("musa");
 }
 
 Tensor Conv2dDataBwd(
@@ -483,18 +483,18 @@ Tensor Conv1dWeightBwd(
       !transposed, "Transposed Convolution Backward is not implemented yet!");
   TORCH_CHECK(
       weight.device().type() == kMUSA,
-      "Device of weight tensor of Convolution Backward must be MTGPU, ",
+      "Device of weight tensor of Convolution Backward must be MUSA, ",
       "but now is ",
       weight.device());
   TORCH_CHECK(
       input.device().type() == kMUSA,
-      "Device of weight tensor of Convolution Backward must be MTGPU, "
+      "Device of weight tensor of Convolution Backward must be MUSA, "
       "but now is",
       input.device());
   TORCH_CHECK(
       grad_output.device().type() == kMUSA,
       "Device of grad_output tensor of Convolution Backward must be "
-      "MTGPU, but now is",
+      "MUSA, but now is",
       grad_output.device());
   TORCH_CHECK(
       weight.scalar_type() == at::ScalarType::Float,

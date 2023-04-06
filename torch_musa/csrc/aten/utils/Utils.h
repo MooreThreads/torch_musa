@@ -16,6 +16,8 @@ namespace at {
 namespace native {
 namespace musa {
 
+#define UNUSED(x) (void)(x)
+
 #define CheckContiguous(input)                          \
   TORCH_CHECK(                                          \
       input.is_contiguous() && !input.storage_offset(), \

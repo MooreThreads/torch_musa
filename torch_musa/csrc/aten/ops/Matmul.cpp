@@ -169,11 +169,44 @@ Tensor& MmOut(const Tensor& self, const Tensor& mat2, Tensor& out) {
   return out;
 }
 
+Tensor Bmm(const Tensor& self, const Tensor& mat2) {
+  TORCH_CHECK(self.dim() == 3 && mat2.dim() == 3, "self must be a 3D matrix");
+  TORCH_CHECK(
+      self.size(0) == mat2.size(0) && self.size(2) == mat2.size(1),
+      "self_shape[0] must equal to mat2_shape[0], and self_shape[2] "
+      "must equal to mat2_shape[1]");
+  Tensor result = empty_mtgpu(
+      {self.size(0), self.size(1), mat2.size(2)},
+      self.scalar_type(),
+      c10::nullopt,
+      kMUSA,
+      c10::nullopt,
+      at::MemoryFormat::Contiguous);
+  auto l_ = Contiguous(self);
+  auto r_ = Contiguous(mat2);
+  BmmCall(l_, r_, result);
+  return result;
+}
+
+Tensor& BmmOut(const Tensor& self, const Tensor& mat2, Tensor& out) {
+  TORCH_CHECK(self.dim() == 3 && mat2.dim() == 3, "self must be a 3D matrix");
+  TORCH_CHECK(
+      self.size(0) == mat2.size(0) && self.size(2) == mat2.size(1),
+      "self_shape[0] must equal to mat2_shape[0], and self_shape[2] "
+      "must equal to mat2_shape[1]");
+  auto l_ = Contiguous(self);
+  auto r_ = Contiguous(mat2);
+  BmmCall(l_, r_, out);
+  return out;
+}
+
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("addmm.out", &AddMmOut);
   m.impl("addmm", &AddMm);
   m.impl("mm", &Mm);
   m.impl("mm.out", &MmOut);
+  m.impl("bmm", &Bmm);
+  m.impl("bmm.out", &BmmOut);
 }
 
 } // namespace musa

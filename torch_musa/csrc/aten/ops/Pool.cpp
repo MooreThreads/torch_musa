@@ -433,7 +433,7 @@ std::tuple<Tensor&, Tensor&> MaxPool2dIndicesOut(
     Tensor& indices) {
   if (ceil_mode) {
     C10_LOG_FIRST_N(WARNING, 1)
-        << "ceil mode is invalid in MusaMaxPool2dIndicesOut";
+        << "ceil mode is invalid in MaxPool2dIndicesOut";
   }
   PoolParams params;
   MaxPool2dConfigParams(params, ker, str, pad, dil);
@@ -455,7 +455,7 @@ Tensor& MaxPool2dIndicesBwdOut(
     Tensor& grad_input) {
   if (ceil_mode) {
     C10_LOG_FIRST_N(WARNING, 1)
-        << "ceil_mode is invalid in MusaMaxPool2dIndicesBwdOut";
+        << "ceil_mode is invalid in MaxPool2dIndicesBwdOut";
   }
   PoolParams params;
   MaxPool2dConfigParams(params, ker, str, pad, dil);
@@ -496,7 +496,7 @@ Tensor& AvgPool2dOut(
     c10::optional<int64_t> divisor_override,
     Tensor& output) {
   if (ceil_mode) {
-    C10_LOG_FIRST_N(WARNING, 1) << "ceil_mode is invalid in MusaAvgPool2dOut";
+    C10_LOG_FIRST_N(WARNING, 1) << "ceil_mode is invalid in AvgPool2dOut";
   }
   PoolParams params;
   AvgPool2dConfigParams(
@@ -523,16 +523,16 @@ Tensor& AvgPool2dOutBwd(
     Tensor& grad_input) {
   TORCH_CHECK(
       grad_output.device().type() == kMUSA,
-      "Device of grad_output tensor of AvgPool2dBackward must be MTGPU, ",
+      "Device of grad_output tensor of AvgPool2dBackward must be MUSA, ",
       "but now is ",
       grad_output.device());
   TORCH_CHECK(
       input.device().type() == kMUSA,
-      "Device of input tensor of AvgPool2dBackward must be MTGPU, but now is ",
+      "Device of input tensor of AvgPool2dBackward must be MUSA, but now is ",
       input.device());
   TORCH_CHECK(
       grad_input.device().type() == kMUSA,
-      "Device of grad_input tensor of AvgPool2dBackward must be MTGPU, "
+      "Device of grad_input tensor of AvgPool2dBackward must be MUSA, "
       "but now is ",
       grad_input.device());
   TORCH_CHECK(
@@ -622,12 +622,12 @@ Tensor AdaptiveAvgPool2dBwd(const Tensor& grad_output, const Tensor& input) {
 
   TORCH_CHECK(
       grad_output.device().type() == kMUSA,
-      "Device of grad_output tensor of AvgPool2dBackward must be MTGPU, ",
+      "Device of grad_output tensor of AvgPool2dBackward must be MUSA, ",
       "but now is ",
       grad_output.device());
   TORCH_CHECK(
       input.device().type() == kMUSA,
-      "Device of input tensor of AvgPool2dBackward must be MTGPU, but now is ",
+      "Device of input tensor of AvgPool2dBackward must be MUSA, but now is ",
       input.device());
   TORCH_CHECK(
       grad_output.scalar_type() == at::ScalarType::Float,

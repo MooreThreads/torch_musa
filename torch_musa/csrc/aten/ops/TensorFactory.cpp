@@ -1,5 +1,4 @@
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <ATen/ATen.h>
 #include <ATen/Dispatch.h>
@@ -24,7 +23,7 @@
 namespace at {
 namespace detail {
 
-// function: create a mtgpu empty tensor
+// function: create a musa empty tensor
 Tensor empty_mtgpu(
     IntArrayRef size,
     c10::optional<ScalarType> dtype_opt,
@@ -39,8 +38,8 @@ Tensor empty_mtgpu(
 
   bool pin_memory = pinned_memory_or_default(pin_memory_opt);
 
-  TORCH_CHECK(pin_memory == false, "MTGPU only support not pinned memory");
-  TORCH_CHECK(device.type() == at::native::musa::kMUSA, "Device isn't MTGPU!");
+  TORCH_CHECK(pin_memory == false, "MUSA only support not pinned memory");
+  TORCH_CHECK(device.type() == at::native::musa::kMUSA, "Device isn't MUSA!");
   c10::Allocator* allocator;
 
   allocator = c10::GetAllocator(at::native::musa::kMUSA);
@@ -69,10 +68,10 @@ void resize_bytes_mtgpu(StorageImpl* storage, size_t size_bytes) {
   const auto copy_capacity = std::min(size_bytes, old_capacity);
   storage->set_nbytes(size_bytes);
   if (old_data != nullptr && old_data.get() != nullptr && copy_capacity > 0) {
-    // need to modify this place for our mtgpu memory storage
+    // need to modify this place for our musa memory storage
     // TODO(guandong.lu): memoryCopy from device to device
     // memcpy(storage->data(), old_data.get(), copy_capacity);
-    TORCH_CHECK(false, "MTGPU currently not support copy from D2D");
+    TORCH_CHECK(false, "MUSA currently not support copy from D2D");
   }
 }
 

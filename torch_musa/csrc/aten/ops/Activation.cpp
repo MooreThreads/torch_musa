@@ -1,6 +1,5 @@
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wunused-function"
 #include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/NativeFunctions.h>
@@ -105,6 +104,21 @@ void UnaryOut(
   UnaryCall(op_name, output, contiguous_input, func);
 }
 
+Tensor& BinaryCall(
+    const Tensor& input,
+    const Tensor& other,
+    ::musa::dnn::Binary::Mode mode,
+    Tensor& output) {
+  ::musa::dnn::Handle h;
+  ::musa::dnn::Binary binary_op;
+  auto mt_input = CreateMUTensor(input);
+  auto mt_other = CreateMUTensor(other);
+  auto mt_output = CreateMUTensor(output);
+  CHECK_MUDNN_STATUS(binary_op.SetMode(mode), "SetMode");
+  CHECK_MUDNN_STATUS(binary_op.Run(h, mt_output, mt_input, mt_other), "Run");
+  return output;
+}
+
 Tensor Relu(const Tensor& input) {
   return Unary(__func__, input, [](::musa::dnn::Unary& op) {
     CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::RELU), "SetMode");
@@ -112,7 +126,7 @@ Tensor Relu(const Tensor& input) {
 }
 
 Tensor& Relu_(Tensor& input) {
-  Unary_("__func__", input, [](::musa::dnn::Unary& op) {
+  Unary_(__func__, input, [](::musa::dnn::Unary& op) {
     CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::RELU), "SetMode");
   });
   return input;
@@ -156,16 +170,16 @@ Tensor& ThresholdGradInputBwd(
     Tensor& grad_input) {
   TORCH_CHECK(
       grad_output.device().type() == kMUSA,
-      "Device of grad_output tensor of ThresholdBackward must be MTGPU, ",
+      "Device of grad_output tensor of ThresholdBackward must be MUSA, ",
       "but now is ",
       grad_output.device());
   TORCH_CHECK(
       self.device().type() == kMUSA,
-      "Device of self tensor of ThresholdBackward must be MTGPU, but now is ",
+      "Device of self tensor of ThresholdBackward must be MUSA, but now is ",
       self.device());
   TORCH_CHECK(
       grad_input.device().type() == kMUSA,
-      "Device of grad_input tensor of ThresholdBackward must be MTGPU, ",
+      "Device of grad_input tensor of ThresholdBackward must be MUSA, ",
       "but now is ",
       grad_input.device());
   grad_input.resize_(self.sizes());
@@ -180,13 +194,13 @@ Tensor& ThresholdGradInputBwd(
       "Dtype of self tensor of ThresholdBackward only support Float32, ",
       "but now it is ",
       self.scalar_type());
-  auto contiguous_grad_output = grad_output.expect_contiguous();
-  auto contiguous_self = self.expect_contiguous();
+  auto contiguous_grad_output = Contiguous(grad_output);
+  auto contiguous_self = Contiguous(self);
 
   muHandle h;
   ::musa::dnn::Binary binary_op;
-  auto mt_grad_output = CreateMUTensor(*contiguous_grad_output);
-  auto mt_self = CreateMUTensor(*contiguous_self);
+  auto mt_grad_output = CreateMUTensor(contiguous_grad_output);
+  auto mt_self = CreateMUTensor(contiguous_self);
   auto mt_output = CreateMUTensor(grad_input);
   CHECK_MUDNN_STATUS(
       binary_op.SetMode(::musa::dnn::Binary::Mode::THRESHOLD_BW), "SetMode");
@@ -227,8 +241,320 @@ Tensor Sqrt(const Tensor& input) {
 }
 
 Tensor& SqrtOut(const Tensor& input, Tensor& output) {
-  UnaryOut("__func__", output, input, [](::musa::dnn::Unary& op) {
+  UnaryOut(__func__, output, input, [](::musa::dnn::Unary& op) {
     CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::SQRT), "SetMode");
+  });
+  return output;
+}
+
+Tensor Tanh(const Tensor& input) {
+  return Unary(__func__, input, [](::musa::dnn::Unary& op) {
+    CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::TANH), "SetMode");
+  });
+}
+
+Tensor& Tanh_(Tensor& input) {
+  Tensor contiguous_input = Contiguous(input);
+  Unary_(__func__, contiguous_input, [](::musa::dnn::Unary& op) {
+    CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::TANH), "SetMode");
+  });
+  input.copy_(contiguous_input);
+  return input;
+}
+
+Tensor& TanhOut(const Tensor& input, Tensor& output) {
+  UnaryOut(__func__, output, input, [](::musa::dnn::Unary& op) {
+    CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::TANH), "SetMode");
+  });
+  return output;
+}
+
+at::Tensor& TanhGradInputBwd(
+    const at::Tensor& grad_output,
+    const at::Tensor& output,
+    at::Tensor& grad_input) {
+  TORCH_CHECK(
+      grad_output.device().type() == kMUSA,
+      "Device of grad_output tensor of TanhBackward must be MUSA, but now is ",
+      grad_output.device());
+  TORCH_CHECK(
+      output.device().type() == kMUSA,
+      "Device of output tensor of TanhBackward must be MUSA, but now is ",
+      output.device());
+  TORCH_CHECK(
+      grad_input.device().type() == kMUSA,
+      "Device of grad_input tensor of TanhBackward must be MUSA, but now is ",
+      grad_input.device());
+  TORCH_CHECK(
+      grad_output.scalar_type() == at::ScalarType::Float,
+      "Dtype of grad_output tensor of TanhBackward only support Float32, ",
+      "but now it is ",
+      grad_output.scalar_type());
+  TORCH_CHECK(
+      output.scalar_type() == at::ScalarType::Float,
+      "Dtype of output tensor of TanhBackward only support Float32, ",
+      "but now it is ",
+      output.scalar_type());
+  auto contiguous_grad_output = Contiguous(grad_output);
+  auto contiguous_output = Contiguous(output);
+
+  grad_input.resize_((contiguous_grad_output).sizes());
+  return BinaryCall(
+      contiguous_grad_output,
+      contiguous_output,
+      ::musa::dnn::Binary::Mode::TANH_BW,
+      grad_input);
+}
+
+at::Tensor TanhBwd(const at::Tensor& grad_output, const at::Tensor& output) {
+  auto result = at::empty_like(grad_output);
+  Tensor grad_output_ = Contiguous(grad_output);
+  Tensor output_ = Contiguous(output);
+  Tensor result_ = Contiguous(result);
+  TanhGradInputBwd(grad_output_, output_, result_);
+  return result_;
+}
+
+Tensor GELU(const Tensor& self, c10::string_view approximate) {
+  auto approximate_type = get_gelutype_enum(approximate);
+  TORCH_CHECK(
+      approximate_type == GeluType::None,
+      "Musa GELU op only support approximate is None now!");
+  return Unary(__func__, self, [&](::musa::dnn::Unary& op) {
+    CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::GELU), "SetMode");
+  });
+}
+
+Tensor& GELUOut(
+    const Tensor& self,
+    c10::string_view approximate,
+    Tensor& output) {
+  auto approximate_type = get_gelutype_enum(approximate);
+  TORCH_CHECK(
+      approximate_type == GeluType::None,
+      "Musa GELU op only support approximate is None now!");
+  UnaryOut(__func__, output, self, [&](::musa::dnn::Unary& op) {
+    CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::GELU), "SetMode");
+  });
+  return output;
+}
+
+at::Tensor& GELUGradInputBwd(
+    const at::Tensor& grad_output,
+    const at::Tensor& self,
+    c10::string_view approximate,
+    at::Tensor& grad_input) {
+  TORCH_CHECK(
+      grad_output.device().type() == kMUSA,
+      "Device of grad_output tensor of GELUBackward must be MUSA, but now is ",
+      grad_output.device());
+  TORCH_CHECK(
+      self.device().type() == kMUSA,
+      "Device of self tensor of GELUBackward must be MUSA, but now is ",
+      self.device());
+  TORCH_CHECK(
+      grad_input.device().type() == kMUSA,
+      "Device of grad_input tensor of GELUBackward must be MUSA, but now is ",
+      grad_input.device());
+  TORCH_CHECK(
+      grad_output.scalar_type() == at::ScalarType::Float,
+      "Dtype of grad_output tensor of GELUBackward only support Float32, ",
+      "but now it is ",
+      grad_output.scalar_type());
+  TORCH_CHECK(
+      self.scalar_type() == at::ScalarType::Float,
+      "Dtype of input tensor of GELUBackward only support Float32, ",
+      "but now it is ",
+      self.scalar_type());
+  auto contiguous_grad_output = Contiguous(grad_output);
+  auto contiguous_self = Contiguous(self);
+
+  grad_input.resize_(self.sizes());
+  auto approximate_type = get_gelutype_enum(approximate);
+  if (approximate_type == GeluType::None) {
+    return BinaryCall(
+        contiguous_grad_output,
+        contiguous_self,
+        ::musa::dnn::Binary::Mode::GELU_NONE_BW,
+        grad_input);
+  } else {
+    return BinaryCall(
+        contiguous_grad_output,
+        contiguous_self,
+        ::musa::dnn::Binary::Mode::GELU_TANH_BW,
+        grad_input);
+  }
+}
+
+at::Tensor GELUBwd(
+    const at::Tensor& grad_output,
+    const at::Tensor& self,
+    c10::string_view approximate) {
+  auto result = ::at::empty(self.sizes(), self.options());
+  GELUGradInputBwd(grad_output, self, approximate, result);
+  return result;
+}
+
+void ClampCall(
+    const std::string& op_name,
+    Tensor& out,
+    const Tensor& self,
+    bool has_min,
+    const c10::optional<Scalar>& min,
+    bool has_max,
+    const c10::optional<Scalar>& max) {
+  auto t_type = self.scalar_type();
+  auto self_ = Contiguous(self);
+
+  switch (t_type) {
+    case ScalarType::Float: {
+      // DBL_MIN = 2.22507e-308 which is positive, so we must use lowest or
+      // (-max) there !!!
+      const double min_val = has_min ? min.value().to<double>()
+                                     : std::numeric_limits<double>::lowest();
+
+      const double max_val = has_max ? max.value().to<double>()
+                                     : std::numeric_limits<double>::max();
+      UnaryCall(op_name, out, self_, [&](::musa::dnn::Unary& op) {
+        CHECK_MUDNN_STATUS(op.SetAlpha(min_val), "SetAlpha");
+        CHECK_MUDNN_STATUS(op.SetBeta(max_val), "SetBeta");
+        CHECK_MUDNN_STATUS(
+            op.SetMode(::musa::dnn::Unary::Mode::CLIP), "SetMode");
+      });
+      break;
+    }
+    case ScalarType::Long: {
+      // LONG_MIN = -9223372036854775808, LONG_MAX = 9223372036854775807
+      const int64_t min_val = has_min ? min.value().to<int64_t>()
+                                      : std::numeric_limits<int64_t>::min();
+      const int64_t max_val = has_max ? max.value().to<int64_t>()
+                                      : std::numeric_limits<int64_t>::max();
+      UnaryCall(op_name, out, self_, [&](::musa::dnn::Unary& op) {
+        CHECK_MUDNN_STATUS(op.SetAlpha(min_val), "SetAlpha");
+        CHECK_MUDNN_STATUS(op.SetBeta(max_val), "SetBeta");
+        CHECK_MUDNN_STATUS(
+            op.SetMode(::musa::dnn::Unary::Mode::CLIP), "SetMode");
+      });
+      break;
+    }
+
+    default:
+      TORCH_CHECK(false, "Unsupported tensor dtype: ", t_type);
+      throw;
+  }
+}
+
+Tensor Clamp(
+    const Tensor& self,
+    const c10::optional<Scalar>& min,
+    const c10::optional<Scalar>& max) {
+  const bool has_min = (min.has_value());
+  const bool has_max = (max.has_value());
+  TORCH_CHECK(
+      has_min || has_max,
+      "torch.clamp: either min, max or both scalars must be defined")
+  Tensor output = at::empty_like(self);
+  MUSA_TENSOR_TYPE_CHECK(self);
+
+  ClampCall(__func__, output, self, has_min, min, has_max, max);
+  return output;
+}
+
+Tensor& Clamp_(
+    Tensor& self,
+    const c10::optional<Scalar>& min,
+    const c10::optional<Scalar>& max) {
+  const bool has_min = (min.has_value());
+  const bool has_max = (max.has_value());
+  TORCH_CHECK(
+      has_min || has_max,
+      "torch.clamp: either min, max or both scalars must be defined")
+  MUSA_TENSOR_TYPE_CHECK(self);
+
+  ClampCall(__func__, self, self, has_min, min, has_max, max);
+  return self;
+}
+
+Tensor& ClampOut(
+    const Tensor& self,
+    const c10::optional<Scalar>& min,
+    const c10::optional<Scalar>& max,
+    Tensor& out) {
+  const bool has_min = (min.has_value());
+  const bool has_max = (max.has_value());
+  TORCH_CHECK(
+      has_min || has_max,
+      "torch.clamp: either min, max or both scalars must be defined")
+  MUSA_TENSOR_TYPE_CHECK(self);
+
+  ClampCall(__func__, out, self, has_min, min, has_max, max);
+  return out;
+}
+
+Tensor& ClampTensorOut(
+    const Tensor& self,
+    const c10::optional<Tensor>& min,
+    const c10::optional<Tensor>& max,
+    Tensor& out) {
+  TORCH_CHECK(
+      self.device().type() == kMUSA,
+      "Device of input tensor of Clamp must be MUSA, but now is ",
+      self.device());
+  TORCH_CHECK(
+      out.device().type() == kMUSA,
+      "Device of output tensor of Clamp.TensorOut must be MUSA, but now is ",
+      out.device());
+  auto has_min = min.has_value() && min->defined();
+  auto has_max = max.has_value() && max->defined();
+  Tensor cpu_min;
+  Tensor cpu_max;
+  if (has_min) {
+    TORCH_CHECK(
+        min->device().type() == kMUSA,
+        "Device of min tensor of Clamp.TensorOut must be MUSA, but now is ",
+        min->device());
+    cpu_min = min->to("cpu");
+  }
+  if (has_max) {
+    TORCH_CHECK(
+        max->device().type() == kMUSA,
+        "Device of max tensor of Clamp.TensorOut must be MUSA, but now is ",
+        max->device());
+    cpu_max = max->to("cpu");
+  }
+  out.resize_(self.sizes());
+  TORCH_CHECK(
+      has_min || has_max,
+      "torch.clamp: At least one of 'min' or 'max' must not be None");
+  auto cpu_self = self.to("cpu");
+  const auto cpu_min_ref =
+      has_min ? c10::optional<Tensor>(cpu_min) : c10::optional<Tensor>();
+  const auto cpu_max_ref =
+      has_max ? c10::optional<Tensor>(cpu_max) : c10::optional<Tensor>();
+  auto cpu_result = clamp(cpu_self, cpu_min_ref, cpu_max_ref);
+  out.copy_(cpu_result);
+  return out;
+}
+
+Tensor Reciprocal(const Tensor& self) {
+  return Unary(__func__, self, [&](::musa::dnn::Unary& op) {
+    CHECK_MUDNN_STATUS(op.SetAlpha(-1.), "SetAlpha");
+    CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::POW), "SetMode");
+  });
+}
+
+Tensor& Reciprocal_(Tensor& self) {
+  Unary_(__func__, self, [&](::musa::dnn::Unary& op) {
+    CHECK_MUDNN_STATUS(op.SetAlpha(-1.), "SetAlpha");
+    CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::POW), "SetMode");
+  });
+  return self;
+}
+
+Tensor& ReciprocalOut(const Tensor& self, Tensor& output) {
+  UnaryOut(__func__, output, self, [&](::musa::dnn::Unary& op) {
+    CHECK_MUDNN_STATUS(op.SetAlpha(-1.), "SetAlpha");
+    CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::POW), "SetMode");
   });
   return output;
 }
@@ -266,6 +592,26 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
 
   m.impl("sqrt", &Sqrt);
   m.impl("sqrt.out", &SqrtOut);
+
+  m.impl("tanh", &Tanh);
+  m.impl("tanh_", &Tanh_);
+  m.impl("tanh.out", &TanhOut);
+  m.impl("tanh_backward.grad_input", &TanhGradInputBwd);
+  m.impl("tanh_backward", &TanhBwd);
+
+  m.impl("gelu", &GELU);
+  m.impl("gelu.out", &GELUOut);
+  m.impl("gelu_backward", &GELUBwd);
+  m.impl("gelu_backward.grad_input", &GELUGradInputBwd);
+
+  m.impl("clamp", &Clamp);
+  m.impl("clamp_", &Clamp_);
+  m.impl("clamp.out", &ClampOut);
+  m.impl("clamp.Tensor_out", &ClampTensorOut);
+
+  m.impl("reciprocal", &Reciprocal);
+  m.impl("reciprocal_", &Reciprocal_);
+  m.impl("reciprocal.out", &ReciprocalOut);
 }
 
 } // namespace musa

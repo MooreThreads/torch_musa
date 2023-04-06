@@ -1,5 +1,4 @@
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <ATen/ATen.h>
 #include <ATen/Config.h>
@@ -373,7 +372,7 @@ Tensor& IndexPut(
     const bool accumulate,
     const bool unsafe) {
   // Note: Tensors in "indices" are not on the same device, which is allowed.
-  // such as: self-cpu, indices0-cpu, indices1-mtgpu, value-cpu
+  // such as: self-cpu, indices0-cpu, indices1-musa, value-cpu
   if (self.device() == DeviceType::CPU) {
     torch::List<c10::optional<Tensor>> indices_cpu;
     // Ensure indices are on the same device as self
@@ -400,7 +399,7 @@ Tensor& IndexPut(
       auto contiguous_value = value.to("cpu");
       at::_index_put_impl_(
           contiguous_self, indices_, contiguous_value, accumulate, unsafe);
-      self.copy_(contiguous_self.to("mtgpu"));
+      self.copy_(contiguous_self.to("musa"));
       return self;
     }
   }
@@ -438,7 +437,7 @@ Tensor& IndexPut(
     muTensor indice;
     if (index.has_value()) {
       at::assert_no_overlap(self, *index);
-      cgs_tensors[idx] = index->to("mtgpu");
+      cgs_tensors[idx] = index->to("musa");
       auto contiguous_index = Contiguous(cgs_tensors[idx]);
       indice = CreateMUTensor(contiguous_index);
       tensors.emplace_back(indice);

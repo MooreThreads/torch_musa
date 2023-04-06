@@ -1,5 +1,4 @@
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <ATen/ATen.h>
 #include <ATen/Config.h>
@@ -222,11 +221,24 @@ Tensor BinarycommonDtype(
     const Tensor& other,
     Scalar const& alpha_scalar,
     BINARY_MODE m) {
-  auto common_dtype = at::result_type(self, other);
+  ScalarType common_dtype = at::result_type(self, other);
   alpha_check(common_dtype, alpha_scalar);
   Tensor contiguous_self = self.to(common_dtype);
   Tensor contiguous_other = other.to(common_dtype);
   return Binary(op_name, contiguous_self, contiguous_other, m, alpha_scalar);
+}
+
+void BinarycommonDtype_(
+    const std::string& op_name,
+    const Tensor& self,
+    const Tensor& other,
+    Scalar const& alpha_scalar,
+    BINARY_MODE m) {
+  ScalarType commonDtype = at::result_type(self, other);
+  alpha_check(commonDtype, alpha_scalar);
+  Tensor other_ = other.to(commonDtype);
+  Binary(op_name, self, other_, m, alpha_scalar, true);
+  return;
 }
 
 void BinarycommonDtypeInternal(
@@ -235,7 +247,7 @@ void BinarycommonDtypeInternal(
     const Tensor& other,
     Scalar const& alpha_scalar,
     BINARY_MODE m) {
-  auto common_dtype = at::result_type(self, other);
+  ScalarType common_dtype = at::result_type(self, other);
   alpha_check(common_dtype, alpha_scalar);
   Tensor contiguous_other = other.to(common_dtype);
   Binary(op_name, self, contiguous_other, m, alpha_scalar, true);
@@ -249,7 +261,7 @@ void BinarycommonDtypeCall(
     Scalar const& alpha_scalar,
     Tensor& output,
     BINARY_MODE m) {
-  auto common_dtype = at::result_type(self, other);
+  ScalarType common_dtype = at::result_type(self, other);
   alpha_check(common_dtype, alpha_scalar);
   Tensor contiguous_self = Contiguous(self.to(common_dtype));
   Tensor contiguous_other = Contiguous(other.to(common_dtype));
@@ -305,6 +317,7 @@ DEFINE_BINARY_OP(Equal, BINARY_MODE::EQ)
 DEFINE_BINARY_OP(NotEqual, BINARY_MODE::NE)
 DEFINE_BINARY_OP(Greater, BINARY_MODE::GT)
 DEFINE_BINARY_OP(GreaterEqual, BINARY_MODE::GE)
+DEFINE_BINARY_OP(Remainder, BINARY_MODE::FLOORMOD)
 
 Tensor& Div_out_mode(
     const Tensor& self,
@@ -355,6 +368,13 @@ Tensor& Div_Tensor_mode(
   return self;
 }
 
+Tensor RemainderScalarTensor(const Scalar& self, const Tensor& other) {
+  Tensor other_cpu = other.cpu();
+  Tensor out = at::remainder(self, other_cpu);
+  auto out_musa = out.to("musa");
+  return out_musa;
+}
+
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("add.Tensor", &AddTensor);
   m.impl("add_.Tensor", &Add_Tensor);
@@ -402,6 +422,11 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("sub.Tensor", &SubTensor);
   m.impl("sub_.Tensor", &Sub_Tensor);
   m.impl("sub.out", &Sub_out);
+
+  m.impl("remainder.Tensor", &RemainderTensor);
+  m.impl("remainder_.Tensor", &Remainder_Tensor);
+  m.impl("remainder.Tensor_out", &Remainder_out);
+  m.impl("remainder.Scalar_Tensor", &RemainderScalarTensor);
 }
 
 } // namespace musa

@@ -184,19 +184,19 @@ Tensor& AddcMulOut(
     Tensor& output) {
   TORCH_CHECK(
       self.device().type() == kMUSA,
-      "Device of input tensor of addcmul must be MTGPU, but now it is ",
+      "Device of input tensor of addcmul must be MUSA, but now it is ",
       self.device());
   TORCH_CHECK(
       input1.device().type() == kMUSA,
-      "Device of input1 tensor of addcmul must be MTGPU, but now it is ",
+      "Device of input1 tensor of addcmul must be MUSA, but now it is ",
       input1.device());
   TORCH_CHECK(
       input2.device().type() == kMUSA,
-      "Device of input2 tensor of addcmul must be MTGPU, but now it is ",
+      "Device of input2 tensor of addcmul must be MUSA, but now it is ",
       input2.device());
   TORCH_CHECK(
       output.device().type() == kMUSA,
-      "Device of output tensor of addcmul must be MTGPU, but now it is ",
+      "Device of output tensor of addcmul must be MUSA, but now it is ",
       output.device());
   TernarycommonDtypeCall(
       self, input1, input2, alpha_scalar, output, TERNARY_MODE::ADDCMUL);
@@ -211,19 +211,19 @@ Tensor& AddcDivOut(
     Tensor& output) {
   TORCH_CHECK(
       self.device().type() == kMUSA,
-      "Device of input tensor of addcdiv must be MTGPU, but now it is ",
+      "Device of input tensor of addcdiv must be MUSA, but now it is ",
       self.device());
   TORCH_CHECK(
       input1.device().type() == kMUSA,
-      "Device of input1 tensor of addcdiv must be MTGPU, but now it is ",
+      "Device of input1 tensor of addcdiv must be MUSA, but now it is ",
       self.device());
   TORCH_CHECK(
       input2.device().type() == kMUSA,
-      "Device of input2 tensor of addcdiv must be MTGPU, but now it is ",
+      "Device of input2 tensor of addcdiv must be MUSA, but now it is ",
       input2.device());
   TORCH_CHECK(
       output.device().type() == kMUSA,
-      "Device of output tensor of addcdiv must be MTGPU, but now it is ",
+      "Device of output tensor of addcdiv must be MUSA, but now it is ",
       output.device());
   TORCH_CHECK(
       self.scalar_type() == at::ScalarType::Float,

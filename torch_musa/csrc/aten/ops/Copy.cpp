@@ -153,16 +153,8 @@ void mtgpu_impl_copy_d2d(const Tensor& tensor_self, const Tensor& tensor_src) {
   }
   muHandle h;
   ::musa::dnn::Permute op;
-  auto dst_offset = tensor_self.storage_offset();
-  auto src_offset = tensor_src.storage_offset();
   auto contiguous_out = CreateMUTensor(tensor_self, true);
   auto contiguous_in = CreateMUTensor(tensor_src, true);
-  if (dst_offset || src_offset) {
-    CHECK_MUDNN_STATUS(
-        op.SetSrcOffset(static_cast<int>(src_offset)), "SetSrcOffset");
-    CHECK_MUDNN_STATUS(
-        op.SetDstOffset(static_cast<int>(dst_offset)), "SetDstOffset");
-  }
   CHECK_MUDNN_STATUS(op.Run(h, contiguous_out, contiguous_in), "Run");
 }
 
@@ -189,7 +181,7 @@ void mtgpu_impl_datacast(const Tensor& tensor_self, const Tensor& tensor_src) {
         tensor_src.dtype(),
         " to ",
         tensor_self.dtype(),
-        " is not supported on MTGPU now!");
+        " is not supported on MUSA now!");
     auto cpu_src = tensor_src.to("cpu");
     auto cpu_result =
         cpu_src.to(tensor_src.options().dtype(tensor_self.dtype()));
@@ -229,7 +221,7 @@ inline void mtgpu_impl_copy(
   if (!capacity) {
     return;
   }
-  if (copy_type == Memcpy_type::MEMCPY_HOST_TO_DEVICE) { // cpu -> mtgpu
+  if (copy_type == Memcpy_type::MEMCPY_HOST_TO_DEVICE) { // cpu -> musa
     // Note: tensor.data_ptr() will return the type void*
     if (tensor_self.dtype() != tensor_src.dtype()) {
       // Note: when H2D copy, tensor_src and tensor_self have different
@@ -249,7 +241,7 @@ inline void mtgpu_impl_copy(
           result == ::musa::dnn::Status::SUCCESS,
           "Copy(MEMCPY_HOST_TO_DEVICE)");
     }
-  } else if (copy_type == Memcpy_type::MEMCPY_DEVICE_TO_HOST) { // mtgpu -> cpu
+  } else if (copy_type == Memcpy_type::MEMCPY_DEVICE_TO_HOST) { // musa -> cpu
     if (tensor_self.dtype() != tensor_src.dtype()) {
       // Note: when D2H copy, tensor_src and tensor_self have different
       // dtypes, type conversions are performed on the CPU for CPU->GPU copies.
@@ -275,10 +267,10 @@ Tensor mtgpu_copy_from(
     const Tensor& src,
     const Tensor& self,
     bool non_blocking) {
-  TORCH_CHECK(!non_blocking, "non_blocking is invalid in mtgpu!");
+  TORCH_CHECK(!non_blocking, "non_blocking is invalid in musa!");
   // For all cases, the source and destination's sizes should be the same.
   TORCH_INTERNAL_ASSERT(self.sizes() == src.sizes());
-  // At least one of src and dst should be MTGPU, otherwise it is impossible
+  // At least one of src and dst should be MUSA, otherwise it is impossible
   // to fall into this function!
   TORCH_INTERNAL_ASSERT(
       src.device().type() == kMUSA || self.device().type() == kMUSA);
