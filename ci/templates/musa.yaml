@@ -6,10 +6,10 @@ spec:
       requiredDuringSchedulingIgnoredDuringExecution:
         nodeSelectorTerms:
         - matchExpressions:
-          - key: mthreads.com/gpu.product
+          - key: gputype
             operator: In
             values:
-            - MTT-S3000
+            - mthreads-train
   containers:
   - name: main
     tty: true
@@ -28,4 +28,3 @@ spec:
       limits:
         cpu: "32"
         memory: "128Gi"
-        mthreads.com/gpu: "1"

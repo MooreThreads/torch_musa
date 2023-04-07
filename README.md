@@ -52,6 +52,7 @@ export PYTORCH_REPO_PATH=path/to/PyTorch source code
 
 ### Building With Script
 ```bash
+bash scripts/update_daily_mudnn.sh # update daily mudnn lib when needed
 bash build.sh   # build original PyTorch and Torch_MUSA from scratch
 
 # Some important parameters are as follows:
@@ -91,6 +92,11 @@ python setup.py install
 ```bash
 docker run -it --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev:v0.1.6 /bin/bash
 ```
+
+| Docker Tag | Description |
+| ---- | --- |
+| [**latest/v0.1.6**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | update toolkits rc1.3.0 |
+| [**v0.1.5**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) |  |
 
 ## Getting Started
 ```bash
