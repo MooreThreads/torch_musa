@@ -29,7 +29,7 @@ def test_musa_set_device():
     assert torch_musa.current_device() == 0
 
 
-@pytest.mark.skipif(not  TEST_MULTIGPU, reason="detected no mtGPU")
+@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected no mtGPU")
 def test_get_musa_devcie_index():
     """Test exception case about torch_musa.device(xxx)"""
     with torch_musa.device("musa:1"):

@@ -14,6 +14,10 @@ from .core.device import (
     synchronize,
 )
 
+from .core.serialization import register_deserialization
+
+register_deserialization()
+
 try:
     import torch_musa._MUSAC
 except ImportError as err:
