@@ -8,7 +8,6 @@
 #include <ATen/WrapDimUtilsMulti.h>
 #include <ATen/native/ReduceOpsUtils.h>
 #include <torch/library.h>
-#pragma GCC diagnostic pop
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
@@ -136,12 +135,6 @@ Tensor& MeanOut(
     bool keepdim,
     c10::optional<ScalarType> dtype,
     Tensor& output) {
-  if (keepdim) {
-    C10_LOG_FIRST_N(WARNING, 1) << "keepdim is invalid in MeanOut";
-  }
-  if (dtype.has_value()) {
-    C10_LOG_FIRST_N(WARNING, 1) << "dtype is invalid in MeanOut";
-  }
   ReduceCall(output, self, dim.value(), ::musa::dnn::Reduce::Mode::MEAN);
   return output;
 }
@@ -165,12 +158,6 @@ Tensor& MeanNamesDimOut(
     bool keepdim,
     c10::optional<ScalarType> dtype,
     Tensor& output) {
-  if (keepdim) {
-    C10_LOG_FIRST_N(WARNING, 1) << "keepdim is invalid in MeanNamesDimOut";
-  }
-  if (dtype.has_value()) {
-    C10_LOG_FIRST_N(WARNING, 1) << "dtype is invalid in MeanNamesDimOut";
-  }
   ReduceCall(
       output,
       self,
@@ -190,12 +177,6 @@ Tensor& SumIntListOut(
     bool keepdim,
     optional<ScalarType> opt_dtype,
     Tensor& output) {
-  if (!keepdim) {
-    C10_LOG_FIRST_N(WARNING, 1) << "keepdim is invalid in SumIntListOut";
-  }
-  if (opt_dtype.has_value()) {
-    C10_LOG_FIRST_N(WARNING, 1) << "opt_dtype is invalid in SumIntListOut";
-  }
   ReduceCall(output, self, dim.value(), ::musa::dnn::Reduce::Mode::ADD);
   return output;
 }
@@ -250,6 +231,54 @@ Tensor& NormOut(
   return out;
 }
 
+void ReduceIndicesCall(
+    Tensor& output,
+    Tensor& indices,
+    const Tensor& self,
+    int64_t dim,
+    ::musa::dnn::Reduce::Mode m) {
+  TORCH_CHECK(
+      self.scalar_type() == output.scalar_type(),
+      "scalar_type of in&out must be the same, bug got: ",
+      self.scalar_type(),
+      " and: ",
+      output.scalar_type());
+  TORCH_CHECK(indices.scalar_type() == kLong, "Only support int64 indices now");
+
+  auto input = Contiguous(self);
+
+  auto out = CreateMUTensor(output);
+  auto ids = CreateMUTensor(indices);
+  auto in = CreateMUTensor(input);
+
+  muHandle h;
+  ::musa::dnn::Reduce r;
+  CHECK_MUDNN_STATUS(r.SetMode(m), "SetMode");
+  int dim_int = dim;
+  CHECK_MUDNN_STATUS(r.SetDim({dim_int}), "SetDim");
+  CHECK_MUDNN_STATUS(
+      r.RunWithIndices(h, out, ids, in, InternalMemAlloc), "RunWithIndices");
+}
+
+// TODO(zaixing.wang): mudnn ReduceIndices only support float, int64 input
+Tensor& ArgmaxOut(
+    const Tensor& self,
+    c10::optional<int64_t> dim,
+    bool keepdim,
+    Tensor& result) {
+  Tensor contiguous_self = Contiguous(self);
+  if (!dim.has_value()) {
+    contiguous_self = contiguous_self.flatten();
+  }
+  Tensor out_data =
+      at::empty(result.sizes(), self.options().dtype(self.scalar_type()));
+  auto dim_ = dim.has_value() ? maybe_wrap_dim(dim.value(), self.dim()) : 0;
+  ReduceIndicesCall(
+      out_data, result, contiguous_self, dim_, ::musa::dnn::Reduce::Mode::MAX);
+  return result;
+}
+#pragma GCC diagnostic pop
+
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("mean", &Mean);
   m.impl("mean.dim", &MeanDim);
@@ -260,6 +289,7 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("sum.IntList_out", &SumIntListOut);
   m.impl("norm.out", &NormOut);
   m.impl("norm.dtype_out", &NormDtypeOut);
+  m.impl("argmax.out", &ArgmaxOut);
 }
 
 } // namespace musa

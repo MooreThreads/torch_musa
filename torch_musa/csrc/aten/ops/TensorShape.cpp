@@ -388,7 +388,6 @@ Tensor& IndexPut(
   }
 
   if (indices[0].has_value()) {
-    std::cout << "wzx debug hit cpu index_put" << std::endl;
     if (indices[0]->scalar_type() == ScalarType::Bool) {
       auto contiguous_self = self.to("cpu");
       torch::List<c10::optional<Tensor>> indices_;

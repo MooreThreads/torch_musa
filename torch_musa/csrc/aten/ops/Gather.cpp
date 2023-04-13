@@ -47,26 +47,27 @@ at::Tensor& GatherOut(
       "Dtype of input tensor of Gather only support Float32 and Int64, "
       "but now it is ",
       input.scalar_type());
-  auto input_ = Contiguous(input);
-  auto index_ = Contiguous(index);
+  auto contiguous_input = Contiguous(input);
+  auto contiguous_index = Contiguous(index);
 
-  out.resize_(index_.sizes());
+  out.resize_(contiguous_index.sizes());
 
-  if (index_.numel() != 0) {
+  if (contiguous_index.numel() != 0) {
     TORCH_CHECK(
-        index_.scalar_type() == at::ScalarType::Long,
+        contiguous_index.scalar_type() == at::ScalarType::Long,
         "gather",
         "(): Expected dtype int64 for index");
-    const int64_t wrapped_dim = at::maybe_wrap_dim(dim, input_.dim());
-    at::native::gather_shape_check(input_, wrapped_dim, index_);
+    const int64_t wrapped_dim = at::maybe_wrap_dim(dim, contiguous_input.dim());
+    at::native::gather_shape_check(
+        contiguous_input, wrapped_dim, contiguous_index);
   } else {
     return out;
   }
 
   ::musa::dnn::Handle h;
   ::musa::dnn::GatherX gather_op;
-  auto mt_input = CreateMUTensor(input_);
-  auto mt_index = CreateMUTensor(index_);
+  auto mt_input = CreateMUTensor(contiguous_input);
+  auto mt_index = CreateMUTensor(contiguous_index);
   auto mt_out = CreateMUTensor(out);
   CHECK_MUDNN_STATUS(gather_op.SetAxis(dim), "SetAxis");
   CHECK_MUDNN_STATUS(

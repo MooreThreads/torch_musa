@@ -36,7 +36,7 @@ Tensor& Normal(
     c10::optional<Generator> gen) {
   self = self.to("cpu");
   self = normal_(self, mean, std, gen);
-  self = self.to("mtgpu");
+  self = self.to("musa");
   return self;
 }
 
