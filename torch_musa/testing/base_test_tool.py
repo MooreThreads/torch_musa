@@ -43,7 +43,7 @@ class DefaultComparator(Comparator):
         Use both relative and absolute tolerance to compare the result and golden.
         """
         super().__init__()
-        self._comparator = lambda result, golden: np.allclose(
+        self._comparator = lambda result, golden: pt.allclose(
             result, golden, rtol=rel_diff, atol=abs_diff, equal_nan=equal_nan
         )
 
@@ -57,7 +57,7 @@ class AbsDiffComparator(Comparator):
         """
         super().__init__()
         self._comparator = (
-            lambda result, golden: np.abs(golden - result).max() < abs_diff
+            lambda result, golden: torch.abs(golden - result).max() < abs_diff
         )
 
 
@@ -166,7 +166,7 @@ class OpTest:
                     reduce.sum().backward()
                     for _, val in inputs.items():
                         if val.requires_grad:
-                            grad.append(val.grad.cpu().detach().numpy())
+                            grad.append(val.grad.cpu())
             else:
                 if isinstance(inputs, pt.Tensor):
                     inputs = inputs.to(device)
@@ -180,17 +180,17 @@ class OpTest:
                     and isinstance(self._input_args[k], pt.Tensor)
                     and self._input_args[k].requires_grad
                 ):
-                    grad.append(self._input_args[k].grad.cpu().detach().numpy())
+                    grad.append(self._input_args[k].grad.cpu())
 
             if isinstance(reduce, (tuple, list)):
                 for val in reduce:
-                    res.append(val.to("cpu").detach().numpy())
+                    res.append(val.to("cpu"))
             else:
-                res.append(reduce.to("cpu").detach().numpy())
+                res.append(reduce.to("cpu"))
             if test_out and "out" in self._input_args:
-                res.append(self._input_args["out"].to("cpu").detach().numpy())
+                res.append(self._input_args["out"].to("cpu"))
             for i in grad:
-                res.append(i.copy())
+                res.append(i.clone())
             return res
 
     def __call__(self, inputs, train: bool = False, test_out: bool = False):
