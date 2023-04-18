@@ -16,6 +16,16 @@ from .core.device import (
 
 from .core.serialization import register_deserialization
 
+from .core.memory import (
+    empty_cache,
+    memory_stats,
+    memory_summary,
+    memory_reserved,
+    memory_snapshot,
+    memory_allocated,
+    max_memory_allocated,
+    max_memory_reserved)
+
 register_deserialization()
 
 try:

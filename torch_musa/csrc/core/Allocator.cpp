@@ -567,7 +567,7 @@ class MUSACachingAllocator {
   }
 
   /** returns cached blocks to the system allocator **/
-  void clear_cache() {
+  void EmptyCache() {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     release_cached_blocks();
   }
@@ -590,7 +590,7 @@ class MUSACachingAllocator {
   }
 
   /** Returns a copy of the memory allocator stats_ **/
-  DeviceStats get_stats() {
+  DeviceStats GetStats() const {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     return stats_;
   }
@@ -638,7 +638,7 @@ class MUSACachingAllocator {
 
   /** Dump a complete snapshot of the memory held by the allocator. Potentially
    * VERY expensive. **/
-  std::vector<SegmentInfo> snapshot() const {
+  std::vector<SegmentInfo> Snapshot() const {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
 
     std::vector<SegmentInfo> result;
@@ -1189,3 +1189,21 @@ at::Allocator* GetDefaultMTGPUAllocator() {
 
 REGISTER_ALLOCATOR(at::native::musa::kMUSA, &g_mtgpu_alloc);
 } // namespace c10
+
+namespace musa {
+namespace MUSACachingAllocator {
+
+void EmptyCache() {
+  c10::DefaultMTGPUAllocator::get_allocator()->EmptyCache();
+}
+
+DeviceStats GetDeviceStats() {
+  return c10::DefaultMTGPUAllocator::get_allocator()->GetStats();
+}
+
+std::vector<SegmentInfo> GetMemorySnapshot() {
+  return c10::DefaultMTGPUAllocator::get_allocator()->Snapshot();
+}
+
+} // namespace MUSACachingAllocator
+} // namespace musa

@@ -211,6 +211,10 @@ struct SegmentInfo {
   std::vector<BlockInfo> blocks;
 };
 
+void EmptyCache();
+DeviceStats GetDeviceStats();
+std::vector<SegmentInfo> GetMemorySnapshot();
+
 } // namespace MUSACachingAllocator
 } // namespace musa
 #endif // ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUALLOCATOR_H_
