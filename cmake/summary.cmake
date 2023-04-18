@@ -12,6 +12,7 @@ function(torch_musa_build_configuration_summary)
   message(STATUS "CMAKE_INSTALL_PREFIX  : ${CMAKE_INSTALL_PREFIX}")
   message(STATUS "USE_PYTHON            : ${USE_PYTHON}")
   message(STATUS "BUILD_TEST            : ${BUILD_TEST}")
+  message(STATUS "BUILD_TYPE            : ${CMAKE_BUILD_TYPE}")
   message(STATUS "")
  
   message(STATUS "PYTORCH_SOURCE_PATH   : $ENV{PYTORCH_REPO_PATH}")

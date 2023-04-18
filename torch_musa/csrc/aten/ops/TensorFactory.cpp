@@ -17,6 +17,7 @@
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/Device.h"
+#include "torch_musa/csrc/core/MUSAGuard.h"
 
 #include <mudnn.h>
 
@@ -132,6 +133,7 @@ Tensor empty_mtgpu(
     c10::optional<Device> device_opt,
     c10::optional<bool> pin_memory_opt,
     c10::optional<c10::MemoryFormat> memory_format_opt) {
+  torch_musa::OptionalMUSAGuard guard(device_opt);
   return at::detail::empty_mtgpu(
       size,
       dtype_opt,
@@ -149,6 +151,8 @@ Tensor empty_strided_mtgpu(
     c10::optional<Device> device_opt,
     c10::optional<bool> pin_memory_opt) {
   check_size_nonnegative(size);
+  torch_musa::OptionalMUSAGuard guard(device_opt);
+
   auto t = at::native::musa::empty_mtgpu(
       {0}, dtype_opt, layout_opt, device_opt, pin_memory_opt, c10::nullopt);
   at::native::musa::resize_impl_mtgpu_(t.unsafeGetTensorImpl(), size, stride);

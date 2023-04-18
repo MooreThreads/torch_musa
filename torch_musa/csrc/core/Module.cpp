@@ -149,6 +149,7 @@ PyObject* InitMusaModule() {
   auto py_module = py::reinterpret_borrow<py::module>(module);
 
   // Device Management
+  torch_musa::registerMusaDeviceProperties(module);
   py_module.def(
       "_musa_getDeviceCount", []() { return torch_musa::device_count(); });
   py_module.def(
@@ -156,7 +157,22 @@ PyObject* InitMusaModule() {
   py_module.def(
       "_musa_setDevice", [](int device) { torch_musa::set_device(device); });
   // Synchronize musa device.
-  py_module.def("_musa_synchronize", []() { at::native::musa::Synchronize(); });
+  py_module.def("_musa_synchronize", []() { torch_musa::Synchronize(); });
+
+  py_module.def("_musa_exchangeDevice", [](int64_t device) {
+    return torch_musa::exchangeDevice(device);
+  });
+  py_module.def(
+      "_musa_canDeviceAccessPeer", [](int64_t device, int64_t peer_device) {
+        return torch_musa::canDeviceAccessPeer(device, peer_device);
+      });
+
+  py_module.def(
+      "_get_device_properties",
+      [](int64_t device) -> musaDeviceProp* {
+        return torch_musa::getDeviceProperties(device);
+      },
+      py::return_value_policy::reference);
 
   return module;
   END_HANDLE_TH_ERRORS

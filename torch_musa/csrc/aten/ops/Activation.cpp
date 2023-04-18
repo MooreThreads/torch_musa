@@ -165,7 +165,6 @@ SCALAR_COMPARISON(GtScalar, UNARY_MODE::GT)
 SCALAR_COMPARISON(EqScalar, UNARY_MODE::EQ)
 SCALAR_COMPARISON(NeScalar, UNARY_MODE::NE)
 
-
 Tensor GELU(const Tensor& self, c10::string_view approximate) {
   auto approximate_type = get_gelutype_enum(approximate);
   TORCH_CHECK(
@@ -189,7 +188,6 @@ Tensor& GELUOut(
   });
   return output;
 }
-
 
 void ClampCall(
     const std::string& op_name,

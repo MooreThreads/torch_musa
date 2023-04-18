@@ -80,8 +80,7 @@ void ConfigFormat(Tensor& t, muTensor& mt, bool auto_contiguous = false);
 void InternalMemFree(void* ptr);
 ::musa::dnn::MemoryHandler InternalMemAlloc(size_t s);
 
-// synchronize device
-void Synchronize();
+bool is_musa(const Tensor& t);
 
 } // namespace musa
 } // namespace native

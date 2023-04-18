@@ -1117,7 +1117,7 @@ struct C10_API DefaultMTGPUAllocator final : at::Allocator {
   at::DataPtr allocate(size_t nbytes) const override {
     void* data = nullptr;
     int device;
-    TORCH_MUSARUNTIME_CHECK(musaGetDevice(&device));
+    TORCH_MUSA_CHECK(musaGetDevice(&device));
     if (nbytes) {
       if (use_caching_allocator_) {
         Block* block =

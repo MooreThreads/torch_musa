@@ -6,12 +6,18 @@ import torch
 torch.utils.rename_privateuse1_backend("musa")
 
 from .core.device import Device as device
+from .core.device import DeviceOf as device_of
 from .core.device import (
     set_device,
     current_device,
     is_available,
     device_count,
     synchronize,
+    get_device_name,
+    get_device_capability,
+    get_device_properties,
+    can_device_access_peer,
+    _exchange_device,
 )
 
 from .core.serialization import register_deserialization

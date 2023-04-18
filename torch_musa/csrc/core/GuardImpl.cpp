@@ -3,16 +3,16 @@
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #pragma GCC diagnostic ignored "-Wunused"
 #pragma GCC diagnostic ignored "-Wunused-parameter"
-#include <c10/core/impl/DeviceGuardImplInterface.h>
 
+#include "torch_musa/csrc/core/GuardImpl.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
-namespace at {
-namespace detail {
+namespace torch_musa {
+namespace impl {
 
-C10_REGISTER_GUARD_IMPL(
-    PrivateUse1,
-    c10::impl::NoOpDeviceGuardImpl<::at::native::musa::kMUSA>);
+constexpr DeviceType MUSAGuardImpl::static_type;
 
-} // namespace detail
-} // namespace at
+C10_REGISTER_GUARD_IMPL(PrivateUse1, MUSAGuardImpl);
+
+} // namespace impl
+} // namespace torch_musa

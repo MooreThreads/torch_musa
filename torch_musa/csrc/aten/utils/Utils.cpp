@@ -100,8 +100,8 @@ void InternalMemFree(void* ptr) {
   return ::musa::dnn::MemoryHandler(data, InternalMemFree);
 }
 
-void Synchronize() {
-  musaDeviceSynchronize();
+bool is_musa(const Tensor& t) {
+  return t.device().type() == kMUSA;
 }
 
 // Restore disabled warnings
