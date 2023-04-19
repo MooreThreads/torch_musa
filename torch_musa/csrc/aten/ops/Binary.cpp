@@ -322,6 +322,7 @@ DEFINE_BINARY_OP(NotEqual, BINARY_MODE::NE)
 DEFINE_BINARY_OP(Greater, BINARY_MODE::GT)
 DEFINE_BINARY_OP(GreaterEqual, BINARY_MODE::GE)
 DEFINE_BINARY_OP(Remainder, BINARY_MODE::FLOORMOD)
+DEFINE_BINARY_OP(Less, BINARY_MODE::LT)
 
 Tensor& Div_out_mode(
     const Tensor& self,
@@ -522,6 +523,12 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("remainder.Tensor_out", &Remainder_out);
   m.impl("remainder.Scalar_Tensor", &RemainderScalarTensor);
 
+  m.impl("lt.Tensor", &LessTensor);
+  m.impl("lt_.Tensor", &Less_Tensor);
+  m.impl("lt.Tensor_out", &Less_out);
+  m.impl("less.Tensor", &LessTensor);
+  m.impl("less_.Tensor", &Less_Tensor);
+  m.impl("less.Tensor_out", &Less_out);
   m.impl("silu_backward", &SiluBwd);
   m.impl("silu_backward.grad_input", &SiluBwd_out);
 

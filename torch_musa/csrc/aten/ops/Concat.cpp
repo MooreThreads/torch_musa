@@ -76,72 +76,6 @@ void ConcatImpl(Tensor& output, int dim, TensorList tensors) {
       op.Run(handle, om, musa_tensors.size(), musa_tensors.data()), "Run");
 }
 
-Tensor Concat(TensorList tensors, int64_t dim = 0) {
-  int valid_id = 0;
-  auto num_inputs = tensors.size();
-  for (size_t i = 0; i < num_inputs; i++) {
-    if (!cat_should_skip_tensor(tensors[i])) {
-      valid_id = i;
-      break;
-    }
-  }
-
-  // cal output_sizes must use valid_id !!!
-  auto ndim = tensors[valid_id].dim();
-  dim = ((dim % ndim) + ndim) % ndim;
-  int64_t dim_out_size = 0;
-  std::vector<Tensor> valid_tensors;
-  valid_tensors.reserve(num_inputs);
-
-  for (size_t i = 0; i < num_inputs; i++) {
-    if (!cat_should_skip_tensor(tensors[i])) {
-      check_cat_shape_except_dim(tensors[valid_id], tensors[i], dim);
-      dim_out_size = dim_out_size + tensors[i].size(dim);
-      Tensor one = Contiguous(tensors[i]);
-      valid_tensors.emplace_back(one);
-    }
-  }
-
-  auto output_sizes = tensors[valid_id].sizes().vec();
-  output_sizes[dim] = dim_out_size;
-
-  Tensor output = empty_mtgpu(
-      output_sizes,
-      tensors[valid_id].scalar_type(),
-      c10::nullopt,
-      kMUSA,
-      c10::nullopt,
-      at::MemoryFormat::Contiguous);
-  ConcatImpl(output, dim, valid_tensors);
-  return output;
-}
-
-Tensor& ConcatOut(TensorList tensors, int64_t dim, Tensor& output) {
-  auto num_inputs = tensors.size();
-  int valid_id = 0;
-  for (size_t i = 0; i < num_inputs; i++) {
-    if (!cat_should_skip_tensor(tensors[i])) {
-      valid_id = i;
-      break;
-    }
-  }
-  auto ndim = tensors[valid_id].dim();
-  dim = ((dim % ndim) + ndim) % ndim;
-
-  std::vector<Tensor> valid_tensors;
-  valid_tensors.reserve(num_inputs);
-
-  for (size_t i = 0; i < num_inputs; i++) {
-    if (!cat_should_skip_tensor(tensors[i])) {
-      check_cat_shape_except_dim(tensors[valid_id], tensors[i], dim);
-      Tensor one = Contiguous(tensors[i]);
-      valid_tensors.emplace_back(one);
-    }
-  }
-  ConcatImpl(output, dim, valid_tensors);
-  return output;
-}
-
 Tensor Cat(const at::ITensorListRef& tensors, int64_t dim = 0) {
   Tensor valid_tensor;
   auto num_inputs = tensors.size();
@@ -212,8 +146,6 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("cat", &Cat);
   m.impl("_cat", &Cat);
   m.impl("cat.out", &CatOut);
-  m.impl("concat", &Concat);
-  m.impl("concat.out", &ConcatOut);
 }
 
 } // namespace musa

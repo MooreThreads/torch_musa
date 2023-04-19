@@ -74,9 +74,47 @@ Tensor& Zero_(Tensor& self) {
   return self;
 }
 
+void MaskedFillCall(Tensor& self, const Tensor& mask, const Scalar& value) {
+  TORCH_CHECK(
+      self.device().type() == kMUSA,
+      "Device of input tensor of MaskedFill must be MTGPU, but now is ",
+      self.device());
+  TORCH_CHECK(
+      self.scalar_type() == at::ScalarType::Float ||
+          self.scalar_type() == at::ScalarType::Double ||
+          self.scalar_type() == at::ScalarType::Int ||
+          self.scalar_type() == at::ScalarType::Long,
+      "Dtype of input tensor of masked_fill only support ",
+      "Float32/Float64/Int32/Int64, but now it is ",
+      self.scalar_type());
+  TORCH_CHECK(
+      mask.scalar_type() == at::ScalarType::Bool ||
+          mask.scalar_type() == at::ScalarType::Byte,
+      "Dtype of mask tensor of masked_fill only support ",
+      "Bool, but now it is ",
+      mask.scalar_type());
+  auto contiguous_self = Contiguous(self);
+  auto contiguous_mask = Contiguous(mask);
+  ::musa::dnn::Fill fill_op;
+  set_value(fill_op, self, value);
+  muHandle handle;
+  auto mt_self = CreateMUTensor(contiguous_self);
+  auto mt_mask = CreateMUTensor(contiguous_mask);
+  CHECK_MUDNN_STATUS(fill_op.Run(handle, mt_self, mt_mask), "Run");
+  if (!self.is_contiguous()) {
+    self.copy_(contiguous_self);
+  }
+}
+
+Tensor& MaskedFill(Tensor& self, const Tensor& mask, const Scalar& value) {
+  MaskedFillCall(self, mask, value);
+  return self;
+}
+
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("fill_.Scalar", &Fill);
   m.impl("zero_", &Zero_);
+  m.impl("masked_fill_.Scalar", &MaskedFill);
 }
 
 } // namespace musa
