@@ -1,10 +1,6 @@
 #ifndef ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUALLOCATOR_H_
 #define ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUALLOCATOR_H_
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wunused-variable"
-#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <ATen/ATen.h>
 #include <c10/core/CPUAllocator.h>
 #include <c10/core/DeviceType.h>

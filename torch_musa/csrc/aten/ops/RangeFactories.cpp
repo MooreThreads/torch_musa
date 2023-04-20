@@ -1,14 +1,9 @@
-#pragma GCC diagnostic push
-
-#pragma GCC diagnostic ignored "-Wunused-variable"
-#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <ATen/ATen.h>
 #include <ATen/AccumulateType.h>
 #include <ATen/Config.h>
 #include <ATen/NativeFunctions.h>
 #include <ATen/Parallel.h>
 #include <torch/library.h>
-#pragma GCC diagnostic pop
 
 #include "torch_musa/csrc/aten/utils/Utils.h"
 

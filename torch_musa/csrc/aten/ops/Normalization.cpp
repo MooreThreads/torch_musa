@@ -1,5 +1,3 @@
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/NativeFunctions.h>
@@ -586,7 +584,6 @@ std::tuple<Tensor, Tensor, Tensor> NativeGroupNormBwd(
       std::get<1>(result).to("musa"),
       std::get<2>(result).to("musa")};
 }
-#pragma GCC diagnostic pop
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("native_batch_norm", &NativeBatchNorm);

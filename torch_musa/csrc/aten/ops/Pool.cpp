@@ -1,5 +1,3 @@
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/NamedTensorUtils.h>
@@ -643,8 +641,6 @@ Tensor AdaptiveAvgPool2dBwd(const Tensor& grad_output, const Tensor& input) {
   return grad_input;
 }
 
-// Restore disabled warnings.
-#pragma GCC diagnostic pop
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("_adaptive_avg_pool2d", &AdaptiveAvgPool2d);

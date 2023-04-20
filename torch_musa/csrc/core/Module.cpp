@@ -1,6 +1,3 @@
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
 #include <ATen/Parallel.h>
 #include <ATen/Utils.h>
 #include <pybind11/pybind11.h>
@@ -181,5 +178,3 @@ PyObject* InitMusaModule() {
 PyMODINIT_FUNC PyInit__MUSAC(void) {
   return InitMusaModule();
 }
-
-#pragma GCC diagnostic pop

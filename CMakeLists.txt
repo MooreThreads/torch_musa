@@ -76,6 +76,11 @@ string(APPEND CMAKE_CXX_FLAGS " -O2 -fPIC")
 string(APPEND CMAKE_CXX_FLAGS " -Wall")
 string(APPEND CMAKE_CXX_FLAGS " -Wextra")
 string(APPEND CMAKE_CXX_FLAGS " -Werror")
+string(APPEND CMAKE_CXX_FLAGS " -Wno-unused-parameter")
+string(APPEND CMAKE_CXX_FLAGS " -Wno-unused-variable")
+string(APPEND CMAKE_CXX_FLAGS " -Wno-unused-function")
+string(APPEND CMAKE_CXX_FLAGS " -Wno-sign-compare")
+string(APPEND CMAKE_CXX_FLAGS " -Wno-missing-field-initializers")
 
 # Use ld.gold if available, fall back to ld.bfd (the default ld) if not
 if(USE_GOLD_LINKER)

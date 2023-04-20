@@ -83,15 +83,12 @@ class LogMessageVoidify {
   void operator&(std::ostream&) {}
 };
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wsign-compare"
 DEFINE_COMPARISON_CHECKER(LT, <)
 DEFINE_COMPARISON_CHECKER(GT, >)
 DEFINE_COMPARISON_CHECKER(LE, <=)
 DEFINE_COMPARISON_CHECKER(GE, >=)
 DEFINE_COMPARISON_CHECKER(EQ, ==)
 DEFINE_COMPARISON_CHECKER(NE, !=)
-#pragma GCC diagnostic pop
 
 #define CHECK_BINARY_OP(name, op, x, y)                          \
   if (auto msg = torch_musa::logging::ToString##name(x, y))      \

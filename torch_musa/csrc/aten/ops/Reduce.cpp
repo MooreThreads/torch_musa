@@ -1,6 +1,3 @@
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/NamedTensorUtils.h>
@@ -547,7 +544,6 @@ Tensor& ArgmaxOut(
       out_data, result, contiguous_self, dim_, ::musa::dnn::Reduce::Mode::MAX);
   return result;
 }
-#pragma GCC diagnostic pop
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("mean", &Mean);
