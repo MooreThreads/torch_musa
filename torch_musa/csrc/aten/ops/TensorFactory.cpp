@@ -222,9 +222,16 @@ Tensor& set_tensor_(Tensor& result, const Tensor& source) {
   return result;
 }
 
-Tensor Contiguous(const Tensor& self, MemoryFormat memory_format) {
+bool IsContiguous(const Tensor& self, MemoryFormat memory_format) {
   if (self.is_contiguous(memory_format) && !self.storage_offset() &&
       (self.dim() == 0 || (self.dim() != 0 && self.stride(-1) == 1))) {
+    return true;
+  }
+  return false;
+}
+
+Tensor Contiguous(const Tensor& self, MemoryFormat memory_format) {
+  if (IsContiguous(self, memory_format)) {
     return self;
   }
   TORCH_CHECK(

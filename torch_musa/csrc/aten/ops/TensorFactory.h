@@ -24,6 +24,9 @@ Tensor empty_mtgpu(
     c10::optional<bool> pin_memory_opt,
     c10::optional<c10::MemoryFormat> memory_format_opt);
 
+bool IsContiguous(
+    const Tensor& self,
+    MemoryFormat memory_format = MemoryFormat::Contiguous);
 // Contiguous create new tensor when self tensor's storage_offset > 0 and
 // not contiguous
 Tensor Contiguous(
