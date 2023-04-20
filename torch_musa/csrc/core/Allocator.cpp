@@ -1,12 +1,13 @@
 #include "torch_musa/csrc/core/Allocator.h"
+
 #include <mudnn.h>
-#include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/core/Device.h"
-#include "torch_musa/csrc/core/MUSAException.h"
 
 #include <regex>
 
-using ::musa::dnn::Tensor;
+#include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/core/Device.h"
+#include "torch_musa/csrc/core/MUSAException.h"
+#include "torch_musa/csrc/utils/Logging.h"
 
 namespace c10 {
 
@@ -1107,10 +1108,10 @@ struct C10_API DefaultMTGPUAllocator final : at::Allocator {
     const char* env = getenv("MTGPU_ALLOC_TYPE");
     use_caching_allocator_ = true;
     if (env != nullptr && std::string(env) == "naive") {
-      printf("Use naive allocator.\n");
+      DLOG_INFO << "Use naive allocator.";
       use_caching_allocator_ = false;
     } else {
-      printf("Use caching allocator.\n");
+      DLOG_INFO << "Use caching allocator.";
     }
   }
 
