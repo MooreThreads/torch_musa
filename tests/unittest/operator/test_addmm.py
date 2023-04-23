@@ -71,4 +71,4 @@ def test_addmm(input_data):
         func=torch.addmm,
         input_args=input_data
     )
-    test(None)
+    test.check_result()

@@ -40,4 +40,4 @@ def test_mm(input_data):
         func=torch.mm,
         input_args=input_data
     )
-    test(None)
+    test.check_result()

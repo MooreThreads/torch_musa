@@ -30,7 +30,11 @@ void BinaryCall(
 
   if (!alpha_scalar.equal(1)) {
     ::musa::dnn::Unary uop;
-    CHECK_MUDNN_STATUS(uop.SetAlpha(alpha_scalar.toDouble()), "SetAlpha");
+    if (alpha_scalar.isFloatingPoint()) {
+      CHECK_MUDNN_STATUS(uop.SetAlpha(alpha_scalar.toDouble()), "SetAlpha");
+    } else {
+      CHECK_MUDNN_STATUS(uop.SetAlpha(alpha_scalar.toLong()), "SetAlpha");
+    }
     // TODO(zaixing.wang) it's strange there is UNARY_MODE::MUL in BinaryCall
     // func, maybe refactor later
     CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::MUL), "SetMode");
@@ -484,18 +488,10 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("ge.Tensor", &GreaterEqualTensor);
   m.impl("ge_.Tensor", &GreaterEqual_Tensor);
   m.impl("ge.Tensor_out", &GreaterEqual_out);
-  // greater_equal, alias for torch.ge
-  m.impl("greater_equal.Tensor", &GreaterEqualTensor);
-  m.impl("greater_equal_.Tensor", &GreaterEqual_Tensor);
-  m.impl("greater_equal.Tensor_out", &GreaterEqual_out);
 
   m.impl("gt.Tensor", &GreaterTensor);
   m.impl("gt_.Tensor", &Greater_Tensor);
   m.impl("gt.Tensor_out", &Greater_out);
-  // greater, alias for torch.gt
-  m.impl("greater.Tensor", &GreaterTensor);
-  m.impl("greater_.Tensor", &Greater_Tensor);
-  m.impl("greater.Tensor_out", &Greater_out);
 
   m.impl("mul.Tensor", &MulTensor);
   m.impl("mul_.Tensor", &Mul_Tensor);

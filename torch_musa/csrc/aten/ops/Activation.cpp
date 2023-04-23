@@ -128,6 +128,7 @@ DEFINE_ACTIVATE_OP(Sigmoid, ::musa::dnn::Unary::Mode::SIGMOID)
 DEFINE_ACTIVATE_OP(Exp, ::musa::dnn::Unary::Mode::EXP)
 DEFINE_ACTIVATE_OP(Sin, ::musa::dnn::Unary::Mode::SIN)
 DEFINE_ACTIVATE_OP(Cos, ::musa::dnn::Unary::Mode::COS)
+DEFINE_ACTIVATE_OP(Abs, ::musa::dnn::Unary::Mode::ABS)
 DEFINE_ACTIVATE_OP(Neg, ::musa::dnn::Unary::Mode::MUL)
 
 #define SCALAR_COMPARISON(op_name, mode)                         \
@@ -373,6 +374,10 @@ Tensor& PowScalarOut(const Tensor& self, const Scalar& value, Tensor& output) {
 }
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
+  m.impl("abs", &Abs);
+  m.impl("abs_", &Abs_);
+  m.impl("abs.out", &AbsOut);
+
   m.impl("eq.Scalar", &EqScalar);
   m.impl("eq_.Scalar", &EqScalar_);
   m.impl("eq.Scalar_out", &EqScalarOut);

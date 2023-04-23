@@ -7,7 +7,24 @@ from typing import Callable
 
 import types
 import numpy as np
-import torch as pt
+import torch
+
+
+def get_raw_data():
+    return [
+        torch.randn(10),
+        torch.randn(10, 10),
+        torch.randn(10, 10, 2),
+        torch.randn(10, 10, 2, 2),
+        torch.randn(10, 10, 2, 2, 1),
+        torch.randn(10, 10, 2, 2, 1, 3),
+        torch.randn(10, 10, 2, 2, 1, 3, 2),
+        torch.randn(10, 10, 2, 2, 1, 3, 2, 2),
+    ]
+
+
+def get_all_support_types():
+    return [torch.float32, torch.int32, torch.int64]
 
 
 class Comparator:
@@ -43,7 +60,7 @@ class DefaultComparator(Comparator):
         Use both relative and absolute tolerance to compare the result and golden.
         """
         super().__init__()
-        self._comparator = lambda result, golden: pt.allclose(
+        self._comparator = lambda result, golden: torch.allclose(
             result, golden, rtol=rel_diff, atol=abs_diff, equal_nan=equal_nan
         )
 
@@ -88,8 +105,8 @@ class OpTest:
         func=None,
         input_args=None,
         comparators=DefaultComparator(equal_nan=True),
-        ignored_result_indices=None,
-    ):
+        ignored_result_indices=None
+        ):
         assert func is not None, "no function defined."
         self._func = func
         self._input_args = input_args
@@ -109,18 +126,20 @@ class OpTest:
 
         res = []
         grad = []
-        mode_context = nullcontext() if train else pt.set_grad_enabled(False)
+        mode_context = nullcontext() if train else torch.set_grad_enabled(False)
         with ExitStack() as stack:
             stack.enter_context(mode_context)
             for k in self._input_args:
-                if isinstance(self._input_args[k], pt.Tensor):
+                if isinstance(self._input_args[k], torch.Tensor):
                     self._input_args[k] = self._input_args[k].to(device)
                 if isinstance(self._input_args[k], np.ndarray):
-                    self._input_args[k] = pt.from_numpy(self._input_args[k]).to(device)
+                    self._input_args[k] = torch.from_numpy(self._input_args[k]).to(
+                        device
+                    )
                 elif isinstance(self._input_args[k], list):
                     for i in range(len(self._input_args[k])):
                         if isinstance(self._input_args[k][i], np.ndarray):
-                            self._input_args[k][i] = pt.Tensor(
+                            self._input_args[k][i] = torch.Tensor(
                                 self._input_args[k][i]
                             ).to(device)
                             self._input_args[k][i].retain_grad()
@@ -129,7 +148,7 @@ class OpTest:
 
                 if (
                     train
-                    and isinstance(self._input_args[k], pt.Tensor)
+                    and isinstance(self._input_args[k], torch.Tensor)
                     and self._input_args[k].requires_grad
                 ):
                     self._input_args[k].retain_grad()
@@ -143,18 +162,18 @@ class OpTest:
             elif isinstance(inputs, list):
                 inputs_list = []
                 for _, value in enumerate(inputs):
-                    if isinstance(value, pt.Tensor):
+                    if isinstance(value, torch.Tensor):
                         inputs_list.append(value.to(device))
                     if isinstance(value, np.ndarray):
-                        tensor = pt.from_numpy(value).to(device)
+                        tensor = torch.from_numpy(value).to(device)
                         inputs_list.append(tensor)
                 reduce = self._func(*inputs_list)
             elif isinstance(inputs, dict):
                 for k in inputs:
-                    if isinstance(inputs[k], pt.Tensor):
+                    if isinstance(inputs[k], torch.Tensor):
                         inputs[k] = inputs[k].to(device)
                     if isinstance(inputs[k], np.ndarray):
-                        inputs[k] = pt.from_numpy(inputs[k]).to(device)
+                        inputs[k] = torch.from_numpy(inputs[k]).to(device)
                     if train and inputs[k].requires_grad:
                         inputs[k].retain_grad()
                         if inputs[k].grad:
@@ -168,16 +187,16 @@ class OpTest:
                         if val.requires_grad:
                             grad.append(val.grad.cpu())
             else:
-                if isinstance(inputs, pt.Tensor):
+                if isinstance(inputs, torch.Tensor):
                     inputs = inputs.to(device)
                 if isinstance(inputs, np.ndarray):
-                    inputs = pt.from_numpy(inputs).to(device)
+                    inputs = torch.from_numpy(inputs).to(device)
                 reduce = self._func(inputs)
 
             for k in self._input_args:
                 if (
                     train
-                    and isinstance(self._input_args[k], pt.Tensor)
+                    and isinstance(self._input_args[k], torch.Tensor)
                     and self._input_args[k].requires_grad
                 ):
                     grad.append(self._input_args[k].grad.cpu())
@@ -193,7 +212,7 @@ class OpTest:
                 res.append(i.clone())
             return res
 
-    def __call__(self, inputs, train: bool = False, test_out: bool = False):
+    def check_result(self, inputs = None, train: bool = False, test_out: bool = False):
         """Run op and compare computing results.
         Args:
             inputs (dict): Inputs arguments for op.
