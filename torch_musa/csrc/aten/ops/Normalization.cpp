@@ -4,6 +4,8 @@
 #include <ATen/native/layer_norm.h>
 #include <torch/library.h>
 
+#pragma GCC diagnostic pop
+
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
@@ -523,6 +525,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeGroupNorm(
     int64_t HxW,
     int64_t group,
     double eps) {
+  (void)HxW;
   c10::MaybeOwned<Tensor> gamma_maybe_owned =
       at::borrow_from_optional_tensor(gamma_opt);
   const Tensor& contiguous_gamma = Contiguous(*gamma_maybe_owned);
@@ -557,32 +560,28 @@ std::tuple<Tensor, Tensor, Tensor> NativeGroupNorm(
 }
 
 std::tuple<Tensor, Tensor, Tensor> NativeGroupNormBwd(
-    const Tensor& dY,
-    const Tensor& X,
+    const Tensor& grad_out,
+    const Tensor& input,
     const Tensor& mean,
     const Tensor& rstd,
-    const c10::optional<Tensor>& gamma_opt,
-    int64_t N,
-    int64_t C,
-    int64_t HxW,
+    const c10::optional<Tensor>& weight,
+    c10::SymInt N,
+    c10::SymInt C,
+    c10::SymInt HxW,
     int64_t group,
-    std::array<bool, 3> grad_input_mask) {
-  auto gamma_cpu = gamma_opt.has_value() ? (*gamma_opt).to("cpu") : Tensor();
-  auto result = at::native_group_norm_backward(
-      dY.to("cpu"),
-      X.to("cpu"),
-      mean.to("cpu"),
-      rstd.to("cpu"),
-      gamma_cpu,
-      N,
-      C,
-      HxW,
+    ::std::array<bool, 3> output_mask) {
+  // implemented by cuda-porting
+  return at::native::native_group_norm_backward(
+      grad_out,
+      input,
+      mean,
+      rstd,
+      weight,
+      N.expect_int(),
+      C.expect_int(),
+      HxW.expect_int(),
       group,
-      grad_input_mask);
-  return {
-      std::get<0>(result).to("musa"),
-      std::get<1>(result).to("musa"),
-      std::get<2>(result).to("musa")};
+      output_mask);
 }
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {

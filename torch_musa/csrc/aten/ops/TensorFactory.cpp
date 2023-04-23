@@ -51,7 +51,6 @@ Tensor empty_mtgpu(
 
 namespace native {
 namespace musa {
-
 // function: resize tensor to a new size
 void resize_bytes_mtgpu(StorageImpl* storage, size_t size_bytes) {
   TORCH_CHECK(
@@ -154,6 +153,30 @@ Tensor empty_strided_mtgpu(
       {0}, dtype_opt, layout_opt, device_opt, pin_memory_opt, c10::nullopt);
   at::native::musa::resize_impl_mtgpu_(t.unsafeGetTensorImpl(), size, stride);
   return t;
+}
+
+Tensor create_out(
+    IntArrayRef sizes,
+    IntArrayRef strides,
+    const TensorOptions& options) {
+  if (strides.empty()) {
+    return at::detail::empty_mtgpu(
+        sizes,
+        optTypeMetaToScalarType(options.dtype_opt()),
+        options.layout_opt(),
+        options.device_opt(),
+        options.pinned_memory_opt(),
+        options.memory_format_opt());
+  } else {
+    // TODO(mt-ai): use memory_format in options
+    return empty_strided_mtgpu(
+        sizes,
+        strides,
+        optTypeMetaToScalarType(options.dtype_opt()),
+        options.layout_opt(),
+        options.device_opt(),
+        options.pinned_memory_opt());
+  }
 }
 
 const Tensor& resize_mtgpu_(

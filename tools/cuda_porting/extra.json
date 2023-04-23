@@ -1,0 +1,11 @@
+{
+    "TORCH_INTERNAL_ASSERT(d.is_cuda()": "TORCH_INTERNAL_ASSERT(d.type() == DeviceType::PrivateUse1",
+    "device_custom().is_cuda()": "device_custom().type() == DeviceType::PrivateUse1",
+    "device.is_cuda()": "device.type() == DeviceType::PrivateUse1",
+    "device().is_cuda()": "device().type() == DeviceType::PrivateUse1",
+    "device(arg).is_cuda()": "device(arg).type() == DeviceType::PrivateUse1",
+    ".is_cuda()": ".device().type() == DeviceType::PrivateUse1",
+    "#ifdef CUDART_VERSION": "#if 0",
+    "REGISTER_CUDA_DISPATCH": "REGISTER_MUSA_DISPATCH",
+    "RegisterCUDADispatch": "RegisterMUSADispatch"
+}
