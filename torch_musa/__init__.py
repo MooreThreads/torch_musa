@@ -1,5 +1,5 @@
 """Imports the torch musa adaption facilities."""
-# pylint: disable=wrong-import-position
+# pylint: disable=wrong-import-position, W0404
 
 import torch
 
@@ -18,6 +18,16 @@ from .core.device import (
     get_device_properties,
     can_device_access_peer,
     _exchange_device,
+)
+
+from .core.stream import (
+    set_stream,
+    current_stream,
+    default_stream,
+    stream,
+    ExternalStream,
+    stream,
+    Stream,
 )
 
 from .core.serialization import register_deserialization

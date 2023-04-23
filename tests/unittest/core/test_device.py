@@ -1,5 +1,5 @@
 """Test device features."""
-# pylint: disable=invalid-name, C0415
+# pylint: disable=invalid-name, comparison-with-itself, unused-variable, C0415
 import torch
 import pytest
 import torch_musa
@@ -147,3 +147,222 @@ def test_copy_device():
         z = y.to("musa:0")
         assert z.get_device() == 0
         assert z.to("musa:0") is z
+
+
+@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one mtGPU")
+def test_current_stream():
+    "Testing NULL stream"
+    d0 = torch.device('musa:0')
+    d1 = torch.device('musa:1')
+
+    s0 = torch_musa.current_stream()
+    s1 = torch_musa.current_stream(device=1)
+    s2 = torch_musa.current_stream(device=0)
+
+    assert d0 == s0.device
+    assert d1 == s1.device
+    assert d0 == s2.device
+    assert s0 == s2
+
+    with torch_musa.device(d1):
+        s0 = torch_musa.current_stream()
+        s1 = torch_musa.current_stream(1)
+        s2 = torch_musa.current_stream(d0)
+
+    assert d1 == s0.device
+    assert d1 == s1.device
+    assert d0 == s2.device
+    assert s0 == s1
+
+    with pytest.raises(ValueError, match="Expected a musa device, but got: cpu"):
+        torch_musa.current_stream(torch.device('cpu'))
+
+
+@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one mtGPU")
+def test_default_stream():
+    "Testing No-NULL stream from stream pool"
+    d0 = torch.device('musa:0')
+    d1 = torch.device('musa:1')
+
+    with torch_musa.device(d0):
+        s0 = torch_musa.default_stream()
+
+    with torch_musa.device(d1):
+        s1 = torch_musa.default_stream()
+
+    s2 = torch_musa.default_stream(device=0)
+    s3 = torch_musa.default_stream(d1)
+
+    assert d0 == s0.device
+    assert d1 == s1.device
+    assert d0 == s2.device
+    assert d1 == s3.device
+    assert s0 == s2
+    assert s1 == s3
+    with torch_musa.device(d0):
+        assert torch_musa.current_stream() == s0
+
+    with torch_musa.device(d1):
+        assert torch_musa.current_stream() == s1
+
+    with pytest.raises(ValueError, match="Expected a musa device, but got: cpu"):
+        torch_musa.default_stream(torch.device('cpu'))
+
+
+@pytest.mark.skipif(not TEST_MUSA, reason="detected only one mtGPU")
+def test_streams():
+    "Testing stream base methods"
+    default_stream = torch_musa.current_stream()
+    user_stream = torch_musa.Stream()
+    assert torch_musa.current_stream() == default_stream
+    assert default_stream != user_stream
+    assert default_stream.musa_stream == 0
+    assert user_stream.musa_stream != 0
+    with torch_musa.stream(user_stream):
+        assert torch_musa.current_stream() == user_stream
+    assert user_stream.query() is True
+    tensor1 = torch.Tensor(5)
+    tensor2 = tensor1.to(device="musa", non_blocking=True) + 1
+    default_stream.synchronize()
+    assert default_stream.query() is True
+
+
+@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one mtGPU")
+def test_stream_context():
+    "Testing stream context"
+    s0 = torch_musa.current_stream()
+    s1 = torch_musa.Stream(device=1)
+    s2 = torch_musa.Stream(device=0)
+
+    with torch_musa.device(s1.device):
+        prev_stream_on_musa1 = torch_musa.current_stream()
+
+    assert torch_musa.current_stream() == s0
+    assert 0 == torch_musa.current_device()
+    with torch_musa.stream(s1):
+        assert torch_musa.current_stream() == s1
+        assert 1 == torch_musa.current_device()
+        with torch_musa.stream(s2):
+            assert torch_musa.current_stream() == s2
+            assert 0 == torch_musa.current_device()
+            with torch_musa.stream(s0):
+                assert torch_musa.current_stream() == s0
+                assert 0 == torch_musa.current_device()
+            assert torch_musa.current_stream() == s2
+            assert 0 == torch_musa.current_device()
+        assert torch_musa.current_stream() == s1
+        assert 1 == torch_musa.current_device()
+
+    with torch_musa.device(s1.device):
+        assert prev_stream_on_musa1 == torch_musa.current_stream()
+
+    assert torch_musa.current_stream() == s0
+    assert 0 == torch_musa.current_device()
+
+
+@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one mtGPU")
+def test_streams_multi_gpu():
+    "Testing stream across multi cards"
+    default_stream = torch_musa.current_stream()
+    assert default_stream.device, torch.device('musa:0')
+    stream = torch_musa.Stream(device=1)
+    assert stream.device == torch.device('musa:1')
+    with torch_musa.device(1):
+        assert torch_musa.current_stream().device == torch.device('musa:1')
+        assert torch_musa.current_stream() != default_stream
+
+
+@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one mtGPU")
+def test_streams_multi_gpu_query():
+    "Testing streams query"
+    d0 = torch.device('musa:0')
+    d1 = torch.device('musa:1')
+    torch_musa.synchronize(d0)
+    torch_musa.synchronize(d1)
+
+    with torch_musa.device(d0):
+        s0 = torch_musa.current_stream()
+
+    with torch_musa.device(d1):
+        s1 = torch_musa.current_stream()
+        # TODO(mt-ai): replace with musa sleep
+        # torch_musa._sleep(FIFTY_MIL_CYCLES)
+
+    assert s0.query() is True
+    # assert s1.query() is False
+
+    with torch_musa.device(d0):
+        assert s0.query() is True
+        # assert s1.query() is False
+
+    with torch_musa.device(d1):
+        assert s0.query() is True
+        # assert s1.query() is False
+
+    # deliberately using a different device
+    with torch_musa.device(d0):
+        s1.synchronize()
+
+    assert s0.query() is True
+    assert s1.query() is True
+
+    with torch_musa.device(d0):
+        assert s0.query() is True
+        assert s1.query() is True
+
+    with torch_musa.device(d1):
+        assert s0.query() is True
+        assert s1.query() is True
+
+
+@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one mtGPU")
+def test_streams_multi_gpu_eq():
+    "Testing streams equal"
+    d0 = torch.device('musa:0')
+    d1 = torch.device('musa:1')
+
+    with torch_musa.device(d0):
+        s0 = torch_musa.current_stream()
+        s1 = torch_musa.current_stream()
+
+    with torch_musa.device(d1):
+        s2 = torch_musa.current_stream()
+        s3 = torch_musa.current_stream()
+
+    assert s0 == s0
+    assert s0 == s1
+    assert s2 == s2
+    assert s2 == s3
+    assert s0 != s2
+    assert s1 != s3
+
+    assert s0.device == s1.device
+    assert s0.musa_stream == s1.musa_stream
+    assert s2.device == s3.device
+    assert s2.musa_stream == s3.musa_stream
+    assert s0.device != s3.device
+
+    assert hash(s0) == hash(s1)
+    assert hash(s2) == hash(s3)
+    assert hash(s0) != hash(s3)
+
+
+@pytest.mark.skipif(not TEST_MULTIGPU, reason="multi-GPU not supported")
+def test_streams_priority():
+    "Testing streams priority"
+    low, high = torch_musa.Stream.priority_range()
+    s0 = torch_musa.Stream(device=0, priority=low)
+
+    assert low == s0.priority
+    assert torch.device('musa:0') == s0.device
+
+    s1 = torch_musa.Stream(device=1, priority=high)
+
+    assert high == s1.priority
+    assert torch.device('musa:1') == s1.device
+
+
+#TODO(mt-ai): Need import musart
+@pytest.mark.skipif(True, reason="Waiting musart import")
+def test_external_streams():
+    "Testing external streams"

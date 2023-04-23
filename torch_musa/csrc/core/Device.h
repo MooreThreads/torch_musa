@@ -4,6 +4,9 @@
 #include <c10/core/Device.h>
 #include <pybind11/pybind11.h>
 #include "musa_runtime_api.h"
+
+#define MUSA_COMPILE_TIME_MAX_GPUS 16
+
 namespace py = pybind11;
 namespace torch_musa {
 

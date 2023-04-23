@@ -11,6 +11,7 @@
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
+#include "torch_musa/csrc/core/MUSAStream.h"
 
 #include <mudnn.h>
 
@@ -170,8 +171,8 @@ void mtgpu_impl_copy_d2d(
 
   torch_musa::MUSAGuard device_guard(src_device);
 
-  muHandle h(src_device.index()); // TODO(Xiaokang Shang): Implement
-                                  // getCurrentHandle for handle;
+  torch_musa::MUSAStream copy_stream =
+      torch_musa::getCurrentMUSAStream(src_device.index());
 
   if (memcpy_eligible) {
     bool needs_MemcpyPeer =
@@ -181,20 +182,10 @@ void mtgpu_impl_copy_d2d(
     size_t size = tensor_src.nbytes();
     if (needs_MemcpyPeer && src_device != dst_device) {
       TORCH_MUSA_CHECK(musaMemcpyPeerAsync(
-          dst,
-          dst_device.index(),
-          src,
-          src_device.index(),
-          size,
-          h.GetStream())); // TODO(Xiaokang Shang): Implement MUSAStream as
-                           // stream
+          dst, dst_device.index(), src, src_device.index(), size, copy_stream));
     } else {
       TORCH_MUSA_CHECK(musaMemcpyAsync(
-          dst,
-          src,
-          size,
-          musaMemcpyDeviceToDevice,
-          h.GetStream())); // TODO(Xiaokang Shang): MUSAStream
+          dst, src, size, musaMemcpyDeviceToDevice, copy_stream));
     }
   } else {
     TORCH_CHECK(same_type == true, "Device to device copy is unsupported");
@@ -207,8 +198,7 @@ void mtgpu_impl_copy_d2d(
   }
 
   if (!non_blocking) {
-    TORCH_MUSA_CHECK(musaStreamSynchronize(
-        h.GetStream())); // TODO(Xiaokang Shang): Implement MUSAStream as stream
+    TORCH_MUSA_CHECK(musaStreamSynchronize(copy_stream));
   }
 
   TORCH_MUSA_CHECK(musaGetLastError());

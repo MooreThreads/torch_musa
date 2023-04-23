@@ -4,10 +4,12 @@
 #include <c10/core/DeviceGuard.h>
 #include <c10/core/Stream.h>
 #include <c10/core/impl/DeviceGuardImplInterface.h>
+
 #include "musa_runtime_api.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/Device.h"
 #include "torch_musa/csrc/core/MUSAException.h"
+#include "torch_musa/csrc/core/MUSAStream.h"
 
 namespace torch_musa {
 using at::native::musa::kMUSA;
@@ -62,18 +64,38 @@ struct MUSAGuardImpl final : public c10::impl::DeviceGuardImplInterface {
     }
   }
 
-  // TODO(Xiaokang Shang): Implement MUSAStream as stream
   Stream getStream(Device d) const noexcept override {
-    return Stream(Stream::DEFAULT, d);
+    return getCurrentMUSAStream(d.index()).unwrap();
   }
 
-  // TODO(Xiaokang Shang): Implement MUSAStream as stream
+  Stream getDefaultStream(Device d) const override {
+    return getDefaultMUSAStream(d.index());
+  }
+
+  Stream getStreamFromGlobalPool(Device d, bool high_priority = false)
+      const override {
+    return getStreamFromPool(high_priority, d.index());
+  }
+
   Stream exchangeStream(Stream s) const noexcept override {
-    return s;
+    MUSAStream ms(s);
+    auto old_stream = getCurrentMUSAStream(s.device().index());
+    setCurrentMUSAStream(ms);
+    return old_stream.unwrap();
   }
 
   DeviceIndex deviceCount() const noexcept override {
     return device_count();
+  }
+
+  bool queryStream(const Stream& stream) const override {
+    MUSAStream musa_stream(stream);
+    return musa_stream.query();
+  }
+
+  void synchronizeStream(const Stream& stream) const override {
+    MUSAStream musa_stream(stream);
+    musa_stream.synchronize();
   }
 
   // TODO(Xiaokang Shang): Event
