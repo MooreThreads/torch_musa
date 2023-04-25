@@ -120,7 +120,8 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNorm(
     auto v = CreateMUTensor(save_invstd);
 
     CHECK_MUDNN_STATUS(
-        bn.RunComposite(h, out, in, am, av, m, v, s, b, momentum),
+        bn.RunComposite(
+            h, out, in, am, av, m, v, s, b, momentum, InternalMemAlloc),
         "RunComposite");
   }
   return std::tuple<Tensor&, Tensor&, Tensor&>{output, save_mean, save_invstd};
@@ -225,7 +226,8 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
   CHECK_MUDNN_STATUS(bn.SetTraining(train), "BN SetTraining");
 
   CHECK_MUDNN_STATUS(
-      bn.RunBwd(h, dx, dm, dv, dg, db, x, dy, m, v, g), "BN RunBwd");
+      bn.RunBwd(h, dx, dm, dv, dg, db, x, dy, m, v, g, InternalMemAlloc),
+      "BN RunBwd");
   return std::make_tuple(grad_input, grad_weight, grad_bias);
 }
 

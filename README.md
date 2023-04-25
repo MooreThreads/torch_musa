@@ -43,16 +43,15 @@ pip install -r requirements.txt
 
 #### Set Important Environment Variables
 ```bash
-export MUDNN_PATH=path/to/mudnn  # eg: MUDNN_PATH=/home/muDNN/build/mudnn
-export MUSATOOLKITS_PATH=path/to/musa_toolkits  # defalut value is /usr/local/musa/
-export LD_LIBRARY_PATH=$MUDNN_PATH/lib64:$MUSATOOLKITS_PATH/lib:$LD_LIBRARY_PATH
+export MUSA_HOME=path/to/musa_libraries(including mudnn and musa_toolkits) # defalut value is /usr/local/musa/
+export LD_LIBRARY_PATH=$MUSA_HOME/lib:$LD_LIBRARY_PATH
 # if PYTORCH_REPO_PATH is not set, PyTorch-v2.0.0 will be downloaded outside this directory when building with build.sh
-export PYTORCH_REPO_PATH=path/to/PyTorch source code 
+export PYTORCH_REPO_PATH=path/to/PyTorch source code
 ```
 
 ### Building With Script
 ```bash
-bash scripts/update_daily_mudnn.sh # update daily mudnn lib when needed
+bash scripts/update_daily_mudnn.sh # update daily mudnn lib if needed
 bash build.sh   # build original PyTorch and Torch_MUSA from scratch
 
 # Some important parameters are as follows:

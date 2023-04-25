@@ -15,9 +15,9 @@ function(torch_musa_build_configuration_summary)
   message(STATUS "BUILD_TYPE            : ${CMAKE_BUILD_TYPE}")
  
   message(STATUS "PYTORCH_SOURCE_PATH   : $ENV{PYTORCH_REPO_PATH}")
-  message(STATUS "MUDNN PATH            : $ENV{MUDNN_PATH}")
+  message(STATUS "MUDNN PATH            : ${MUDNN_PATH}")
   message(STATUS "MUDNN_LIBRARIES       : ${MUDNN_LIBRARIES}")
-  message(STATUS "MUSA TOOLKITS PATH    : $ENV{MUSATOOLKITS_PATH}")
+  message(STATUS "MUSA TOOLKITS PATH    : ${MUSATOOLKITS_PATH}")
   message(STATUS "MUSAToolkits_LIBRARIES  : ${MUSAToolkits_LIBRARIES}")
 
 endfunction()

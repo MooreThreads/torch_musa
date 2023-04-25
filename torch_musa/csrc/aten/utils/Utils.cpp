@@ -102,7 +102,6 @@ bool is_musa(const Tensor& t) {
   return t.device().type() == kMUSA;
 }
 
-
 } // namespace musa
 } // namespace native
 } // namespace at

@@ -5,3 +5,4 @@ ninja==1.11.1
 mkl==2023.0.0
 mkl-include==2023.0.0
 mkl-devel==2023.0.0
+pyahocorasick==2.0.0

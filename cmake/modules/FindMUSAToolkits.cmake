@@ -11,8 +11,8 @@
 
 include(FindPackageHandleStandardArgs)
 
-SET(MUSAToolkits_INCLUDE_SEARCH_PATHS $ENV{MUSATOOLKITS_PATH}/include)
-SET(MUSAToolkits_LIB_SEARCH_PATHS $ENV{MUSATOOLKITS_PATH}/lib)
+SET(MUSAToolkits_INCLUDE_SEARCH_PATHS $ENV{MUSA_HOME}/include)
+SET(MUSAToolkits_LIB_SEARCH_PATHS $ENV{MUSA_HOME}/lib)
 
 find_path(MUSAToolkits_INCLUDE_DIR NAMES musa_runtime.h
           PATHS ${MUSAToolkits_INCLUDE_SEARCH_PATHS}
@@ -31,6 +31,7 @@ find_package_handle_standard_args(MUSAToolkits DEFAULT_MSG MUSAToolkits_INCLUDE_
 if(MUSAToolkits_FOUND)
   set(MUSAToolkits_INCLUDE_DIRS ${MUSAToolkits_INCLUDE_DIR})
   set(MUSAToolkits_LIBRARIES ${MUSAToolkits_LIBRARY})
+  set(MUSATOOLKITS_PATH $ENV{MUSA_HOME})
 
   mark_as_advanced(MUSAToolkits_ROOT_DIR MUSAToolkits_LIBRARY_RELEASE MUSAToolkits_LIBRARY_DEBUG
       MUSAToolkits_LIBRARY MUSAToolkits_INCLUDE_DIR )

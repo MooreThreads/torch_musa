@@ -107,6 +107,8 @@ Tensor Conv2d(
   muHandle h;
   ::musa::dnn::Convolution c;
   ConfigConv(c, stride, padding, dilation, groups);
+  ::musa::dnn::Convolution::Algorithm algo;
+  c.GetRecommendForwardAlgorithm(h, algo, out, in, ke);
   if (bias_opt.has_value() && bias_opt.value().numel() != 0) {
 #ifdef ENABLE_FUSION
     ::musa::dnn::Convolution::FusedActivationDesc fused_desc;
@@ -114,41 +116,18 @@ Tensor Conv2d(
     auto bias = CreateMUTensor(bias_opt.value());
     CHECK_MUDNN_STATUS(
         c.RunFusion(
-            h,
-            out,
-            in,
-            ke,
-            bias,
-            temp_add,
-            fused_desc,
-            ::musa::dnn::Convolution::Algorithm::DIRECT,
-            InternalMemAlloc),
+            h, out, in, ke, bias, temp_add, fused_desc, algo, InternalMemAlloc),
         "RunFusion");
 #else
     CHECK_MUDNN_STATUS(
-        c.Run(
-            h,
-            out,
-            in,
-            ke,
-            ::musa::dnn::Convolution::Algorithm::DIRECT,
-            InternalMemAlloc),
-        "RUNConv");
+        c.Run(h, out, in, ke, algo, InternalMemAlloc), "RUNConv");
     if (bias_opt.has_value()) {
       AddBias(output, *bias_opt);
     }
 #endif
   } else {
     // conv2d
-    CHECK_MUDNN_STATUS(
-        c.Run(
-            h,
-            out,
-            in,
-            ke,
-            ::musa::dnn::Convolution::Algorithm::DIRECT,
-            InternalMemAlloc),
-        "Run");
+    CHECK_MUDNN_STATUS(c.Run(h, out, in, ke, algo, InternalMemAlloc), "Run");
   }
   return output;
 }
@@ -191,7 +170,7 @@ Tensor Conv2dTranspose(
           gin,
           gout,
           w,
-          ::musa::dnn::Convolution::Algorithm::DIRECT,
+          ::musa::dnn::Convolution::AlgorithmBwdData::IMPLICIT_GEMM,
           InternalMemAlloc),
       "RunBwdData");
 
@@ -288,7 +267,7 @@ Tensor Conv2dDataBwd(
           gin,
           gout,
           w,
-          ::musa::dnn::Convolution::Algorithm::DIRECT,
+          ::musa::dnn::Convolution::AlgorithmBwdData::IMPLICIT_GEMM,
           InternalMemAlloc),
       "ConvBwdData");
   return grad_input_t;
@@ -352,7 +331,7 @@ Tensor Conv2dWeightBwd(
           gw,
           in,
           gout,
-          ::musa::dnn::Convolution::Algorithm::DIRECT,
+          ::musa::dnn::Convolution::AlgorithmBwdFilter::IMPLICIT_GEMM,
           InternalMemAlloc),
       "ConvBwdFilter");
   return grad_weight_t;

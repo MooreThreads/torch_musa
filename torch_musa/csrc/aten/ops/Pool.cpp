@@ -641,7 +641,6 @@ Tensor AdaptiveAvgPool2dBwd(const Tensor& grad_output, const Tensor& input) {
   return grad_input;
 }
 
-
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("_adaptive_avg_pool2d", &AdaptiveAvgPool2d);
   m.impl("adaptive_avg_pool2d.out", &AdaptiveAvgPool2dOut);

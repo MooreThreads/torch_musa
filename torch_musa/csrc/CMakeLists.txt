@@ -14,7 +14,7 @@ LIST(APPEND MUSA_CSRCS ${_CSRCS})
 set(MUSA_CSRCS ${MUSA_CSRCS} PARENT_SCOPE)
 
 
-list(APPEND CMAKE_MODULE_PATH /usr/local/musa/cmake)
+list(APPEND CMAKE_MODULE_PATH $ENV{MUSA_HOME}/cmake)
 find_package(MUSA REQUIRED)
 
 FILE(GLOB cuda_porting_cpp_files
