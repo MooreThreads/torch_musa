@@ -11,13 +11,13 @@ def match(cuda_op_name: str, mudnn_op_name: str):
 def check(cuda_ops_file_path: str, mudnn_ops_file_path: str):
     cuda_df = pd.read_excel(cuda_ops_file_path, "Sheet")
     mudnn_df = pd.read_excel(mudnn_ops_file_path, "Sheet")
-    mudnn_op_names = mudnn_df["涉及算子的名称"]
+    mudnn_op_names = mudnn_df["operator name"]
     for index, row in cuda_df.iterrows():
-        cuda_op_name = row["涉及算子的名称"]
-        cuda_df.at[index, "muDNN是否支持"] = "N"
+        cuda_op_name = row["operator name"]
+        cuda_df.at[index, "muDNN support or not"] = "N"
         for mudnn_op_name in mudnn_op_names:
             if match(cuda_op_name, mudnn_op_name):
-                cuda_df.at[index, "muDNN是否支持"] = "Y"
+                cuda_df.at[index, "muDNN support or not"] = "Y"
                 break
 
     cuda_df.to_excel(args.output_path, index=False)

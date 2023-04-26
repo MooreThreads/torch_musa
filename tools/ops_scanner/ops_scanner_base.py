@@ -37,7 +37,7 @@ class OpsScannerBase:
         worksheet = workbook.active
 
         # Write the headers to the worksheet
-        headers = [self.file_ext + "文件名", "涉及算子的名称"]
+        headers = [self.file_ext + " filename", "operator name"]
         for i, header in enumerate(headers):
             cell = worksheet.cell(row=1, column=i + 1)
             cell.value = header
