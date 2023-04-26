@@ -15,10 +15,10 @@ string(FIND "${CMAKE_CXX_FLAGS}" "-std=c++" env_cxx_standard)
 if(env_cxx_standard GREATER -1)
   message(
       WARNING "C++ standard version definition detected in environment variable."
-      "PyTorch requires -std=c++14. Please remove -std=c++ settings in your environment.")
+      "PyTorch requires -std=c++17. Please remove -std=c++ settings in your environment.")
 endif()
-set(CMAKE_CXX_STANDARD 14)
-set(CMAKE_C_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17 CACHE STRING "The C++ standard whose features are requested to build this target.")
+set(CMAKE_C_STANDARD   11 CACHE STRING "The C standard whose features are requested to build this target.")
 
 if(DEFINED GLIBCXX_USE_CXX11_ABI)
   if(${GLIBCXX_USE_CXX11_ABI} EQUAL 1)
@@ -76,6 +76,11 @@ string(APPEND CMAKE_CXX_FLAGS " -O2 -fPIC")
 string(APPEND CMAKE_CXX_FLAGS " -Wall")
 string(APPEND CMAKE_CXX_FLAGS " -Wextra")
 string(APPEND CMAKE_CXX_FLAGS " -Werror")
+string(APPEND CMAKE_CXX_FLAGS " -Wno-unused-parameter")
+string(APPEND CMAKE_CXX_FLAGS " -Wno-unused-variable")
+string(APPEND CMAKE_CXX_FLAGS " -Wno-unused-function")
+string(APPEND CMAKE_CXX_FLAGS " -Wno-sign-compare")
+string(APPEND CMAKE_CXX_FLAGS " -Wno-missing-field-initializers")
 
 # Use ld.gold if available, fall back to ld.bfd (the default ld) if not
 if(USE_GOLD_LINKER)
@@ -138,6 +143,7 @@ endif()
 
 set(PLUGIN_NAME "musa_python")
 set(MUSA_CSRCS)
+set(MUSA_KERNELS_LIB "musa_kernels")
 
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/modules)
 set(DEPENDENT_LIBRARIES "")
@@ -147,9 +153,12 @@ if(MUDNN_FOUND)
   list(APPEND DEPENDENT_INCLUDE_DIRS ${MUDNN_INCLUDE_DIRS})
   list(APPEND DEPENDENT_LIBRARIES ${MUDNN_LIBRARIES})
 else()
-  message(WARNING, "Cannot find MUDNN, using default MUDNN_PATH=/usr/local/mudnn.")
-  list(APPEND DEPENDENT_INCLUDE_DIRS "/usr/local/mudnn/include/cc")
-  list(APPEND DEPENDENT_LIBRARIES "/usr/local/mudnn/lib64/libmudnn.so")
+  # set default mudnn library path
+  message(WARNING " The environment variable MUSA_HOME may be not specified. Using default MUDNN PATH: /usr/local/musa")
+  list(APPEND DEPENDENT_INCLUDE_DIRS "/usr/local/musa/include")
+  list(APPEND DEPENDENT_LIBRARIES "/usr/local/musa/lib/libmudnn.so")
+  set(MUDNN_PATH "/usr/local/musa")
+  set(MUDNN_LIBRARIES "/usr/local/musa/lib/libmudnn.so")
 endif()
 
 find_package(MUSAToolkits)
@@ -158,15 +167,19 @@ if(MUSAToolkits_FOUND)
   list(APPEND DEPENDENT_LIBRARIES ${MUSAToolkits_LIBRARIES})
 else()
   # set default musa_toolkits path
-  message(WARNING, "Cannot find MUSAToolkits, using default MUSATOOLKITS_PATH=/usr/local/musa")
+  message(WARNING " The environment variable MUSA_HOME may be not specified. Using default MUSATOOLKITS PATH: /usr/local/musa")
   list(APPEND DEPENDENT_INCLUDE_DIRS "/usr/local/musa/include/")
   list(APPEND DEPENDENT_LIBRARIES "/usr/local/musa/lib/libmusart.so")
+  set(ENV{MUSA_HOME} "/usr/local/musa")
+  set(MUSATOOLKITS_PATH "/usr/local/musa")
+  set(MUSAToolkits_LIBRARIES "/usr/local/musa/lib/")
 endif()
 
 include_directories(${PROJECT_SOURCE_DIR})
 include_directories(${PROJECT_SOURCE_DIR}/torch_musa/csrc/aten/core)
 include_directories(${PROJECT_SOURCE_DIR}/torch_musa/csrc/aten/utils)
 include_directories(${PROJECT_SOURCE_DIR}/torch_musa/csrc/aten/ops)
+include_directories(${PROJECT_SOURCE_DIR}/torch_musa/csrc/aten/ops/musa)
 include_directories(${DEPENDENT_INCLUDE_DIRS})
 
 # Set installed PyTorch dir
@@ -189,6 +202,7 @@ set(CPP_SRCS ${MUSA_CSRCS})
 add_library(${PLUGIN_NAME} SHARED ${CPP_SRCS})
 
 target_link_libraries(${PLUGIN_NAME} PUBLIC ${DEPENDENT_LIBRARIES})
+target_link_libraries(${PLUGIN_NAME} PUBLIC ${MUSA_KERNELS_LIB})
 
 set(INSTALL_BIN_DIR "bin")
 set(INSTALL_LIB_DIR "lib64")

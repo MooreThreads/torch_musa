@@ -1,5 +1,3 @@
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/NativeFunctions.h>
@@ -100,12 +98,9 @@ void InternalMemFree(void* ptr) {
   return ::musa::dnn::MemoryHandler(data, InternalMemFree);
 }
 
-void Synchronize() {
-  musaDeviceSynchronize();
+bool is_musa(const Tensor& t) {
+  return t.device().type() == kMUSA;
 }
-
-// Restore disabled warnings
-#pragma GCC diagnostic pop
 
 } // namespace musa
 } // namespace native

@@ -1,14 +1,8 @@
-#pragma GCC diagnostic push
-
-#pragma GCC diagnostic ignored "-Wunused-variable"
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-
 #include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/NativeFunctions.h>
 #include <torch/library.h>
 #include <iostream>
-#pragma GCC diagnostic pop
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
@@ -46,10 +40,10 @@ Tensor musaScatter(
     const Tensor& index,
     const Tensor& src) {
   auto self_ = self.cpu();
-  auto index_ = index.cpu();
+  auto contiguous_index = index.cpu();
   auto src_ = src.cpu();
 
-  auto out_ = at::scatter(self_, dim, index_, src_);
+  auto out_ = at::scatter(self_, dim, contiguous_index, src_);
   auto out = out_.to("musa");
   return out;
 }
@@ -101,13 +95,13 @@ Tensor& ScatterAddOut(
   }
   Tensor self_ = Contiguous(self);
   Tensor src_ = Contiguous(src);
-  Tensor index_ = Contiguous(index);
+  Tensor contiguous_index = Contiguous(index);
   muHandle h;
   ::musa::dnn::Scatter op;
   CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Scatter::Mode::ADD), "SetMode");
   auto self_mt = CreateMUTensor(self_);
   auto out_mt = CreateMUTensor(out);
-  auto idx_mt = CreateMUTensor(index_);
+  auto idx_mt = CreateMUTensor(contiguous_index);
   auto src_mt = CreateMUTensor(src_);
   CHECK_MUDNN_STATUS(
       op.Run(h, out_mt, self_mt, idx_mt, src_mt, dim, InternalMemAlloc), "Run");
@@ -152,7 +146,7 @@ Tensor& ScatterAddU(
   }
   Tensor self_ = Contiguous(self);
   Tensor src_ = Contiguous(src);
-  Tensor index_ = Contiguous(index);
+  Tensor contiguous_index = Contiguous(index);
   muHandle h;
   ::musa::dnn::Scatter op;
   CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Scatter::Mode::ADD), "SetMode");

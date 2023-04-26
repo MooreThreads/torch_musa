@@ -1,5 +1,3 @@
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <ATen/ATen.h>
 #include <ATen/Dispatch.h>
 #include <ATen/Functions.h>
@@ -12,11 +10,11 @@
 #include <c10/core/Allocator.h>
 #include <c10/core/TensorOptions.h>
 #include <torch/library.h>
-#pragma GCC diagnostic pop
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/Device.h"
+#include "torch_musa/csrc/core/MUSAGuard.h"
 
 #include <mudnn.h>
 
@@ -53,7 +51,6 @@ Tensor empty_mtgpu(
 
 namespace native {
 namespace musa {
-
 // function: resize tensor to a new size
 void resize_bytes_mtgpu(StorageImpl* storage, size_t size_bytes) {
   TORCH_CHECK(
@@ -132,6 +129,7 @@ Tensor empty_mtgpu(
     c10::optional<Device> device_opt,
     c10::optional<bool> pin_memory_opt,
     c10::optional<c10::MemoryFormat> memory_format_opt) {
+  torch_musa::OptionalMUSAGuard guard(device_opt);
   return at::detail::empty_mtgpu(
       size,
       dtype_opt,
@@ -149,10 +147,36 @@ Tensor empty_strided_mtgpu(
     c10::optional<Device> device_opt,
     c10::optional<bool> pin_memory_opt) {
   check_size_nonnegative(size);
+  torch_musa::OptionalMUSAGuard guard(device_opt);
+
   auto t = at::native::musa::empty_mtgpu(
       {0}, dtype_opt, layout_opt, device_opt, pin_memory_opt, c10::nullopt);
   at::native::musa::resize_impl_mtgpu_(t.unsafeGetTensorImpl(), size, stride);
   return t;
+}
+
+Tensor create_out(
+    IntArrayRef sizes,
+    IntArrayRef strides,
+    const TensorOptions& options) {
+  if (strides.empty()) {
+    return at::detail::empty_mtgpu(
+        sizes,
+        optTypeMetaToScalarType(options.dtype_opt()),
+        options.layout_opt(),
+        options.device_opt(),
+        options.pinned_memory_opt(),
+        options.memory_format_opt());
+  } else {
+    // TODO(mt-ai): use memory_format in options
+    return empty_strided_mtgpu(
+        sizes,
+        strides,
+        optTypeMetaToScalarType(options.dtype_opt()),
+        options.layout_opt(),
+        options.device_opt(),
+        options.pinned_memory_opt());
+  }
 }
 
 const Tensor& resize_mtgpu_(
@@ -218,9 +242,16 @@ Tensor& set_tensor_(Tensor& result, const Tensor& source) {
   return result;
 }
 
-Tensor Contiguous(const Tensor& self, MemoryFormat memory_format) {
+bool IsContiguous(const Tensor& self, MemoryFormat memory_format) {
   if (self.is_contiguous(memory_format) && !self.storage_offset() &&
       (self.dim() == 0 || (self.dim() != 0 && self.stride(-1) == 1))) {
+    return true;
+  }
+  return false;
+}
+
+Tensor Contiguous(const Tensor& self, MemoryFormat memory_format) {
+  if (IsContiguous(self, memory_format)) {
     return self;
   }
   TORCH_CHECK(

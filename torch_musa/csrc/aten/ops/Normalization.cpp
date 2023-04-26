@@ -1,12 +1,9 @@
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/NativeFunctions.h>
 #include <ATen/native/layer_norm.h>
 #include <torch/library.h>
 
-// Restore disabled warnings
 #pragma GCC diagnostic pop
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
@@ -31,7 +28,7 @@ void check_dims_match_num_input_features(
       actual);
 }
 
-std::tuple<Tensor, Tensor, Tensor> BatchNorm(
+std::tuple<Tensor, Tensor, Tensor> NativeBatchNorm(
     const Tensor& input,
     const c10::optional<Tensor>& weight_opt,
     const c10::optional<Tensor>& bias_opt,
@@ -123,13 +120,14 @@ std::tuple<Tensor, Tensor, Tensor> BatchNorm(
     auto v = CreateMUTensor(save_invstd);
 
     CHECK_MUDNN_STATUS(
-        bn.RunComposite(h, out, in, am, av, m, v, s, b, momentum),
+        bn.RunComposite(
+            h, out, in, am, av, m, v, s, b, momentum, InternalMemAlloc),
         "RunComposite");
   }
   return std::tuple<Tensor&, Tensor&, Tensor&>{output, save_mean, save_invstd};
 }
 
-std::tuple<Tensor, Tensor, Tensor> BatchNormBwd(
+std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
     const Tensor& grad_out,
     const Tensor& input,
     const c10::optional<Tensor>& weight_opt /* optional */,
@@ -228,7 +226,8 @@ std::tuple<Tensor, Tensor, Tensor> BatchNormBwd(
   CHECK_MUDNN_STATUS(bn.SetTraining(train), "BN SetTraining");
 
   CHECK_MUDNN_STATUS(
-      bn.RunBwd(h, dx, dm, dv, dg, db, x, dy, m, v, g), "BN RunBwd");
+      bn.RunBwd(h, dx, dm, dv, dg, db, x, dy, m, v, g, InternalMemAlloc),
+      "BN RunBwd");
   return std::make_tuple(grad_input, grad_weight, grad_bias);
 }
 
@@ -326,7 +325,7 @@ std::tuple<Tensor, Tensor, Tensor> BatchNormBwd(
   return std::make_tuple(std::move(output), std::move(mean), std::move(rstd));
 }
 
-::std::tuple<Tensor, Tensor, Tensor> LayerNormBwd(
+::std::tuple<Tensor, Tensor, Tensor> NativeLayerNormBwd(
     const at::Tensor& grad_out,
     const at::Tensor& input,
     at::IntArrayRef normalized_shape,
@@ -485,11 +484,115 @@ std::tuple<Tensor, Tensor, Tensor> BatchNormBwd(
   return std::make_tuple(std::move(dX), std::move(dgamma), std::move(dbeta));
 }
 
+void check_group_norm_inputs(
+    const Tensor& input,
+    const Tensor& weight,
+    const Tensor& bias,
+    int64_t C,
+    int64_t num_groups) {
+  TORCH_CHECK(
+      num_groups > 0,
+      "Expected num groups to be greater than 0, got ",
+      num_groups);
+  TORCH_CHECK(
+      C % num_groups == 0,
+      "Expected number of channels in input to be divisible by ",
+      "num_groups, but got input of shape ",
+      input.sizes(),
+      " and "
+      "num_groups=",
+      num_groups);
+  TORCH_CHECK(
+      !weight.defined() || (weight.dim() == 1 && weight.numel() == C),
+      "Expected weight to be a vector of size equal to the number of ",
+      "channels in input, but got weight of shape ",
+      weight.sizes(),
+      " and input of shape ",
+      input.sizes());
+  TORCH_CHECK(
+      !bias.defined() || (bias.dim() == 1 && bias.numel() == C),
+      "Expected bias to be a vector of size equal to the number of ",
+      "channels in input, but got bias of shape ",
+      weight.sizes(),
+      " and input of shape ",
+      input.sizes());
+}
+
+std::tuple<Tensor, Tensor, Tensor> NativeGroupNorm(
+    const Tensor& X,
+    const c10::optional<Tensor>& gamma_opt /* optional */,
+    const c10::optional<Tensor>& beta_opt /* optional */,
+    int64_t N,
+    int64_t C,
+    int64_t HxW,
+    int64_t group,
+    double eps) {
+  (void)HxW;
+  c10::MaybeOwned<Tensor> gamma_maybe_owned =
+      at::borrow_from_optional_tensor(gamma_opt);
+  const Tensor& contiguous_gamma = Contiguous(*gamma_maybe_owned);
+  const Tensor& contiguous_beta =
+      Contiguous(c10::value_or_else(beta_opt, [] { return Tensor(); }));
+
+  check_group_norm_inputs(X, contiguous_gamma, contiguous_beta, C, group);
+
+  Tensor contiguous_X = Contiguous(X);
+  Tensor contiguous_Y = at::native::empty_like(contiguous_X);
+  Tensor contiguous_mean = at::empty({N, group}, contiguous_X.options());
+  Tensor contiguous_rstd = at::empty({N, group}, contiguous_X.options());
+
+  auto in = CreateMUTensor(contiguous_X);
+  auto out = CreateMUTensor(contiguous_Y);
+  auto mean = CreateMUTensor(contiguous_mean);
+  auto rstd = CreateMUTensor(contiguous_rstd);
+
+  muTensor gamma = contiguous_gamma.defined() ? CreateMUTensor(contiguous_gamma)
+                                              : muTensor();
+  muTensor beta =
+      contiguous_beta.defined() ? CreateMUTensor(contiguous_beta) : muTensor();
+
+  muHandle h;
+  ::musa::dnn::GroupNorm op;
+  CHECK_MUDNN_STATUS(op.SetEpsilon(eps), "SetEpsilon");
+  CHECK_MUDNN_STATUS(op.SetAxis(1), "SetAxis");
+  CHECK_MUDNN_STATUS(op.SetGroup(static_cast<int>(group)), "SetGroup");
+  CHECK_MUDNN_STATUS(op.Run(h, out, mean, rstd, in, gamma, beta), "RunOp");
+
+  return std::make_tuple(contiguous_Y, contiguous_mean, contiguous_rstd);
+}
+
+std::tuple<Tensor, Tensor, Tensor> NativeGroupNormBwd(
+    const Tensor& grad_out,
+    const Tensor& input,
+    const Tensor& mean,
+    const Tensor& rstd,
+    const c10::optional<Tensor>& weight,
+    c10::SymInt N,
+    c10::SymInt C,
+    c10::SymInt HxW,
+    int64_t group,
+    ::std::array<bool, 3> output_mask) {
+  // implemented by cuda-porting
+  return at::native::native_group_norm_backward(
+      grad_out,
+      input,
+      mean,
+      rstd,
+      weight,
+      N.expect_int(),
+      C.expect_int(),
+      HxW.expect_int(),
+      group,
+      output_mask);
+}
+
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("native_batch_norm", &BatchNorm);
-  m.impl("native_batch_norm_backward", &BatchNormBwd);
+  m.impl("native_batch_norm", &NativeBatchNorm);
+  m.impl("native_batch_norm_backward", &NativeBatchNormBwd);
   m.impl("native_layer_norm", &NativeLayerNorm);
-  m.impl("native_layer_norm_backward", &LayerNormBwd);
+  m.impl("native_layer_norm_backward", &NativeLayerNormBwd);
+  m.impl("native_group_norm", &NativeGroupNorm);
+  m.impl("native_group_norm_backward", &NativeGroupNormBwd);
 }
 
 } // namespace musa

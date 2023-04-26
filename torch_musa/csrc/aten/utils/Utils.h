@@ -1,13 +1,8 @@
 #ifndef ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUUTILS_H_
 #define ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUUTILS_H_
 
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-function"
-#pragma GCC diagnostic ignored "-Wunused-variable"
-#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <ATen/ATen.h>
 #include <ATen/Dispatch.h>
-#pragma GCC diagnostic pop
 
 #include <mudnn.h>
 #include "torch_musa/csrc/core/MUSAException.h"
@@ -80,8 +75,7 @@ void ConfigFormat(Tensor& t, muTensor& mt, bool auto_contiguous = false);
 void InternalMemFree(void* ptr);
 ::musa::dnn::MemoryHandler InternalMemAlloc(size_t s);
 
-// synchronize device
-void Synchronize();
+bool is_musa(const Tensor& t);
 
 } // namespace musa
 } // namespace native

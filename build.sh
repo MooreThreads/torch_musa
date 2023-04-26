@@ -4,12 +4,14 @@ set -e
 CUR_DIR=$(cd $(dirname $0);pwd)
 TORCH_MUSA_HOME=$CUR_DIR
 PYTORCH_PATH=${TORCH_MUSA_HOME}/../pytorch  # default pytorch repo path
+PATCHES_DIR=${TORCH_MUSA_HOME}/torch_patches/
 
 BUILD_WHEEL=0
 DEBUG_MODE=0
 ASAN_MODE=0
 BUILD_TORCH=1
 BUILD_TORCH_MUSA=1
+ONLY_PATCH=0
 CLEAN=0
 
 usage() {
@@ -21,12 +23,13 @@ usage() {
   echo -e "\033[32m    -d/--debug    : Means building in debug mode. \033[0m"
   echo -e "\033[32m    -a/--asan     : Means building in asan mode. \033[0m"
   echo -e "\033[32m    -c/--clean    : Means cleaning everything that has been built. \033[0m"
+  echo -e "\033[32m    -p/--patch    : Means applying patches only. \033[0m"
   echo -e "\033[32m    -w/--wheel    : Means generating wheel after building. \033[0m"
   echo -e "\033[32m    -h/--help     : Help information. \033[0m"
 }
 
 # parse paremters
-parameters=`getopt -o +mtdacpwh --long all,musa,torch,debug,asan,clean,wheel,help, -n "$0" -- "$@"`
+parameters=`getopt -o +mtdacpwh --long all,musa,torch,debug,asan,clean,patch,wheel,help, -n "$0" -- "$@"`
 [ $? -ne 0 ] && { echo -e "\033[34mTry '$0 --help' for more information. \033[0m"; exit 1; }
 
 eval set -- "$parameters"
@@ -40,6 +43,7 @@ while true;do
         -a|--asan) ASAN_MODE=1; shift ;;
         -c|--clean) CLEAN=1; shift ;;
         -w|--wheel) BUILD_WHEEL=1; shift ;;
+        -p|--patch) ONLY_PATCH=1; shift ;;
         -h|--help) usage;exit ;;
         --)
             shift ; break ;;
@@ -62,6 +66,29 @@ clone_pytorch() {
       popd 
     fi
   fi
+}
+
+apply_patches() {
+  # apply patches into PyTorch
+  echo -e "\033[34mApplying patches to ${PYTORCH_PATH} ...\033[0m"
+  # clean PyTorch before patching
+  if [ -d "$PYTORCH_PATH/.git" ]; then
+    echo -e "\033[34mCleaning the PyTorch environment before patching. \033[0m"
+    pushd $PYTORCH_PATH
+    git reset --hard
+    popd
+  fi
+
+  for file in `ls -a $PATCHES_DIR`
+  do
+    if [ "${file##*.}"x = "patch"x ]; then
+      echo -e "\033[34mapplying patch: $file \033[0m"
+      pushd $PYTORCH_PATH
+      git apply --check $PATCHES_DIR/$file
+      git apply $PATCHES_DIR/$file
+      popd
+    fi
+  done
 }
 
 build_pytorch() {
@@ -121,12 +148,16 @@ main() {
     clean_torch_musa
     exit 0
   fi
+  if [ ${ONLY_PATCH} -eq 1 ]; then
+    apply_patches
+    exit 0
+  fi
   if [ ${BUILD_TORCH} -eq 1 ]; then
     clone_pytorch
+    apply_patches
     build_pytorch
   fi
   if [ ${BUILD_TORCH_MUSA} -eq 1 ]; then
-    clean_torch_musa
     build_torch_musa
   fi
 }

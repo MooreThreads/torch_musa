@@ -1,5 +1,3 @@
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/ExpandUtils.h>
@@ -8,9 +6,6 @@
 #include <ATen/TensorUtils.h>
 #include <ATen/WrapDimUtils.h>
 #include <torch/library.h>
-
-// Restore disabled warnings
-#pragma GCC diagnostic pop
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
@@ -292,11 +287,75 @@ at::Tensor NllLossBwd(
   return grad_input;
 }
 
+Tensor KLDiv(
+    const Tensor& input,
+    const Tensor& target,
+    int64_t reduction,
+    bool log_target) {
+  ::musa::dnn::Handle h;
+  ::musa::dnn::KLDivLoss kldiv;
+
+  Tensor output;
+  if (reduction == at::Reduction::Mean) {
+    kldiv.SetReductionMode(::musa::dnn::KLDivLoss::Mode::MEAN);
+    output = at::empty({}, input.options());
+  } else if (reduction == at::Reduction::Sum) {
+    kldiv.SetReductionMode(::musa::dnn::KLDivLoss::Mode::SUM);
+    output = at::empty({}, input.options());
+  } else {
+    kldiv.SetReductionMode(::musa::dnn::KLDivLoss::Mode::NONE);
+    output = at::empty_like(input);
+  }
+  kldiv.SetLogTarget(log_target);
+
+  Tensor contiguous_input = Contiguous(input);
+  auto mt_input = CreateMUTensor(contiguous_input);
+  Tensor contiguous_target = Contiguous(target);
+  auto mt_target = CreateMUTensor(contiguous_target);
+  auto mt_output = CreateMUTensor(output);
+
+  kldiv.Run(h, mt_output, mt_input, mt_target, InternalMemAlloc);
+  return output;
+}
+
+Tensor KLDivBwd(
+    const Tensor& grad,
+    const Tensor& input,
+    const Tensor& target,
+    int64_t reduction,
+    bool log_target) {
+  auto grad_input = at::zeros_like(input);
+  ::musa::dnn::Handle h;
+  ::musa::dnn::KLDivLoss kldiv;
+
+  if (reduction == at::Reduction::Mean) {
+    kldiv.SetReductionMode(::musa::dnn::KLDivLoss::Mode::MEAN);
+  } else if (reduction == at::Reduction::Sum) {
+    kldiv.SetReductionMode(::musa::dnn::KLDivLoss::Mode::SUM);
+  } else {
+    kldiv.SetReductionMode(::musa::dnn::KLDivLoss::Mode::NONE);
+  }
+  kldiv.SetLogTarget(log_target);
+
+  Tensor grad_ = Contiguous(grad);
+  auto mt_grad = CreateMUTensor(grad_);
+  Tensor contiguous_input = Contiguous(input);
+  auto mt_input = CreateMUTensor(contiguous_input);
+  Tensor contiguous_target = Contiguous(target);
+  auto mt_target = CreateMUTensor(contiguous_target);
+  auto mt_gradin = CreateMUTensor(grad_input);
+
+  kldiv.RunBwd(h, mt_gradin, mt_grad, mt_input, mt_target);
+  return grad_input;
+}
+
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("nll_loss_forward.output", &NllLossOut);
   m.impl("nll_loss_forward", &NllLoss);
   m.impl("nll_loss_backward.grad_input", &NllLossBwdGradInput);
   m.impl("nll_loss_backward", &NllLossBwd);
+  m.impl("kl_div", &KLDiv);
+  m.impl("kl_div_backward", &KLDivBwd);
 }
 
 } // namespace musa

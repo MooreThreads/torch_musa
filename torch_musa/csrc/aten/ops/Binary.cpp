@@ -1,14 +1,10 @@
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/ExpandUtils.h>
 #include <ATen/NativeFunctions.h>
+#include <ATen/native/Activation.h>
 #include <ATen/native/BinaryOps.h>
 #include <torch/library.h>
-
-// Restore disabled warnings
-#pragma GCC diagnostic pop
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
@@ -34,7 +30,13 @@ void BinaryCall(
 
   if (!alpha_scalar.equal(1)) {
     ::musa::dnn::Unary uop;
-    CHECK_MUDNN_STATUS(uop.SetAlpha(alpha_scalar.toDouble()), "SetAlpha");
+    if (alpha_scalar.isFloatingPoint()) {
+      CHECK_MUDNN_STATUS(uop.SetAlpha(alpha_scalar.toDouble()), "SetAlpha");
+    } else {
+      CHECK_MUDNN_STATUS(uop.SetAlpha(alpha_scalar.toLong()), "SetAlpha");
+    }
+    // TODO(zaixing.wang) it's strange there is UNARY_MODE::MUL in BinaryCall
+    // func, maybe refactor later
     CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::MUL), "SetMode");
     auto other_in = CreateMUTensor(other);
     CHECK_MUDNN_STATUS(uop.Run(h, other_mt, other_in), "Run " + op_name);
@@ -295,6 +297,7 @@ void BinarycommonDtypeCall(
 DEFINE_BINARY_SCALAR_OP(Add, BINARY_MODE::ADD)
 DEFINE_BINARY_SCALAR_OP(Sub, BINARY_MODE::SUB)
 
+// TODO(zaixing.wang): add check type, check device
 #define DEFINE_BINARY_OP(op_name, mode)                             \
   Tensor op_name##Tensor(const Tensor& self, const Tensor& other) { \
     return BinarycommonDtype(__func__, self, other, 1, mode);       \
@@ -318,6 +321,7 @@ DEFINE_BINARY_OP(NotEqual, BINARY_MODE::NE)
 DEFINE_BINARY_OP(Greater, BINARY_MODE::GT)
 DEFINE_BINARY_OP(GreaterEqual, BINARY_MODE::GE)
 DEFINE_BINARY_OP(Remainder, BINARY_MODE::FLOORMOD)
+DEFINE_BINARY_OP(Less, BINARY_MODE::LT)
 
 Tensor& Div_out_mode(
     const Tensor& self,
@@ -375,6 +379,96 @@ Tensor RemainderScalarTensor(const Scalar& self, const Tensor& other) {
   return out_musa;
 }
 
+#define DEFINE_BINARY_GRAD_OP(op_name, mode)                                 \
+  Tensor op_name(const Tensor& grad_output, const Tensor& self) {            \
+    return BinarycommonDtype(__func__, grad_output, self, 1, mode);          \
+  }                                                                          \
+                                                                             \
+  Tensor& op_name##_out(                                                     \
+      const Tensor& grad_output, const Tensor& self, Tensor& grad_input) {   \
+    BinarycommonDtypeCall(__func__, grad_output, self, 1, grad_input, mode); \
+    return grad_input;                                                       \
+  }
+
+DEFINE_BINARY_GRAD_OP(SiluBwd, BINARY_MODE::SILU_BW)
+DEFINE_BINARY_GRAD_OP(SigmoidBwd, BINARY_MODE::SIGMOID_BW)
+DEFINE_BINARY_GRAD_OP(TanhBwd, BINARY_MODE::TANH_BW)
+
+at::Tensor& GELUBwd_out(
+    const at::Tensor& grad_output,
+    const at::Tensor& self,
+    c10::string_view approximate,
+    at::Tensor& grad_input) {
+  auto contiguous_grad_output = Contiguous(grad_output);
+  auto contiguous_self = Contiguous(self);
+
+  grad_input.resize_(self.sizes());
+  auto approximate_type = get_gelutype_enum(approximate);
+  auto mode = approximate_type == GeluType::None
+      ? ::musa::dnn::Binary::Mode::GELU_NONE_BW
+      : ::musa::dnn::Binary::Mode::GELU_TANH_BW;
+  BinaryCall(
+      __func__, grad_input, contiguous_grad_output, contiguous_self, mode);
+
+  return grad_input;
+}
+
+at::Tensor GELUBwd(
+    const at::Tensor& grad_output,
+    const at::Tensor& self,
+    c10::string_view approximate) {
+  auto result = ::at::empty(self.sizes(), self.options());
+  GELUBwd_out(grad_output, self, approximate, result);
+  return result;
+}
+
+// TODO(zaixing.wang): maybe we can use macro to refactor unary/binary op with
+// special args like Threadshold, GELU, PowScalar.
+Tensor& ThresholdBwd_out(
+    const Tensor& grad_output,
+    const Tensor& self,
+    const Scalar& threshold,
+    Tensor& grad_input) {
+  auto contiguous_grad_output = Contiguous(grad_output);
+  auto contiguous_self = Contiguous(self);
+
+  muHandle h;
+  ::musa::dnn::Binary binary_op;
+  auto mt_grad_output = CreateMUTensor(contiguous_grad_output);
+  auto mt_self = CreateMUTensor(contiguous_self);
+  auto mt_output = CreateMUTensor(grad_input);
+  CHECK_MUDNN_STATUS(
+      binary_op.SetMode(::musa::dnn::Binary::Mode::THRESHOLD_BW), "SetMode");
+  // only support float32 now
+  AT_DISPATCH_ALL_MTGPU_TYPES_AND_HALF(
+      self.scalar_type(), "threshold_backward", [&] {
+        auto threshold_value = threshold.to<scalar_t>();
+        if (self.scalar_type() == at::ScalarType::Double ||
+            self.scalar_type() == at::ScalarType::Float ||
+            self.scalar_type() == at::ScalarType::Half) {
+          CHECK_MUDNN_STATUS(
+              binary_op.SetAlpha(static_cast<double>(threshold_value)),
+              "SetAlpha");
+        } else {
+          CHECK_MUDNN_STATUS(
+              binary_op.SetAlpha(static_cast<int64_t>(threshold_value)),
+              "SetAlpha");
+        }
+        CHECK_MUDNN_STATUS(
+            binary_op.Run(h, mt_output, mt_grad_output, mt_self), "Run");
+      });
+  return grad_input;
+}
+
+Tensor ThresholdBwd(
+    const Tensor& grad_output,
+    const Tensor& self,
+    const Scalar& threshold) {
+  auto grad_input = at::empty(self.sizes(), self.options());
+  ThresholdBwd_out(grad_output, self, threshold, grad_input);
+  return grad_input;
+}
+
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("add.Tensor", &AddTensor);
   m.impl("add_.Tensor", &Add_Tensor);
@@ -394,18 +488,10 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("ge.Tensor", &GreaterEqualTensor);
   m.impl("ge_.Tensor", &GreaterEqual_Tensor);
   m.impl("ge.Tensor_out", &GreaterEqual_out);
-  // greater_equal, alias for torch.ge
-  m.impl("greater_equal.Tensor", &GreaterEqualTensor);
-  m.impl("greater_equal_.Tensor", &GreaterEqual_Tensor);
-  m.impl("greater_equal.Tensor_out", &GreaterEqual_out);
 
   m.impl("gt.Tensor", &GreaterTensor);
   m.impl("gt_.Tensor", &Greater_Tensor);
   m.impl("gt.Tensor_out", &Greater_out);
-  // greater, alias for torch.gt
-  m.impl("greater.Tensor", &GreaterTensor);
-  m.impl("greater_.Tensor", &Greater_Tensor);
-  m.impl("greater.Tensor_out", &Greater_out);
 
   m.impl("mul.Tensor", &MulTensor);
   m.impl("mul_.Tensor", &Mul_Tensor);
@@ -427,6 +513,27 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("remainder_.Tensor", &Remainder_Tensor);
   m.impl("remainder.Tensor_out", &Remainder_out);
   m.impl("remainder.Scalar_Tensor", &RemainderScalarTensor);
+
+  m.impl("lt.Tensor", &LessTensor);
+  m.impl("lt_.Tensor", &Less_Tensor);
+  m.impl("lt.Tensor_out", &Less_out);
+  m.impl("less.Tensor", &LessTensor);
+  m.impl("less_.Tensor", &Less_Tensor);
+  m.impl("less.Tensor_out", &Less_out);
+  m.impl("silu_backward", &SiluBwd);
+  m.impl("silu_backward.grad_input", &SiluBwd_out);
+
+  m.impl("sigmoid_backward", &SigmoidBwd);
+  m.impl("sigmoid_backward.grad_input", &SigmoidBwd_out);
+
+  m.impl("tanh_backward", &TanhBwd);
+  m.impl("tanh_backward.grad_input", &TanhBwd_out);
+
+  m.impl("threshold_backward", &ThresholdBwd);
+  m.impl("threshold_backward.grad_input", &ThresholdBwd_out);
+
+  m.impl("gelu_backward", &GELUBwd);
+  m.impl("gelu_backward.grad_input", &GELUBwd_out);
 }
 
 } // namespace musa

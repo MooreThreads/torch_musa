@@ -1,5 +1,3 @@
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/MemoryOverlap.h>
@@ -8,9 +6,6 @@
 #include <ATen/native/IndexingUtils.h>
 #include <c10/util/irange.h>
 #include <torch/library.h>
-
-// Restore disabled warnings
-#pragma GCC diagnostic pop
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
@@ -388,7 +383,6 @@ Tensor& IndexPut(
   }
 
   if (indices[0].has_value()) {
-    std::cout << "wzx debug hit cpu index_put" << std::endl;
     if (indices[0]->scalar_type() == ScalarType::Bool) {
       auto contiguous_self = self.to("cpu");
       torch::List<c10::optional<Tensor>> indices_;

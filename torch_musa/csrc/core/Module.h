@@ -4,6 +4,4 @@
 
 namespace py = pybind11;
 
-void initMUSAModule(PyObject* m);
-
 #endif // TORCH_MUSA_CSRC_CORE_MUSA_MUSAEXCEPTION_H_

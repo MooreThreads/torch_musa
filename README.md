@@ -43,16 +43,15 @@ pip install -r requirements.txt
 
 #### Set Important Environment Variables
 ```bash
-export MUDNN_PATH=path/to/mudnn  # eg: MUDNN_PATH=/home/muDNN/build/mudnn
-export MUSATOOLKITS_PATH=path/to/musa_toolkits  # defalut value is /usr/local/musa/
-export LD_LIBRARY_PATH=$MUDNN_PATH/lib64:$MUSATOOLKITS_PATH/lib:$LD_LIBRARY_PATH
+export MUSA_HOME=path/to/musa_libraries(including mudnn and musa_toolkits) # defalut value is /usr/local/musa/
+export LD_LIBRARY_PATH=$MUSA_HOME/lib:$LD_LIBRARY_PATH
 # if PYTORCH_REPO_PATH is not set, PyTorch-v2.0.0 will be downloaded outside this directory when building with build.sh
-export PYTORCH_REPO_PATH=path/to/PyTorch source code 
+export PYTORCH_REPO_PATH=path/to/PyTorch source code
 ```
 
 ### Building With Script
 ```bash
-bash scripts/update_daily_mudnn.sh # update daily mudnn lib when needed
+bash scripts/update_daily_mudnn.sh # update daily mudnn lib if needed
 bash build.sh   # build original PyTorch and Torch_MUSA from scratch
 
 # Some important parameters are as follows:
@@ -95,7 +94,8 @@ docker run -it --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-si
 
 | Docker Tag | Description |
 | ---- | --- |
-| [**latest/v0.1.6**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | update toolkits rc1.3.0 |
+| [**latest/v0.1.7**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | toolkits rc1.3.0 + MUSA-Runtime_use_armory<br> muAlg _dev-0.1.0 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.1.0 |
+| [**v0.1.6**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | toolkits rc1.3.0 |
 | [**v0.1.5**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) |  |
 
 ## Getting Started
@@ -107,6 +107,13 @@ a = torch.tensor([1.2, 2.3], dtype=torch.float32, device='musa')
 b = torch.tensor([1.8, 1.2], dtype=torch.float32, device='musa')
 c = a + b
 ```
+
+### Limitations
+Though a user can access most PyTorch features seamlessly with torch_musa, there are several
+features temporarily unavailable.
+
+1. When a module is saved, it has to be copied to CPU first. Don't forget to call `model = model.to("cpu")`
+   before calling `torch.save(model, model_path)`.
 
 ## Releases and Contributing
 

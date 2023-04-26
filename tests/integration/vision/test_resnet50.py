@@ -14,17 +14,8 @@ INPUT_DATA = [
 
 @pytest.mark.parametrize("input_data", INPUT_DATA)
 def test_rn50(input_data):
-    rn50 = models.resnet50().to("musa")
-    gpu_result = (
-        rn50(torch.tensor(input_data["input"], device="musa", requires_grad=False))
-        .cpu()
-        .detach()
-        .numpy()
-    )
-    cpu_result = (
-        rn50.to("cpu")(torch.tensor(input_data["input"], requires_grad=False))
-        .detach()
-        .numpy()
-    )
+    rn50 = models.resnet50().eval()
+    cpu_result = rn50(input_data["input"])
+    gpu_result = rn50.to("musa")(input_data["input"].to(device="musa")).cpu()
     comparator = testing.DefaultComparator()
     assert comparator(gpu_result, cpu_result)

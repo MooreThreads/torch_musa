@@ -9,6 +9,8 @@ from setuptools.command.install import install as Install
 
 from torch.utils.cpp_extension import CppExtension  # pylint: disable=C0411
 from torch.utils.cpp_extension import BuildExtension as Build  # pylint: disable=C0411
+from tools.cuda_porting.cuda_porting import port_cuda
+
 import multiprocessing
 
 if os.getenv("MAX_JOBS") is None:
@@ -61,17 +63,26 @@ class Clean(distutils.command.clean.clean):
         # It's an old-style class in Python 2.7...
         distutils.command.clean.clean.run(self)
 
-
-def build_musa_lib():
-    cmake = CMakeManager()
-    env = os.environ.copy()
+def get_pytorch_install_path():
     try:
         import torch
-
-        env["PYTORCH_INSTALL_DIR"] = os.path.dirname(os.path.abspath(torch.__file__))
+        pytorch_install_root = os.path.dirname(os.path.abspath(torch.__file__))
     except Exception:
         raise RuntimeError("Building error: import torch failed when building!")
+    return pytorch_install_root
 
+def build_musa_lib():
+    # generate code for CUDA porting
+    build_dir = "build"
+    gen_porting_dir = "generated_cuda_compatible"
+    cuda_compatiable_path = os.path.join(BASE_DIR, build_dir, gen_porting_dir)
+    if not os.path.isdir(cuda_compatiable_path):
+        port_cuda(pytorch_root, get_pytorch_install_path(), cuda_compatiable_path)
+
+    cmake = CMakeManager(build_dir)
+    env = os.environ.copy()
+    env["PYTORCH_INSTALL_DIR"] = get_pytorch_install_path()
+    env["GENERATED_PORTING_DIR"] = gen_porting_dir
     build_test = not check_negative_env_flag("BUILD_TEST")
     cmake_python_library = "{}/{}".format(
         sysconfig.get_config_var("LIBDIR"), sysconfig.get_config_var("INSTSONAME")
