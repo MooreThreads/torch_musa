@@ -27,6 +27,7 @@ pipeline {
         stage('Python Lint') {
           steps {
             container('main') {
+              sh 'git config --global --add safe.directory \"*\"'
               sh '/opt/conda/condabin/conda run -n test_environment --no-capture-output /bin/bash tools/lint/pylint.sh'
             }
           }
@@ -34,6 +35,7 @@ pipeline {
         stage('C++ Lint') {
           steps {
             container('main') {
+              sh 'git config --global --add safe.directory \"*\"'
               sh '/opt/conda/condabin/conda run -n test_environment --no-capture-output /bin/bash tools/lint/git-clang-format.sh --rev origin/main'
             }
           }

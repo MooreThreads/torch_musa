@@ -170,7 +170,3 @@ void InitMusaModule(PyObject* module) {
     torch_musa::setCurrentMUSAStream(stream);
   });
 }
-
-PYBIND11_MODULE(_MUSAC, m) {
-  InitMusaModule(m.ptr());
-}
