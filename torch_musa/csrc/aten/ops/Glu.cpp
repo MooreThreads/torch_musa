@@ -15,10 +15,11 @@ namespace native {
 namespace musa {
 
 void GluCall(Tensor& o, const Tensor& i, int dim) {
+  torch_musa::MUSAGuard device_guard(i.device());
   auto in = CreateMUTensor(i);
   auto out = CreateMUTensor(o);
 
-  muHandle h;
+  muHandle& h = getMudnnHandle();
   ::musa::dnn::Glu op;
   CHECK_MUDNN_STATUS(op.SetAxis(dim), "SetAxis");
   CHECK_MUDNN_STATUS(op.Run(h, out, in), "Run");
@@ -40,7 +41,7 @@ Tensor Glu(const Tensor& self, int64_t dim) {
       output_size,
       self_.scalar_type(),
       c10::nullopt,
-      kMUSA,
+      self.device(),
       c10::nullopt,
       at::MemoryFormat::Contiguous);
   GluCall(out, self_, static_cast<int>(dim));

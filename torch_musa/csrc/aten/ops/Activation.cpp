@@ -20,7 +20,7 @@ void UnaryCall(
     Tensor& o,
     const Tensor& i,
     std::function<void(::musa::dnn::Unary&)> func) {
-  muHandle h;
+  muHandle& h = getMudnnHandle();
   auto in = CreateMUTensor(i);
   auto out = CreateMUTensor(o);
 

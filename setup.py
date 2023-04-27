@@ -63,13 +63,16 @@ class Clean(distutils.command.clean.clean):
         # It's an old-style class in Python 2.7...
         distutils.command.clean.clean.run(self)
 
+
 def get_pytorch_install_path():
     try:
         import torch
+
         pytorch_install_root = os.path.dirname(os.path.abspath(torch.__file__))
     except Exception:
         raise RuntimeError("Building error: import torch failed when building!")
     return pytorch_install_root
+
 
 def build_musa_lib():
     # generate code for CUDA porting

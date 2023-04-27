@@ -106,8 +106,8 @@ class OpTest:
         func=None,
         input_args=None,
         comparators=DefaultComparator(equal_nan=True),
-        ignored_result_indices=None
-        ):
+        ignored_result_indices=None,
+    ):
         assert func is not None, "no function defined."
         self._func = func
         self._input_args = input_args
@@ -213,7 +213,7 @@ class OpTest:
                 res.append(i.clone())
             return res
 
-    def check_result(self, inputs = None, train: bool = False, test_out: bool = False):
+    def check_result(self, inputs=None, train: bool = False, test_out: bool = False):
         """Run op and compare computing results.
         Args:
             inputs (dict): Inputs arguments for op.

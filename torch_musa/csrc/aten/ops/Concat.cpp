@@ -2,6 +2,7 @@
 #include <ATen/Config.h>
 #include <ATen/NativeFunctions.h>
 #include <torch/library.h>
+#include <vector>
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
@@ -64,7 +65,7 @@ void ConcatImpl(Tensor& output, int dim, TensorList tensors) {
     return;
   }
   auto om = CreateMUTensor(output);
-  ::musa::dnn::Handle handle;
+  muHandle& handle = getMudnnHandle();
   ::musa::dnn::Concat op;
   CHECK_MUDNN_STATUS(op.SetAxis(dim), "SetAxis");
   CHECK_MUDNN_STATUS(
@@ -99,12 +100,14 @@ Tensor Cat(const at::ITensorListRef& tensors, int64_t dim = 0) {
 
   auto output_sizes = valid_tensor.sizes().vec();
   output_sizes[dim] = dim_out_size;
+  Device device_opt = valid_tensor.device();
+  torch_musa::MUSAGuard device_guard(device_opt);
 
   Tensor output = empty_mtgpu(
       output_sizes,
       valid_tensor.scalar_type(),
       c10::nullopt,
-      kMUSA,
+      device_opt,
       c10::nullopt,
       at::MemoryFormat::Contiguous);
   ConcatImpl(output, dim, valid_tensors);
@@ -125,6 +128,7 @@ Tensor& CatOut(const at::ITensorListRef& tensors, int64_t dim, Tensor& output) {
 
   std::vector<Tensor> valid_tensors;
   valid_tensors.reserve(num_inputs);
+  torch_musa::MUSAGuard(valid_tensor.device());
 
   for (const auto& t : tensors) {
     if (!cat_should_skip_tensor(t)) {

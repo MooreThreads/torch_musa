@@ -12,6 +12,8 @@
 #include <c10/core/TensorOptions.h>
 #include <torch/library.h>
 
+#include "torch_musa/csrc/core/MUSAGuard.h"
+
 namespace at {
 namespace native {
 namespace musa {

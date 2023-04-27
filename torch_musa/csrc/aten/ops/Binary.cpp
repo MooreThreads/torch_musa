@@ -24,7 +24,7 @@ void BinaryCall(
     const Tensor& other,
     BINARY_MODE m = BINARY_MODE::ADD,
     const Scalar alpha_scalar = 1) {
-  muHandle h;
+  muHandle& h = getMudnnHandle();
   Tensor other_tmp = alpha_scalar.equal(1) ? other : at::empty_like(other);
   auto other_mt = CreateMUTensor(other_tmp);
 
@@ -174,7 +174,7 @@ Tensor Binary(
   }
 
   if (optimize_scalar_unary) {
-    muHandle h;
+    muHandle& h = getMudnnHandle();
     ::musa::dnn::Unary uop;
     auto other_scalar = contiguous_other.item();
     auto ConvertBinaryModeToString = [](BINARY_MODE mode) -> std::string {
@@ -432,7 +432,7 @@ Tensor& ThresholdBwd_out(
   auto contiguous_grad_output = Contiguous(grad_output);
   auto contiguous_self = Contiguous(self);
 
-  muHandle h;
+  muHandle& h = getMudnnHandle();
   ::musa::dnn::Binary binary_op;
   auto mt_grad_output = CreateMUTensor(contiguous_grad_output);
   auto mt_self = CreateMUTensor(contiguous_self);

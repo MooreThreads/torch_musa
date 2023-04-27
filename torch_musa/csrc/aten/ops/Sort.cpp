@@ -23,11 +23,12 @@ void SortCall(
     int64_t dim,
     bool descending,
     bool stable) {
+  torch_musa::MUSAGuard device_guard(in.device());
   auto input_ = CreateMUTensor(in);
   auto values_ = CreateMUTensor(values);
   auto indices_ = CreateMUTensor(indices);
 
-  ::musa::dnn::Handle h;
+  muHandle& h = getMudnnHandle();
   ::musa::dnn::Sort mSort;
   TORCH_CHECK(
       Status::SUCCESS == mSort.SetDim(dim), "Sort set dim param failed");

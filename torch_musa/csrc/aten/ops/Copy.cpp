@@ -144,7 +144,11 @@ bool require_copy_backup(const Tensor& src, const Tensor& self) {
 }
 
 void permute_to_contiguous(const Tensor& self, const Tensor& src) {
-  muHandle h;
+  muHandle& h = getMudnnHandle();
+  std::cout << "print muHandle value ###############################"
+            << std::endl;
+  std::cout << h.GetDeviceId() << std::endl;
+  std::cout << h.GetStream() << std::endl;
   ::musa::dnn::Permute op;
   auto contiguous_out = CreateMUTensor(self, true);
   auto contiguous_in = CreateMUTensor(src, true);
@@ -156,6 +160,7 @@ void mtgpu_impl_copy_d2d(
     const Tensor& tensor_src,
     bool non_blocking = false) {
   // when tensor_src is empty , we just return
+
   if (tensor_src.dim() != 0 && tensor_src.numel() == 0) {
     return;
   }
@@ -170,6 +175,11 @@ void mtgpu_impl_copy_d2d(
   Device src_device = tensor_src.device();
 
   torch_musa::MUSAGuard device_guard(src_device);
+  muHandle& h = getMudnnHandle();
+  std::cout << "print muHandle value ###############################"
+            << std::endl;
+  std::cout << h.GetDeviceId() << std::endl;
+  std::cout << h.GetStream() << std::endl;
 
   torch_musa::MUSAStream copy_stream =
       torch_musa::getCurrentMUSAStream(src_device.index());
@@ -207,8 +217,7 @@ void mtgpu_impl_copy_d2d(
 void mtgpu_impl_datacast(const Tensor& tensor_self, const Tensor& tensor_src) {
 
   torch_musa::MUSAGuard device_guard(tensor_src.device());
-  muHandle h(tensor_src.device().index()); // TODO(Xiaokang Shang): Implement
-                                           // getCurrentHandle for handle;
+  muHandle& h = getMudnnHandle();
   ::musa::dnn::Unary op;
 
   Tensor src_contig = Contiguous(tensor_src);
@@ -228,7 +237,11 @@ inline void mtgpu_impl_copy(
     const Tensor& tensor_src,
     Memcpy_type copy_type,
     bool non_blocking = false) {
-  muHandle h(torch_musa::current_device());
+  muHandle& h = getMudnnHandle();
+  std::cout << "print muHandle value ###############################"
+            << std::endl;
+  std::cout << h.GetDeviceId() << std::endl;
+  std::cout << h.GetStream() << std::endl;
 
   // Since we already check the equivalance of src & dst sizes, so we do not
   // need to check nbytes here.
@@ -244,7 +257,11 @@ inline void mtgpu_impl_copy(
       auto cpu_cast_result = tensor_src.to(tensor_self.dtype());
       auto musa_self = CreateMUTensor(tensor_self, true);
       auto result = musa_self.CopyFrom(
-          cpu_cast_result.data_ptr(), capacity, musaMemcpyHostToDevice, h);
+          cpu_cast_result.data_ptr(),
+          capacity,
+          musaMemcpyHostToDevice,
+          h,
+          !non_blocking);
       TORCH_CHECK(
           result == ::musa::dnn::Status::SUCCESS,
           "Copy(MEMCPY_HOST_TO_DEVICE)");
@@ -270,7 +287,11 @@ inline void mtgpu_impl_copy(
     } else {
       auto musa_self = CreateMUTensor(tensor_self, true);
       auto result = musa_self.CopyFrom(
-          tensor_src.data_ptr(), capacity, musaMemcpyDeviceToHost, h);
+          tensor_src.data_ptr(),
+          capacity,
+          musaMemcpyDeviceToHost,
+          h,
+          !non_blocking);
       TORCH_CHECK(
           result == ::musa::dnn::Status::SUCCESS,
           "Copy(MEMCPY_DEVICE_TO_HOST)");

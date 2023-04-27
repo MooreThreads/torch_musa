@@ -29,9 +29,10 @@ Tensor& Normal(
     double mean,
     double std,
     c10::optional<Generator> gen) {
-  self = self.to("cpu");
+  Device self_device = self.device();
+  self = self.to("cpu"); // assign to reference ?
   self = normal_(self, mean, std, gen);
-  self = self.to("musa");
+  self = self.to(self_device);
   return self;
 }
 

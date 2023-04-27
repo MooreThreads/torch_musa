@@ -20,7 +20,7 @@ Tensor& musaScatterOut(
   Tensor index_cpu = index.cpu();
   Tensor self_cpu = self.cpu();
   Tensor src_cpu = src.cpu();
-  out = self_cpu.scatter_(dim, index_cpu, src_cpu).to(kMUSA);
+  out = self_cpu.scatter_(dim, index_cpu, src_cpu).to(self.device());
 
   // TODO(kang.chen): when muDNN support long, we will use it.
   // muHandle h;
@@ -44,7 +44,7 @@ Tensor musaScatter(
   auto src_ = src.cpu();
 
   auto out_ = at::scatter(self_, dim, contiguous_index, src_);
-  auto out = out_.to("musa");
+  auto out = out_.to(self.device());
   return out;
 }
 
@@ -90,13 +90,14 @@ Tensor& ScatterAddOut(
       out.scalar_type() == at::ScalarType::Float,
       "Dtype of out tensor of scatter_add only support Float32, but now it is ",
       out.scalar_type());
+  torch_musa::MUSAGuard device_guard(self.device());
   if (dim < 0) {
     dim += self.dim();
   }
   Tensor self_ = Contiguous(self);
   Tensor src_ = Contiguous(src);
   Tensor contiguous_index = Contiguous(index);
-  muHandle h;
+  muHandle& h = getMudnnHandle();
   ::musa::dnn::Scatter op;
   CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Scatter::Mode::ADD), "SetMode");
   auto self_mt = CreateMUTensor(self_);
@@ -141,13 +142,14 @@ Tensor& ScatterAddU(
       src.scalar_type() == at::ScalarType::Float,
       "Dtype of src tensor of scatter_add only support Float32, but now it is ",
       src.scalar_type());
+  torch_musa::MUSAGuard device_guard(self.device());
   if (dim < 0) {
     dim += self.dim();
   }
   Tensor self_ = Contiguous(self);
   Tensor src_ = Contiguous(src);
   Tensor contiguous_index = Contiguous(index);
-  muHandle h;
+  muHandle& h = getMudnnHandle();
   ::musa::dnn::Scatter op;
   CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Scatter::Mode::ADD), "SetMode");
   auto self_mt = CreateMUTensor(self);

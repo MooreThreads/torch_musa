@@ -42,6 +42,7 @@ std::tuple<Tensor&, Tensor&> TopkOut(
       "now it is ",
       self.scalar_type());
 
+  torch_musa::MUSAGuard device_guard(self.device());
   int64_t wraped_dim = maybe_wrap_dim(dim, self.dim(), /*wrap_scalar=*/true);
   TORCH_CHECK(
       k >= 0 && k <= (self.dim() > 0 ? self.size(wraped_dim) : 1),
@@ -82,7 +83,7 @@ std::tuple<Tensor&, Tensor&> TopkOut(
     mt_indices = CreateMUTensor(indices);
   }
 
-  muHandle h;
+  muHandle& h = getMudnnHandle();
   ::musa::dnn::TopK mTopk;
   CHECK_MUDNN_STATUS(mTopk.SetK(k), "SetK");
   CHECK_MUDNN_STATUS(mTopk.SetDim(wraped_dim), "SetDim");

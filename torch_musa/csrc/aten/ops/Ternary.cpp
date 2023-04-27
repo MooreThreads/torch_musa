@@ -19,7 +19,8 @@ void TernaryCall(
     const Tensor& input2,
     TERNARY_MODE m,
     const Scalar& alpha_scalar) {
-  muHandle h;
+  torch_musa::MUSAGuard device_guard(self.device());
+  muHandle& h = getMudnnHandle();
   ::musa::dnn::Ternary top;
 
   if (!alpha_scalar.equal(1)) {
@@ -147,7 +148,7 @@ Tensor& WhereSelfOut(
         output_shape,
         result_type,
         c10::nullopt,
-        kMUSA,
+        self.device(),
         c10::nullopt,
         at::MemoryFormat::Contiguous);
   }
@@ -166,7 +167,7 @@ Tensor WhereSelf(
       other.sizes(),
       result_type,
       c10::nullopt,
-      kMUSA,
+      self.device(),
       c10::nullopt,
       at::MemoryFormat::Contiguous);
   WhereSelfOut(condition, self, other, output);

@@ -36,13 +36,14 @@ Tensor& UpSampleNearest2dOut(
     TORCH_CHECK(false, "Now not supported NHWC");
   }
 
+  torch_musa::MUSAGuard device_guard(self.device());
   // if shapes are the same, just copy and return.
   if (self.sizes() == result.sizes()) {
     result.copy_(self);
   } else if (self.numel() > 0) { // else result should be empty to return
     Tensor contiguous_input = Contiguous(self);
 
-    ::musa::dnn::Handle h;
+    muHandle& h = getMudnnHandle();
     auto in = CreateMUTensor(contiguous_input);
     auto out = CreateMUTensor(result);
 
@@ -102,7 +103,8 @@ Tensor& UpSampleNearest2dBwdOut(
 
   Tensor contiguous_input = Contiguous(grad_output);
 
-  ::musa::dnn::Handle h;
+  torch_musa::MUSAGuard device_guard(grad_output.device());
+  muHandle& h = getMudnnHandle();
   auto in = CreateMUTensor(contiguous_input);
   auto out = CreateMUTensor(grad_input);
 

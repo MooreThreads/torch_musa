@@ -4,6 +4,7 @@
 #include <torch/library.h>
 
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/core/MUSAGuard.h"
 
 #include <mudnn.h>
 
@@ -13,6 +14,7 @@ namespace musa {
 
 Scalar LocalScalarDense_(const Tensor& self) {
   Scalar r;
+  torch_musa::MUSAGuard device_guard(self.device());
   AT_DISPATCH_ALL_TYPES_AND_COMPLEX_AND4(
       kComplexHalf,
       kHalf,
@@ -22,7 +24,7 @@ Scalar LocalScalarDense_(const Tensor& self) {
       "LocalScalarDense_",
       [&] {
         scalar_t value;
-        muHandle h;
+        muHandle& h = getMudnnHandle();
         musaMemcpy(
             &value,
             self.data_ptr(),

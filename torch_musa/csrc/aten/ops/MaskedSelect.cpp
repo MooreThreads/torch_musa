@@ -61,6 +61,8 @@ at::Tensor& MaskedSelectOut(
     return out;
   }
 
+  torch_musa::MUSAGuard device_guard(mask.device());
+
   auto contiguous_self = Contiguous(*self_temp);
   auto contiguous_mask = Contiguous(*mask_temp);
 
@@ -68,7 +70,7 @@ at::Tensor& MaskedSelectOut(
   std::tie(expand_mask, expand_input) =
       expand_outplace(contiguous_mask, contiguous_self);
   out.resize_({(*expand_input).numel()});
-  ::musa::dnn::Handle h;
+  muHandle& h = getMudnnHandle();
   ::musa::dnn::MaskedSelect maskedselect_op;
   auto mt_input = CreateMUTensor(*expand_input, true);
   auto mt_mask = CreateMUTensor(*expand_mask, true);
@@ -122,6 +124,8 @@ at::Tensor& NonzeroOut(const at::Tensor& self, at::Tensor& out) {
     out.resize_({0, self.dim()});
     return out;
   }
+
+  torch_musa::MUSAGuard device_guard(self.device());
   auto contiguous_self = Contiguous(self);
 
   TORCH_CHECK(
@@ -136,7 +140,7 @@ at::Tensor& NonzeroOut(const at::Tensor& self, at::Tensor& out) {
       out.dtype());
   out.resize_({contiguous_self.numel(), contiguous_self.dim()});
 
-  ::musa::dnn::Handle h;
+  muHandle& h = getMudnnHandle();
   ::musa::dnn::Nonzero op;
   auto mt_input = CreateMUTensor(contiguous_self);
   auto mt_out = CreateMUTensor(out);
@@ -191,6 +195,7 @@ at::Tensor& MaskedScatter(
       self.scalar_type(),
       " and ",
       source.scalar_type());
+  torch_musa::MUSAGuard device_guard(mask.device());
   auto contiguous_self = Contiguous(self);
   auto contiguous_mask = Contiguous(mask);
   c10::MaybeOwned<Tensor> b_mask =
@@ -205,7 +210,7 @@ at::Tensor& MaskedScatter(
     return self;
   }
 
-  ::musa::dnn::Handle h;
+  muHandle& h = getMudnnHandle();
   ::musa::dnn::MaskedScatter op;
   auto mt_input = CreateMUTensor(contiguous_self);
   auto mt_mask = CreateMUTensor(contiguous_mask);

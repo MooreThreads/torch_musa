@@ -104,7 +104,14 @@ Tensor Conv2d(
 
   auto ke = CreateMUTensor(contiguous_weight);
 
-  muHandle h;
+  muHandle& h = getMudnnHandle();
+  std::cout
+      << "convolution ####################################################"
+      << std::endl;
+  std::cout << "print muHandle value ###############################"
+            << std::endl;
+  std::cout << h.GetDeviceId() << std::endl;
+  std::cout << h.GetStream() << std::endl;
   ::musa::dnn::Convolution c;
   ConfigConv(c, stride, padding, dilation, groups);
   ::musa::dnn::Convolution::Algorithm algo;
@@ -161,7 +168,11 @@ Tensor Conv2dTranspose(
 
   auto w = CreateMUTensor(weight_cont);
 
-  muHandle h;
+  muHandle& h = getMudnnHandle();
+  std::cout << "print muHandle value ###############################"
+            << std::endl;
+  std::cout << h.GetDeviceId() << std::endl;
+  std::cout << h.GetStream() << std::endl;
   ::musa::dnn::Convolution c;
   ConfigConv(c, stride, padding, dilation, groups);
   CHECK_MUDNN_STATUS(
@@ -258,7 +269,11 @@ Tensor Conv2dDataBwd(
 
   auto w = CreateMUTensor(weight_cont);
 
-  muHandle h;
+  muHandle& h = getMudnnHandle();
+  std::cout << "print muHandle value ###############################"
+            << std::endl;
+  std::cout << h.GetDeviceId() << std::endl;
+  std::cout << h.GetStream() << std::endl;
   ::musa::dnn::Convolution c;
   ConfigConv(c, stride, padding, dilation, groups);
   CHECK_MUDNN_STATUS(
@@ -322,7 +337,11 @@ Tensor Conv2dWeightBwd(
 
   auto in = CreateMUTensor(input_cont);
 
-  muHandle h;
+  muHandle& h = getMudnnHandle();
+  std::cout << "print muHandle value ###############################"
+            << std::endl;
+  std::cout << h.GetDeviceId() << std::endl;
+  std::cout << h.GetStream() << std::endl;
   ::musa::dnn::Convolution c;
   ConfigConv(c, stride, padding, dilation, groups);
   CHECK_MUDNN_STATUS(

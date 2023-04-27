@@ -37,6 +37,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNorm(
     bool training,
     double momentum,
     double eps) {
+  torch_musa::MUSAGuard device_guard(input.device());
   const Tensor& weight =
       c10::value_or_else(weight_opt, [] { return Tensor(); });
   const Tensor& bias = c10::value_or_else(bias_opt, [] { return Tensor(); });
@@ -104,7 +105,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNorm(
   ConfigFormat(contiguous_input, in, true);
   ConfigFormat(output, out, true);
 
-  muHandle h;
+  muHandle& h = getMudnnHandle();
   ::musa::dnn::BatchNorm bn;
   CHECK_MUDNN_STATUS(bn.SetEpsilon(eps), "SetEpsilon");
 
@@ -158,6 +159,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
       "Dtype of input tensor of BatchNormBackward only support Float32, ",
       "but now it is ",
       input.scalar_type());
+  torch_musa::MUSAGuard device_guard(input.device());
   c10::MaybeOwned<Tensor> weight_maybe_owned =
       at::borrow_from_optional_tensor(weight_opt);
   const Tensor& weight = *weight_maybe_owned;
@@ -220,7 +222,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
   ConfigFormat(grad_mean, dm, true);
   ConfigFormat(grad_var, dv, true);
 
-  muHandle h;
+  muHandle& h = getMudnnHandle();
   ::musa::dnn::BatchNorm bn;
   CHECK_MUDNN_STATUS(bn.SetEpsilon(eps), "BN SetEpsilon");
   CHECK_MUDNN_STATUS(bn.SetTraining(train), "BN SetTraining");
@@ -245,6 +247,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
       input.scalar_type() == at::ScalarType::Float,
       "Dtype of input tensor of LayerNorm only support Float32, but now it is ",
       input.scalar_type());
+  torch_musa::MUSAGuard device_guard(input.device());
   c10::MaybeOwned<Tensor> weight_maybe_owned =
       at::borrow_from_optional_tensor(weight_opt);
   const Tensor& weight = *weight_maybe_owned;
@@ -257,7 +260,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
   Tensor input_contiguous = Contiguous(input);
   auto output = at::empty_like(input_contiguous);
 
-  muHandle h;
+  muHandle& h = getMudnnHandle();
   ::musa::dnn::LayerNorm op;
   auto mt_input = CreateMUTensor(input_contiguous);
   auto mt_output = CreateMUTensor(output);
@@ -371,6 +374,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
       "Dtype of rstd tensor of LayerNormBackward only support Float32, ",
       "but now it is ",
       rstd.scalar_type());
+  torch_musa::MUSAGuard device_guard(input.device());
   c10::MaybeOwned<Tensor> weight_maybe_owned =
       at::borrow_from_optional_tensor(weight_opt);
   const Tensor& weight = *weight_maybe_owned;
@@ -456,7 +460,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
           "but now it is ",
           weight.scalar_type());
     }
-    muHandle h;
+    muHandle& h = getMudnnHandle();
     ::musa::dnn::LayerNorm op;
     std::vector<int32_t> norm_axis;
     const int32_t diff = input.dim() - normalized_shape.size();
@@ -528,6 +532,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeGroupNorm(
     int64_t group,
     double eps) {
   (void)HxW;
+  torch_musa::MUSAGuard device_guard(X.device());
   c10::MaybeOwned<Tensor> gamma_maybe_owned =
       at::borrow_from_optional_tensor(gamma_opt);
   const Tensor& contiguous_gamma = Contiguous(*gamma_maybe_owned);
@@ -551,7 +556,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeGroupNorm(
   muTensor beta =
       contiguous_beta.defined() ? CreateMUTensor(contiguous_beta) : muTensor();
 
-  muHandle h;
+  muHandle& h = getMudnnHandle();
   ::musa::dnn::GroupNorm op;
   CHECK_MUDNN_STATUS(op.SetEpsilon(eps), "SetEpsilon");
   CHECK_MUDNN_STATUS(op.SetAxis(1), "SetAxis");

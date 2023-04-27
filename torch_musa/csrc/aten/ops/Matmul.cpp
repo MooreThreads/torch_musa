@@ -27,7 +27,8 @@ bool IsTranspose(const Tensor& mat, bool is_batch) {
 }
 
 void BmmCall(const Tensor& l, const Tensor& r, Tensor& out, bool is_batch) {
-  muHandle h;
+  torch_musa::MUSAGuard device_guard(l.device());
+  muHandle& h = getMudnnHandle();
   bool trans_l = IsTranspose(l, is_batch);
   bool trans_r = IsTranspose(r, is_batch);
   int batch_index = is_batch ? 1 : 0;
@@ -53,7 +54,8 @@ void MmCall(
     Tensor& out,
     double alpha,
     double beta) {
-  muHandle h;
+  torch_musa::MUSAGuard device_guard(l.device());
+  muHandle& h = getMudnnHandle();
   bool trans_l = IsTranspose(l, false);
   bool trans_r = IsTranspose(r, false);
   Tensor contiguous_l;
@@ -77,7 +79,8 @@ Tensor& MmAlphaBetaOut(
     const double alpha,
     const double beta,
     Tensor& out) {
-  muHandle h;
+  torch_musa::MUSAGuard device_guard(l.device());
+  muHandle& h = getMudnnHandle();
   auto dim_tensor1 = l.dim();
   auto dim_tensor2 = r.dim();
 
@@ -149,6 +152,7 @@ at::Tensor& AddMmOut(
       "Dtype of mat2 tensor of Addmm only support Float32, but now it is ",
       mat2.scalar_type());
 
+  torch_musa::MUSAGuard device_guard(self.device());
   out.zero_();
   out.add_(self);
   // only support float32 now
@@ -175,7 +179,7 @@ at::Tensor AddMm(
       {mat1.size(0), mat2.size(1)},
       self.scalar_type(),
       c10::nullopt,
-      kMUSA,
+      self.device(),
       c10::nullopt,
       at::MemoryFormat::Contiguous);
   AddMmOut(self, mat1, mat2, beta, alpha, result);
@@ -190,7 +194,7 @@ Tensor Mm(const Tensor& self, const Tensor& mat2) {
       {self.size(0), mat2.size(1)},
       self.scalar_type(),
       c10::nullopt,
-      kMUSA,
+      self.device(),
       c10::nullopt,
       at::MemoryFormat::Contiguous);
   BmmCall(self, mat2, result, false);
@@ -216,7 +220,7 @@ Tensor Bmm(const Tensor& self, const Tensor& mat2) {
       {self.size(0), self.size(1), mat2.size(2)},
       self.scalar_type(),
       c10::nullopt,
-      kMUSA,
+      self.device(),
       c10::nullopt,
       at::MemoryFormat::Contiguous);
   BmmCall(self, mat2, result, true);

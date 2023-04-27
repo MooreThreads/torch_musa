@@ -17,7 +17,6 @@ at::Tensor Randint(
     c10::optional<Layout> layout,
     c10::optional<Device> device,
     c10::optional<bool> pin_memory) {
-  UNUSED(device);
   auto a1 = at::randint(
       high,
       size,
@@ -26,7 +25,7 @@ at::Tensor Randint(
       layout,
       Device::Type::CPU,
       pin_memory);
-  a1 = a1.to("musa");
+  a1 = a1.to(device.value());
   return a1;
 }
 
@@ -35,8 +34,9 @@ at::Tensor& RandomFrom(
     int64_t from,
     c10::optional<int64_t> to,
     c10::optional<at::Generator> generator) {
+  Device device = self.device();
   Tensor& a1 = at::native::random_(self, from, to, generator);
-  a1 = a1.to("musa");
+  a1 = a1.to(device);
   return a1;
 }
 
@@ -48,11 +48,9 @@ at::Tensor GeneratorRandint(
     c10::optional<at::Layout> layout,
     c10::optional<at::Device> device,
     c10::optional<bool> pin_memory) {
-  // DeviceGuard omitted
-  UNUSED(device);
   auto a1 = at::native::randint(
       high, size, generator, dtype, layout, Device::Type::CPU, pin_memory);
-  a1 = a1.to("musa");
+  a1 = a1.to(device.value());
   return a1;
 }
 
@@ -64,11 +62,9 @@ at::Tensor LowRandint(
     c10::optional<at::Layout> layout,
     c10::optional<at::Device> device,
     c10::optional<bool> pin_memory) {
-  // DeviceGuard omitted
-  UNUSED(device);
   auto a1 = at::native::randint(
       low, high, size, dtype, layout, Device::Type::CPU, pin_memory);
-  a1 = a1.to("musa");
+  a1 = a1.to(device.value());
   return a1;
 }
 
@@ -81,11 +77,9 @@ at::Tensor LowGeneratorRandint(
     c10::optional<at::Layout> layout,
     c10::optional<at::Device> device,
     c10::optional<bool> pin_memory) {
-  // DeviceGuard omitted
-  UNUSED(device);
   auto a1 = at::native::randint(
       low, high, size, generator, dtype, layout, Device::Type::CPU, pin_memory);
-  a1 = a1.to("musa");
+  a1 = a1.to(device.value());
   return a1;
 }
 
