@@ -38,6 +38,6 @@ def test_module_save_load():
     model = model.to("musa")
     with tempfile.TemporaryDirectory() as temp_dir:
         model_path = os.path.join(temp_dir, "model.pt")
-        torch.save(model.to("cpu"), model_path)
+        torch.save(model, model_path)
         reloaded_model = torch.load(model_path, map_location="musa")
         reloaded_model.eval()

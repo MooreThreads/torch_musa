@@ -111,9 +111,7 @@ c = a + b
 ### Limitations
 Though a user can access most PyTorch features seamlessly with torch_musa, there are several
 features temporarily unavailable.
-
-1. When a module is saved, it has to be copied to CPU first. Don't forget to call `model = model.to("cpu")`
-   before calling `torch.save(model, model_path)`.
+...
 
 ## Releases and Contributing
 
