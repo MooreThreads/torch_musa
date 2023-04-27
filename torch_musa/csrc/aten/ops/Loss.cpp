@@ -95,7 +95,7 @@ std::tuple<at::Tensor&, at::Tensor&> NllLossOut(
   }
   total_weight.resize_({});
 
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::NLLLoss nll_loss_op;
   auto mt_input = CreateMUTensor(contiguous_input);
   auto mt_target = CreateMUTensor(contiguous_target);
@@ -236,7 +236,7 @@ at::Tensor& NllLossBwdGradInput(
   }
   grad_input.resize_(input.sizes());
 
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::NLLLoss nll_loss_op;
   auto mt_target = CreateMUTensor(contiguous_target);
   auto mt_grad_output = CreateMUTensor(contiguous_grad_output);
@@ -295,7 +295,7 @@ Tensor KLDiv(
     int64_t reduction,
     bool log_target) {
   torch_musa::MUSAGuard device_guard(input.device());
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::KLDivLoss kldiv;
 
   Tensor output;
@@ -329,7 +329,7 @@ Tensor KLDivBwd(
     bool log_target) {
   torch_musa::MUSAGuard device_guard(input.device());
   auto grad_input = at::zeros_like(input);
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::KLDivLoss kldiv;
 
   if (reduction == at::Reduction::Mean) {

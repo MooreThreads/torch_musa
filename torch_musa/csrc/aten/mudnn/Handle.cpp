@@ -6,16 +6,15 @@ namespace at {
 namespace native {
 namespace {
 
-void createMuDNNHandle(mudnnHandle_t* handle) {
+void CreateMuDNNHandle(mudnnHandle_t* handle) {
   TORCH_CHECK(handle, "Handle pointer is no-nullptr");
   int device;
   TORCH_MUSA_CHECK(musaGetDevice(&device));
   TORCH_CHECK(device >= 0);
   *handle = new musa::muHandle(device);
-  /* TORCH_MUDNN_CHECK(mudnnCreate(handle)); */
 }
 
-void destroyMuDNNHandle(mudnnHandle_t /*handle*/) {
+void DestroyMuDNNHandle(mudnnHandle_t /*handle*/) {
   // this is because of something dumb in the ordering of
   // destruction. Sometimes atexit, the musa context (or something)
   // would already be destroyed by the time this gets destroyed. It
@@ -24,12 +23,12 @@ void destroyMuDNNHandle(mudnnHandle_t /*handle*/) {
 
 using MudnnPoolType = at::musa::DeviceThreadHandlePool<
     mudnnHandle_t,
-    createMuDNNHandle,
-    destroyMuDNNHandle>;
+    CreateMuDNNHandle,
+    DestroyMuDNNHandle>;
 
 } // namespace
 
-::musa::dnn::Handle& getMudnnHandle() {
+::musa::dnn::Handle& GetMudnnHandle() {
   int device;
   TORCH_MUSA_CHECK(musaGetDevice(&device));
 
@@ -44,8 +43,6 @@ using MudnnPoolType = at::musa::DeviceThreadHandlePool<
 
   mudnnHandle_t handle = myPoolWindow->reserve(device);
   handle->SetStream(torch_musa::getCurrentMUSAStream());
-  /* TORCH_MUDNN_CHECK(mudnnSetStream(handle,
-   * torch_musa::getCurrentMUSAStream())); */
   return *handle;
 }
 

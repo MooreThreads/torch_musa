@@ -28,7 +28,7 @@ bool IsTranspose(const Tensor& mat, bool is_batch) {
 
 void BmmCall(const Tensor& l, const Tensor& r, Tensor& out, bool is_batch) {
   torch_musa::MUSAGuard device_guard(l.device());
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   bool trans_l = IsTranspose(l, is_batch);
   bool trans_r = IsTranspose(r, is_batch);
   int batch_index = is_batch ? 1 : 0;
@@ -55,7 +55,7 @@ void MmCall(
     double alpha,
     double beta) {
   torch_musa::MUSAGuard device_guard(l.device());
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   bool trans_l = IsTranspose(l, false);
   bool trans_r = IsTranspose(r, false);
   Tensor contiguous_l;
@@ -80,7 +80,7 @@ Tensor& MmAlphaBetaOut(
     const double beta,
     Tensor& out) {
   torch_musa::MUSAGuard device_guard(l.device());
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   auto dim_tensor1 = l.dim();
   auto dim_tensor2 = r.dim();
 

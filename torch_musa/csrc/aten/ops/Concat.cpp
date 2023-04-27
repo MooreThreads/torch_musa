@@ -2,7 +2,6 @@
 #include <ATen/Config.h>
 #include <ATen/NativeFunctions.h>
 #include <torch/library.h>
-#include <vector>
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
@@ -65,7 +64,7 @@ void ConcatImpl(Tensor& output, int dim, TensorList tensors) {
     return;
   }
   auto om = CreateMUTensor(output);
-  muHandle& handle = getMudnnHandle();
+  muHandle& handle = GetMudnnHandle();
   ::musa::dnn::Concat op;
   CHECK_MUDNN_STATUS(op.SetAxis(dim), "SetAxis");
   CHECK_MUDNN_STATUS(
@@ -128,7 +127,7 @@ Tensor& CatOut(const at::ITensorListRef& tensors, int64_t dim, Tensor& output) {
 
   std::vector<Tensor> valid_tensors;
   valid_tensors.reserve(num_inputs);
-  torch_musa::MUSAGuard(valid_tensor.device());
+  torch_musa::MUSAGuard device_guard(valid_tensor.device());
 
   for (const auto& t : tensors) {
     if (!cat_should_skip_tensor(t)) {

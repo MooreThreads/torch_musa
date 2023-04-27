@@ -205,7 +205,7 @@ void IndexSelectCall(
   auto idx_mt = CreateMUTensor(index);
   auto in = CreateMUTensor(self);
   auto out_mt = CreateMUTensor(out);
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::IndexSelect op;
   CHECK_MUDNN_STATUS(op.SetDim(dim), "SetDim");
   CHECK_MUDNN_STATUS(op.Run(h, out_mt, idx_mt, in), "Run");
@@ -218,7 +218,7 @@ void IndexCall(
   torch_musa::MUSAGuard device_guard(self.device());
   auto in = CreateMUTensor(self);
   auto out_mt = CreateMUTensor(out);
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Index op;
   CHECK_MUDNN_STATUS(
       op.Run(h, out_mt, indexes.size(), indexes.data(), in), "Index Run");
@@ -238,7 +238,7 @@ void IndexPutCall(
       ", accumulate:",
       accumulate);
   torch_musa::MUSAGuard device_guard(value.device());
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::IndexPut op;
   CHECK_MUDNN_STATUS(op.SetAccumulate(accumulate), "Set Accumulate");
   // TODO(kang.chen): muDNN not provides SetOffset interface now,comment out

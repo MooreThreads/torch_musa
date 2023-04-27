@@ -83,7 +83,7 @@ std::tuple<Tensor&, Tensor&> TopkOut(
     mt_indices = CreateMUTensor(indices);
   }
 
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::TopK mTopk;
   CHECK_MUDNN_STATUS(mTopk.SetK(k), "SetK");
   CHECK_MUDNN_STATUS(mTopk.SetDim(wraped_dim), "SetDim");

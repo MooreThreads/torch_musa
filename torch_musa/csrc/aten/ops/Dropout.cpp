@@ -50,7 +50,7 @@ namespace musa {
   Tensor mask = at::empty_like(
       input, input.options().dtype(c10::CppTypeToScalarType<bool>::value));
   Tensor output = at::empty_like(input);
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   auto musa_input = CreateMUTensor(input);
   auto musa_output = CreateMUTensor(output);
   auto musa_mask = CreateMUTensor(mask);
@@ -88,7 +88,7 @@ Tensor NativeDropoutBackward(
       mask.scalar_type());
   torch_musa::MUSAGuard device_guard(grad_output.device());
   Tensor output = at::empty_like(grad_output);
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   auto musa_grad_output = CreateMUTensor(grad_output);
   auto musa_mask = CreateMUTensor(mask);
   auto musa_output = CreateMUTensor(output);

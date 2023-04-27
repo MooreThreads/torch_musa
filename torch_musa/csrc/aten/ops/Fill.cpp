@@ -44,7 +44,7 @@ void FillCall(Tensor& self, const Scalar& value) {
 
   set_value(f, self, value);
 
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   // When self tensor is contiguous but storage_offset is not 0,
   // first creates a new contiguous tensor, then fill value in the new tensor,
   // copy new tensor value back to self tensor at last.
@@ -94,7 +94,7 @@ void MaskedFillCall(Tensor& self, const Tensor& mask, const Scalar& value) {
   auto contiguous_mask = Contiguous(mask);
   ::musa::dnn::Fill fill_op;
   set_value(fill_op, self, value);
-  muHandle& handle = getMudnnHandle();
+  muHandle& handle = GetMudnnHandle();
   auto mt_self = CreateMUTensor(contiguous_self);
   auto mt_mask = CreateMUTensor(contiguous_mask);
   CHECK_MUDNN_STATUS(fill_op.Run(handle, mt_self, mt_mask), "Run");

@@ -19,7 +19,7 @@ void GluCall(Tensor& o, const Tensor& i, int dim) {
   auto in = CreateMUTensor(i);
   auto out = CreateMUTensor(o);
 
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Glu op;
   CHECK_MUDNN_STATUS(op.SetAxis(dim), "SetAxis");
   CHECK_MUDNN_STATUS(op.Run(h, out, in), "Run");

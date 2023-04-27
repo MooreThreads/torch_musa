@@ -46,7 +46,7 @@ Tensor Embedding(
   auto tbl = CreateMUTensor(weight_);
   auto idx = CreateMUTensor(indices_);
 
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Embedding op;
   CHECK_MUDNN_STATUS(op.SetPaddingIdx(padding_idx), "SetPaddingIdx");
   CHECK_MUDNN_STATUS(op.Run(h, out, tbl, idx), "Run");
@@ -94,7 +94,7 @@ Tensor EmbeddingDenseBwd(
   auto contiguous_grad_output = Contiguous(grad_output);
   auto contiguous_indices = Contiguous(indices);
 
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Embedding embedding;
   auto mt_grad_output = CreateMUTensor(contiguous_grad_output);
   auto mt_indices = CreateMUTensor(contiguous_indices);

@@ -20,7 +20,7 @@ void TernaryCall(
     TERNARY_MODE m,
     const Scalar& alpha_scalar) {
   torch_musa::MUSAGuard device_guard(self.device());
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Ternary top;
 
   if (!alpha_scalar.equal(1)) {

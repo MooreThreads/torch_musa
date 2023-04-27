@@ -27,7 +27,7 @@ Tensor& ArangeStartOut(
   std::vector<int64_t> shape{size};
   result.resize_(shape);
   auto out = CreateMUTensor(result);
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Arange op;
   if (result.scalar_type() == at::ScalarType::Float) {
     CHECK_MUDNN_STATUS(op.SetStart(start.toDouble()), "SetStart");

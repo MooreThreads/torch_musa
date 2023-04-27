@@ -58,7 +58,7 @@ void ReduceCall(
   auto out = CreateMUTensor(output);
   auto in = CreateMUTensor(input);
 
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Reduce r;
   CHECK_MUDNN_STATUS(r.SetMode(m), "SetMode");
   // That input is scalar, but dim = [0] is allowed in PyTorch, in which case
@@ -277,7 +277,7 @@ Tensor CumsumCall(
   muTensor self_mt = CreateMUTensor(self);
   muTensor out_mt = CreateMUTensor(out);
 
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Cumsum csop;
   CHECK_MUDNN_STATUS(csop.SetDim(dim), "SetDim");
   CHECK_MUDNN_STATUS(csop.Run(h, out_mt, self_mt, InternalMemAlloc), "Run");
@@ -371,7 +371,7 @@ void ReduceIndicesCall(
   auto ids = CreateMUTensor(indices);
   auto in = CreateMUTensor(input);
 
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Reduce r;
   CHECK_MUDNN_STATUS(r.SetMode(m), "SetMode");
   int dim_int = dim;

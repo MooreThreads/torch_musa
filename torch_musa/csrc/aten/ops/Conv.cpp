@@ -104,14 +104,7 @@ Tensor Conv2d(
 
   auto ke = CreateMUTensor(contiguous_weight);
 
-  muHandle& h = getMudnnHandle();
-  std::cout
-      << "convolution ####################################################"
-      << std::endl;
-  std::cout << "print muHandle value ###############################"
-            << std::endl;
-  std::cout << h.GetDeviceId() << std::endl;
-  std::cout << h.GetStream() << std::endl;
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Convolution c;
   ConfigConv(c, stride, padding, dilation, groups);
   ::musa::dnn::Convolution::Algorithm algo;
@@ -168,11 +161,7 @@ Tensor Conv2dTranspose(
 
   auto w = CreateMUTensor(weight_cont);
 
-  muHandle& h = getMudnnHandle();
-  std::cout << "print muHandle value ###############################"
-            << std::endl;
-  std::cout << h.GetDeviceId() << std::endl;
-  std::cout << h.GetStream() << std::endl;
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Convolution c;
   ConfigConv(c, stride, padding, dilation, groups);
   CHECK_MUDNN_STATUS(
@@ -221,6 +210,7 @@ Tensor Convolution(
       "but now it is ",
       input.scalar_type());
 
+  torch_musa::MUSAGuard device_guard(input.device());
   if (input.dim() == 4 && weight.dim() == 4) {
     return transposed
         ? Conv2dTranspose(
@@ -269,11 +259,7 @@ Tensor Conv2dDataBwd(
 
   auto w = CreateMUTensor(weight_cont);
 
-  muHandle& h = getMudnnHandle();
-  std::cout << "print muHandle value ###############################"
-            << std::endl;
-  std::cout << h.GetDeviceId() << std::endl;
-  std::cout << h.GetStream() << std::endl;
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Convolution c;
   ConfigConv(c, stride, padding, dilation, groups);
   CHECK_MUDNN_STATUS(
@@ -337,11 +323,7 @@ Tensor Conv2dWeightBwd(
 
   auto in = CreateMUTensor(input_cont);
 
-  muHandle& h = getMudnnHandle();
-  std::cout << "print muHandle value ###############################"
-            << std::endl;
-  std::cout << h.GetDeviceId() << std::endl;
-  std::cout << h.GetStream() << std::endl;
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Convolution c;
   ConfigConv(c, stride, padding, dilation, groups);
   CHECK_MUDNN_STATUS(
@@ -506,6 +488,7 @@ Tensor Conv1dWeightBwd(
       "support Float32, ",
       "but now it is ",
       grad_output.scalar_type());
+  torch_musa::MUSAGuard device_guard(input.device());
 
   if (input.dim() == 3 && weight.dim() == 3) {
     return Convolution1dBwd(

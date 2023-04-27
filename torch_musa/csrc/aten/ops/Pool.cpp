@@ -42,7 +42,7 @@ void PoolCall(
   ConfigFormat(contiguous_input, in, true);
   ConfigFormat(output, out, true);
 
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Pooling pool;
   CHECK_MUDNN_STATUS(pool.SetMode(p.mode), "SetMode");
   CHECK_MUDNN_STATUS(
@@ -77,7 +77,7 @@ void PoolCallBwd(
   ConfigFormat(contiguous_input, in, true);
   ConfigFormat(grad_input, out, true);
 
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Pooling pool;
   CHECK_MUDNN_STATUS(pool.SetMode(p.mode), "SetMode");
   CHECK_MUDNN_STATUS(
@@ -400,6 +400,7 @@ std::tuple<Tensor, Tensor> MaxPool2dIndices(
     bool ceil_mode) {
   PoolParams params;
   MaxPool2dConfigParams(params, ker, str, pad, dil);
+  torch_musa::MUSAGuard device_guard(input.device());
   auto r = std::make_tuple(Tensor(), Tensor());
   MaxPool2dInternal(input, params, ceil_mode, std::get<0>(r), &std::get<1>(r));
   return r;

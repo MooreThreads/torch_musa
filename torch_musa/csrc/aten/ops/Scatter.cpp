@@ -97,7 +97,7 @@ Tensor& ScatterAddOut(
   Tensor self_ = Contiguous(self);
   Tensor src_ = Contiguous(src);
   Tensor contiguous_index = Contiguous(index);
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Scatter op;
   CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Scatter::Mode::ADD), "SetMode");
   auto self_mt = CreateMUTensor(self_);
@@ -149,7 +149,7 @@ Tensor& ScatterAddU(
   Tensor self_ = Contiguous(self);
   Tensor src_ = Contiguous(src);
   Tensor contiguous_index = Contiguous(index);
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Scatter op;
   CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Scatter::Mode::ADD), "SetMode");
   auto self_mt = CreateMUTensor(self);

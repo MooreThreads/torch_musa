@@ -28,7 +28,7 @@ void SortCall(
   auto values_ = CreateMUTensor(values);
   auto indices_ = CreateMUTensor(indices);
 
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Sort mSort;
   TORCH_CHECK(
       Status::SUCCESS == mSort.SetDim(dim), "Sort set dim param failed");

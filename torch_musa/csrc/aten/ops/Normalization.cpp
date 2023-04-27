@@ -105,7 +105,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNorm(
   ConfigFormat(contiguous_input, in, true);
   ConfigFormat(output, out, true);
 
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::BatchNorm bn;
   CHECK_MUDNN_STATUS(bn.SetEpsilon(eps), "SetEpsilon");
 
@@ -222,7 +222,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
   ConfigFormat(grad_mean, dm, true);
   ConfigFormat(grad_var, dv, true);
 
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::BatchNorm bn;
   CHECK_MUDNN_STATUS(bn.SetEpsilon(eps), "BN SetEpsilon");
   CHECK_MUDNN_STATUS(bn.SetTraining(train), "BN SetTraining");
@@ -260,7 +260,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
   Tensor input_contiguous = Contiguous(input);
   auto output = at::empty_like(input_contiguous);
 
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::LayerNorm op;
   auto mt_input = CreateMUTensor(input_contiguous);
   auto mt_output = CreateMUTensor(output);
@@ -460,7 +460,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
           "but now it is ",
           weight.scalar_type());
     }
-    muHandle& h = getMudnnHandle();
+    muHandle& h = GetMudnnHandle();
     ::musa::dnn::LayerNorm op;
     std::vector<int32_t> norm_axis;
     const int32_t diff = input.dim() - normalized_shape.size();
@@ -556,7 +556,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeGroupNorm(
   muTensor beta =
       contiguous_beta.defined() ? CreateMUTensor(contiguous_beta) : muTensor();
 
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::GroupNorm op;
   CHECK_MUDNN_STATUS(op.SetEpsilon(eps), "SetEpsilon");
   CHECK_MUDNN_STATUS(op.SetAxis(1), "SetAxis");

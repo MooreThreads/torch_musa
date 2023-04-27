@@ -60,7 +60,7 @@ at::Tensor& GatherOut(
     return out;
   }
 
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::GatherX gather_op;
   auto mt_input = CreateMUTensor(contiguous_input);
   auto mt_index = CreateMUTensor(contiguous_index);

@@ -70,7 +70,7 @@ at::Tensor& MaskedSelectOut(
   std::tie(expand_mask, expand_input) =
       expand_outplace(contiguous_mask, contiguous_self);
   out.resize_({(*expand_input).numel()});
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::MaskedSelect maskedselect_op;
   auto mt_input = CreateMUTensor(*expand_input, true);
   auto mt_mask = CreateMUTensor(*expand_mask, true);
@@ -140,7 +140,7 @@ at::Tensor& NonzeroOut(const at::Tensor& self, at::Tensor& out) {
       out.dtype());
   out.resize_({contiguous_self.numel(), contiguous_self.dim()});
 
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Nonzero op;
   auto mt_input = CreateMUTensor(contiguous_self);
   auto mt_out = CreateMUTensor(out);
@@ -210,7 +210,7 @@ at::Tensor& MaskedScatter(
     return self;
   }
 
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::MaskedScatter op;
   auto mt_input = CreateMUTensor(contiguous_self);
   auto mt_mask = CreateMUTensor(contiguous_mask);

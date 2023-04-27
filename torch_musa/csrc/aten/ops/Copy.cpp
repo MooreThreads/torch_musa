@@ -144,11 +144,7 @@ bool require_copy_backup(const Tensor& src, const Tensor& self) {
 }
 
 void permute_to_contiguous(const Tensor& self, const Tensor& src) {
-  muHandle& h = getMudnnHandle();
-  std::cout << "print muHandle value ###############################"
-            << std::endl;
-  std::cout << h.GetDeviceId() << std::endl;
-  std::cout << h.GetStream() << std::endl;
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Permute op;
   auto contiguous_out = CreateMUTensor(self, true);
   auto contiguous_in = CreateMUTensor(src, true);
@@ -175,11 +171,7 @@ void mtgpu_impl_copy_d2d(
   Device src_device = tensor_src.device();
 
   torch_musa::MUSAGuard device_guard(src_device);
-  muHandle& h = getMudnnHandle();
-  std::cout << "print muHandle value ###############################"
-            << std::endl;
-  std::cout << h.GetDeviceId() << std::endl;
-  std::cout << h.GetStream() << std::endl;
+  muHandle& h = GetMudnnHandle();
 
   torch_musa::MUSAStream copy_stream =
       torch_musa::getCurrentMUSAStream(src_device.index());
@@ -217,7 +209,7 @@ void mtgpu_impl_copy_d2d(
 void mtgpu_impl_datacast(const Tensor& tensor_self, const Tensor& tensor_src) {
 
   torch_musa::MUSAGuard device_guard(tensor_src.device());
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Unary op;
 
   Tensor src_contig = Contiguous(tensor_src);
@@ -237,11 +229,7 @@ inline void mtgpu_impl_copy(
     const Tensor& tensor_src,
     Memcpy_type copy_type,
     bool non_blocking = false) {
-  muHandle& h = getMudnnHandle();
-  std::cout << "print muHandle value ###############################"
-            << std::endl;
-  std::cout << h.GetDeviceId() << std::endl;
-  std::cout << h.GetStream() << std::endl;
+  muHandle& h = GetMudnnHandle();
 
   // Since we already check the equivalance of src & dst sizes, so we do not
   // need to check nbytes here.

@@ -24,7 +24,7 @@ Scalar LocalScalarDense_(const Tensor& self) {
       "LocalScalarDense_",
       [&] {
         scalar_t value;
-        muHandle& h = getMudnnHandle();
+        muHandle& h = GetMudnnHandle();
         musaMemcpy(
             &value,
             self.data_ptr(),

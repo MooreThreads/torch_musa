@@ -4,10 +4,9 @@
 #include <ATen/native/UpSample.h>
 #include <torch/library.h>
 
+#include <mudnn_image.h>
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-
-#include <mudnn_image.h>
 
 namespace at {
 namespace native {
@@ -36,14 +35,13 @@ Tensor& UpSampleNearest2dOut(
     TORCH_CHECK(false, "Now not supported NHWC");
   }
 
-  torch_musa::MUSAGuard device_guard(self.device());
   // if shapes are the same, just copy and return.
   if (self.sizes() == result.sizes()) {
     result.copy_(self);
   } else if (self.numel() > 0) { // else result should be empty to return
     Tensor contiguous_input = Contiguous(self);
 
-    muHandle& h = getMudnnHandle();
+    muHandle& h = GetMudnnHandle();
     auto in = CreateMUTensor(contiguous_input);
     auto out = CreateMUTensor(result);
 
@@ -66,6 +64,7 @@ Tensor UpSampleNearest2d(
     IntArrayRef output_size,
     c10::optional<double> scales_h,
     c10::optional<double> scales_w) {
+  torch_musa::MUSAGuard device_guard(self.device());
   auto result = at::empty(
       upsample_2d_common_check(self.sizes(), output_size),
       self.options().memory_format(self.suggest_memory_format()));
@@ -103,8 +102,7 @@ Tensor& UpSampleNearest2dBwdOut(
 
   Tensor contiguous_input = Contiguous(grad_output);
 
-  torch_musa::MUSAGuard device_guard(grad_output.device());
-  muHandle& h = getMudnnHandle();
+  muHandle& h = GetMudnnHandle();
   auto in = CreateMUTensor(contiguous_input);
   auto out = CreateMUTensor(grad_input);
 
@@ -126,6 +124,7 @@ Tensor UpSampleNearest2dBwd(
     IntArrayRef contiguous_inputsize,
     c10::optional<double> scales_h,
     c10::optional<double> scales_w) {
+  torch_musa::MUSAGuard device_guard(grad_output.device());
   auto grad_input = at::empty(
       contiguous_inputsize,
       grad_output.options().memory_format(grad_output.suggest_memory_format()));

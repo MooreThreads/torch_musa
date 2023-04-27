@@ -7,7 +7,7 @@ namespace native {
 
 using mudnnHandle_t = ::musa::dnn::Handle*;
 
-::musa::dnn::Handle& getMudnnHandle();
+::musa::dnn::Handle& GetMudnnHandle();
 } // namespace native
 } // namespace at
 
