@@ -205,35 +205,6 @@ void mtgpu_impl_copy_d2d(
 }
 
 void mtgpu_impl_datacast(const Tensor& tensor_self, const Tensor& tensor_src) {
-  // we just copy data there when cast is bool->unint8 and unint8->bool
-  if ((tensor_src.dtype() == ScalarType::Bool &&
-       tensor_self.dtype() == ScalarType::Byte) ||
-      (tensor_src.dtype() == ScalarType::Byte &&
-       tensor_self.dtype() == ScalarType::Bool)) {
-    mtgpu_impl_copy_d2d(tensor_self, tensor_src);
-    return;
-  }
-  // mudnn doest not support double cast
-  if (tensor_src.dtype() == ScalarType::Double ||
-      tensor_self.dtype() == ScalarType::Double) {
-    const std::unordered_set<ScalarType> double_cast_set = {
-        ScalarType::Float, ScalarType::Int, ScalarType::Long};
-    TORCH_CHECK(
-        double_cast_set.find(tensor_src.dtype().toScalarType()) !=
-                double_cast_set.end() ||
-            double_cast_set.find(tensor_self.dtype().toScalarType()) !=
-                double_cast_set.end(),
-        "Data type cast from ",
-        tensor_src.dtype(),
-        " to ",
-        tensor_self.dtype(),
-        " is not supported on MUSA now!");
-    auto cpu_src = tensor_src.to("cpu");
-    auto cpu_result =
-        cpu_src.to(tensor_src.options().dtype(tensor_self.dtype()));
-    tensor_self.copy_(cpu_result);
-    return;
-  }
 
   torch_musa::MUSAGuard device_guard(tensor_src.device());
   muHandle h(tensor_src.device().index()); // TODO(Xiaokang Shang): Implement
@@ -246,11 +217,6 @@ void mtgpu_impl_datacast(const Tensor& tensor_self, const Tensor& tensor_src) {
   auto contiguous_in = CreateMUTensor(src_contig);
   auto contiguous_out = CreateMUTensor(dst_contig);
 
-  // data cast float2bool
-  if (tensor_src.dtype() == ScalarType::Float &&
-      tensor_self.dtype() == ScalarType::Bool) {
-    contiguous_out.SetType(muTensor::Type::INT8);
-  }
   CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::CAST), "SetMode");
   CHECK_MUDNN_STATUS(op.Run(h, contiguous_out, contiguous_in), "Run");
 }

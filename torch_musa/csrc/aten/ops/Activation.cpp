@@ -129,7 +129,6 @@ DEFINE_ACTIVATE_OP(Exp, ::musa::dnn::Unary::Mode::EXP)
 DEFINE_ACTIVATE_OP(Sin, ::musa::dnn::Unary::Mode::SIN)
 DEFINE_ACTIVATE_OP(Cos, ::musa::dnn::Unary::Mode::COS)
 DEFINE_ACTIVATE_OP(Abs, ::musa::dnn::Unary::Mode::ABS)
-DEFINE_ACTIVATE_OP(Neg, ::musa::dnn::Unary::Mode::MUL)
 
 #define SCALAR_COMPARISON(op_name, mode)                         \
   Tensor& op_name##Out(                                          \
@@ -348,6 +347,31 @@ Tensor& ReciprocalOut(const Tensor& self, Tensor& output) {
     CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::POW), "SetMode");
   });
   return output;
+}
+Tensor Neg(const Tensor& self) {
+  return Unary(__func__, self, [&](::musa::dnn::Unary& op) {
+    op.SetMode(::musa::dnn::Unary::Mode::MUL);
+    Scalar value = -1;
+    op.SetAlpha(value.to<double>());
+  });
+}
+
+Tensor& Neg_(Tensor& self) {
+  Unary_(__func__, self, [&](::musa::dnn::Unary& op) {
+    CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::MUL), "SetMode");
+    Scalar value = -1;
+    CHECK_MUDNN_STATUS(op.SetAlpha(value.to<double>()), "SetAlpha");
+  });
+  return self;
+}
+
+Tensor& NegOut(const Tensor& self, Tensor& out) {
+  UnaryOut(__func__, out, self, [&](::musa::dnn::Unary& op) {
+    CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::MUL), "SetMode");
+    Scalar value = -1;
+    CHECK_MUDNN_STATUS(op.SetAlpha(value.to<double>()), "SetAlpha");
+  });
+  return out;
 }
 
 Tensor PowScalar(const Tensor& self, const Scalar& value) {
