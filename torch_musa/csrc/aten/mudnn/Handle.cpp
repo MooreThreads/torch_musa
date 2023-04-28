@@ -39,7 +39,7 @@ using MudnnPoolType = at::musa::DeviceThreadHandlePool<
   // releasing its reserved handles back to the pool.
   static auto pool = std::make_shared<MudnnPoolType>();
   thread_local std::unique_ptr<MudnnPoolType::PoolWindow> myPoolWindow(
-      pool->newPoolWindow());
+      pool->NewPoolWindow());
 
   mudnnHandle_t handle = myPoolWindow->reserve(device);
   handle->SetStream(torch_musa::getCurrentMUSAStream());
