@@ -34,11 +34,13 @@ eps = [1e-5, 0, 0.5]
 def test_native_layer_norm(input_dtype, parameter, affine, eps):
     test = testing.OpTest(
         func=torch.nn.GroupNorm,
-        input_args={'num_groups': parameter['num_groups'],
-                    'num_channels': parameter['num_channels'],
-                    'eps': eps,
-                    'affine': affine},
-        comparators=testing.DefaultComparator(abs_diff=1e-6)
+        input_args={
+            "num_groups": parameter["num_groups"],
+            "num_channels": parameter["num_channels"],
+            "eps": eps,
+            "affine": affine,
+        },
+        comparators=testing.DefaultComparator(abs_diff=1e-6),
     )
     test.check_result(
         inputs={

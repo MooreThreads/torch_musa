@@ -88,6 +88,10 @@ Tensor Binary(
     }
   }
 
+  // One of the both tensors might be cpu device. e.g.
+  // 1. self will be in cpu if '1 + Tensor'.
+  // 2. other wiil be in cpu if 'Tensor + 1'.
+  // We use get musa devcie info to set context, so we need this check.
   Device device =
       self.device().type() == DeviceType::CPU ? other.device() : self.device();
   torch_musa::MUSAGuard guard(device);

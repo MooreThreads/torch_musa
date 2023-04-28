@@ -207,7 +207,6 @@ void mtgpu_impl_copy_d2d(
 }
 
 void mtgpu_impl_datacast(const Tensor& tensor_self, const Tensor& tensor_src) {
-
   torch_musa::MUSAGuard device_guard(tensor_src.device());
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Unary op;

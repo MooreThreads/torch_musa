@@ -377,4 +377,4 @@ def test_malloc_multi_device():
         torch_musa.set_device(device_i)
         tensor = torch.rand(5, 5).to("musa")
         assert tensor.device == torch.device("musa:" + str(device_i))
-    torch_musa.set_device(curr_device) # reset device
+    torch_musa.set_device(curr_device)  # reset device
