@@ -3,6 +3,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <torch/csrc/Exceptions.h>
+#include <torch/csrc/utils/invalid_arguments.h>
 #include <torch/csrc/utils/pybind.h>
 #include <torch/csrc/utils/python_numbers.h>
 #include <vector>
@@ -12,12 +13,54 @@
 #include "torch_musa/csrc/core/Device.h"
 #include "torch_musa/csrc/core/Stream.h"
 
+// yang.zhao: copied from torch/csrc/utils.cpp to avoid including other things.
+void THPUtils_invalidArguments(
+    PyObject* given_args,
+    PyObject* given_kwargs,
+    const char* function_name,
+    size_t num_options,
+    ...) {
+  std::vector<std::string> option_strings;
+  va_list option_list;
+  va_start(option_list, num_options);
+  std::generate_n(
+      std::back_inserter(option_strings), num_options, [&option_list] {
+        return va_arg(option_list, const char*);
+      });
+  va_end(option_list);
+
+  PyErr_SetString(
+      PyExc_TypeError,
+      torch::format_invalid_args(
+          given_args, given_kwargs, function_name, option_strings)
+          .c_str());
+}
+
+void AddPyMethodDefs(std::vector<PyMethodDef>& vector, PyMethodDef* methods) {
+  if (!vector.empty()) {
+    // remove nullptr terminator
+    vector.pop_back();
+  }
+  while (true) {
+    vector.push_back(*methods);
+    if (!methods->ml_name) {
+      break;
+    }
+    methods++;
+  }
+}
+
 py::object PyMusa_EmptyCache() {
   musa::MUSACachingAllocator::EmptyCache();
   return py::none();
 }
 
-py::object PyMusa_MemoryStats() {
+py::object PyMusa_ResetPeakStats() {
+  musa::MUSACachingAllocator::ResetPeakStats();
+  return py::none();
+}
+
+py::object PyMusa_MemoryStats(int64_t device) {
   using musa::MUSACachingAllocator::DeviceStats;
   using musa::MUSACachingAllocator::Stat;
   using musa::MUSACachingAllocator::StatArray;
@@ -43,7 +86,7 @@ py::object PyMusa_MemoryStats() {
     return dict;
   };
 
-  const DeviceStats stats = musa::MUSACachingAllocator::GetDeviceStats();
+  const DeviceStats stats = musa::MUSACachingAllocator::GetDeviceStats(device);
 
   py::dict result;
   result["num_alloc_retries"] = stats.num_alloc_retries;
@@ -111,7 +154,11 @@ void InitMusaModule(PyObject* module) {
 
   // Memory Management
   py_module.def("_musa_emptyCache", []() { return PyMusa_EmptyCache(); });
-  py_module.def("_musa_memoryStats", []() { return PyMusa_MemoryStats(); });
+  py_module.def(
+      "_musa_resetPeakStats", []() { return PyMusa_ResetPeakStats(); });
+  py_module.def("_musa_memoryStats", [](int64_t device) {
+    return PyMusa_MemoryStats(device);
+  });
   py_module.def(
       "_musa_memorySnapshot", []() { return PyMusa_MemorySnapshot(); });
 
@@ -120,8 +167,9 @@ void InitMusaModule(PyObject* module) {
       "_musa_getDeviceCount", []() { return torch_musa::device_count(); });
   py_module.def(
       "_musa_getDevice", []() { return torch_musa::current_device(); });
-  py_module.def(
-      "_musa_setDevice", [](int device) { torch_musa::set_device(device); });
+  py_module.def("_musa_setDevice", [](int64_t device) {
+    torch_musa::set_device(device);
+  });
   // Synchronize musa device.
   py_module.def("_musa_synchronize", []() { torch_musa::Synchronize(); });
 

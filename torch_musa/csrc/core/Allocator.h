@@ -61,6 +61,8 @@ C10_DECLARE_REGISTRY(FreeMusaMemoryCallbacksRegistry, FreeMemoryCallback);
 #define REGISTER_FREE_MEMORY_CALLBACK(name, ...) \
   C10_REGISTER_CLASS(FreeMusaMemoryCallbacksRegistry, name, __VA_ARGS__);
 
+void raw_delete(void* ptr);
+
 } // namespace c10
 
 namespace musa {
@@ -208,7 +210,8 @@ struct SegmentInfo {
 };
 
 void EmptyCache();
-DeviceStats GetDeviceStats();
+void ResetPeakStats();
+DeviceStats GetDeviceStats(int64_t device);
 std::vector<SegmentInfo> GetMemorySnapshot();
 
 } // namespace MUSACachingAllocator

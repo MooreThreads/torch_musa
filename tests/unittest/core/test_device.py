@@ -366,3 +366,15 @@ def test_streams_priority():
 @pytest.mark.skipif(True, reason="Waiting musart import")
 def test_external_streams():
     "Testing external streams"
+
+
+@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected no mtGPU")
+def test_malloc_multi_device():
+    """Test multiple device allocator"""
+    curr_device = torch_musa.current_device()
+    device_num = torch_musa.device_count()
+    for device_i in range(device_num):
+        torch_musa.set_device(device_i)
+        tensor = torch.rand(5, 5).to("musa")
+        assert tensor.device == torch.device("musa:" + str(device_i))
+    torch_musa.set_device(curr_device) # reset device

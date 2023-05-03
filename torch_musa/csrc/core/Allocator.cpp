@@ -321,7 +321,7 @@ class CachingAllocatorConfig {
   }
 };
 
-class MUSACachingAllocator {
+class MTGPUCachingAllocator {
  private:
   // lock around all operations
   mutable std::recursive_mutex mutex_;
@@ -351,7 +351,7 @@ class MUSACachingAllocator {
   int self_device_;
 
  public:
-  MUSACachingAllocator()
+  MTGPUCachingAllocator()
       : large_blocks_(BlockComparator, /*is_small=*/false),
         small_blocks_(BlockComparator, /*is_small=*/true) {
     stats_.max_split_size = CachingAllocatorConfig::max_split_size();
@@ -365,7 +365,7 @@ class MUSACachingAllocator {
 
     self_device_ = device;
     size = round_size(size);
-    auto& pool = get_pool(size);
+    BlockPool& pool = get_pool(size);
     const size_t alloc_size = get_allocation_size(size);
     AllocParams params(device, size, &pool, alloc_size);
     params.stat_types[static_cast<size_t>(StatType::AGGREGATE)] = true;
@@ -568,7 +568,7 @@ class MUSACachingAllocator {
   }
 
   /** returns cached blocks to the system allocator **/
-  void EmptyCache() {
+  void empty_cache() {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     release_cached_blocks();
   }
@@ -591,7 +591,7 @@ class MUSACachingAllocator {
   }
 
   /** Returns a copy of the memory allocator stats_ **/
-  DeviceStats GetStats() const {
+  DeviceStats get_stats() const {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     return stats_;
   }
@@ -639,11 +639,11 @@ class MUSACachingAllocator {
 
   /** Dump a complete snapshot of the memory held by the allocator. Potentially
    * VERY expensive. **/
-  std::vector<SegmentInfo> Snapshot() const {
+  std::vector<SegmentInfo> snapshot() const {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
 
     std::vector<SegmentInfo> result;
-    const auto all_blocks = get_all_blocks();
+    const std::vector<const Block*> all_blocks = get_all_blocks();
 
     for (const Block* const head_block : all_blocks) {
       if (head_block->prev != nullptr) {
@@ -717,7 +717,7 @@ class MUSACachingAllocator {
     if (size < kMinBlockSize) {
       return kMinBlockSize;
     } else {
-      auto divisions = CachingAllocatorConfig::roundup_power2_divisions();
+      size_t divisions = CachingAllocatorConfig::roundup_power2_divisions();
       if (divisions > 0 && size > (kMinBlockSize * divisions)) {
         return roundup_power2_next_division(size, divisions);
       } else {
@@ -745,7 +745,7 @@ class MUSACachingAllocator {
 
     size_t original_block_size = block->size;
 
-    auto& pool = *block->pool;
+    BlockPool& pool = *block->pool;
     int64_t net_change_inactive_split_blocks = 0;
     int64_t net_change_inactive_split_size = 0;
 
@@ -900,7 +900,7 @@ class MUSACachingAllocator {
     if (total_allocated_memory_ <= gc_threshold) {
       return;
     }
-    const auto target_size = total_allocated_memory_ - gc_threshold;
+    const size_t target_size = total_allocated_memory_ - gc_threshold;
     size_t gc_reclaimed = 0;
 
     // Calculate the total age of the free-able blocks. We'll use it later to
@@ -1051,7 +1051,7 @@ class MUSACachingAllocator {
     TORCH_CHECK(err == musaSuccess, "Musa Tensor Release failed!");
     total_allocated_memory_ -= block->size;
 
-    auto* pool = block->pool;
+    BlockPool* pool = block->pool;
 
     StatTypes stat_types = {false};
     stat_types[static_cast<size_t>(StatType::AGGREGATE)] = true;
@@ -1082,7 +1082,7 @@ class MUSACachingAllocator {
   // Accumulates sizes of all memory blocks for given device in given pool
   void cache_info_aux(const BlockPool& pool, size_t* total, size_t* largest) {
     for (const auto& block : pool.blocks) {
-      const auto blocksize = block->size;
+      const size_t blocksize = block->size;
       *total += blocksize;
       if (blocksize > *largest) {
         *largest = blocksize;
@@ -1098,13 +1098,95 @@ namespace c10 {
 
 using namespace musa::MUSACachingAllocator;
 
-struct C10_API DefaultMTGPUAllocator final : at::Allocator {
-  static MUSACachingAllocator* get_allocator() {
-    static MUSACachingAllocator g_alloctator;
-    return &g_alloctator;
+class MusaCachingAllocatorImpl {
+ public:
+  MusaCachingAllocatorImpl() {
+    const int64_t dev_num = static_cast<int64_t>(torch_musa::device_count());
+    device_allocators_.reserve(dev_num);
+    for (int i = 0; i < dev_num; ++i) {
+      device_allocators_.emplace_back(
+          std::make_unique<MTGPUCachingAllocator>());
+    }
   }
 
-  DefaultMTGPUAllocator() {
+  Block* get_allocated_block(void* ptr, bool remove = false) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = allocated_blocks.find(ptr);
+    if (it == allocated_blocks.end()) {
+      return nullptr;
+    }
+    Block* block = it->second;
+    if (remove) {
+      allocated_blocks.erase(it);
+    }
+    return block;
+  }
+
+  void malloc(void** devPtr, int device, size_t size) {
+    TORCH_INTERNAL_ASSERT(
+        0 <= device && static_cast<size_t>(device) < device_allocators_.size(),
+        "Allocator not initialized for device ",
+        device,
+        ": did you call init?");
+    Block* block = device_allocators_[device]->malloc(device, size);
+    add_allocated_block(block);
+    *devPtr = (void*)block->ptr;
+  }
+
+  void free(void* ptr) {
+    if (!ptr) {
+      return;
+    }
+    Block* block = get_allocated_block(ptr, true /* remove */);
+    if (!block) {
+      TORCH_CHECK(false, "invalid device pointer: ", ptr);
+    }
+    device_allocators_[block->device]->free(block);
+  }
+
+  void empty_cache() {
+    for (auto& da : device_allocators_) {
+      da->empty_cache();
+    }
+  }
+
+  void reset_peak_stats() {
+    for (auto& da : device_allocators_) {
+      da->reset_peak_stats();
+    }
+  }
+
+  std::vector<SegmentInfo> snapshot() {
+    std::vector<SegmentInfo> result;
+    for (auto& da : device_allocators_) {
+      auto snap = da->snapshot();
+      result.insert(result.end(), snap.begin(), snap.end());
+    }
+
+    return result;
+  }
+
+  DeviceStats get_stats(int64_t device) {
+    return device_allocators_[device]->get_stats();
+  }
+
+  std::vector<std::unique_ptr<MTGPUCachingAllocator>> device_allocators_;
+
+ private:
+  std::mutex mutex_;
+
+  // allocated blocks by device pointer
+  ska::flat_hash_map<void*, Block*> allocated_blocks;
+
+  void add_allocated_block(Block* block) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    allocated_blocks[block->ptr] = block;
+  }
+};
+
+struct C10_API MusaCachingAllocator final : at::Allocator {
+ public:
+  MusaCachingAllocator() {
     const char* env = getenv("MTGPU_ALLOC_TYPE");
     use_caching_allocator_ = true;
     if (env != nullptr && std::string(env) == "naive") {
@@ -1112,6 +1194,7 @@ struct C10_API DefaultMTGPUAllocator final : at::Allocator {
       use_caching_allocator_ = false;
     } else {
       DLOG_INFO << "Use caching allocator.";
+      allocator_impl_ = new MusaCachingAllocatorImpl();
     }
   }
 
@@ -1121,89 +1204,65 @@ struct C10_API DefaultMTGPUAllocator final : at::Allocator {
     TORCH_MUSA_CHECK(musaGetDevice(&device));
     if (nbytes) {
       if (use_caching_allocator_) {
-        Block* block =
-            c10::DefaultMTGPUAllocator::get_allocator()->malloc(device, nbytes);
-        data = block->ptr;
-        add_allocated_block(block);
+        allocator_impl_->malloc(&data, device, nbytes);
       } else {
         musa::AutoGrowthBestFitAllocator::get_allocator()->AllocateImpl(
             nbytes, &data);
       }
     }
     return {
-        data,
-        data,
-        &ReportAndDelete,
-        at::Device(at::native::musa::kMUSA, device)};
-  }
-
-  static void ReportAndDelete(void* ptr) {
-    if (!ptr) {
-      return;
-    }
-    if (use_caching_allocator_) {
-      Block* block = get_allocated_block(ptr, true /* remove */);
-      if (!block) {
-        TORCH_CHECK(false, "invalid device pointer: ", ptr);
-      }
-      c10::DefaultMTGPUAllocator::get_allocator()->free(block);
-    } else {
-      musa::AutoGrowthBestFitAllocator::get_allocator()->FreeImpl(ptr);
-    }
+        data, data, &raw_delete, at::Device(at::native::musa::kMUSA, device)};
   }
 
   at::DeleterFnPtr raw_deleter() const override {
-    return &ReportAndDelete;
+    return &raw_delete;
   }
+
+  MusaCachingAllocatorImpl* get_allocator() const {
+    return allocator_impl_;
+  }
+
+  bool use_caching_allocator_;
 
  private:
-  void add_allocated_block(Block* block) const {
-    std::lock_guard<std::mutex> lock(mutex_);
-    allocated_blocks_[block->ptr] = block;
-  }
-
-  static Block* get_allocated_block(void* ptr, bool remove = false) {
-    auto it = allocated_blocks_.find(ptr);
-    if (it == allocated_blocks_.end()) {
-      return nullptr;
-    }
-    Block* block = it->second;
-    if (remove) {
-      allocated_blocks_.erase(it);
-    }
-    return block;
-  }
-
-  static bool use_caching_allocator_;
-  mutable std::mutex mutex_;
-  static ska::flat_hash_map<void*, Block*> allocated_blocks_;
+  MusaCachingAllocatorImpl* allocator_impl_;
 };
 
-static DefaultMTGPUAllocator g_mtgpu_alloc;
-ska::flat_hash_map<void*, Block*> DefaultMTGPUAllocator::allocated_blocks_ =
-    ska::flat_hash_map<void*, Block*>();
-bool DefaultMTGPUAllocator::use_caching_allocator_ = true;
+MusaCachingAllocator g_musa_alloc;
 
-at::Allocator* GetDefaultMTGPUAllocator() {
-  return &g_mtgpu_alloc;
+MusaCachingAllocator* GetMusaCachingAllocator() {
+  return &g_musa_alloc;
 }
 
-REGISTER_ALLOCATOR(at::native::musa::kMUSA, &g_mtgpu_alloc);
+void raw_delete(void* ptr) {
+  MusaCachingAllocator* palloc = c10::GetMusaCachingAllocator();
+  palloc->get_allocator()->free(ptr);
+}
+
+REGISTER_ALLOCATOR(at::native::musa::kMUSA, &g_musa_alloc);
 } // namespace c10
 
 namespace musa {
 namespace MUSACachingAllocator {
 
 void EmptyCache() {
-  c10::DefaultMTGPUAllocator::get_allocator()->EmptyCache();
+  c10::MusaCachingAllocator* palloc = c10::GetMusaCachingAllocator();
+  palloc->get_allocator()->empty_cache();
 }
 
-DeviceStats GetDeviceStats() {
-  return c10::DefaultMTGPUAllocator::get_allocator()->GetStats();
+void ResetPeakStats() {
+  c10::MusaCachingAllocator* palloc = c10::GetMusaCachingAllocator();
+  palloc->get_allocator()->reset_peak_stats();
+}
+
+DeviceStats GetDeviceStats(int64_t device) {
+  c10::MusaCachingAllocator* palloc = c10::GetMusaCachingAllocator();
+  return palloc->get_allocator()->get_stats(device);
 }
 
 std::vector<SegmentInfo> GetMemorySnapshot() {
-  return c10::DefaultMTGPUAllocator::get_allocator()->Snapshot();
+  c10::MusaCachingAllocator* palloc = c10::GetMusaCachingAllocator();
+  return palloc->get_allocator()->snapshot();
 }
 
 } // namespace MUSACachingAllocator

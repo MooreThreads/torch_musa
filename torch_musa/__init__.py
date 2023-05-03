@@ -34,8 +34,10 @@ from .core.serialization import register_deserialization
 
 from .core.memory import (
     empty_cache,
+    reset_peak_stats,
     memory_stats,
     memory_summary,
+    memory_stats_all,
     memory_reserved,
     memory_snapshot,
     memory_allocated,
