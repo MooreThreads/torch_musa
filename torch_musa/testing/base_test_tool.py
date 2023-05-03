@@ -13,6 +13,7 @@ import torch
 def get_raw_data():
     return [
         torch.randn(10),
+        torch.randn(10)[2:8], # to test non_contiguous tensor(storage_offset != 0)
         torch.randn(10, 10),
         torch.randn(10, 10, 2),
         torch.randn(10, 10, 2, 2),
@@ -55,7 +56,7 @@ class Comparator:
 class DefaultComparator(Comparator):
     """The default comparator"""
 
-    def __init__(self, abs_diff=1e-3, rel_diff=1e-5, equal_nan=False):
+    def __init__(self, abs_diff=1e-8, rel_diff=1e-5, equal_nan=False):
         """
         Use both relative and absolute tolerance to compare the result and golden.
         """
@@ -81,13 +82,13 @@ class AbsDiffComparator(Comparator):
 class RelDiffComparator(Comparator):
     """The relative difference comparator."""
 
-    def __init__(self, rel_diff=1e-3):
+    def __init__(self, rel_diff=1e-5):
         """
         Use relative tolerance to compare the result and golden.
         """
         super().__init__()
         self._comparator = (
-            lambda result, golden: np.abs((golden - result) / golden).max() < rel_diff
+            lambda result, golden: torch.abs((golden - result) / golden).max() < rel_diff
         )
 
 

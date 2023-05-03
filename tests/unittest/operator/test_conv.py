@@ -31,11 +31,6 @@ input_data = [
              }
 ]
 
-def set_same_weight(model, other):
-    for key in model.state_dict().keys():
-        other.state_dict()[key].data.copy_(model.state_dict()[key].data)
-
-
 @pytest.mark.parametrize('input_data', input_data)
 def test_conv2d(input_data):
     """Test conv2d operators."""
@@ -59,10 +54,10 @@ def test_conv2d(input_data):
                                 groups=input_data['groups'],
                                 bias=input_data['bias'],
                                 device="musa")
-    set_same_weight(conv2d, musa_conv2d)
+    conv2d.load_state_dict(musa_conv2d.state_dict())
     cpu_output = conv2d(cpu_input)
     musa_output = musa_conv2d(musa_input.to("musa"))
-    comparator = testing.DefaultComparator()
+    comparator = testing.DefaultComparator(abs_diff=1e-6)
     assert comparator(cpu_output, musa_output.cpu())
     cpu_output.sum().backward()
     musa_output.sum().backward()

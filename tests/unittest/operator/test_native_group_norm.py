@@ -44,7 +44,8 @@ def test_native_layer_norm(input_dtype, parameter, affine, eps):
         input_args={'num_groups': parameter['num_groups'],
                     'num_channels': parameter['num_channels'],
                     'eps': eps,
-                    'affine': affine}
+                    'affine': affine},
+        comparators=testing.DefaultComparator(abs_diff=1e-6)
     )
     test.check_result(inputs={'input': torch.tensor(parameter['data'],
         dtype=input_dtype, requires_grad = True)}, train=True)

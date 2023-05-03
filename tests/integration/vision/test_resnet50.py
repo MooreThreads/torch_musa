@@ -17,5 +17,4 @@ def test_rn50(input_data):
     rn50 = models.resnet50().eval()
     cpu_result = rn50(input_data["input"])
     gpu_result = rn50.to("musa")(input_data["input"].to(device="musa")).cpu()
-    comparator = testing.DefaultComparator()
-    assert comparator(gpu_result, cpu_result)
+    assert testing.DefaultComparator(abs_diff=1e-4)(gpu_result, cpu_result)
