@@ -32,12 +32,14 @@ void BmmCall(const Tensor& l, const Tensor& r, Tensor& out, bool is_batch) {
   bool trans_r = IsTranspose(r, is_batch);
   int batch_index = is_batch ? 1 : 0;
   // if IsTranspose(mat) is True, we don't need to clone to permutate memory
+  Tensor contiguous_l;
+  Tensor contiguous_r;
   auto lmt = trans_l
       ? CreateMUTensor(l.transpose(0 + batch_index, 1 + batch_index), true)
-      : CreateMUTensor(Contiguous(l));
+      : CreateMUTensor(Contiguous(l, contiguous_l));
   auto rmt = trans_r
       ? CreateMUTensor(r.transpose(0 + batch_index, 1 + batch_index), true)
-      : CreateMUTensor(Contiguous(r));
+      : CreateMUTensor(Contiguous(r, contiguous_r));
   auto rst = CreateMUTensor(out);
   ConfigFormat(out, rst, true);
   ::musa::dnn::BatchMatMul b_mm;
@@ -54,10 +56,12 @@ void MmCall(
   muHandle h;
   bool trans_l = IsTranspose(l, false);
   bool trans_r = IsTranspose(r, false);
-  auto lmt =
-      trans_l ? CreateMUTensor(l.t(), true) : CreateMUTensor(Contiguous(l));
-  auto rmt =
-      trans_r ? CreateMUTensor(r.t(), true) : CreateMUTensor(Contiguous(r));
+  Tensor contiguous_l;
+  Tensor contiguous_r;
+  auto lmt = trans_l ? CreateMUTensor(l.t(), true)
+                     : CreateMUTensor(Contiguous(l, contiguous_l));
+  auto rmt = trans_r ? CreateMUTensor(r.t(), true)
+                     : CreateMUTensor(Contiguous(r, contiguous_r));
   auto rst = CreateMUTensor(out);
   ConfigFormat(out, rst, true);
   ::musa::dnn::MatMul matmul;
@@ -95,12 +99,14 @@ Tensor& MmAlphaBetaOut(
     // when dim_tensor1 <= 2 &&  dim_tensor1 <= 2 ,call dot
     if (alpha == 1 && beta == 0) {
       ::musa::dnn::Dot dot;
-      auto contiguous_out = CreateMUTensor(Contiguous(out));
-      ConfigFormat(out, contiguous_out, true);
-      auto contiguous_l = CreateMUTensor(Contiguous(l));
-      auto contiguous_r = CreateMUTensor(Contiguous(r));
-      CHECK_MUDNN_STATUS(
-          dot.Run(h, contiguous_out, contiguous_l, contiguous_r), "Run");
+      auto contiguous_out = Contiguous(out);
+      auto rst = CreateMUTensor(contiguous_out);
+      ConfigFormat(out, rst, true);
+      auto contiguous_l = Contiguous(l);
+      auto contiguous_r = Contiguous(r);
+      auto lmt = CreateMUTensor(contiguous_l);
+      auto rmt = CreateMUTensor(contiguous_r);
+      CHECK_MUDNN_STATUS(dot.Run(h, rst, lmt, rmt), "Run");
     } else {
       MmCall(l, r, out, alpha, beta);
     }

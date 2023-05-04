@@ -250,6 +250,11 @@ bool IsContiguous(const Tensor& self, MemoryFormat memory_format) {
   return false;
 }
 
+Tensor Contiguous(const Tensor& self, Tensor& ref, MemoryFormat memory_format) {
+  ref = Contiguous(self, memory_format);
+  return ref;
+}
+
 Tensor Contiguous(const Tensor& self, MemoryFormat memory_format) {
   if (IsContiguous(self, memory_format)) {
     return self;

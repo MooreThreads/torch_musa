@@ -29,6 +29,12 @@ bool IsContiguous(
     MemoryFormat memory_format = MemoryFormat::Contiguous);
 // Contiguous create new tensor when self tensor's storage_offset > 0 and
 // not contiguous
+
+Tensor Contiguous(
+    const Tensor& self,
+    Tensor& result,
+    MemoryFormat memory_format = MemoryFormat::Contiguous);
+
 Tensor Contiguous(
     const Tensor& self,
     MemoryFormat memory_format = MemoryFormat::Contiguous);
