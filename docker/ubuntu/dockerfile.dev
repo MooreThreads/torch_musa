@@ -1,0 +1,103 @@
+#syntax=docker/dockerfile:1.0-experimental
+ARG UBUNTU_VERSION
+
+FROM ubuntu:${UBUNTU_VERSION}
+
+ARG UBUNTU_VERSION
+ARG MUSA_TOOLKITS_URL
+ARG MUDNN_URL
+ARG PYTHON_VERSION
+
+SHELL ["/bin/bash", "-c"]
+
+# setup time for system
+ENV LANG=C.UTF-8
+ENV DEBIAN_FRONTEND=noninteractive
+
+# using ubuntu official sources often fails to connect
+COPY ./common/change_ubuntu_mirror.sh change_ubuntu_mirror.sh
+RUN bash change_ubuntu_mirror.sh && \
+    rm -f change_ubuntu_mirror.sh
+
+# install basic packages
+COPY ./common/install_base.sh install_base.sh
+RUN bash install_base.sh && \
+    rm -f install_base.sh
+
+# install gcc
+# TODO(mingyuan-wang)
+# placeholder parameter, no gcc update or installation will be performed,
+# cuz the torch_musa environment was successfully configured only on ubuntu20.04 
+# using default gcc9 currently.
+ARG GCC_VERSION
+COPY ./common/install_gcc.sh install_gcc.sh 
+RUN bash install_gcc.sh && \
+    rm -f install_gcc.sh
+
+# install musa_toolkit, which includes musa_runtime and mcc
+RUN wget --no-check-certificate ${MUSA_TOOLKITS_URL} -O /home/musa_toolkits_install.tar.gz
+RUN cd /home && \
+    tar -zxf ./musa_toolkits_install.tar.gz && \
+    cd ./musa_toolkits_install && \
+    bash ./install.sh && \
+    rm -f ../musa_toolkits_install.tar.gz
+
+# install muDNN
+RUN wget --no-check-certificate ${MUDNN_URL} -O /home/mudnn.tar && \
+    tar -xvf /home/mudnn.tar -C /home && \
+    pushd /home/mudnn && \
+    bash install_mudnn.sh && \
+    rm -f /home/mudnn.tar && \
+    popd
+
+# install math libs
+COPY ./common/install_math.sh install_math.sh
+RUN bash install_math.sh && \
+    rm -f install_math.sh
+
+# config git
+RUN git config --global http.sslverify false && \
+    git config --global https.sslverify false
+
+# clone torch_musa
+COPY ./common/clone_torch_musa.sh /home/clone_torch_musa.sh
+RUN --mount=type=secret,id=gitCredential,dst=/.gitCredential \
+    USER=$(sed -n '1p' /.gitCredential) \
+    PASSWORD=$(sed -n '2p' /.gitCredential) && \
+    pushd /home && \
+    /usr/bin/expect clone_torch_musa.sh $USER $PASSWORD && \
+    rm -f ./clone_torch_musa.sh && \
+    popd
+
+# install conda
+COPY ./common/install_conda.sh install_conda.sh
+RUN bash install_conda.sh && \
+    rm -f install_conda.sh
+
+# setup conda virtual environment for torch_musa 
+ENV PATH=/opt/conda/bin:$PATH
+RUN pushd /home/torch_musa && \
+    ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
+    conda create -n ${ENV_NAME} python=${PYTHON_VERSION} --yes && \
+    source activate ${ENV_NAME} && \
+    pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple some-package && \
+    pip install numpy==1.23.1 pytest==7.2.2 protobuf==3.19.0 \
+    googleapis-common-protos==1.56.4 importlib-metadata==4.11.3 \
+    pillow==9.2.0 pylint==2.17.3 requests -i https://pypi.tuna.tsinghua.edu.cn/simple some-package && \
+    pip install --no-deps torchvision==0.15.0 -i https://pypi.tuna.tsinghua.edu.cn/simple some-package && \
+    popd
+
+# prepare some envs & build original pytorch and torch_musa from scratch
+ENV MUSA_HOME=/usr/local/musa
+ENV LD_LIBRARY_PATH=$MUSA_HOME/lib:$LD_LIBRARY_PATH
+ENV PATH=/usr/local/musa/bin:/opt/conda/bin:$PATH
+RUN ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \ 
+    sudo echo "export MUSA_HOME=${MUSA_HOME}"                                     >> ~/.bashrc && \
+    sudo echo -e "export LD_LIBRARY_PATH=\$MUSA_HOME/lib:\$LD_LIBRARY_PATH\n"     >> ~/.bashrc && \
+    sudo echo "export PATH=/usr/local/musa/bin:/opt/conda/bin:$PATH"              >> ~/.bashrc && \
+    sudo echo "source activate ${ENV_NAME}"                                       >> ~/.bashrc && \
+    source activate ${ENV_NAME} && \
+    pushd /home/torch_musa && \
+    pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
+    bash build.sh && \
+    popd
