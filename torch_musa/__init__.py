@@ -52,3 +52,7 @@ except ImportError as err:
     raise ImportError("Please try running Python from a different directory!") from err
 
 from . import testing
+
+
+def _sleep(cycles):
+    torch_musa._MUSAC._musa_sleep(cycles)

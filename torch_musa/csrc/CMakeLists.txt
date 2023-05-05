@@ -28,7 +28,9 @@ FILE(GLOB cuda_porting_cpp_files
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/c10/musa/MUSA_PORT_MiscFunctions.cpp)
 
 FILE(GLOB cuda_porting_mu_files
-    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/group_norm_kernel.mu)
+    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/group_norm_kernel.mu
+    core/*.mu
+    )
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/utils.cmake)
 append_cxx_flag_if_supported("-Wno-unused-parameter" CMAKE_CXX_FLAGS)
@@ -36,6 +38,7 @@ append_cxx_flag_if_supported("-Wno-unused-variable" CMAKE_CXX_FLAGS)
 append_cxx_flag_if_supported("-Wno-sign-compare" CMAKE_CXX_FLAGS)
 append_cxx_flag_if_supported("-w" CMAKE_CXX_FLAGS)
 set(MUSA_MCC_FLAGS -D__MUSA_NO_HALF_OPERATORS__)
+set(MUSA_MCC_FLAGS -U__CUDA__)
 
 if(NOT ENABLE_COMPILE_FP64)
     string(APPEND MUSA_MCC_FLAGS " -mathx-disable-fp64")  # disable fp64
