@@ -200,11 +200,12 @@ void IndexSelectCall(
     int64_t dim,
     const Tensor& index,
     Tensor& out) {
+  torch_musa::MUSAGuard device_guard(self.device());
   TORCH_CHECK(dim < self.dim() && dim >= 0, "dim is invalid.");
   auto idx_mt = CreateMUTensor(index);
   auto in = CreateMUTensor(self);
   auto out_mt = CreateMUTensor(out);
-  muHandle h;
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::IndexSelect op;
   CHECK_MUDNN_STATUS(op.SetDim(dim), "SetDim");
   CHECK_MUDNN_STATUS(op.Run(h, out_mt, idx_mt, in), "Run");
@@ -214,9 +215,10 @@ void IndexCall(
     const Tensor& self,
     const std::vector<muTensor>& indexes,
     Tensor& out) {
+  torch_musa::MUSAGuard device_guard(self.device());
   auto in = CreateMUTensor(self);
   auto out_mt = CreateMUTensor(out);
-  muHandle h;
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Index op;
   CHECK_MUDNN_STATUS(
       op.Run(h, out_mt, indexes.size(), indexes.data(), in), "Index Run");
@@ -235,7 +237,8 @@ void IndexPutCall(
       value.scalar_type(),
       ", accumulate:",
       accumulate);
-  muHandle h;
+  torch_musa::MUSAGuard device_guard(value.device());
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::IndexPut op;
   CHECK_MUDNN_STATUS(op.SetAccumulate(accumulate), "Set Accumulate");
   // TODO(kang.chen): muDNN not provides SetOffset interface now,comment out
@@ -275,7 +278,7 @@ Tensor IndexSelect(const Tensor& self, int64_t dim, const Tensor& index) {
       out_shape,
       contiguous_self.scalar_type(),
       c10::nullopt,
-      kMUSA,
+      self.device(),
       c10::nullopt,
       at::MemoryFormat::Contiguous);
   IndexSelectCall(contiguous_self, dim, contiguous_index, out);
@@ -340,7 +343,7 @@ Tensor IndexTensor(
         out_shape,
         self.scalar_type(),
         c10::nullopt,
-        kMUSA,
+        self.device(),
         c10::nullopt,
         at::MemoryFormat::Contiguous);
   }
@@ -351,7 +354,7 @@ Tensor IndexTensor(
       out_shape,
       self.scalar_type(),
       c10::nullopt,
-      kMUSA,
+      self.device(),
       c10::nullopt,
       at::MemoryFormat::Contiguous);
   Tensor contiguous_self = Contiguous(self);
@@ -393,7 +396,7 @@ Tensor& IndexPut(
       auto contiguous_value = value.to("cpu");
       at::_index_put_impl_(
           contiguous_self, indices_, contiguous_value, accumulate, unsafe);
-      self.copy_(contiguous_self.to("musa"));
+      self.copy_(contiguous_self.to(value.device()));
       return self;
     }
   }
@@ -431,7 +434,7 @@ Tensor& IndexPut(
     muTensor indice;
     if (index.has_value()) {
       at::assert_no_overlap(self, *index);
-      cgs_tensors[idx] = index->to("musa");
+      cgs_tensors[idx] = index->to(value.device());
       auto contiguous_index = Contiguous(cgs_tensors[idx]);
       indice = CreateMUTensor(contiguous_index);
       tensors.emplace_back(indice);

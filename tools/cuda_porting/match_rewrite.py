@@ -11,7 +11,9 @@ import ahocorasick
 from typing import Dict
 
 
-def init_ac_automaton(input_map_files: list, headers_path_map: Dict[str, str]) -> ahocorasick.Automaton:
+def init_ac_automaton(
+    input_map_files: list, headers_path_map: Dict[str, str]
+) -> ahocorasick.Automaton:
     r"""Returns an instance of Automaton with specific information.
 
     Args:
@@ -22,6 +24,7 @@ def init_ac_automaton(input_map_files: list, headers_path_map: Dict[str, str]) -
         an instance of ahocorasick.Automaton.
     """
     automaton = ahocorasick.Automaton()
+
     def read_mapping(path):
         with open(path) as handle:
             return json.load(handle)
@@ -35,6 +38,7 @@ def init_ac_automaton(input_map_files: list, headers_path_map: Dict[str, str]) -
     automaton.make_automaton()
     return automaton
 
+
 def is_word_char(chr: str) -> bool:
     r"""Checks whether all the characters in a given string are either alphabet/numeric (alphanumeric) characters or "_".
 
@@ -45,6 +49,7 @@ def is_word_char(chr: str) -> bool:
         bool: True If all the characters are alphanumeric or "_".
     """
     return chr.isalnum() or chr == "_"
+
 
 def is_word_boundary(code: str, start_idx: int, end_idx: int) -> bool:
     r"""Check whether it is a word boundary.
@@ -61,7 +66,10 @@ def is_word_boundary(code: str, start_idx: int, end_idx: int) -> bool:
     right_has_more = end_idx + 1 < len(code) and is_word_char(code[end_idx + 1])
     return not (left_has_more or right_has_more)
 
-def transform_line(line: str, automaton: ahocorasick.Automaton, replace_map: Dict[str, str] = {}) -> None:
+
+def transform_line(
+    line: str, automaton: ahocorasick.Automaton, replace_map: Dict[str, str] = {}
+) -> None:
     r"""Match and replace specific strings for a line in file.
 
     Args:
@@ -76,15 +84,16 @@ def transform_line(line: str, automaton: ahocorasick.Automaton, replace_map: Dic
     for end_idx, (cuda_len, musa_name) in automaton.iter_long(line):
         start_idx = end_idx - cuda_len + 1
         if is_word_boundary(line, start_idx, end_idx):
-            new_line += line[last_end_idx : start_idx]
+            new_line += line[last_end_idx:start_idx]
             new_line += musa_name
             last_end_idx = end_idx + 1
-    
+
     new_line += line[last_end_idx:]
     for key, value in replace_map.items():
         new_line = new_line.replace(key, value)
 
     return new_line
+
 
 @contextlib.contextmanager
 def writer(file_name: str = None) -> None:
@@ -103,7 +112,10 @@ def writer(file_name: str = None) -> None:
     if file_name:
         writer.close()
 
-def transform_file(path: str, automaton: ahocorasick.Automaton, replace_map: Dict[str, str] = {}) -> str:
+
+def transform_file(
+    path: str, automaton: ahocorasick.Automaton, replace_map: Dict[str, str] = {}
+) -> str:
     r"""Match and replace specific strings for cuda compatibility.
 
     Args:
@@ -122,9 +134,9 @@ def transform_file(path: str, automaton: ahocorasick.Automaton, replace_map: Dic
                 try:
                     line = line.decode()
                 except UnicodeDecodeError:
-                    line = line.decode('unicode_escape')
+                    line = line.decode("unicode_escape")
                 new_line = transform_line(line, automaton, replace_map)
-                write_handle.write(new_line);
+                write_handle.write(new_line)
     file_name = path if not path.endswith(".cu") else path.replace(".cu", ".mu")
     os.rename(write_path, file_name)
     return file_name

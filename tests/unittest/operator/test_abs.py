@@ -7,7 +7,9 @@ from torch_musa import testing
 
 
 data_type = [torch.float32]
-#data_type = [torch.float32, torch.int32, torch.int64]
+
+
+# data_type = [torch.float32, torch.int32, torch.int64]
 def get_abs_inputs():
     return [
         {"input": torch.tensor(5.0)},
@@ -30,7 +32,6 @@ def get_abs_inputs():
 @pytest.mark.parametrize("data_type", data_type)
 def test_abs(input_args, data_type):
     test = testing.OpTest(
-        func=torch.abs,
-        input_args={"input": input_args["input"].to(data_type)}
+        func=torch.abs, input_args={"input": input_args["input"].to(data_type)}
     )
     test.check_result(None)

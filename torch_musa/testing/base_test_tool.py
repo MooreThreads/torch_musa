@@ -13,7 +13,7 @@ import torch
 def get_raw_data():
     return [
         torch.randn(10),
-        torch.randn(10)[2:8], # to test non_contiguous tensor(storage_offset != 0)
+        torch.randn(10)[2:8],  # to test non_contiguous tensor(storage_offset != 0)
         torch.randn(10, 10),
         torch.randn(10, 10, 2),
         torch.randn(10, 10, 2, 2),
@@ -88,7 +88,8 @@ class RelDiffComparator(Comparator):
         """
         super().__init__()
         self._comparator = (
-            lambda result, golden: torch.abs((golden - result) / golden).max() < rel_diff
+            lambda result, golden: torch.abs((golden - result) / golden).max()
+            < rel_diff
         )
 
 
@@ -106,8 +107,8 @@ class OpTest:
         func=None,
         input_args=None,
         comparators=DefaultComparator(equal_nan=True),
-        ignored_result_indices=None
-        ):
+        ignored_result_indices=None,
+    ):
         assert func is not None, "no function defined."
         self._func = func
         self._input_args = input_args
@@ -213,7 +214,7 @@ class OpTest:
                 res.append(i.clone())
             return res
 
-    def check_result(self, inputs = None, train: bool = False, test_out: bool = False):
+    def check_result(self, inputs=None, train=False, test_out=False):
         """Run op and compare computing results.
         Args:
             inputs (dict): Inputs arguments for op.

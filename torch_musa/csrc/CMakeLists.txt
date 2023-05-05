@@ -5,6 +5,7 @@ project(op_subproject LANGUAGES CXX)
 FILE(GLOB _CSRCS
     aten/ops/*.cpp
     aten/utils/*.cpp
+    aten/mudnn/*.cpp
     core/*.cpp
     )
 

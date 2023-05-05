@@ -44,6 +44,7 @@ std::tuple<at::Tensor&, at::Tensor&> NllLossOut(
       input.scalar_type() == at::ScalarType::Float,
       "Dtype of input tensor of NllLoss only support Float32, but now it is ",
       input.scalar_type());
+  torch_musa::MUSAGuard device_guard(input.device());
 
   auto contiguous_input = Contiguous(input);
   auto contiguous_target = Contiguous(target);
@@ -94,7 +95,7 @@ std::tuple<at::Tensor&, at::Tensor&> NllLossOut(
   }
   total_weight.resize_({});
 
-  muHandle h;
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::NLLLoss nll_loss_op;
   auto mt_input = CreateMUTensor(contiguous_input);
   auto mt_target = CreateMUTensor(contiguous_target);
@@ -179,6 +180,7 @@ at::Tensor& NllLossBwdGradInput(
       "Dtype of input tensor of NllLossBackward only support Float32, ",
       "but now it is ",
       input.scalar_type());
+  torch_musa::MUSAGuard guard_device(input.device());
   auto contiguous_grad_output = Contiguous(grad_output);
   auto contiguous_input = Contiguous(input);
   auto contiguous_target = Contiguous(target);
@@ -234,7 +236,7 @@ at::Tensor& NllLossBwdGradInput(
   }
   grad_input.resize_(input.sizes());
 
-  muHandle h;
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::NLLLoss nll_loss_op;
   auto mt_target = CreateMUTensor(contiguous_target);
   auto mt_grad_output = CreateMUTensor(contiguous_grad_output);
@@ -292,7 +294,8 @@ Tensor KLDiv(
     const Tensor& target,
     int64_t reduction,
     bool log_target) {
-  ::musa::dnn::Handle h;
+  torch_musa::MUSAGuard device_guard(input.device());
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::KLDivLoss kldiv;
 
   Tensor output;
@@ -324,8 +327,9 @@ Tensor KLDivBwd(
     const Tensor& target,
     int64_t reduction,
     bool log_target) {
+  torch_musa::MUSAGuard device_guard(input.device());
   auto grad_input = at::zeros_like(input);
-  ::musa::dnn::Handle h;
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::KLDivLoss kldiv;
 
   if (reduction == at::Reduction::Mean) {

@@ -24,7 +24,8 @@ void BinaryCall(
     const Tensor& other,
     BINARY_MODE m = BINARY_MODE::ADD,
     const Scalar alpha_scalar = 1) {
-  muHandle h;
+  torch_musa::MUSAGuard device_guard(self.device());
+  muHandle& h = GetMudnnHandle();
   Tensor other_tmp = alpha_scalar.equal(1) ? other : at::empty_like(other);
   auto other_mt = CreateMUTensor(other_tmp);
 
@@ -86,6 +87,14 @@ Tensor Binary(
       return at::empty({0}, self.options());
     }
   }
+
+  // One of the both tensors might be cpu device. e.g.
+  // 1. self will be in cpu if '1 + Tensor'.
+  // 2. other wiil be in cpu if 'Tensor + 1'.
+  // We use get musa devcie info to set context, so we need this check.
+  Device device =
+      self.device().type() == DeviceType::CPU ? other.device() : self.device();
+  torch_musa::MUSAGuard guard(device);
 
   Tensor contiguous_self = Contiguous(self);
   Tensor contiguous_other = Contiguous(other);
@@ -159,7 +168,7 @@ Tensor Binary(
           output_sizes,
           ScalarType::Bool,
           c10::nullopt,
-          kMUSA,
+          device,
           c10::nullopt,
           at::MemoryFormat::Contiguous);
     } else {
@@ -167,14 +176,14 @@ Tensor Binary(
           output_sizes,
           contiguous_self.scalar_type(),
           c10::nullopt,
-          kMUSA,
+          device,
           c10::nullopt,
           at::MemoryFormat::Contiguous);
     }
   }
 
   if (optimize_scalar_unary) {
-    muHandle h;
+    muHandle& h = GetMudnnHandle();
     ::musa::dnn::Unary uop;
     auto other_scalar = contiguous_other.item();
     auto ConvertBinaryModeToString = [](BINARY_MODE mode) -> std::string {
@@ -429,10 +438,11 @@ Tensor& ThresholdBwd_out(
     const Tensor& self,
     const Scalar& threshold,
     Tensor& grad_input) {
+  torch_musa::MUSAGuard device_gaurd(self.device());
   auto contiguous_grad_output = Contiguous(grad_output);
   auto contiguous_self = Contiguous(self);
 
-  muHandle h;
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Binary binary_op;
   auto mt_grad_output = CreateMUTensor(contiguous_grad_output);
   auto mt_self = CreateMUTensor(contiguous_self);

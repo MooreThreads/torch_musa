@@ -6,6 +6,7 @@
 #include <torch/library.h>
 
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/core/MUSAGuard.h"
 
 #include <mudnn.h>
 
@@ -19,13 +20,14 @@ Tensor& ArangeStartOut(
     const Scalar& step,
     Tensor& result) {
   MUSA_TENSOR_TYPE_CHECK(result);
+  torch_musa::MUSAGuard device_guard(result.device());
   double size_d =
       std::ceil((end.toDouble() - start.toDouble()) / step.toDouble());
   int64_t size = static_cast<int64_t>(size_d);
   std::vector<int64_t> shape{size};
   result.resize_(shape);
   auto out = CreateMUTensor(result);
-  ::musa::dnn::Handle h;
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Arange op;
   if (result.scalar_type() == at::ScalarType::Float) {
     CHECK_MUDNN_STATUS(op.SetStart(start.toDouble()), "SetStart");

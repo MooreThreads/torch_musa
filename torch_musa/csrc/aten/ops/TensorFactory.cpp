@@ -33,6 +33,7 @@ Tensor empty_mtgpu(
     LOG(INFO) << "layout_opt is invalid in empty_mtgpu";
   }
   auto device = device_or_default(device_opt);
+  torch_musa::OptionalMUSAGuard guard(device);
 
   bool pin_memory = pinned_memory_or_default(pin_memory_opt);
 

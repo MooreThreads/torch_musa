@@ -53,11 +53,12 @@ void ReduceCall(
     ::musa::dnn::Reduce::Mode m,
     const c10::optional<at::Scalar>& p = c10::nullopt,
     const bool is_norm = false) {
+  torch_musa::MUSAGuard device_guard(self.device());
   auto input = Contiguous(self);
   auto out = CreateMUTensor(output);
   auto in = CreateMUTensor(input);
 
-  muHandle h;
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Reduce r;
   CHECK_MUDNN_STATUS(r.SetMode(m), "SetMode");
   // That input is scalar, but dim = [0] is allowed in PyTorch, in which case
@@ -272,10 +273,11 @@ Tensor CumsumCall(
     c10::optional<ScalarType> dtype_opt,
     Tensor& out) {
   UNUSED(dtype_opt);
+  torch_musa::MUSAGuard device_guard(self.device());
   muTensor self_mt = CreateMUTensor(self);
   muTensor out_mt = CreateMUTensor(out);
 
-  ::musa::dnn::Handle h;
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Cumsum csop;
   CHECK_MUDNN_STATUS(csop.SetDim(dim), "SetDim");
   CHECK_MUDNN_STATUS(csop.Run(h, out_mt, self_mt, InternalMemAlloc), "Run");
@@ -361,13 +363,15 @@ void ReduceIndicesCall(
       output.scalar_type());
   TORCH_CHECK(indices.scalar_type() == kLong, "Only support int64 indices now");
 
+  torch_musa::MUSAGuard device(self.device());
+
   auto input = Contiguous(self);
 
   auto out = CreateMUTensor(output);
   auto ids = CreateMUTensor(indices);
   auto in = CreateMUTensor(input);
 
-  muHandle h;
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Reduce r;
   CHECK_MUDNN_STATUS(r.SetMode(m), "SetMode");
   int dim_int = dim;

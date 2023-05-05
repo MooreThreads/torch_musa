@@ -23,6 +23,7 @@ Tensor Embedding(
   // these varibs are not used in musa so far.
   UNUSED(scale_grad_by_freq);
   UNUSED(sparse);
+  torch_musa::MUSAGuard device_guard(weight.device());
   std::vector<int64_t> new_shape(
       indices.sizes().begin(), indices.sizes().end());
 
@@ -45,7 +46,7 @@ Tensor Embedding(
   auto tbl = CreateMUTensor(weight_);
   auto idx = CreateMUTensor(indices_);
 
-  ::musa::dnn::Handle h;
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Embedding op;
   CHECK_MUDNN_STATUS(op.SetPaddingIdx(padding_idx), "SetPaddingIdx");
   CHECK_MUDNN_STATUS(op.Run(h, out, tbl, idx), "Run");
@@ -81,6 +82,7 @@ Tensor EmbeddingDenseBwd(
       indices.scalar_type());
   // its not be used in muDNN so far.
   UNUSED(scale_grad_by_freq);
+  torch_musa::MUSAGuard device_guard(grad_output.device());
 
   Tensor grad_input = empty_mtgpu(
       {num_weights, grad_output.size(-1)},
@@ -92,7 +94,7 @@ Tensor EmbeddingDenseBwd(
   auto contiguous_grad_output = Contiguous(grad_output);
   auto contiguous_indices = Contiguous(indices);
 
-  ::musa::dnn::Handle h;
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Embedding embedding;
   auto mt_grad_output = CreateMUTensor(contiguous_grad_output);
   auto mt_indices = CreateMUTensor(contiguous_indices);

@@ -42,6 +42,7 @@ at::Tensor& GatherOut(
       "Dtype of input tensor of Gather only support Float32 and Int64, "
       "but now it is ",
       input.scalar_type());
+  torch_musa::MUSAGuard device_guard(input.device());
   auto contiguous_input = Contiguous(input);
   auto contiguous_index = Contiguous(index);
 
@@ -59,7 +60,7 @@ at::Tensor& GatherOut(
     return out;
   }
 
-  ::musa::dnn::Handle h;
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::GatherX gather_op;
   auto mt_input = CreateMUTensor(contiguous_input);
   auto mt_index = CreateMUTensor(contiguous_index);

@@ -24,7 +24,8 @@ void SoftMaxCall(
     const int64_t dim,
     const Tensor& input,
     SOFTMAX_MODE mode) {
-  muHandle h;
+  torch_musa::MUSAGuard device_guard(input.device());
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Softmax softmax;
   auto input_m = CreateMUTensor(input);
   auto output_m = CreateMUTensor(output);
@@ -178,6 +179,7 @@ Tensor& SoftmaxBwdInternal(
 
   grad_input.resize_(grad_output.sizes());
 
+  torch_musa::MUSAGuard device_guard(grad_output.device());
   auto contiguous_grad_output = Contiguous(grad_output);
   auto contiguous_output = Contiguous(output);
 
@@ -189,7 +191,7 @@ Tensor& SoftmaxBwdInternal(
   if (output.numel() == 0) {
     return grad_input;
   }
-  muHandle h;
+  muHandle& h = GetMudnnHandle();
   ::musa::dnn::Softmax softmax;
   auto mt_grad_output = CreateMUTensor(contiguous_grad_output);
   auto mt_output = CreateMUTensor(contiguous_output);

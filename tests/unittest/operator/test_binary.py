@@ -9,7 +9,7 @@ from torch_musa import testing
 
 input_datas = [
     {"input": torch.tensor(random.uniform(-10, 10)), "other": torch.randn(30, 30)},
-    {"input": torch.randn(30), "other": torch.tensor(random.uniform(-10,10))},
+    {"input": torch.randn(30), "other": torch.tensor(random.uniform(-10, 10))},
     {"input": torch.randn(30, 1), "other": torch.randn(30, 30)},
     {"input": torch.randn(30, 1), "other": torch.randn(1, 30)},
 ]
@@ -31,7 +31,8 @@ all_funcs_except_div = [
 
 all_support_types = testing.get_all_support_types()
 
-def function(input_data, dtype, other_dtype,func):
+
+def function(input_data, dtype, other_dtype, func):
     if isinstance(input_data["input"], torch.Tensor):
         input_data["input"] = input_data["input"].to(dtype)
     if isinstance(input_data["other"], torch.Tensor):
@@ -63,11 +64,21 @@ def test_div(input_data, dtype, func):
 @pytest.mark.parametrize(
     "input_data",
     [
-        {"input": torch.randn(30), "other": torch.randn(30), "alpha": random.uniform(-10, 10)},
-        {"input": torch.randn(30), "other": torch.tensor(random.uniform(-100, 100)),
-            "alpha": random.uniform(-10, 10)},
-        {"input": random.uniform(0, 1), "other": random.uniform(-1, 1),
-            "alpha": random.uniform(-1, 1)},
+        {
+            "input": torch.randn(30),
+            "other": torch.randn(30),
+            "alpha": random.uniform(-10, 10),
+        },
+        {
+            "input": torch.randn(30),
+            "other": torch.tensor(random.uniform(-100, 100)),
+            "alpha": random.uniform(-10, 10),
+        },
+        {
+            "input": random.uniform(0, 1),
+            "other": random.uniform(-1, 1),
+            "alpha": random.uniform(-1, 1),
+        },
     ],
 )
 @pytest.mark.parametrize("dtype", [torch.float32])
@@ -81,7 +92,7 @@ def test_binary_with_alpha(input_data, dtype, func):
     "input_data",
     [
         {"input": torch.randn(10), "other": torch.tensor(random.uniform(-10, 10))},
-        {"input": torch.randn(10), "other": random.uniform(-10,10)},
+        {"input": torch.randn(10), "other": random.uniform(-10, 10)},
     ],
 )
 @pytest.mark.parametrize("dtype", [torch.float32])

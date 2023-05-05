@@ -25,6 +25,7 @@ namespace musa {
       "but now it is ",
       input.scalar_type());
 
+  torch_musa::MUSAGuard device_guard(input.device());
   if (input.numel() == 0) {
     return std::make_tuple(input, at::empty_like(input, input.options()));
   }
@@ -49,7 +50,7 @@ namespace musa {
   Tensor mask = at::empty_like(
       input, input.options().dtype(c10::CppTypeToScalarType<bool>::value));
   Tensor output = at::empty_like(input);
-  ::musa::dnn::Handle h;
+  muHandle& h = GetMudnnHandle();
   auto musa_input = CreateMUTensor(input);
   auto musa_output = CreateMUTensor(output);
   auto musa_mask = CreateMUTensor(mask);
@@ -85,8 +86,9 @@ Tensor NativeDropoutBackward(
       "Dtype of mask tensor of NativeDropoutBackward only support",
       " Bool, but now it is ",
       mask.scalar_type());
+  torch_musa::MUSAGuard device_guard(grad_output.device());
   Tensor output = at::empty_like(grad_output);
-  ::musa::dnn::Handle h;
+  muHandle& h = GetMudnnHandle();
   auto musa_grad_output = CreateMUTensor(grad_output);
   auto musa_mask = CreateMUTensor(mask);
   auto musa_output = CreateMUTensor(output);

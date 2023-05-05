@@ -5,6 +5,7 @@
 #include <ATen/Dispatch.h>
 
 #include <mudnn.h>
+#include "torch_musa/csrc/aten/mudnn/Handle.h"
 #include "torch_musa/csrc/core/MUSAException.h"
 
 namespace at {

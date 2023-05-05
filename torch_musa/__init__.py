@@ -24,7 +24,6 @@ from .core.stream import (
     set_stream,
     current_stream,
     default_stream,
-    stream,
     ExternalStream,
     stream,
     Stream,
@@ -42,7 +41,8 @@ from .core.memory import (
     memory_snapshot,
     memory_allocated,
     max_memory_allocated,
-    max_memory_reserved)
+    max_memory_reserved,
+)
 
 register_deserialization()
 

@@ -9,52 +9,65 @@ from torch_musa import testing
 
 
 input_data = testing.get_raw_data()
-all_dtypes = [torch.bool, torch.uint8, torch.float32, torch.int32, torch.float64, torch.int64]
+all_dtypes = [
+    torch.bool,
+    torch.uint8,
+    torch.float32,
+    torch.int32,
+    torch.float64,
+    torch.int64,
+]
+
 
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("src_dtype", all_dtypes)
 def test_cast_to_float64(input_data, src_dtype):
-    call_cast_func(input_data,src_dtype, torch.float64)
+    call_cast_func(input_data, src_dtype, torch.float64)
+
 
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("src_dtype", all_dtypes)
 def test_cast_to_float32(input_data, src_dtype):
-    call_cast_func(input_data,src_dtype, torch.float32)
+    call_cast_func(input_data, src_dtype, torch.float32)
+
 
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("src_dtype", all_dtypes)
 def test_cast_to_int64(input_data, src_dtype):
-    call_cast_func(input_data,src_dtype, torch.int64)
+    call_cast_func(input_data, src_dtype, torch.int64)
 
 
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("src_dtype", all_dtypes)
 def test_cast_to_int32(input_data, src_dtype):
-    call_cast_func(input_data,src_dtype, torch.int32)
+    call_cast_func(input_data, src_dtype, torch.int32)
+
 
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("src_dtype", all_dtypes)
 def test_cast_to_uint8(input_data, src_dtype):
-    call_cast_func(input_data,src_dtype, torch.uint8)
+    call_cast_func(input_data, src_dtype, torch.uint8)
+
 
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("src_dtype", all_dtypes)
 def test_cast_to_bool(input_data, src_dtype):
-    call_cast_func(input_data,src_dtype, torch.bool)
+    call_cast_func(input_data, src_dtype, torch.bool)
+
 
 def call_cast_func(input_data, src_dtype, dst_dtype):
     # this cast will call Permute op or memcpy func
     if src_dtype == dst_dtype:
         return
-    src_tensor_mtgpu = input_data.clone().detach().to(dtype=src_dtype, device = "musa")
+    src_tensor_mtgpu = input_data.clone().detach().to(dtype=src_dtype, device="musa")
     dst_tensor_mtgpu = src_tensor_mtgpu.to(dst_dtype)
     mtgpu_result = dst_tensor_mtgpu.cpu().detach()
 
-    src_tensor_cpu = input_data.clone().detach().to(dtype=src_dtype, device = "cpu")
+    src_tensor_cpu = input_data.clone().detach().to(dtype=src_dtype, device="cpu")
     dst_tensor_cpu = src_tensor_cpu.to(dst_dtype)
     cpu_result = dst_tensor_cpu.detach()
 
     comparator = testing.DefaultComparator()
     assert comparator(mtgpu_result, cpu_result)
-    assert mtgpu_result.dtype ==  cpu_result.dtype
-    assert mtgpu_result.shape ==  cpu_result.shape
+    assert mtgpu_result.dtype == cpu_result.dtype
+    assert mtgpu_result.shape == cpu_result.shape
