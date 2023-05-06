@@ -129,6 +129,7 @@ DEFINE_ACTIVATE_OP(Exp, ::musa::dnn::Unary::Mode::EXP)
 DEFINE_ACTIVATE_OP(Sin, ::musa::dnn::Unary::Mode::SIN)
 DEFINE_ACTIVATE_OP(Cos, ::musa::dnn::Unary::Mode::COS)
 DEFINE_ACTIVATE_OP(Abs, ::musa::dnn::Unary::Mode::ABS)
+DEFINE_ACTIVATE_OP(Ceil, ::musa::dnn::Unary::Mode::CEIL)
 
 #define SCALAR_COMPARISON(op_name, mode)                         \
   Tensor& op_name##Out(                                          \
@@ -451,6 +452,10 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("sigmoid", &Sigmoid);
   m.impl("sigmoid_", &Sigmoid_);
   m.impl("sigmoid.out", &SigmoidOut);
+
+  m.impl("ceil", &Ceil);
+  m.impl("ceil_", &Ceil_);
+  m.impl("ceil.out", &CeilOut);
 
   m.impl("exp", &Exp);
   m.impl("exp_", &Exp_);

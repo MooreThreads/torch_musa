@@ -232,6 +232,17 @@ Tensor BinarycommonDtype(
     const Tensor& other,
     Scalar const& alpha_scalar,
     BINARY_MODE m) {
+  // TODO(@caizhi): use musa porting to instead putting to cpu.
+  if ((self.scalar_type() == ScalarType::Bool ||
+       other.scalar_type() == ScalarType::Bool) ||
+      self.scalar_type() == ScalarType::Double ||
+      other.scalar_type() == ScalarType::Double) {
+    if (m == BINARY_MODE::MUL) {
+      return at::mul(self.cpu(), other.cpu()).to("musa");
+    } else if (m == BINARY_MODE::TRUEDIV) {
+      return at::div(self.cpu(), other.cpu()).to("musa");
+    }
+  }
   ScalarType common_dtype = at::result_type(self, other);
   alpha_check(common_dtype, alpha_scalar);
   Tensor contiguous_self = self.to(common_dtype);
@@ -331,6 +342,7 @@ DEFINE_BINARY_OP(Greater, BINARY_MODE::GT)
 DEFINE_BINARY_OP(GreaterEqual, BINARY_MODE::GE)
 DEFINE_BINARY_OP(Remainder, BINARY_MODE::FLOORMOD)
 DEFINE_BINARY_OP(Less, BINARY_MODE::LT)
+DEFINE_BINARY_OP(Bitwise_And, BINARY_MODE::LOGICAL_AND)
 
 Tensor& Div_out_mode(
     const Tensor& self,
@@ -514,6 +526,10 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("not_equal.Tensor", &NotEqualTensor);
   m.impl("not_equal_.Tensor", &NotEqual_Tensor);
   m.impl("not_equal.Tensor_out", &NotEqual_out);
+
+  m.impl("bitwise_and.Tensor", &Bitwise_AndTensor);
+  m.impl("bitwise_and_.Tensor", &Bitwise_And_Tensor);
+  m.impl("bitwise_and.Tensor_out", &Bitwise_And_out);
 
   m.impl("sub.Tensor", &SubTensor);
   m.impl("sub_.Tensor", &Sub_Tensor);

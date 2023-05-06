@@ -113,6 +113,7 @@ Tensor Reduction(
   return output;
 }
 
+#define REDUCE_OPERATOR(op_name)
 Tensor Mean(const Tensor& self, c10::optional<ScalarType> dtype) {
   return Reduction(
       self, IntArrayRef{}, false, dtype, ::musa::dnn::Reduce::Mode::MEAN);
@@ -416,6 +417,10 @@ Tensor MaxAllCall(const Tensor& self, ::musa::dnn::Reduce::Mode m) {
 }
 
 Tensor MaxAll(const Tensor& self) {
+  // TODO(@caizhi): use musa porting to instead putting to cpu.
+  if (self.scalar_type() == ScalarType::Double) {
+    return at::min(self.to("cpu")).to("musa");
+  }
   return MaxAllCall(self, ::musa::dnn::Reduce::Mode::MAX);
 }
 
@@ -549,6 +554,27 @@ Tensor& ArgmaxOut(
   return result;
 }
 
+Tensor MinAllCall(const Tensor& self, ::musa::dnn::Reduce::Mode m) {
+  auto out_dtype = self.scalar_type();
+  // torch.min call reudce_all according to out.dim
+  Tensor output = at::empty({}, self.options().dtype(out_dtype));
+  DimVector dims_(0);
+  if (self.numel() == 0) {
+    output.zero_();
+  } else {
+    ReduceCall(output, self, dims_, m);
+  }
+  return output;
+}
+
+Tensor MinAll(const Tensor& self) {
+  // TODO(@caizhi): use musa porting to instead putting to cpu.
+  if (self.scalar_type() == ScalarType::Double) {
+    return at::min(self.to("cpu")).to("musa");
+  }
+  return MinAllCall(self, ::musa::dnn::Reduce::Mode::MIN);
+}
+
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("mean", &Mean);
   m.impl("mean.dim", &MeanDim);
@@ -578,6 +604,8 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("max.dim_max", &MaxDimMax);
   m.impl("max.names_dim", &MaxNamesDim);
   m.impl("max.names_dim_max", &MaxNamesDimMax);
+
+  m.impl("min", &MinAll);
 
   m.impl("all", &All);
   m.impl("all.dim", &AllDim);

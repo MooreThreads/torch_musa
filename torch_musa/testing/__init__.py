@@ -7,4 +7,5 @@ from .base_test_tool import (
     OpTest,
     get_raw_data,
     get_all_support_types,
+    get_all_types
 )

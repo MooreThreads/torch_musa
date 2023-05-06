@@ -24,5 +24,9 @@ input_data = [
 
 @pytest.mark.parametrize("input_data", input_data)
 def test_bmm(input_data):
-    test = testing.OpTest(func=torch.bmm, input_args=input_data)
+    test = testing.OpTest(
+        func=torch.bmm,
+        input_args=input_data,
+        comparators=testing.DefaultComparator(abs_diff=1e-6)
+    )
     test.check_result()

@@ -15,7 +15,7 @@ all_dtypes = [
     torch.float32,
     torch.int32,
     torch.float64,
-    torch.int64,
+    torch.int64
 ]
 
 
