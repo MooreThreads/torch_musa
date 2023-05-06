@@ -170,15 +170,15 @@ void mtgpu_impl_copy_d2d(
   Device dst_device = tensor_self.device();
   Device src_device = tensor_src.device();
 
-  torch_musa::MUSAGuard device_guard(src_device);
+  c10::musa::MUSAGuard device_guard(src_device);
   muHandle& h = GetMudnnHandle();
 
-  torch_musa::MUSAStream copy_stream =
-      torch_musa::getCurrentMUSAStream(src_device.index());
+  c10::musa::MUSAStream copy_stream =
+      c10::musa::getCurrentMUSAStream(src_device.index());
 
   if (memcpy_eligible) {
     bool needs_MemcpyPeer =
-        torch_musa::canDeviceAccessPeer(src_device.index(), dst_device.index());
+        c10::musa::canDeviceAccessPeer(src_device.index(), dst_device.index());
     void* dst = const_cast<void*>(tensor_self.data_ptr());
     void* src = const_cast<void*>(tensor_src.data_ptr());
     size_t size = tensor_src.nbytes();
@@ -207,7 +207,7 @@ void mtgpu_impl_copy_d2d(
 }
 
 void mtgpu_impl_datacast(const Tensor& tensor_self, const Tensor& tensor_src) {
-  torch_musa::MUSAGuard device_guard(tensor_src.device());
+  c10::musa::MUSAGuard device_guard(tensor_src.device());
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Unary op;
 
@@ -319,7 +319,7 @@ Tensor mtgpu_copy_from(
     return self;
   }
 
-  torch_musa::OptionalMUSAGuard device_guard;
+  c10::musa::OptionalMUSAGuard device_guard;
   Memcpy_type copy_type;
   if (!is_musa(src) && is_musa(self)) {
     device_guard.set_device(self.device());

@@ -7,7 +7,7 @@
 #include "torch_musa/csrc/core/MUSAStream.h"
 
 struct THMPStream : THPStream {
-  torch_musa::MUSAStream musa_stream;
+  c10::musa::MUSAStream musa_stream;
 };
 extern PyObject* THMPStreamClass;
 

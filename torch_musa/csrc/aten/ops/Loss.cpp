@@ -44,7 +44,7 @@ std::tuple<at::Tensor&, at::Tensor&> NllLossOut(
       input.scalar_type() == at::ScalarType::Float,
       "Dtype of input tensor of NllLoss only support Float32, but now it is ",
       input.scalar_type());
-  torch_musa::MUSAGuard device_guard(input.device());
+  c10::musa::MUSAGuard device_guard(input.device());
 
   auto contiguous_input = Contiguous(input);
   auto contiguous_target = Contiguous(target);
@@ -180,7 +180,7 @@ at::Tensor& NllLossBwdGradInput(
       "Dtype of input tensor of NllLossBackward only support Float32, ",
       "but now it is ",
       input.scalar_type());
-  torch_musa::MUSAGuard guard_device(input.device());
+  c10::musa::MUSAGuard guard_device(input.device());
   auto contiguous_grad_output = Contiguous(grad_output);
   auto contiguous_input = Contiguous(input);
   auto contiguous_target = Contiguous(target);
@@ -294,7 +294,7 @@ Tensor KLDiv(
     const Tensor& target,
     int64_t reduction,
     bool log_target) {
-  torch_musa::MUSAGuard device_guard(input.device());
+  c10::musa::MUSAGuard device_guard(input.device());
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::KLDivLoss kldiv;
 
@@ -327,7 +327,7 @@ Tensor KLDivBwd(
     const Tensor& target,
     int64_t reduction,
     bool log_target) {
-  torch_musa::MUSAGuard device_guard(input.device());
+  c10::musa::MUSAGuard device_guard(input.device());
   auto grad_input = at::zeros_like(input);
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::KLDivLoss kldiv;

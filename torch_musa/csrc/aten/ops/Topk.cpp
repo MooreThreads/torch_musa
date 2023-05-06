@@ -42,7 +42,7 @@ std::tuple<Tensor&, Tensor&> TopkOut(
       "now it is ",
       self.scalar_type());
 
-  torch_musa::MUSAGuard device_guard(self.device());
+  c10::musa::MUSAGuard device_guard(self.device());
   int64_t wraped_dim = maybe_wrap_dim(dim, self.dim(), /*wrap_scalar=*/true);
   TORCH_CHECK(
       k >= 0 && k <= (self.dim() > 0 ? self.size(wraped_dim) : 1),

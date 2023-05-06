@@ -36,7 +36,6 @@ Musa PyTorch is an extension that adds Moore Threads's MUSA as a standalone PyTo
 #### Install Dependencies
 
 ```bash
-apt-get install patch
 apt-get install ccache
 pip install -r requirements.txt
 ```
@@ -57,6 +56,7 @@ bash build.sh   # build original PyTorch and Torch_MUSA from scratch
 # Some important parameters are as follows:
 bash build.sh --torch  # build original PyTorch only
 bash build.sh --musa   # build Torch_MUSA only
+bash build.sh --fp64   # compile fp64 in kernels using mcc in Torch_MUSA
 bash build.sh --debug  # build in debug mode
 bash build.sh --asan   # build in asan mode
 bash build.sh --clean  # clean everything built

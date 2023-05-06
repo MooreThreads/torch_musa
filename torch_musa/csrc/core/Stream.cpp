@@ -19,7 +19,7 @@ static PyObject* THMPStream_pynew(
     PyObject* kwargs) {
   HANDLE_TH_ERRORS
 
-  const auto current_device = torch_musa::current_device();
+  const auto current_device = c10::musa::current_device();
 
   int priority = 0;
   int64_t stream_id = 0;
@@ -58,20 +58,20 @@ static PyObject* THMPStream_pynew(
         priority == 0, "Priority was explicitly set for a external stream")
   }
 
-  torch_musa::MUSAStream stream = (stream_id || device_index || device_type)
-      ? torch_musa::MUSAStream::unpack3(
+  c10::musa::MUSAStream stream = (stream_id || device_index || device_type)
+      ? c10::musa::MUSAStream::unpack3(
             stream_id, device_index, static_cast<c10::DeviceType>(device_type))
       : stream_ptr
-      ? torch_musa::getStreamFromExternal(
+      ? c10::musa::getStreamFromExternal(
             reinterpret_cast<musaStream_t>(stream_ptr), current_device)
-      : torch_musa::getStreamFromPool(
+      : c10::musa::getStreamFromPool(
             /* isHighPriority */ priority < 0 ? true : false);
 
   THMPStream* self = (THMPStream*)ptr.get();
   self->stream_id = static_cast<int64_t>(stream.id());
   self->device_index = static_cast<int64_t>(stream.device_index());
   self->device_type = static_cast<int64_t>(stream.device_type());
-  new (&self->musa_stream) torch_musa::MUSAStream(stream);
+  new (&self->musa_stream) c10::musa::MUSAStream(stream);
 
   return (PyObject*)ptr.release();
   END_HANDLE_TH_ERRORS
@@ -104,7 +104,7 @@ static PyObject* THMPStream_priority_range(
     PyObject* _unused,
     PyObject* noargs) {
   HANDLE_TH_ERRORS
-  auto least_greatest_priority = torch_musa::MUSAStream::priority_range();
+  auto least_greatest_priority = c10::musa::MUSAStream::priority_range();
   int least_priority = std::get<0>(least_greatest_priority);
   int greatest_priority = std::get<1>(least_greatest_priority);
   return Py_BuildValue("(ii)", least_priority, greatest_priority);
@@ -169,7 +169,7 @@ static PyMethodDef THMPStream_methods[] = {
 PyTypeObject THMPStreamType = {
     PyVarObject_HEAD_INIT(
         nullptr,
-        0) "torch_musa._MUSAC._MusaStreamBase", /* tp_name */
+        0) "c10::musa._MUSAC._MusaStreamBase", /* tp_name */
     sizeof(THMPStream), /* tp_basicsize */
     0, /* tp_itemsize */
     (destructor)THMPStream_dealloc, /* tp_dealloc */

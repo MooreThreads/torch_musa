@@ -3,7 +3,8 @@
 #include <deque>
 #include "torch_musa/csrc/core/MUSAException.h"
 
-namespace torch_musa {
+namespace c10 {
+namespace musa {
 
 namespace {
 
@@ -113,4 +114,5 @@ void registerMusaDeviceProperties(PyObject* module) {
       });
 }
 
-} // namespace torch_musa
+} // namespace musa
+} // namespace c10

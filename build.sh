@@ -13,11 +13,13 @@ BUILD_TORCH=1
 BUILD_TORCH_MUSA=1
 ONLY_PATCH=0
 CLEAN=0
+COMPILE_FP64=0
 
 usage() {
   echo -e "\033[1;32mThis script is used to build PyTorch and Torch_MUSA. \033[0m"
   echo -e "\033[1;32mParameters usage: \033[0m"
   echo -e "\033[32m    --all         : Means building both PyTorch and Torch_MUSA. \033[0m"
+  echo -e "\033[32m    --fp64        : Means compiling fp64 data type in kernels using mcc in Torch_MUSA. \033[0m"
   echo -e "\033[32m    -m/--musa     : Means building Torch_MUSA only. \033[0m"
   echo -e "\033[32m    -t/--torch    : Means building original PyTorch only. \033[0m"
   echo -e "\033[32m    -d/--debug    : Means building in debug mode. \033[0m"
@@ -29,7 +31,7 @@ usage() {
 }
 
 # parse paremters
-parameters=`getopt -o +mtdacpwh --long all,musa,torch,debug,asan,clean,patch,wheel,help, -n "$0" -- "$@"`
+parameters=`getopt -o +mtdacpwh --long all,fp64,musa,torch,debug,asan,clean,patch,wheel,help, -n "$0" -- "$@"`
 [ $? -ne 0 ] && { echo -e "\033[34mTry '$0 --help' for more information. \033[0m"; exit 1; }
 
 eval set -- "$parameters"
@@ -37,6 +39,7 @@ eval set -- "$parameters"
 while true;do
     case "$1" in
         --all) BUILD_TORCH=1; BUILD_TORCH_MUSA=1; shift ;;
+        --fp64) COMPILE_FP64=1; shift ;;
         -m|--musa) BUILD_TORCH_MUSA=1; BUILD_TORCH=0; shift ;;
         -t|--torch) BUILD_TORCH_MUSA=0; BUILD_TORCH=1; shift ;;
         -d|--debug) DEBUG_MODE=1; shift ;;
@@ -133,11 +136,11 @@ build_torch_musa() {
   pushd ${TORCH_MUSA_HOME}
   if [ $BUILD_WHEEL -eq 1 ]; then
     rm -rf dist
-    PYTORCH_REPO_PATH=${PYTORCH_PATH} DEBUG=${DEBUG_MODE} USE_ASAN=${ASAN_MODE} python setup.py bdist_wheel
+    PYTORCH_REPO_PATH=${PYTORCH_PATH} DEBUG=${DEBUG_MODE} USE_ASAN=${ASAN_MODE} ENABLE_COMPILE_FP64=${COMPILE_FP64} python setup.py bdist_wheel
     rm -rf torch_musa.egg-info
     pip install dist/*.whl
   else
-    PYTORCH_REPO_PATH=${PYTORCH_PATH} DEBUG=${DEBUG_MODE} USE_ASAN=${ASAN_MODE} python setup.py install
+    PYTORCH_REPO_PATH=${PYTORCH_PATH} DEBUG=${DEBUG_MODE} USE_ASAN=${ASAN_MODE} ENABLE_COMPILE_FP64=${COMPILE_FP64} python setup.py install
   fi
   popd
 }

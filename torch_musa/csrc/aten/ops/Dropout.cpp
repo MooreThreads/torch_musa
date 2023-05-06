@@ -25,7 +25,7 @@ namespace musa {
       "but now it is ",
       input.scalar_type());
 
-  torch_musa::MUSAGuard device_guard(input.device());
+  c10::musa::MUSAGuard device_guard(input.device());
   if (input.numel() == 0) {
     return std::make_tuple(input, at::empty_like(input, input.options()));
   }
@@ -86,7 +86,7 @@ Tensor NativeDropoutBackward(
       "Dtype of mask tensor of NativeDropoutBackward only support",
       " Bool, but now it is ",
       mask.scalar_type());
-  torch_musa::MUSAGuard device_guard(grad_output.device());
+  c10::musa::MUSAGuard device_guard(grad_output.device());
   Tensor output = at::empty_like(grad_output);
   muHandle& h = GetMudnnHandle();
   auto musa_grad_output = CreateMUTensor(grad_output);

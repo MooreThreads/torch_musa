@@ -1,5 +1,5 @@
-#include <build/generated_cuda_compatible/aten/src/ATen/native/Resize.h>
-#include <build/generated_cuda_compatible/aten/src/ATen/ops/cumsum_native.h>
+#include <ATen/native/Resize.h>
+#include <ATen/ops/cumsum_native.h>
 #include <c10/util/Exception.h>
 
 namespace at {

@@ -24,7 +24,7 @@ void BinaryCall(
     const Tensor& other,
     BINARY_MODE m = BINARY_MODE::ADD,
     const Scalar alpha_scalar = 1) {
-  torch_musa::MUSAGuard device_guard(self.device());
+  c10::musa::MUSAGuard device_guard(self.device());
   muHandle& h = GetMudnnHandle();
   Tensor other_tmp = alpha_scalar.equal(1) ? other : at::empty_like(other);
   auto other_mt = CreateMUTensor(other_tmp);
@@ -94,7 +94,7 @@ Tensor Binary(
   // We use get musa devcie info to set context, so we need this check.
   Device device =
       self.device().type() == DeviceType::CPU ? other.device() : self.device();
-  torch_musa::MUSAGuard guard(device);
+  c10::musa::MUSAGuard guard(device);
 
   Tensor contiguous_self = Contiguous(self);
   Tensor contiguous_other = Contiguous(other);
@@ -438,7 +438,7 @@ Tensor& ThresholdBwd_out(
     const Tensor& self,
     const Scalar& threshold,
     Tensor& grad_input) {
-  torch_musa::MUSAGuard device_gaurd(self.device());
+  c10::musa::MUSAGuard device_gaurd(self.device());
   auto contiguous_grad_output = Contiguous(grad_output);
   auto contiguous_self = Contiguous(self);
 

@@ -20,7 +20,7 @@ Tensor& ArangeStartOut(
     const Scalar& step,
     Tensor& result) {
   MUSA_TENSOR_TYPE_CHECK(result);
-  torch_musa::MUSAGuard device_guard(result.device());
+  c10::musa::MUSAGuard device_guard(result.device());
   double size_d =
       std::ceil((end.toDouble() - start.toDouble()) / step.toDouble());
   int64_t size = static_cast<int64_t>(size_d);

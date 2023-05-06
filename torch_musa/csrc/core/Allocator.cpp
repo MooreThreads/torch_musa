@@ -13,8 +13,6 @@ namespace c10 {
 
 C10_DEFINE_REGISTRY(FreeMusaMemoryCallbacksRegistry, FreeMemoryCallback);
 
-} // namespace c10
-
 namespace musa {
 namespace MUSACachingAllocator {
 
@@ -1093,15 +1091,17 @@ class MTGPUCachingAllocator {
 
 } // namespace MUSACachingAllocator
 } // namespace musa
+} // namespace c10
 
 namespace c10 {
+namespace musa {
 
-using namespace musa::MUSACachingAllocator;
+using namespace ::c10::musa::MUSACachingAllocator;
 
 class MusaCachingAllocatorImpl {
  public:
   MusaCachingAllocatorImpl() {
-    const int64_t dev_num = static_cast<int64_t>(torch_musa::device_count());
+    const int64_t dev_num = static_cast<int64_t>(c10::musa::device_count());
     device_allocators_.reserve(dev_num);
     for (int i = 0; i < dev_num; ++i) {
       device_allocators_.emplace_back(
@@ -1206,7 +1206,7 @@ struct C10_API MusaCachingAllocator final : at::Allocator {
       if (use_caching_allocator_) {
         allocator_impl_->malloc(&data, device, nbytes);
       } else {
-        musa::AutoGrowthBestFitAllocator::get_allocator()->AllocateImpl(
+        ::c10::musa::AutoGrowthBestFitAllocator::get_allocator()->AllocateImpl(
             nbytes, &data);
       }
     }
@@ -1235,35 +1235,43 @@ MusaCachingAllocator* GetMusaCachingAllocator() {
 }
 
 void raw_delete(void* ptr) {
-  MusaCachingAllocator* palloc = c10::GetMusaCachingAllocator();
+  MusaCachingAllocator* palloc = c10::musa::GetMusaCachingAllocator();
   palloc->get_allocator()->free(ptr);
 }
 
 REGISTER_ALLOCATOR(at::native::musa::kMUSA, &g_musa_alloc);
+
+} // namespace musa
 } // namespace c10
 
+namespace c10 {
 namespace musa {
 namespace MUSACachingAllocator {
 
 void EmptyCache() {
-  c10::MusaCachingAllocator* palloc = c10::GetMusaCachingAllocator();
+  c10::musa::MusaCachingAllocator* palloc =
+      c10::musa::GetMusaCachingAllocator();
   palloc->get_allocator()->empty_cache();
 }
 
 void ResetPeakStats() {
-  c10::MusaCachingAllocator* palloc = c10::GetMusaCachingAllocator();
+  c10::musa::MusaCachingAllocator* palloc =
+      c10::musa::GetMusaCachingAllocator();
   palloc->get_allocator()->reset_peak_stats();
 }
 
 DeviceStats GetDeviceStats(int64_t device) {
-  c10::MusaCachingAllocator* palloc = c10::GetMusaCachingAllocator();
+  c10::musa::MusaCachingAllocator* palloc =
+      c10::musa::GetMusaCachingAllocator();
   return palloc->get_allocator()->get_stats(device);
 }
 
 std::vector<SegmentInfo> GetMemorySnapshot() {
-  c10::MusaCachingAllocator* palloc = c10::GetMusaCachingAllocator();
+  c10::musa::MusaCachingAllocator* palloc =
+      c10::musa::GetMusaCachingAllocator();
   return palloc->get_allocator()->snapshot();
 }
 
 } // namespace MUSACachingAllocator
 } // namespace musa
+} // namespace c10

@@ -19,7 +19,7 @@ void TernaryCall(
     const Tensor& input2,
     TERNARY_MODE m,
     const Scalar& alpha_scalar) {
-  torch_musa::MUSAGuard device_guard(self.device());
+  c10::musa::MUSAGuard device_guard(self.device());
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Ternary top;
 

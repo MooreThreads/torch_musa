@@ -20,14 +20,15 @@ find_package(MUSA REQUIRED)
 
 FILE(GLOB cuda_porting_cpp_files
     aten/ops/musa/*.cpp
-    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/musa/CUDAContext.cpp
-    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/c10/musa/CUDAStream.cpp
-    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/c10/musa/CUDAFunctions.cpp
-    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/c10/musa/CUDACachingAllocator.cpp
-    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/c10/musa/CUDAMallocAsyncAllocator.cpp
-    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/c10/musa/CUDAMiscFunctions.cpp
-    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/c10/musa/CUDAException.cpp
-    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/c10/musa/CUDADeviceAssertionHost.cpp)
+    # TODO(MTAI): following cpp files should be implemented inside torch_musa
+    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/musa/MUSA_PORT_Context.cpp
+    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/c10/musa/MUSA_PORT_Stream.cpp
+    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/c10/musa/MUSA_PORT_Functions.cpp
+    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/c10/musa/MUSA_PORT_CachingAllocator.cpp
+    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/c10/musa/MUSA_PORT_MallocAsyncAllocator.cpp
+    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/c10/musa/MUSA_PORT_MiscFunctions.cpp
+    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/c10/musa/MUSA_PORT_Exception.cpp
+    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/c10/musa/MUSA_PORT_DeviceAssertionHost.cpp)
 
 FILE(GLOB cuda_porting_mu_files
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/group_norm_kernel.mu)
@@ -39,6 +40,9 @@ append_cxx_flag_if_supported("-Wno-sign-compare" CMAKE_CXX_FLAGS)
 append_cxx_flag_if_supported("-w" CMAKE_CXX_FLAGS)
 set(MUSA_MCC_FLAGS -D__MUSA_NO_HALF_OPERATORS__)
 
+if(NOT ENABLE_COMPILE_FP64)
+    string(APPEND MUSA_MCC_FLAGS " -mathx-disable-fp64")  # disable fp64
+endif()
 #set(MUSA_VERBOSE_BUILD ON)
 musa_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/aten/ops/musa)
 musa_add_library(${MUSA_KERNELS_LIB} SHARED ${cuda_porting_mu_files} ${cuda_porting_cpp_files})

@@ -11,14 +11,11 @@ import ahocorasick
 from typing import Dict
 
 
-def init_ac_automaton(
-    input_map_files: list, headers_path_map: Dict[str, str]
-) -> ahocorasick.Automaton:
+def init_ac_automaton(input_map_files: list) -> ahocorasick.Automaton:
     r"""Returns an instance of Automaton with specific information.
 
     Args:
         input_map_files (list[str]): json files which describe matching and replacing information.
-        headers_path_map (Dict[str, str]): a map used to match and replace '#include' header files path in files.
 
     Returns:
         an instance of ahocorasick.Automaton.
@@ -31,8 +28,6 @@ def init_ac_automaton(
 
     map_iter = itertools.chain(*map(lambda p: read_mapping(p).items(), input_map_files))
     for cuda, musa in map_iter:
-        automaton.add_word(cuda, (len(cuda), musa))
-    for cuda, musa in headers_path_map.items():
         automaton.add_word(cuda, (len(cuda), musa))
 
     automaton.make_automaton()
@@ -137,6 +132,12 @@ def transform_file(
                     line = line.decode("unicode_escape")
                 new_line = transform_line(line, automaton, replace_map)
                 write_handle.write(new_line)
-    file_name = path if not path.endswith(".cu") else path.replace(".cu", ".mu")
-    os.rename(write_path, file_name)
-    return file_name
+    file_name = os.path.basename(path)
+    if file_name.endswith(".cu") or file_name.endswith(".cuh") or "CUDA" in file_name or "cuda" in file_name:
+        musa_file_name = file_name.replace(".cu", ".mu").replace("CUDA", "MUSA_PORT_").replace("cuda", "musa")
+        musa_file_path = path.replace(file_name, musa_file_name)
+        os.remove(path)
+    else:
+        musa_file_path = path
+    os.rename(write_path, musa_file_path)
+    return musa_file_path

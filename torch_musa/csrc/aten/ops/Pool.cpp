@@ -29,7 +29,7 @@ void PoolCall(
     const PoolParams& p,
     Tensor& output,
     Tensor* indices = nullptr) {
-  torch_musa::MUSAGuard device_guard(input.device());
+  c10::musa::MUSAGuard device_guard(input.device());
   auto out = CreateMUTensor(output);
   auto in = CreateMUTensor(input);
   muTensor inds;
@@ -66,7 +66,7 @@ void PoolCallBwd(
     const PoolParams& p,
     Tensor& grad_input,
     const Tensor* indices = nullptr) {
-  torch_musa::MUSAGuard device_guard(grad_output.device());
+  c10::musa::MUSAGuard device_guard(grad_output.device());
   auto in = CreateMUTensor(grad_output);
   auto out = CreateMUTensor(grad_input);
   muTensor inds;
@@ -400,7 +400,7 @@ std::tuple<Tensor, Tensor> MaxPool2dIndices(
     bool ceil_mode) {
   PoolParams params;
   MaxPool2dConfigParams(params, ker, str, pad, dil);
-  torch_musa::MUSAGuard device_guard(input.device());
+  c10::musa::MUSAGuard device_guard(input.device());
   auto r = std::make_tuple(Tensor(), Tensor());
   MaxPool2dInternal(input, params, ceil_mode, std::get<0>(r), &std::get<1>(r));
   return r;

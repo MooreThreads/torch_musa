@@ -37,7 +37,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNorm(
     bool training,
     double momentum,
     double eps) {
-  torch_musa::MUSAGuard device_guard(input.device());
+  c10::musa::MUSAGuard device_guard(input.device());
   const Tensor& weight =
       c10::value_or_else(weight_opt, [] { return Tensor(); });
   const Tensor& bias = c10::value_or_else(bias_opt, [] { return Tensor(); });
@@ -159,7 +159,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
       "Dtype of input tensor of BatchNormBackward only support Float32, ",
       "but now it is ",
       input.scalar_type());
-  torch_musa::MUSAGuard device_guard(input.device());
+  c10::musa::MUSAGuard device_guard(input.device());
   c10::MaybeOwned<Tensor> weight_maybe_owned =
       at::borrow_from_optional_tensor(weight_opt);
   const Tensor& weight = *weight_maybe_owned;
@@ -247,7 +247,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
       input.scalar_type() == at::ScalarType::Float,
       "Dtype of input tensor of LayerNorm only support Float32, but now it is ",
       input.scalar_type());
-  torch_musa::MUSAGuard device_guard(input.device());
+  c10::musa::MUSAGuard device_guard(input.device());
   c10::MaybeOwned<Tensor> weight_maybe_owned =
       at::borrow_from_optional_tensor(weight_opt);
   const Tensor& weight = *weight_maybe_owned;
@@ -374,7 +374,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
       "Dtype of rstd tensor of LayerNormBackward only support Float32, ",
       "but now it is ",
       rstd.scalar_type());
-  torch_musa::MUSAGuard device_guard(input.device());
+  c10::musa::MUSAGuard device_guard(input.device());
   c10::MaybeOwned<Tensor> weight_maybe_owned =
       at::borrow_from_optional_tensor(weight_opt);
   const Tensor& weight = *weight_maybe_owned;
@@ -532,7 +532,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeGroupNorm(
     int64_t group,
     double eps) {
   (void)HxW;
-  torch_musa::MUSAGuard device_guard(X.device());
+  c10::musa::MUSAGuard device_guard(X.device());
   c10::MaybeOwned<Tensor> gamma_maybe_owned =
       at::borrow_from_optional_tensor(gamma_opt);
   const Tensor& contiguous_gamma = Contiguous(*gamma_maybe_owned);

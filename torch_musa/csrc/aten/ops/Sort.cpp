@@ -23,7 +23,7 @@ void SortCall(
     int64_t dim,
     bool descending,
     bool stable) {
-  torch_musa::MUSAGuard device_guard(in.device());
+  c10::musa::MUSAGuard device_guard(in.device());
   auto input_ = CreateMUTensor(in);
   auto values_ = CreateMUTensor(values);
   auto indices_ = CreateMUTensor(indices);

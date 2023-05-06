@@ -11,7 +11,8 @@
 #include "torch_musa/csrc/core/Device.h"
 #include "torch_musa/csrc/core/MUSAException.h"
 
-namespace torch_musa {
+namespace c10 {
+namespace musa {
 
 using at::native::musa::kMUSA;
 using c10::Device;
@@ -176,12 +177,13 @@ void setCurrentMUSAStream(MUSAStream stream);
 
 std::ostream& operator<<(std::ostream& stream, const MUSAStream& s);
 
-} // namespace torch_musa
+} // namespace musa
+} // namespace c10
 
 namespace std {
 template <>
-struct hash<torch_musa::MUSAStream> {
-  size_t operator()(torch_musa::MUSAStream s) const noexcept {
+struct hash<c10::musa::MUSAStream> {
+  size_t operator()(c10::musa::MUSAStream s) const noexcept {
     return std::hash<c10::Stream>{}(s.unwrap());
   }
 };

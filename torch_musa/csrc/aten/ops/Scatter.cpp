@@ -90,7 +90,7 @@ Tensor& ScatterAddOut(
       out.scalar_type() == at::ScalarType::Float,
       "Dtype of out tensor of scatter_add only support Float32, but now it is ",
       out.scalar_type());
-  torch_musa::MUSAGuard device_guard(self.device());
+  c10::musa::MUSAGuard device_guard(self.device());
   if (dim < 0) {
     dim += self.dim();
   }
@@ -142,7 +142,7 @@ Tensor& ScatterAddU(
       src.scalar_type() == at::ScalarType::Float,
       "Dtype of src tensor of scatter_add only support Float32, but now it is ",
       src.scalar_type());
-  torch_musa::MUSAGuard device_guard(self.device());
+  c10::musa::MUSAGuard device_guard(self.device());
   if (dim < 0) {
     dim += self.dim();
   }

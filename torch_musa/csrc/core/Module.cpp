@@ -51,20 +51,20 @@ void AddPyMethodDefs(std::vector<PyMethodDef>& vector, PyMethodDef* methods) {
 }
 
 py::object PyMusa_EmptyCache() {
-  musa::MUSACachingAllocator::EmptyCache();
+  c10::musa::MUSACachingAllocator::EmptyCache();
   return py::none();
 }
 
 py::object PyMusa_ResetPeakStats() {
-  musa::MUSACachingAllocator::ResetPeakStats();
+  c10::musa::MUSACachingAllocator::ResetPeakStats();
   return py::none();
 }
 
 py::object PyMusa_MemoryStats(int64_t device) {
-  using musa::MUSACachingAllocator::DeviceStats;
-  using musa::MUSACachingAllocator::Stat;
-  using musa::MUSACachingAllocator::StatArray;
-  using musa::MUSACachingAllocator::StatType;
+  using c10::musa::MUSACachingAllocator::DeviceStats;
+  using c10::musa::MUSACachingAllocator::Stat;
+  using c10::musa::MUSACachingAllocator::StatArray;
+  using c10::musa::MUSACachingAllocator::StatType;
 
   const auto statToDict = [](const Stat& stat) {
     py::dict dict;
@@ -86,7 +86,8 @@ py::object PyMusa_MemoryStats(int64_t device) {
     return dict;
   };
 
-  const DeviceStats stats = musa::MUSACachingAllocator::GetDeviceStats(device);
+  const DeviceStats stats =
+      c10::musa::MUSACachingAllocator::GetDeviceStats(device);
 
   py::dict result;
   result["num_alloc_retries"] = stats.num_alloc_retries;
@@ -107,8 +108,8 @@ py::object PyMusa_MemoryStats(int64_t device) {
 }
 
 py::object PyMusa_MemorySnapshot() {
-  using musa::MUSACachingAllocator::BlockInfo;
-  using musa::MUSACachingAllocator::SegmentInfo;
+  using c10::musa::MUSACachingAllocator::BlockInfo;
+  using c10::musa::MUSACachingAllocator::SegmentInfo;
 
   const auto segmentInfoToDict = [](const SegmentInfo& segmentInfo) {
     py::dict segmentDict;
@@ -134,7 +135,7 @@ py::object PyMusa_MemorySnapshot() {
     return segmentDict;
   };
 
-  const auto& snapshot = musa::MUSACachingAllocator::GetMemorySnapshot();
+  const auto& snapshot = c10::musa::MUSACachingAllocator::GetMemorySnapshot();
   py::list result;
 
   for (const auto& segmentInfo : snapshot) {
@@ -149,7 +150,7 @@ void InitMusaModule(PyObject* module) {
   THMPStream_init(module);
 
   // Device properties info
-  torch_musa::registerMusaDeviceProperties(module);
+  c10::musa::registerMusaDeviceProperties(module);
   auto py_module = py::reinterpret_borrow<py::module>(module);
 
   // Memory Management
@@ -164,57 +165,56 @@ void InitMusaModule(PyObject* module) {
 
   // Device Management
   py_module.def(
-      "_musa_getDeviceCount", []() { return torch_musa::device_count(); });
+      "_musa_getDeviceCount", []() { return c10::musa::device_count(); });
   py_module.def(
-      "_musa_getDevice", []() { return torch_musa::current_device(); });
-  py_module.def("_musa_setDevice", [](int64_t device) {
-    torch_musa::set_device(device);
-  });
+      "_musa_getDevice", []() { return c10::musa::current_device(); });
+  py_module.def(
+      "_musa_setDevice", [](int64_t device) { c10::musa::set_device(device); });
   // Synchronize musa device.
-  py_module.def("_musa_synchronize", []() { torch_musa::Synchronize(); });
+  py_module.def("_musa_synchronize", []() { c10::musa::Synchronize(); });
 
   py_module.def("_musa_exchangeDevice", [](int64_t device) {
-    return torch_musa::exchangeDevice(device);
+    return c10::musa::exchangeDevice(device);
   });
   py_module.def(
       "_musa_canDeviceAccessPeer", [](int64_t device, int64_t peer_device) {
-        return torch_musa::canDeviceAccessPeer(device, peer_device);
+        return c10::musa::canDeviceAccessPeer(device, peer_device);
       });
 
   py_module.def(
       "_get_device_properties",
       [](int64_t device) -> musaDeviceProp* {
-        return torch_musa::getDeviceProperties(device);
+        return c10::musa::getDeviceProperties(device);
       },
       py::return_value_policy::reference);
 
   py_module.def("_musa_getDefaultStream", [](int64_t device_index) {
-    auto stream = torch_musa::getDefaultMUSAStream(device_index);
+    auto stream = c10::musa::getDefaultMUSAStream(device_index);
     return py::make_tuple(
         static_cast<int64_t>(stream.id()),
         static_cast<int64_t>(stream.device_index()),
         static_cast<int64_t>(stream.device_type()));
   });
   py_module.def("_musa_getCurrentStream", [](int64_t device_index) {
-    auto stream = torch_musa::getCurrentMUSAStream(device_index);
+    auto stream = c10::musa::getCurrentMUSAStream(device_index);
     return py::make_tuple(
         static_cast<int64_t>(stream.id()),
         static_cast<int64_t>(stream.device_index()),
         static_cast<int64_t>(stream.device_type()));
   });
   py_module.def("_musa_getCurrentRawStream", [](int64_t device_index) {
-    return torch_musa::getCurrentMUSAStream(device_index);
+    return c10::musa::getCurrentMUSAStream(device_index);
   });
   py_module.def("_musa_setStream", [](py::kwargs& stream_attr) {
     int64_t device_type = stream_attr["device_type"].cast<int64_t>();
     int64_t stream_id = stream_attr["stream_id"].cast<int64_t>();
     int64_t device_index = stream_attr["device_index"].cast<int64_t>();
-    auto stream = torch_musa::MUSAStream::unpack3(
+    auto stream = c10::musa::MUSAStream::unpack3(
         stream_id, device_index, static_cast<c10::DeviceType>(device_type));
-    auto device = static_cast<int>(torch_musa::current_device());
+    auto device = static_cast<int>(c10::musa::current_device());
     if (device != stream.device_index()) {
-      torch_musa::set_device(stream.device_index());
+      c10::musa::set_device(stream.device_index());
     }
-    torch_musa::setCurrentMUSAStream(stream);
+    c10::musa::setCurrentMUSAStream(stream);
   });
 }

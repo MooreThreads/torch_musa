@@ -53,7 +53,7 @@ void ReduceCall(
     ::musa::dnn::Reduce::Mode m,
     const c10::optional<at::Scalar>& p = c10::nullopt,
     const bool is_norm = false) {
-  torch_musa::MUSAGuard device_guard(self.device());
+  c10::musa::MUSAGuard device_guard(self.device());
   auto input = Contiguous(self);
   auto out = CreateMUTensor(output);
   auto in = CreateMUTensor(input);
@@ -273,7 +273,7 @@ Tensor CumsumCall(
     c10::optional<ScalarType> dtype_opt,
     Tensor& out) {
   UNUSED(dtype_opt);
-  torch_musa::MUSAGuard device_guard(self.device());
+  c10::musa::MUSAGuard device_guard(self.device());
   muTensor self_mt = CreateMUTensor(self);
   muTensor out_mt = CreateMUTensor(out);
 
@@ -363,7 +363,7 @@ void ReduceIndicesCall(
       output.scalar_type());
   TORCH_CHECK(indices.scalar_type() == kLong, "Only support int64 indices now");
 
-  torch_musa::MUSAGuard device(self.device());
+  c10::musa::MUSAGuard device(self.device());
 
   auto input = Contiguous(self);
 

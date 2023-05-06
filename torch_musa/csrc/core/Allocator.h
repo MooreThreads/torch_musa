@@ -61,11 +61,10 @@ C10_DECLARE_REGISTRY(FreeMusaMemoryCallbacksRegistry, FreeMemoryCallback);
 #define REGISTER_FREE_MEMORY_CALLBACK(name, ...) \
   C10_REGISTER_CLASS(FreeMusaMemoryCallbacksRegistry, name, __VA_ARGS__);
 
+namespace musa {
+
 void raw_delete(void* ptr);
 
-} // namespace c10
-
-namespace musa {
 class AutoGrowthBestFitAllocator {
  public:
   static AutoGrowthBestFitAllocator* get_allocator() {
@@ -216,4 +215,5 @@ std::vector<SegmentInfo> GetMemorySnapshot();
 
 } // namespace MUSACachingAllocator
 } // namespace musa
+} // namespace c10
 #endif // ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUALLOCATOR_H_

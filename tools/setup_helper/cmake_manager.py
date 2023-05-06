@@ -110,7 +110,7 @@ class CMakeManager(CMake):
             if true_var is not None:
                 build_options[true_var] = val
             elif var.startswith(
-                ("BUILD_", "USE_", "CMAKE_", "GENERATED_")
+                ("BUILD_", "USE_", "CMAKE_", "GENERATED_", "ENABLE_")
             ) or var.endswith(("EXITCODE", "EXITCODE__TRYRUN_OUTPUT", "INSTALL_DIR")):
                 build_options[var] = val
 

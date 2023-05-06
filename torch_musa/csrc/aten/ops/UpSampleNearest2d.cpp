@@ -64,7 +64,7 @@ Tensor UpSampleNearest2d(
     IntArrayRef output_size,
     c10::optional<double> scales_h,
     c10::optional<double> scales_w) {
-  torch_musa::MUSAGuard device_guard(self.device());
+  c10::musa::MUSAGuard device_guard(self.device());
   auto result = at::empty(
       upsample_2d_common_check(self.sizes(), output_size),
       self.options().memory_format(self.suggest_memory_format()));
@@ -124,7 +124,7 @@ Tensor UpSampleNearest2dBwd(
     IntArrayRef contiguous_inputsize,
     c10::optional<double> scales_h,
     c10::optional<double> scales_w) {
-  torch_musa::MUSAGuard device_guard(grad_output.device());
+  c10::musa::MUSAGuard device_guard(grad_output.device());
   auto grad_input = at::empty(
       contiguous_inputsize,
       grad_output.options().memory_format(grad_output.suggest_memory_format()));

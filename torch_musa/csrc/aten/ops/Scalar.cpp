@@ -14,7 +14,7 @@ namespace musa {
 
 Scalar LocalScalarDense_(const Tensor& self) {
   Scalar r;
-  torch_musa::MUSAGuard device_guard(self.device());
+  c10::musa::MUSAGuard device_guard(self.device());
   AT_DISPATCH_ALL_TYPES_AND_COMPLEX_AND4(
       kComplexHalf,
       kHalf,

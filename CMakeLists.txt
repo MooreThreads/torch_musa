@@ -182,13 +182,9 @@ include_directories(${PROJECT_SOURCE_DIR}/torch_musa/csrc/aten/ops)
 include_directories(${PROJECT_SOURCE_DIR}/torch_musa/csrc/aten/ops/musa)
 include_directories(${DEPENDENT_INCLUDE_DIRS})
 
-# Set installed PyTorch dir
-if(DEFINED PYTORCH_INSTALL_DIR)
-  include_directories(${PYTORCH_INSTALL_DIR}/include)
-  include_directories(${PYTORCH_INSTALL_DIR}/include/torch/csrc/api/include)
-else()
-  message(FATAL_ERROR, "Cannot find installed PyTorch directory")
-endif()
+## Set PyTorch headers dir
+include_directories(${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/include)
+include_directories(${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/include/torch/csrc/api/include)
 
 # Set Python include dir
 if(DEFINED PYTHON_INCLUDE_DIR)

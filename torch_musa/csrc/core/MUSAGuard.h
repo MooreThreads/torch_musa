@@ -6,7 +6,8 @@
 
 #include "torch_musa/csrc/core/GuardImpl.h"
 
-namespace torch_musa {
+namespace c10 {
+namespace musa {
 using at::native::musa::kMUSA;
 using c10::Device;
 using c10::DeviceType;
@@ -281,6 +282,7 @@ struct MUSAMultiStreamGuard {
   }
 };
 
-} // namespace torch_musa
+} // namespace musa
+} // namespace c10
 
 #endif // TORCH_MUSA_CSRC_CORE_MUSA_GUARD_H_

@@ -11,7 +11,8 @@
 #include "torch_musa/csrc/core/MUSAException.h"
 #include "torch_musa/csrc/core/MUSAStream.h"
 
-namespace torch_musa {
+namespace c10 {
+namespace musa {
 using at::native::musa::kMUSA;
 using c10::Device;
 using c10::DeviceType;
@@ -105,6 +106,7 @@ struct MUSAGuardImpl final : public c10::impl::DeviceGuardImplInterface {
   // stream);
 };
 } // namespace impl
-} // namespace torch_musa
+} // namespace musa
+} // namespace c10
 
 #endif // TORCH_MUSA_CSRC_CORE_MUSA_GUARDIMPL_H_

@@ -200,7 +200,7 @@ void IndexSelectCall(
     int64_t dim,
     const Tensor& index,
     Tensor& out) {
-  torch_musa::MUSAGuard device_guard(self.device());
+  c10::musa::MUSAGuard device_guard(self.device());
   TORCH_CHECK(dim < self.dim() && dim >= 0, "dim is invalid.");
   auto idx_mt = CreateMUTensor(index);
   auto in = CreateMUTensor(self);
@@ -215,7 +215,7 @@ void IndexCall(
     const Tensor& self,
     const std::vector<muTensor>& indexes,
     Tensor& out) {
-  torch_musa::MUSAGuard device_guard(self.device());
+  c10::musa::MUSAGuard device_guard(self.device());
   auto in = CreateMUTensor(self);
   auto out_mt = CreateMUTensor(out);
   muHandle& h = GetMudnnHandle();
@@ -237,7 +237,7 @@ void IndexPutCall(
       value.scalar_type(),
       ", accumulate:",
       accumulate);
-  torch_musa::MUSAGuard device_guard(value.device());
+  c10::musa::MUSAGuard device_guard(value.device());
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::IndexPut op;
   CHECK_MUDNN_STATUS(op.SetAccumulate(accumulate), "Set Accumulate");

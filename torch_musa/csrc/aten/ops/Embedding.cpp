@@ -23,7 +23,7 @@ Tensor Embedding(
   // these varibs are not used in musa so far.
   UNUSED(scale_grad_by_freq);
   UNUSED(sparse);
-  torch_musa::MUSAGuard device_guard(weight.device());
+  c10::musa::MUSAGuard device_guard(weight.device());
   std::vector<int64_t> new_shape(
       indices.sizes().begin(), indices.sizes().end());
 
@@ -82,7 +82,7 @@ Tensor EmbeddingDenseBwd(
       indices.scalar_type());
   // its not be used in muDNN so far.
   UNUSED(scale_grad_by_freq);
-  torch_musa::MUSAGuard device_guard(grad_output.device());
+  c10::musa::MUSAGuard device_guard(grad_output.device());
 
   Tensor grad_input = empty_mtgpu(
       {num_weights, grad_output.size(-1)},

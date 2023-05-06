@@ -24,18 +24,10 @@ class PortingFile:
 r"""All folders needed for cuda-porting
 """
 PORT_FILES = [
-    PortingFile("aten/src/ATen/native", True, False),
+    PortingFile("aten/src/ATen/native", True, True),
     PortingFile("aten/src/ATen/cuda", True, False),
-    PortingFile("aten/src/ATen/core", True, True),
-    PortingFile("aten/src/ATen/detail", True, True),
-    PortingFile("aten/src/ATen/", False, True),
-    PortingFile("c10/core", True, True),
     PortingFile("c10/cuda", True, False),
-    PortingFile("c10/macros", True, True),
-    PortingFile("c10/util", True, True),
-    PortingFile("include/ATen/ops", True, True),
-    PortingFile("include/ATen/core", False, True),
-    PortingFile("include/ATen", False, True),
+    PortingFile("include", True, True),
 ]
 
 
@@ -68,17 +60,6 @@ def port_cuda(
 
     Returns: None.
     """
-    # Prepare map used to replace the header file path
-    split_generated_path = generated_dir.split("/")
-    relative_header_file_path = (
-        split_generated_path[-2] + "/" + split_generated_path[-1]
-    )
-    headers_path_map = {
-        "#include <ATen": "#include <" + relative_header_file_path + "/aten/src/ATen",
-        "#include <c10": "#include <" + relative_header_file_path + "/c10",
-    }
-    headers_automaton = get_automaton(headers_path_map)
-
     # Prepare main cuda-porting map
     current_dir = os.path.dirname(os.path.abspath(__file__))
     map_files = [
@@ -86,7 +67,7 @@ def port_cuda(
         os.path.join(current_dir, "general.json"),
         os.path.join(current_dir, "extra.json"),
     ]
-    main_automaton = init_ac_automaton(map_files, headers_path_map)
+    main_automaton = init_ac_automaton(map_files)
 
     # Prepare disable half dtype map
     # TODO(caizhi): the following map is used to disable half dtype in operations.
@@ -94,7 +75,7 @@ def port_cuda(
     disable_half_map = {
         "AT_DISPATCH_CASE(SCALARTYPE1, __VA_ARGS__)": "",
         "AT_DISPATCH_CASE(SCALARTYPE2, __VA_ARGS__)": "",
-        "AT_DISPATCH_FLOATING_TYPES_AND_HALF": "AT_DISPATCH_FLOATING_TYPES",
+        "AT_DISPATCH_FLOATING_TYPES_AND_HALF": "AT_DISPATCH_FLOATING_TYPES_NO_HALF",
         "AT_DISPATCH_ALL_TYPES_AND(at::ScalarType::Half,": "AT_DISPATCH_ALL_TYPES(",
         "AT_DISPATCH_COMPLEX_TYPES_AND(kComplexHalf,": "AT_DISPATCH_COMPLEX_TYPES(",
     }
@@ -103,8 +84,16 @@ def port_cuda(
     # Prepare replace map which is not handled in cuda-porting tools
     extra_replace_map = {
         "cudaOccupancy": "musaOccupancy",
+        "empty_cuda": "empty_musa",
+        "cuda_cmake_macros": "musa_cmake_macros",
+        "c10_cuda_check_implementation": "c10_musa_check_implementation",
+        ".cuh>": ".muh>",
+        "cuda_dispatch.h": "musa_dispatch.h",
         "set_cuda_dispatch_ptr(value)": "set_musa_dispatch_ptr(value)",
         "namespace cuda {": "namespace musa {",
+        # TODO(caizhi): When all functions or symbols in CUDAStream.h are implemented in MUSAStream.h,
+        # we can enable the following replacement
+        # "<c10/musa/CUDAStream.h>": "\"torch_musa/csrc/core/MUSAStream.h\"",
     }
 
     # 1. Copy and cuda-port files
@@ -120,7 +109,7 @@ def port_cuda(
             relative_path = cur_dir.replace(src_root.rstrip("/") + "/", "")
             destination_folder = os.path.join(
                 generated_dir,
-                relative_path.replace("cuda", "musa").replace("include", "aten/src"),
+                relative_path.replace("cuda", "musa")
             )
 
             if not port_file.recursive:
@@ -147,9 +136,9 @@ def port_cuda(
     # 2. Copy several special files about macros files
     special_copy_files = {
         "cmake_macros.h": "c10/macros",
-        "cuda_cmake_macros.h": "c10/musa/impl",
-        "CUDAConfig.h": "aten/src/ATen/musa",
-        "jit_macros.h": "aten/src/ATen",
+        "musa_cmake_macros.h": "c10/musa/impl",
+        "MUSA_PORT_Config.h": "ATen/musa",
+        "jit_macros.h": "ATen",
     }
     for key, value in special_copy_files.items():
-        shutil.copy(os.path.join(current_dir, key), os.path.join(generated_dir, value))
+        shutil.copy(os.path.join(current_dir, key), os.path.join(generated_dir, "include", value))

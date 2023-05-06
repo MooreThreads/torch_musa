@@ -210,7 +210,7 @@ Tensor Convolution(
       "but now it is ",
       input.scalar_type());
 
-  torch_musa::MUSAGuard device_guard(input.device());
+  c10::musa::MUSAGuard device_guard(input.device());
   if (input.dim() == 4 && weight.dim() == 4) {
     return transposed
         ? Conv2dTranspose(
@@ -488,7 +488,7 @@ Tensor Conv1dWeightBwd(
       "support Float32, ",
       "but now it is ",
       grad_output.scalar_type());
-  torch_musa::MUSAGuard device_guard(input.device());
+  c10::musa::MUSAGuard device_guard(input.device());
 
   if (input.dim() == 3 && weight.dim() == 3) {
     return Convolution1dBwd(

@@ -100,7 +100,7 @@ Tensor Cat(const at::ITensorListRef& tensors, int64_t dim = 0) {
   auto output_sizes = valid_tensor.sizes().vec();
   output_sizes[dim] = dim_out_size;
   Device device_opt = valid_tensor.device();
-  torch_musa::MUSAGuard device_guard(device_opt);
+  c10::musa::MUSAGuard device_guard(device_opt);
 
   Tensor output = empty_mtgpu(
       output_sizes,
@@ -127,7 +127,7 @@ Tensor& CatOut(const at::ITensorListRef& tensors, int64_t dim, Tensor& output) {
 
   std::vector<Tensor> valid_tensors;
   valid_tensors.reserve(num_inputs);
-  torch_musa::MUSAGuard device_guard(valid_tensor.device());
+  c10::musa::MUSAGuard device_guard(valid_tensor.device());
 
   for (const auto& t : tensors) {
     if (!cat_should_skip_tensor(t)) {

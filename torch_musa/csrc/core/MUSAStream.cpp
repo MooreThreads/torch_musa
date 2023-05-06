@@ -1,7 +1,8 @@
 #include "torch_musa/csrc/core/MUSAStream.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 
-namespace torch_musa {
+namespace c10 {
+namespace musa {
 namespace {
 // Global stream state and constants
 static c10::once_flag init_flag;
@@ -160,7 +161,7 @@ musaStream_t MUSAStream::stream() const {
           si,
           ").",
           " Did you manufacture the StreamId yourself?  Don't do that; use the",
-          " official API like torch_musa::getStreamFromPool() to get a new stream.");
+          " official API like c10::musa::getStreamFromPool() to get a new stream.");
       return nullptr;
     case StreamIdType::LOW:
       return low_priority_streams[device_index][si];
@@ -234,4 +235,5 @@ std::ostream& operator<<(std::ostream& stream, const MUSAStream& s) {
   return stream << s.unwrap();
 }
 
-} // namespace torch_musa
+} // namespace musa
+} // namespace c10

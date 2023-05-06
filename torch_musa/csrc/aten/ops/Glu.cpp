@@ -15,7 +15,7 @@ namespace native {
 namespace musa {
 
 void GluCall(Tensor& o, const Tensor& i, int dim) {
-  torch_musa::MUSAGuard device_guard(i.device());
+  c10::musa::MUSAGuard device_guard(i.device());
   auto in = CreateMUTensor(i);
   auto out = CreateMUTensor(o);
 

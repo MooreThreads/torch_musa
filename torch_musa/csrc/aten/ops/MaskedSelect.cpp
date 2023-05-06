@@ -61,7 +61,7 @@ at::Tensor& MaskedSelectOut(
     return out;
   }
 
-  torch_musa::MUSAGuard device_guard(mask.device());
+  c10::musa::MUSAGuard device_guard(mask.device());
 
   auto contiguous_self = Contiguous(*self_temp);
   auto contiguous_mask = Contiguous(*mask_temp);
@@ -125,7 +125,7 @@ at::Tensor& NonzeroOut(const at::Tensor& self, at::Tensor& out) {
     return out;
   }
 
-  torch_musa::MUSAGuard device_guard(self.device());
+  c10::musa::MUSAGuard device_guard(self.device());
   auto contiguous_self = Contiguous(self);
 
   TORCH_CHECK(
@@ -195,7 +195,7 @@ at::Tensor& MaskedScatter(
       self.scalar_type(),
       " and ",
       source.scalar_type());
-  torch_musa::MUSAGuard device_guard(mask.device());
+  c10::musa::MUSAGuard device_guard(mask.device());
   auto contiguous_self = Contiguous(self);
   auto contiguous_mask = Contiguous(mask);
   c10::MaybeOwned<Tensor> b_mask =

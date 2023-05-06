@@ -42,7 +42,7 @@ using MudnnPoolType = at::musa::DeviceThreadHandlePool<
       pool->NewPoolWindow());
 
   mudnnHandle_t handle = myPoolWindow->reserve(device);
-  handle->SetStream(torch_musa::getCurrentMUSAStream());
+  handle->SetStream(c10::musa::getCurrentMUSAStream());
   return *handle;
 }
 

@@ -33,7 +33,7 @@ Tensor empty_mtgpu(
     LOG(INFO) << "layout_opt is invalid in empty_mtgpu";
   }
   auto device = device_or_default(device_opt);
-  torch_musa::OptionalMUSAGuard guard(device);
+  c10::musa::OptionalMUSAGuard guard(device);
 
   bool pin_memory = pinned_memory_or_default(pin_memory_opt);
 
@@ -130,7 +130,7 @@ Tensor empty_mtgpu(
     c10::optional<Device> device_opt,
     c10::optional<bool> pin_memory_opt,
     c10::optional<c10::MemoryFormat> memory_format_opt) {
-  torch_musa::OptionalMUSAGuard guard(device_opt);
+  c10::musa::OptionalMUSAGuard guard(device_opt);
   return at::detail::empty_mtgpu(
       size,
       dtype_opt,
@@ -148,7 +148,7 @@ Tensor empty_strided_mtgpu(
     c10::optional<Device> device_opt,
     c10::optional<bool> pin_memory_opt) {
   check_size_nonnegative(size);
-  torch_musa::OptionalMUSAGuard guard(device_opt);
+  c10::musa::OptionalMUSAGuard guard(device_opt);
 
   auto t = at::native::musa::empty_mtgpu(
       {0}, dtype_opt, layout_opt, device_opt, pin_memory_opt, c10::nullopt);

@@ -27,7 +27,7 @@ bool IsTranspose(const Tensor& mat, bool is_batch) {
 }
 
 void BmmCall(const Tensor& l, const Tensor& r, Tensor& out, bool is_batch) {
-  torch_musa::MUSAGuard device_guard(l.device());
+  c10::musa::MUSAGuard device_guard(l.device());
   muHandle& h = GetMudnnHandle();
   bool trans_l = IsTranspose(l, is_batch);
   bool trans_r = IsTranspose(r, is_batch);
@@ -54,7 +54,7 @@ void MmCall(
     Tensor& out,
     double alpha,
     double beta) {
-  torch_musa::MUSAGuard device_guard(l.device());
+  c10::musa::MUSAGuard device_guard(l.device());
   muHandle& h = GetMudnnHandle();
   bool trans_l = IsTranspose(l, false);
   bool trans_r = IsTranspose(r, false);
@@ -79,7 +79,7 @@ Tensor& MmAlphaBetaOut(
     const double alpha,
     const double beta,
     Tensor& out) {
-  torch_musa::MUSAGuard device_guard(l.device());
+  c10::musa::MUSAGuard device_guard(l.device());
   muHandle& h = GetMudnnHandle();
   auto dim_tensor1 = l.dim();
   auto dim_tensor2 = r.dim();
@@ -152,7 +152,7 @@ at::Tensor& AddMmOut(
       "Dtype of mat2 tensor of Addmm only support Float32, but now it is ",
       mat2.scalar_type());
 
-  torch_musa::MUSAGuard device_guard(self.device());
+  c10::musa::MUSAGuard device_guard(self.device());
   out.zero_();
   out.add_(self);
   // only support float32 now
