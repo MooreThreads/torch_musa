@@ -10,6 +10,8 @@
 #include <musa_runtime.h>
 #include <list>
 
+#include "torch_musa/csrc/core/MUSAStream.h"
+
 // yang.zhao: Macros defined in c10/cuda/CUDAMacros.h,
 //            replacing all CUDA with MUSA
 
@@ -42,6 +44,7 @@
 #endif
 
 // yang.zhao: predefined classes copied from CUDACachingAllocator.h
+
 
 namespace c10 {
 
@@ -214,6 +217,8 @@ void EmptyCache();
 void ResetPeakStats();
 DeviceStats GetDeviceStats(int64_t device);
 std::vector<SegmentInfo> GetMemorySnapshot();
+
+void recordStream(const DataPtr& dataPtr, MUSAStream stream);
 
 } // namespace MUSACachingAllocator
 } // namespace musa

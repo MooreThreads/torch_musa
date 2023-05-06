@@ -8,6 +8,8 @@ from torch_musa import testing
 
 FIFTY_MIL_CYCLES = 50000000
 
+FIFTY_MIL_CYCLES = 50000000
+
 
 @testing.skip_if_not_multiple_musa_device
 def test_musa_set_device():
@@ -437,3 +439,296 @@ def test_malloc_multi_device():
         tensor = torch.rand(5, 5).to("musa")
         assert tensor.device == torch.device("musa:" + str(device_i))
     torch_musa.set_device(curr_device)  # reset device
+
+@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one mtGPU")
+def test_tensor_device():
+    assert torch.FloatTensor(1).to("musa").get_device() == 0
+    assert torch.FloatTensor(1, device="musa:1").get_device() == 1
+    with torch_musa.device(1):
+        assert torch.FloatTensor(1).to("musa").get_device() == 1
+        assert torch.FloatTensor(1, device="musa:0").get_device() == 0
+        assert torch.FloatTensor(1, device="musa").get_device() == 1
+
+def test_events():
+    stream = torch_musa.current_stream()
+    event = torch_musa.Event(enable_timing=True)
+    assert event.query() is True
+    start_event = torch_musa.Event(enable_timing=True)
+    stream.record_event(start_event)
+    torch_musa._sleep(FIFTY_MIL_CYCLES)
+    stream.record_event(event)
+    assert event.query() is False
+    event.synchronize()
+    assert event.query() is True
+    assert start_event.elapsed_time(event) > 0
+
+def _stream_synchronize(spin_time_cycles):
+    s = torch_musa.current_stream()
+    e_tik = torch_musa.Event(enable_timing=True)
+    e_tok = torch_musa.Event(enable_timing=True)
+
+    e_tik.record(s)
+    torch_musa._sleep(spin_time_cycles)
+    e_tok.record(s)
+    s.synchronize()
+
+    assert s.query() is True
+
+    return e_tik.elapsed_time(e_tok)
+
+def _event_synchronize(spin_time_cycles):
+    s = torch_musa.current_stream()
+    e_tik = torch_musa.Event(enable_timing=True)
+    e_tok = torch_musa.Event(enable_timing=True)
+
+    e_tik.record(s)
+    torch_musa._sleep(spin_time_cycles)
+    s.record_event(e_tok)
+    e_tok.synchronize()
+
+    assert s.query() is True
+
+    # not necessary to check e_tik and e_tok, as elapsed_time would throw
+    # exception if otherwise.
+    return e_tik.elapsed_time(e_tok)
+
+def _event_wait(spin_time_cycles):
+    s0 = torch_musa.current_stream()
+    s1 = torch_musa.Stream()
+    e_tik = torch_musa.Event(blocking=True, enable_timing=True)
+    e_tok = torch_musa.Event(blocking=True, enable_timing=True)
+
+    e_tik.record(s0)
+    torch_musa._sleep(spin_time_cycles - 10)
+    e_sync = torch_musa.Event(blocking=True)
+    e_sync.record()
+    e_sync.wait(s1)
+    with torch_musa.stream(s1):
+        torch_musa._sleep(10)
+    s1.synchronize()
+    e_tok.record()
+    e_tok.synchronize()
+
+    assert s0.query() is True
+    assert s1.query() is True
+    assert e_sync.query() is True
+
+    # not necessary to check e_tik and e_tok, as elapsed_time would throw
+    # exception if otherwise.
+    return e_tik.elapsed_time(e_tok)
+
+def _test_stream_event_nogil(sync_func, p2c, c2p):
+    with torch_musa.device('musa:1'):
+        c2p.put(0)
+        p2c.get()
+        c2p.put(sync_func(FIFTY_MIL_CYCLES))
+
+# Skip the test for ROCm as per https://github.com/pytorch/pytorch/issues/53190
+@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one GPU")
+def test_stream_event_nogil():
+    for sync_func in [_stream_synchronize,
+                      _event_synchronize,
+                      _event_wait]:
+        p2c = queue.Queue()
+        c2p = queue.Queue()
+        e_tik = torch_musa.Event(enable_timing=True)
+        e_tok = torch_musa.Event(enable_timing=True)
+
+        t = threading.Thread(
+            target=_test_stream_event_nogil,
+            args=(sync_func, p2c, c2p))
+        t.daemon = True
+        t.start()
+
+        c2p.get()
+        with torch_musa.device('musa:0'):
+            e_tik.record()
+            p2c.put(0)
+            parent_time = sync_func(FIFTY_MIL_CYCLES)
+            child_time = c2p.get()
+            e_tok.record()
+            e_tok.synchronize()
+            total_time = e_tik.elapsed_time(e_tok)
+
+        # Without GIL, synchronizations in parent and child threads can
+        # overlap. The total execution time should be a little bit longer
+        # than spinning fifty million cycles and much shorter than twice of
+        # that. However, testing absolute execution time is not reliable as
+        # it may vary on different hardware in different environments.
+        # Therefore, this test uses relative comparisons, checking if the
+        # sum of parent and child threads execution time is greater than the
+        # real execution time by least 40%.
+        assert parent_time + child_time > total_time * 1.4
+
+@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one GPU")
+def test_events_wait():
+    d0 = torch.device('musa:0')
+    d1 = torch.device('musa:1')
+    torch_musa.synchronize(d0)
+    torch_musa.synchronize(d1)
+
+    with torch_musa.device(d0):
+       s0 = torch_musa.current_stream()
+       torch_musa._sleep(FIFTY_MIL_CYCLES)
+       e0 = torch_musa.Event()
+       s0.record_event(e0)
+
+    with torch_musa.device(d1):
+        s1 = torch_musa.current_stream()
+
+    assert s0.query() is False
+    assert s1.query() is True
+
+    s1.wait_event(e0)
+    s1.synchronize()
+
+    assert e0.query() is True
+    assert s0.query() is True
+    assert s1.query() is True
+
+@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one GPU")
+def test_events_multi_gpu_query():
+    d0 = torch.device('musa:0')
+    d1 = torch.device('musa:1')
+
+    with torch_musa.device(d0):
+        s0 = torch_musa.current_stream()
+        e0 = s0.record_event()
+        s0.synchronize()
+
+    with torch_musa.device(d1):
+        s1 = torch_musa.current_stream()
+        torch_musa._sleep(FIFTY_MIL_CYCLES)
+        e1 = s1.record_event()
+
+    assert e0.query() is True
+    assert e1.query() is False
+
+    with torch_musa.device(d0):
+        assert e0.query() is True
+        assert e1.query() is False
+
+    with torch_musa.device(d1):
+        assert e0.query() is True
+        assert e1.query() is False
+
+    # deliberately using a different device
+    with torch_musa.device(d0):
+        e1.synchronize()
+
+    assert e0.query() is True
+    assert e1.query() is True
+
+    with torch_musa.device(d0):
+        assert e0.query() is True
+        assert e1.query() is True
+
+    with torch_musa.device(d1):
+        assert e0.query() is True
+        assert e1.query() is True
+
+@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one GPU")
+def test_events_multi_gpu_elapsed_time():
+    d0 = torch.device('musa:0')
+    d1 = torch.device('musa:1')
+
+    with torch_musa.device(d0):
+        s0 = torch_musa.current_stream()
+        e0 = torch_musa.Event(enable_timing=True)
+        torch_musa._sleep(10)
+        s0.record_event(e0)
+
+    with torch_musa.device(d1):
+        s1 = torch_musa.current_stream()
+        e1 = torch_musa.Event(enable_timing=True)
+        torch_musa._sleep(FIFTY_MIL_CYCLES)
+        s1.record_event(e1)
+
+    e0.synchronize()
+    e1.synchronize()
+    with torch_musa.device(d0):
+        with pytest.raises(RuntimeError):
+            assert Greater(e0.elapsed_time(e1), 0)
+
+    with torch_musa.device(d1):
+         with pytest.raises(RuntimeError):
+             assert e0.elapsed_time(e1) > 0
+
+    with torch_musa.device(d0):
+        s0 = torch_musa.current_stream()
+        e2 = torch_musa.Event(enable_timing=True)
+        torch_musa._sleep(FIFTY_MIL_CYCLES)
+        s0.record_event(e2)
+        s0.synchronize()
+
+    assert e0.elapsed_time(e2) > 0
+
+        # deliberately calling from a different device
+    with torch_musa.device(d1):
+        assert e0.elapsed_time(e2) > 0
+
+# def test_record_stream():
+#     cycles_per_ms = get_cycles_per_ms()
+
+#     t = torch.FloatTensor([1, 2, 3, 4]).pin_memory()
+#     result = torch_musa.FloatTensor(t.size())
+#     stream = torch_musa.Stream()
+#     ptr = [None]
+
+#     # Performs the CPU->GPU copy in a background stream
+#     def perform_copy():
+#         with torch_musa.stream(stream):
+#             tmp = t.cuda(non_blocking=True)
+#             ptr[0] = tmp.data_ptr()
+#         torch_musa.current_stream().wait_stream(stream)
+#         tmp.record_stream(torch_musa.current_stream())
+#         torch_musa._sleep(int(50 * cycles_per_ms))  # delay the copy
+#         result.copy_(tmp)
+
+#     perform_copy()
+#     with torch_musa.stream(stream):
+#         tmp2 = torch_musa.FloatTensor(t.size())
+#         tmp2.zero_()
+#         assert tmp2.data_ptr() ！= ptr[0], 'allocation re-used to soon'
+
+#     assert result.tolist() == [1, 2, 3, 4]
+
+#     if not TEST_CUDAMALLOCASYNC:
+#         # In the native allocator, we expect "tmp"'s side-stream-tagged block will be reused
+#         # in that side stream after result.copy_(tmp) in the main stream finishes.
+#         torch_musa.current_stream().synchronize()
+#         with torch_musa.stream(stream):
+#             tmp3 = torch_musa.FloatTensor(t.size())
+#             assert tmp3.data_ptr() == ptr[0], 'allocation not re-used'
+
+def test_record_stream_on_shifted_view():
+    # See issue #27366
+
+    # This test detects unexpected block reallocation. For reliable test,
+    # the stream to allocate tensors is isolated. The allocator will not
+    # reuse free blocks which were allocated from another stream.
+    stream_alloc = torch_musa.Stream()
+    with torch_musa.stream(stream_alloc):
+        base = torch_musa.FloatTensor([10, 10])
+
+    # Record another stream on a shifted view tensor.
+    view = base[5:]
+    assert view.storage_offset() > 0
+
+    stream_record = torch_musa.Stream()
+    with torch_musa.stream(stream_record):
+        torch_musa._sleep(int(50 * get_cycles_per_ms()))
+
+    view.record_stream(stream_record)
+
+    # Delete those tensors to make the block free soon.
+    data_ptr = base.data_ptr()
+    del base, view
+
+    # A new tensor should not be allocated to the block above.
+    stream_alloc.synchronize()
+
+    with torch_musa.stream(stream_alloc):
+        try_realloc = torch_musa.FloatTensor([10, 10])
+
+    assert try_realloc.data_ptr() != data_ptr

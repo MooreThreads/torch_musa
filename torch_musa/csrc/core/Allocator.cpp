@@ -3,6 +3,7 @@
 #include <mudnn.h>
 
 #include <regex>
+#include <c10/util/flat_hash_map.h>
 
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/Device.h"
@@ -69,6 +70,8 @@ constexpr size_t kMinLargeAlloc = 10485760;
 // round up large allocations to 2 MiB
 constexpr size_t kRoundLarge = 2097152;
 
+using stream_set = ska::flat_hash_set<MUSAStream>;
+
 using StatTypes = std::array<bool, static_cast<size_t>(StatType::NUM_TYPES)>;
 
 void update_stat(Stat& stat, int64_t amount) {
@@ -127,6 +130,8 @@ struct BlockPool {
 
 struct Block {
   int device; // gpu
+  musaStream_t stream;
+  stream_set stream_uses;
   size_t size; // block size in bytes
   BlockPool* pool; // owning memory pool
   void* ptr; // memory address
@@ -187,6 +192,7 @@ static std::string format_size(uint64_t size) {
   }
   return os.str();
 }
+
 
 struct AllocParams {
   AllocParams(int device, size_t size, BlockPool* pool, size_t alloc_size)
@@ -563,6 +569,14 @@ class MTGPUCachingAllocator {
         "MUSA get memory info fails!");
     allowed_memory_maximum_ = static_cast<size_t>(fraction * device_total);
     set_fraction_ = true;
+  }
+
+  void recordStream(Block* block, MUSAStream stream) {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    if (stream.stream() == block->stream) {
+      return;
+    }
+    block->stream_uses.insert(stream);
   }
 
   /** returns cached blocks to the system allocator **/
@@ -1087,6 +1101,8 @@ class MTGPUCachingAllocator {
       }
     }
   }
+
+  
 };
 
 } // namespace MUSACachingAllocator
@@ -1169,6 +1185,20 @@ class MusaCachingAllocatorImpl {
     return device_allocator_[device]->get_stats();
   }
 
+  void recordStream(const DataPtr& ptr, MUSAStream stream) {
+    if (!ptr.get()) {
+      return;
+    }
+
+    if (ptr.get_deleter() != &raw_delete)
+      return;
+
+    Block* block = get_allocated_block(ptr.get());
+    // block must not be null reaching here
+    TORCH_INTERNAL_ASSERT(block != nullptr, "No allocated block can be found");
+    device_allocators_[block->device]->recordStream(block, stream);
+  }
+
   std::vector<std::unique_ptr<MTGPUCachingAllocator>> device_allocator_;
 
  private:
@@ -1219,6 +1249,10 @@ struct C10_API MusaCachingAllocator final : at::Allocator {
 
   MusaCachingAllocatorImpl* get_allocator() const {
     return allocator_impl_;
+  }
+
+  void recordStream(const DataPtr& dataPtr, MUSAStream stream) {
+    get_allocator()->recordStream(dataPtr, stream);
   }
 
   bool use_caching_allocator_;
@@ -1275,6 +1309,10 @@ std::vector<SegmentInfo> GetMemorySnapshot() {
   return palloc->get_allocator()->snapshot();
 }
 
+void recordStream(const DataPtr& dataPtr, MUSAStream stream) {
+  MusaCachingAllocator* palloc = c10::musa::GetMusaCachingAllocator();
+  palloc->recordStream(dataPtr, stream);
+}
 } // namespace MUSACachingAllocator
 } // namespace musa
 } // namespace c10
