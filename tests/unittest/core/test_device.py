@@ -567,10 +567,7 @@ def _test_stream_event_nogil(sync_func, p2c, c2p):
 @pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one GPU")
 def test_stream_event_nogil():
     """Testing stream and event with nogil"""
-    for sync_func in [  # _stream_synchronize,
-        # _event_synchronize,
-        _event_wait
-    ]:
+    for sync_func in [_stream_synchronize, _event_synchronize, _event_wait]:
         p2c = queue.Queue()
         c2p = queue.Queue()
         e_tik = torch_musa.Event(enable_timing=True)
@@ -716,7 +713,7 @@ def test_events_multi_gpu_elapsed_time():
         assert e0.elapsed_time(e2) > 0
 
 
-#TODO(MT-AI): Support pin_memory and tensor record_stream op.
+# TODO(MT-AI): Support pin_memory and tensor record_stream op.
 @pytest.mark.skipif(True, reason="pin_memory is unsupport")
 def test_record_stream():
     """Testing tensor record stream"""

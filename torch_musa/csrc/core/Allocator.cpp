@@ -12,9 +12,10 @@
 
 namespace c10 {
 
+namespace musa {
+
 C10_DEFINE_REGISTRY(FreeMusaMemoryCallbacksRegistry, FreeMemoryCallback);
 
-namespace musa {
 namespace MUSACachingAllocator {
 
 //
@@ -893,9 +894,9 @@ class MTGPUCachingAllocator {
 
   bool trigger_free_memory_callbacks() {
     bool freed_memory = false;
-    for (const auto& name : c10::FreeMusaMemoryCallbacksRegistry()->Keys()) {
+    for (const auto& name : c10::musa::FreeMusaMemoryCallbacksRegistry()->Keys()) {
       freed_memory |=
-          c10::FreeMusaMemoryCallbacksRegistry()->Create(name)->Execute();
+          c10::musa::FreeMusaMemoryCallbacksRegistry()->Create(name)->Execute();
     }
     return freed_memory;
   }

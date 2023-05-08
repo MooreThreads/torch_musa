@@ -52,6 +52,8 @@ class C10_MUSA_API MUSAOutOfMemoryError : public c10::Error {
   using Error::Error;
 };
 
+namespace musa {
+
 // Caching allocator will execute every registered callback if it's unable to
 // find a block inside of already allocated area.
 class C10_MUSA_API FreeMemoryCallback {
@@ -63,8 +65,6 @@ class C10_MUSA_API FreeMemoryCallback {
 C10_DECLARE_REGISTRY(FreeMusaMemoryCallbacksRegistry, FreeMemoryCallback);
 #define REGISTER_FREE_MEMORY_CALLBACK(name, ...) \
   C10_REGISTER_CLASS(FreeMusaMemoryCallbacksRegistry, name, __VA_ARGS__);
-
-namespace musa {
 
 void raw_delete(void* ptr);
 
