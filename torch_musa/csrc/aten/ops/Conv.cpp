@@ -164,15 +164,10 @@ Tensor Conv2dTranspose(
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Convolution c;
   ConfigConv(c, stride, padding, dilation, groups);
+  ::musa::dnn::Convolution::AlgorithmBwdData algo;
+  c.GetRecommendBackwardDataAlgorithm(h, algo, gin, gout, w);
   CHECK_MUDNN_STATUS(
-      c.RunBwdData(
-          h,
-          gin,
-          gout,
-          w,
-          ::musa::dnn::Convolution::AlgorithmBwdData::IMPLICIT_GEMM,
-          InternalMemAlloc),
-      "RunBwdData");
+      c.RunBwdData(h, gin, gout, w, algo, InternalMemAlloc), "RunBwdData");
 
   if (bias_opt.has_value()) {
     AddBias(grad_input_t, *bias_opt);
@@ -262,15 +257,10 @@ Tensor Conv2dDataBwd(
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Convolution c;
   ConfigConv(c, stride, padding, dilation, groups);
+  ::musa::dnn::Convolution::AlgorithmBwdData algo;
+  c.GetRecommendBackwardDataAlgorithm(h, algo, gin, gout, w);
   CHECK_MUDNN_STATUS(
-      c.RunBwdData(
-          h,
-          gin,
-          gout,
-          w,
-          ::musa::dnn::Convolution::AlgorithmBwdData::IMPLICIT_GEMM,
-          InternalMemAlloc),
-      "ConvBwdData");
+      c.RunBwdData(h, gin, gout, w, algo, InternalMemAlloc), "ConvBwdData");
   return grad_input_t;
 }
 
@@ -326,15 +316,10 @@ Tensor Conv2dWeightBwd(
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Convolution c;
   ConfigConv(c, stride, padding, dilation, groups);
+  ::musa::dnn::Convolution::AlgorithmBwdFilter algo;
+  c.GetRecommendBackwardFilterAlgorithm(h, algo, gw, in, gout);
   CHECK_MUDNN_STATUS(
-      c.RunBwdFilter(
-          h,
-          gw,
-          in,
-          gout,
-          ::musa::dnn::Convolution::AlgorithmBwdFilter::IMPLICIT_GEMM,
-          InternalMemAlloc),
-      "ConvBwdFilter");
+      c.RunBwdFilter(h, gw, in, gout, algo, InternalMemAlloc), "ConvBwdFilter");
   return grad_weight_t;
 }
 

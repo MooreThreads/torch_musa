@@ -349,29 +349,67 @@ Tensor& ReciprocalOut(const Tensor& self, Tensor& output) {
   });
   return output;
 }
+
+void NegCall(
+    const std::string& op_name,
+    Tensor& out,
+    const Tensor& self,
+    const c10::optional<Scalar>& val) {
+  auto t_type = self.scalar_type();
+  auto self_ = Contiguous(self);
+  switch (t_type) {
+    case ScalarType::Float: {
+      const double alpha = val.value().to<double>();
+      UnaryCall(op_name, out, self_, [&](::musa::dnn::Unary& op) {
+        CHECK_MUDNN_STATUS(op.SetAlpha(alpha), "SetAlpha");
+        CHECK_MUDNN_STATUS(
+            op.SetMode(::musa::dnn::Unary::Mode::MUL), "SetMode");
+      });
+      break;
+    }
+    case ScalarType::Int: {
+      const int64_t alpha = val.value().to<int64_t>();
+      UnaryCall(op_name, out, self_, [&](::musa::dnn::Unary& op) {
+        CHECK_MUDNN_STATUS(op.SetAlpha(alpha), "SetAlpha");
+        CHECK_MUDNN_STATUS(
+            op.SetMode(::musa::dnn::Unary::Mode::MUL), "SetMode");
+      });
+      break;
+    }
+    case ScalarType::Long: {
+      const int64_t alpha = val.value().to<int64_t>();
+      UnaryCall(op_name, out, self_, [&](::musa::dnn::Unary& op) {
+        CHECK_MUDNN_STATUS(op.SetAlpha(alpha), "SetAlpha");
+        CHECK_MUDNN_STATUS(
+            op.SetMode(::musa::dnn::Unary::Mode::MUL), "SetMode");
+      });
+      break;
+    }
+    default:
+      TORCH_CHECK(false, "Unsupported tensor dtype: ", t_type);
+      throw;
+  }
+}
+
 Tensor Neg(const Tensor& self) {
-  return Unary(__func__, self, [&](::musa::dnn::Unary& op) {
-    op.SetMode(::musa::dnn::Unary::Mode::MUL);
-    Scalar value = -1;
-    op.SetAlpha(value.to<double>());
-  });
+  Tensor output = at::empty_like(self);
+  MUSA_TENSOR_TYPE_CHECK(self);
+  Scalar val = -1;
+  NegCall(__func__, output, self, val);
+  return output;
 }
 
 Tensor& Neg_(Tensor& self) {
-  Unary_(__func__, self, [&](::musa::dnn::Unary& op) {
-    CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::MUL), "SetMode");
-    Scalar value = -1;
-    CHECK_MUDNN_STATUS(op.SetAlpha(value.to<double>()), "SetAlpha");
-  });
+  MUSA_TENSOR_TYPE_CHECK(self);
+  Scalar val = -1;
+  NegCall(__func__, self, self, val);
   return self;
 }
 
 Tensor& NegOut(const Tensor& self, Tensor& out) {
-  UnaryOut(__func__, out, self, [&](::musa::dnn::Unary& op) {
-    CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::MUL), "SetMode");
-    Scalar value = -1;
-    CHECK_MUDNN_STATUS(op.SetAlpha(value.to<double>()), "SetAlpha");
-  });
+  MUSA_TENSOR_TYPE_CHECK(self);
+  Scalar val = -1;
+  NegCall(__func__, out, self, val);
   return out;
 }
 
