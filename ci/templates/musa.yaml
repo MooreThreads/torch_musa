@@ -1,6 +1,12 @@
 kind: Pod
 apiVersion: v1
 spec:
+  # The shared volume named "artifacts".
+  # NOTE: `emptyDir: { }` declares an empty temporary volume, and
+  #       will be removed after all jobs are finished.
+  volumes:
+  - name: artifacts
+    emptyDir: { }
   affinity:
     nodeAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
@@ -28,3 +34,27 @@ spec:
       limits:
         cpu: "32"
         memory: "128Gi"
+    # Mount the volume named "artifacts" to path "/artifacts", readwrite
+    volumeMounts:
+    - mountPath: /artifacts
+      name: artifacts
+      readOnly: false
+  # Container named "release".
+  - name: release
+    image: sh-harbor.mthreads.com/mt-ai/ops/torch_musa_oss_release:latest
+    imagePullPolicy: IfNotPresent
+    tty: true
+    ttyEnabled: true
+    command:
+    - sleep
+    args:
+    - infinity
+    resources:
+      limits:
+        cpu: 300m
+        memory: 300Mi
+    # Mount the volume named "artifacts" to path "/artifacts", readwrite
+    volumeMounts:
+    - mountPath: /artifacts
+      name: artifacts
+      readOnly: false
