@@ -5,10 +5,10 @@ from statistics import mean
 
 import torch_musa
 
+
 @functools.lru_cache()
 def get_cycles_per_ms() -> float:
-    """Measure and return approximate number of cycles per millisecond for torch_musa._sleep
-    """
+    """Measure and return approximate number of cycles per millisecond for torch_musa._sleep"""
 
     def measure() -> float:
         start = torch_musa.Event(enable_timing=True)

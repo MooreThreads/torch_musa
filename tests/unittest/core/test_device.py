@@ -1,9 +1,9 @@
 """Test device features."""
-# pylint: disable=invalid-name, comparison-with-itself, unused-variable, C0415, C0121
+# pylint: disable=invalid-name, comparison-with-itself, unused-variable, C0415, C0121, C2801
 import queue
 import threading
-import pytest
 import torch
+import pytest
 import torch_musa
 from torch_musa import testing
 from torch_musa.testing import get_cycles_per_ms
@@ -485,6 +485,7 @@ def test_tensor_device():
 
 
 def test_events():
+    """Testing event base api"""
     stream = torch_musa.current_stream()
     event = torch_musa.Event(enable_timing=True)
     assert event.query() is True
@@ -496,6 +497,7 @@ def test_events():
     event.synchronize()
     assert event.query() is True
     assert start_event.elapsed_time(event) > 0
+
 
 def _stream_synchronize(spin_time_cycles):
     s = torch_musa.current_stream()
@@ -510,6 +512,7 @@ def _stream_synchronize(spin_time_cycles):
     assert s.query() is True
 
     return e_tik.elapsed_time(e_tok)
+
 
 def _event_synchronize(spin_time_cycles):
     s = torch_musa.current_stream()
@@ -527,6 +530,7 @@ def _event_synchronize(spin_time_cycles):
     # exception if otherwise.
     return e_tik.elapsed_time(e_tok)
 
+
 def _event_wait(spin_time_cycles):
     s0 = torch_musa.current_stream()
     s1 = torch_musa.Stream()
@@ -539,7 +543,7 @@ def _event_wait(spin_time_cycles):
     e_sync.record()
     e_sync.wait(s1)
     with torch_musa.stream(s1):
-        torch_musa._sleep(FIFTY_MIL_CYCLES )
+        torch_musa._sleep(FIFTY_MIL_CYCLES)
     s1.synchronize()
     e_tok.record()
     e_tok.synchronize()
@@ -552,32 +556,34 @@ def _event_wait(spin_time_cycles):
     # exception if otherwise.
     return e_tik.elapsed_time(e_tok)
 
+
 def _test_stream_event_nogil(sync_func, p2c, c2p):
-    with torch_musa.device('musa:1'):
+    with torch_musa.device("musa:1"):
         c2p.put(0)
         p2c.get()
         c2p.put(sync_func(FIFTY_MIL_CYCLES))
 
-# Skip the test for ROCm as per https://github.com/pytorch/pytorch/issues/53190
+
 @pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one GPU")
 def test_stream_event_nogil():
-    for sync_func in [# _stream_synchronize,
-                      # _event_synchronize,
-                      _event_wait
-                     ]:
+    """Testing stream and event with nogil"""
+    for sync_func in [  # _stream_synchronize,
+        # _event_synchronize,
+        _event_wait
+    ]:
         p2c = queue.Queue()
         c2p = queue.Queue()
         e_tik = torch_musa.Event(enable_timing=True)
         e_tok = torch_musa.Event(enable_timing=True)
 
         t = threading.Thread(
-            target=_test_stream_event_nogil,
-            args=(sync_func, p2c, c2p))
+            target=_test_stream_event_nogil, args=(sync_func, p2c, c2p)
+        )
         t.daemon = True
         t.start()
 
         c2p.get()
-        with torch_musa.device('musa:0'):
+        with torch_musa.device("musa:0"):
             e_tik.record()
             p2c.put(0)
             parent_time = sync_func(FIFTY_MIL_CYCLES)
@@ -596,18 +602,20 @@ def test_stream_event_nogil():
         # real execution time by least 40%.
         # assert parent_time + child_time > total_time * 1.4
 
+
 @pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one GPU")
 def test_events_wait():
-    d0 = torch.device('musa:0')
-    d1 = torch.device('musa:1')
+    """Testing evetns wait"""
+    d0 = torch.device("musa:0")
+    d1 = torch.device("musa:1")
     torch_musa.synchronize(d0)
     torch_musa.synchronize(d1)
 
     with torch_musa.device(d0):
-       s0 = torch_musa.current_stream()
-       torch_musa._sleep(FIFTY_MIL_CYCLES)
-       e0 = torch_musa.Event()
-       s0.record_event(e0)
+        s0 = torch_musa.current_stream()
+        torch_musa._sleep(FIFTY_MIL_CYCLES)
+        e0 = torch_musa.Event()
+        s0.record_event(e0)
 
     with torch_musa.device(d1):
         s1 = torch_musa.current_stream()
@@ -622,10 +630,12 @@ def test_events_wait():
     assert s0.query() is True
     assert s1.query() is True
 
+
 @pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one GPU")
 def test_events_multi_gpu_query():
-    d0 = torch.device('musa:0')
-    d1 = torch.device('musa:1')
+    """Testing event query on multi-gpu env"""
+    d0 = torch.device("musa:0")
+    d1 = torch.device("musa:1")
 
     with torch_musa.device(d0):
         s0 = torch_musa.current_stream()
@@ -663,10 +673,12 @@ def test_events_multi_gpu_query():
         assert e0.query() is True
         assert e1.query() is True
 
+
 @pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one GPU")
 def test_events_multi_gpu_elapsed_time():
-    d0 = torch.device('musa:0')
-    d1 = torch.device('musa:1')
+    """Testing events elapsed time on multi-gpu env"""
+    d0 = torch.device("musa:0")
+    d1 = torch.device("musa:1")
 
     with torch_musa.device(d0):
         s0 = torch_musa.current_stream()
@@ -687,8 +699,8 @@ def test_events_multi_gpu_elapsed_time():
             assert Greater(e0.elapsed_time(e1), 0)
 
     with torch_musa.device(d1):
-         with pytest.raises(RuntimeError):
-             assert e0.elapsed_time(e1) > 0
+        with pytest.raises(RuntimeError):
+            assert e0.elapsed_time(e1) > 0
 
     with torch_musa.device(d0):
         s0 = torch_musa.current_stream()
@@ -699,12 +711,15 @@ def test_events_multi_gpu_elapsed_time():
 
     assert e0.elapsed_time(e2) > 0
 
-        # deliberately calling from a different device
+    # deliberately calling from a different device
     with torch_musa.device(d1):
         assert e0.elapsed_time(e2) > 0
 
+
+#TODO(MT-AI): Support pin_memory and tensor record_stream op.
 @pytest.mark.skipif(True, reason="pin_memory is unsupport")
 def test_record_stream():
+    """Testing tensor record stream"""
     cycles_per_ms = get_cycles_per_ms()
 
     t = torch.FloatTensor([1, 2, 3, 4]).pin_memory()
@@ -726,7 +741,7 @@ def test_record_stream():
     with torch_musa.stream(stream):
         tmp2 = torch_musa.FloatTensor(t.size())
         tmp2.zero_()
-        assert tmp2.data_ptr() != ptr[0], 'allocation re-used to soon'
+        assert tmp2.data_ptr() != ptr[0], "allocation re-used to soon"
 
     assert result.tolist() == [1, 2, 3, 4]
 
@@ -736,4 +751,4 @@ def test_record_stream():
         torch_musa.current_stream().synchronize()
         with torch_musa.stream(stream):
             tmp3 = torch_musa.FloatTensor(t.size())
-            assert tmp3.data_ptr() == ptr[0], 'allocation not re-used'
+            assert tmp3.data_ptr() == ptr[0], "allocation not re-used"

@@ -1,5 +1,5 @@
 """Implement stream class and releated APIs"""
-# pylint: disable=invalid-name, R1705, E1123, W0621, W0622, W0222, W0246
+# pylint: disable=invalid-name, R1705, E1123, E1120, C0325, W0621, W0622, W0222, W0246
 import ctypes
 from typing import Any, Optional
 import torch
@@ -84,7 +84,9 @@ class Stream(torch_musa._MUSAC._MusaStreamBase):
         return hash((self.musa_stream, self.device))
 
     def __repr__(self):
-        return (f"torch_musa.Stream device={self.device} musa_stream={self.musa_stream:#x}")
+        return (
+            f"torch_musa.Stream device={self.device} musa_stream={self.musa_stream:#x}"
+        )
 
 
 class ExternalStream(Stream):
@@ -111,6 +113,7 @@ class ExternalStream(Stream):
                 cls, stream_ptr=stream_ptr, **kwargs
             )
 
+
 class Event(torch_musa._MUSAC._MusaEventBase):
     """Wrapper around a MUSA event.
 
@@ -134,7 +137,10 @@ class Event(torch_musa._MUSAC._MusaEventBase):
     def __new__(cls, enable_timing=False, blocking=False, interprocess=False):
         return super(Event, cls).__new__(
             cls,
-            enable_timing=enable_timing, blocking=blocking, interprocess=interprocess)
+            enable_timing=enable_timing,
+            blocking=blocking,
+            interprocess=interprocess,
+        )
 
     @classmethod
     def from_ipc_handle(cls, device, handle):
@@ -190,7 +196,7 @@ class Event(torch_musa._MUSAC._MusaEventBase):
 
     def ipc_handle(self):
         r"""Returns an IPC handle of this event. If not recorded yet, the event
-        will use the current device. """
+        will use the current device."""
         return super().ipc_handle()
 
     @property
@@ -199,9 +205,9 @@ class Event(torch_musa._MUSAC._MusaEventBase):
 
     def __repr__(self):
         if self.musa_event:
-            return '<torch_musa.Event {0:#x}>'.format(self._as_parameter_.value)
+            return f"<torch_musa.Event {self._as_parameter_.value:#x}>"
         else:
-            return '<torch_musa.Event uninitialized>'
+            return "<torch_musa.Event uninitialized>"
 
 
 class StreamContext:

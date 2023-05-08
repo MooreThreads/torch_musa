@@ -105,11 +105,14 @@ struct MUSAGuardImpl final : public c10::impl::DeviceGuardImplInterface {
     auto musa_flag = musaEventDefault;
     switch (flag) {
       case c10::EventFlag::PYTORCH_DEFAULT:
+      // c10::EventFlag defined CUDA_EVENT_DISABLE_TIME,
+      // we don't need this enum, so just use it.
       /* case EventFlag::MUSA_EVENT_DISABLE_TIMING: */
         musa_flag = musaEventDisableTiming;
         break;
       case c10::EventFlag::BACKEND_DEFAULT:
-      /* case EventFlag::MUSA_EVENT_DEFAULT: */
+      // c10::EventFlag defined MUSA_EVENT_DEFAULT,
+      // we don't need this enum, so just use it.
         musa_flag = musaEventDefault;
         break;
       default:
