@@ -134,6 +134,8 @@ class AutoGrowthBestFitAllocator {
 
 namespace MUSACachingAllocator {
 
+Allocator* get();
+
 struct Stat {
   int64_t current = 0;
   int64_t peak = 0;

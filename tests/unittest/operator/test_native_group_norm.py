@@ -45,7 +45,7 @@ def test_native_layer_norm(input_dtype, parameter, affine, eps):
     test.check_result(
         inputs={
             "input": torch.tensor(
-                parameter["data"], dtype=input_dtype, requires_grad=True
+                parameter["data"].clone().detach(), dtype=input_dtype, requires_grad=True
             )
         },
         train=True,

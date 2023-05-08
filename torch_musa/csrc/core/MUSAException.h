@@ -1,7 +1,8 @@
-#ifndef TORCH_MUSA_CSRC_CORE_MUSA_MUSAEXCEPTION_H_
-#define TORCH_MUSA_CSRC_CORE_MUSA_MUSAEXCEPTION_H_
+#ifndef TORCH_MUSA_CSRC_CORE_MUSAEXCEPTION_H_
+#define TORCH_MUSA_CSRC_CORE_MUSAEXCEPTION_H_
 #include <c10/util/Exception.h>
-#include "musa_runtime_api.h"
+#include <musa.h>
+#include <musa_runtime_api.h>
 
 #define TORCH_MUSA_CHECK(EXPR)                                       \
   do {                                                               \
@@ -21,6 +22,21 @@
 
 #define TORCH_MUSA_ERROR_HANDLE(EXPR) EXPR
 
+#define C10_MUSA_KERNEL_LAUNCH_CHECK() TORCH_MUSA_CHECK(musaGetLastError())
+
+// Indicates that a MUSA error is handled in a non-standard way
+#define C10_MUSA_ERROR_HANDLED(EXPR) EXPR
+
+// Intentionally ignore a MUSA error
+#define C10_MUSA_IGNORE_ERROR(EXPR)                             \
+  do {                                                          \
+    const musaError_t __err = EXPR;                             \
+    if (C10_UNLIKELY(__err != musaSuccess)) {                   \
+      musaError_t error_unused C10_UNUSED = musaGetLastError(); \
+      (void)error_unused;                                       \
+    }                                                           \
+  } while (0)
+
 #define CHECK_MUDNN_STATUS(rst, msg)       \
   TORCH_CHECK(                             \
       rst == ::musa::dnn::Status::SUCCESS, \
@@ -28,4 +44,15 @@
       " MUDNN failed in: ",                \
       msg);
 
-#endif // TORCH_MUSA_CSRC_CORE_MUSA_MUSAEXCEPTION_H_
+namespace c10 {
+namespace musa {
+void c10_musa_check_implementation(
+    const int32_t err,
+    const char* filename,
+    const char* function_name,
+    const int line_number,
+    const bool include_device_assertions);
+} // namespace musa
+} // namespace c10
+
+#endif // TORCH_MUSA_CSRC_CORE_MUSAEXCEPTION_H_

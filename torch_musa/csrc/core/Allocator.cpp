@@ -1248,6 +1248,10 @@ namespace c10 {
 namespace musa {
 namespace MUSACachingAllocator {
 
+Allocator* get() {
+  return c10::musa::GetMusaCachingAllocator();
+}
+
 void EmptyCache() {
   c10::musa::MusaCachingAllocator* palloc =
       c10::musa::GetMusaCachingAllocator();

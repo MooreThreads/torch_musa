@@ -1,5 +1,5 @@
 #pragma once
-#include <build/generated_cuda_compatible/aten/src/ATen/musa/CUDAConfig.h>
+#include <ATen/musa/MUSAConfig.h>
 #include <string>
 
 // AT_USE_JITERATOR(), controls whether we jit some elementwise kernels

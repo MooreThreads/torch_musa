@@ -84,7 +84,6 @@ def build_musa_lib():
 
     cmake = CMakeManager(build_dir)
     env = os.environ.copy()
-    env["PYTORCH_INSTALL_DIR"] = get_pytorch_install_path()
     env["GENERATED_PORTING_DIR"] = gen_porting_dir
     build_test = not check_negative_env_flag("BUILD_TEST")
     cmake_python_library = "{}/{}".format(

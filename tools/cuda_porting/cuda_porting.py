@@ -91,9 +91,22 @@ def port_cuda(
         "cuda_dispatch.h": "musa_dispatch.h",
         "set_cuda_dispatch_ptr(value)": "set_musa_dispatch_ptr(value)",
         "namespace cuda {": "namespace musa {",
-        # TODO(caizhi): When all functions or symbols in CUDAStream.h are implemented in MUSAStream.h,
-        # we can enable the following replacement
-        # "<c10/musa/CUDAStream.h>": "\"torch_musa/csrc/core/MUSAStream.h\"",
+        "C10_CUDA_KERNEL_LAUNCH_CHECK": "C10_MUSA_KERNEL_LAUNCH_CHECK",
+        "C10_CUDA_IGNORE_ERROR": "C10_MUSA_IGNORE_ERROR",
+        "C10_CUDA_ERROR_HANDLED": "C10_MUSA_ERROR_HANDLED",
+        "C10_CUDA_CHECK(": "TORCH_MUSA_CHECK(",
+        "C10_CUDA_CHECK_WARN(": "TORCH_MUSA_WARN(",
+        "C10_CUDA_API ": "",
+        "<c10/musa/CUDADeviceAssertionHost.h>": "\"torch_musa/csrc/core/MUSADeviceAssertionHost.h\"",
+        "<c10/musa/CUDAFunctions.h>": "\"torch_musa/csrc/core/MUSAFunctions.h\"",
+        "<c10/musa/MUSAStream.h>": "\"torch_musa/csrc/core/MUSAStream.h\"",
+        "<c10/musa/MUSAGuard.h>": "\"torch_musa/csrc/core/MUSAGuard.h\"",
+        "<c10/musa/impl/CUDAGuardImpl.h>": "\"torch_musa/csrc/core/GuardImpl.h\"",
+        "<c10/musa/CUDAException.h>": "\"torch_musa/csrc/core/MUSAException.h\"",
+        "<ATen/musa/CUDADevice.h>": "\"torch_musa/csrc/core/Device.h\"",
+        "<ATen/musa/CUDAContext.h>": "\"torch_musa/csrc/aten/musa/MUSAContext.h\"",
+        "<ATen/musa/Exceptions.h>": "\"torch_musa/csrc/aten/musa/Exceptions.h\"",
+        # TODO(caizhi): replace headers about Allocator with headers inside torch_musa
     }
 
     # 1. Copy and cuda-port files
@@ -137,7 +150,7 @@ def port_cuda(
     special_copy_files = {
         "cmake_macros.h": "c10/macros",
         "musa_cmake_macros.h": "c10/musa/impl",
-        "MUSA_PORT_Config.h": "ATen/musa",
+        "MUSAConfig.h": "ATen/musa",
         "jit_macros.h": "ATen",
     }
     for key, value in special_copy_files.items():

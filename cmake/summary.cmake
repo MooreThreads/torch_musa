@@ -15,6 +15,7 @@ function(torch_musa_build_configuration_summary)
   message(STATUS "BUILD_TYPE            : ${CMAKE_BUILD_TYPE}")
  
   message(STATUS "PYTORCH_SOURCE_PATH   : $ENV{PYTORCH_REPO_PATH}")
+  message(STATUS "PYTORCH_HEADERS_PATH  : ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/include")
   message(STATUS "MUDNN PATH            : ${MUDNN_PATH}")
   message(STATUS "MUDNN_LIBRARIES       : ${MUDNN_LIBRARIES}")
   message(STATUS "MUSA TOOLKITS PATH    : ${MUSATOOLKITS_PATH}")

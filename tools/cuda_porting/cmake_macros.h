@@ -9,6 +9,6 @@
 
 #include <type_traits>
 
-#include <torch_musa/csrc/aten/ops/musa/unrealized_functions.h>
+#include "torch_musa/csrc/aten/ops/musa/unimplemented_functions.h"
 
 #endif // C10_MACROS_CMAKE_MACROS_H_
