@@ -11,3 +11,5 @@ from .base_test_tool import (
     skip_if_musa_unavailable,
     skip_if_not_multiple_musa_device
 )
+
+from .common_utils import get_cycles_per_ms
