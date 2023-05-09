@@ -1,14 +1,12 @@
-#include "torch_musa/csrc/core/Allocator.h"
-
-#include <mudnn.h>
-
 #include <regex>
 #include <c10/util/flat_hash_map.h>
 
+#include <mudnn.h>
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/Device.h"
 #include "torch_musa/csrc/core/MUSAException.h"
 #include "torch_musa/csrc/utils/Logging.h"
+#include "torch_musa/csrc/core/Allocator.h"
 
 namespace c10 {
 
@@ -142,8 +140,10 @@ struct Block {
   int gc_count; // counter for prioritizing older / less useful blocks for
                 // garbage collection
 
-  Block(int device, size_t size, BlockPool* pool, void* ptr)
+  Block(int device, musaStream_t stream, size_t size, BlockPool* pool, void* ptr)
       : device(device),
+        stream(stream),
+        stream_uses(),
         size(size),
         pool(pool),
         ptr(ptr),
@@ -153,8 +153,9 @@ struct Block {
         gc_count(0) {}
 
   // constructor for search key
-  Block(int device, size_t size)
+  Block(int device, musaStream_t stream, size_t size)
       : device(device),
+        stream(stream),
         size(size),
         pool(nullptr),
         ptr(nullptr),
@@ -196,8 +197,8 @@ static std::string format_size(uint64_t size) {
 
 
 struct AllocParams {
-  AllocParams(int device, size_t size, BlockPool* pool, size_t alloc_size)
-      : search_key(device, size),
+  AllocParams(int device, size_t size, musaStream_t stream, BlockPool* pool, size_t alloc_size)
+      : search_key(device, stream, size),
         pool(pool),
         alloc_size(alloc_size),
         block(nullptr),
@@ -206,6 +207,11 @@ struct AllocParams {
   int device() const {
     return search_key.device;
   }
+
+  musaStream_t stream() const {
+    return search_key.stream;
+  }
+
   size_t size() const {
     return search_key.size;
   }
@@ -365,14 +371,14 @@ class MTGPUCachingAllocator {
   // All public methods (except the above) acquire the allocator mutex.
   // Thus, do not call a public method from another public method.
 
-  Block* malloc(int device, size_t size) {
+  Block* malloc(int device, size_t size, musaStream_t stream) {
     std::unique_lock<std::recursive_mutex> lock(mutex_);
 
     self_device_ = device;
     size = round_size(size);
     BlockPool& pool = get_pool(size);
     const size_t alloc_size = get_allocation_size(size);
-    AllocParams params(device, size, &pool, alloc_size);
+    AllocParams params(device, size, stream, &pool, alloc_size);
     params.stat_types[static_cast<size_t>(StatType::AGGREGATE)] = true;
     params.stat_types[static_cast<size_t>(get_stat_type_for_pool(pool))] = true;
 
@@ -473,7 +479,7 @@ class MTGPUCachingAllocator {
     if (should_split(block, size)) {
       remaining = block;
 
-      block = new Block(device, size, &pool, block->ptr);
+      block = new Block(device, stream, size, &pool, block->ptr);
       block->prev = remaining->prev;
       if (block->prev) {
         block->prev->next = block;
@@ -876,7 +882,7 @@ class MTGPUCachingAllocator {
       }
     }
     auto it = pool.blocks.lower_bound(&p.search_key);
-    if (it == pool.blocks.end())
+    if (it == pool.blocks.end() || (*it)->stream != p.stream())
       return false;
     // Do not return an oversized block for a large request
     if ((p.size() < CachingAllocatorConfig::max_split_size()) &&
@@ -998,7 +1004,7 @@ class MTGPUCachingAllocator {
     }
 
     total_allocated_memory_ += size;
-    p.block = new Block(p.device(), size, p.pool, (char*)ptr);
+    p.block = new Block(p.device(), p.stream(), size, p.pool, (char*)ptr);
     for_each_selected_stat_type(p.stat_types, [&](size_t stat_type) {
       update_stat(stats_.segment[stat_type], 1);
       update_stat(stats_.reserved_bytes[stat_type], size);
@@ -1023,7 +1029,7 @@ class MTGPUCachingAllocator {
         ? CachingAllocatorConfig::max_split_size()
         : key.size;
     auto it = pool.blocks.lower_bound(&key);
-    if (it == pool.blocks.end()) {
+    if (it == pool.blocks.end() || (*it)->stream != p.stream()) {
       // No single block is large enough; free multiple oversize blocks,
       // starting with the largest
       if (it == pool.blocks.begin())
@@ -1032,7 +1038,8 @@ class MTGPUCachingAllocator {
       --it; // Back up one item.  Now on the largest block for the correct
             // stream
       while ((totalReleased < key.size) &&
-             ((*it)->size >= CachingAllocatorConfig::max_split_size())) {
+             ((*it)->size >= CachingAllocatorConfig::max_split_size()) &&
+             ((*it)->stream == p.stream())) {
         auto cur = it;
         totalReleased += (*it)->size;
         if (it != pool.blocks.begin()) {
@@ -1138,13 +1145,13 @@ class MusaCachingAllocatorImpl {
     return block;
   }
 
-  void malloc(void** devPtr, int device, size_t size) {
+  void malloc(void** devPtr, int device, size_t size, musaStream_t stream) {
     TORCH_INTERNAL_ASSERT(
         0 <= device && static_cast<size_t>(device) < device_allocator_.size(),
         "Allocator not initialized for device ",
         device,
         ": did you call init?");
-    Block* block = device_allocator_[device]->malloc(device, size);
+    Block* block = device_allocator_[device]->malloc(device, size, stream);
     add_allocated_block(block);
     *devPtr = (void*)block->ptr;
   }
@@ -1197,7 +1204,7 @@ class MusaCachingAllocatorImpl {
     Block* block = get_allocated_block(ptr.get());
     // block must not be null reaching here
     TORCH_INTERNAL_ASSERT(block != nullptr, "No allocated block can be found");
-    device_allocators_[block->device]->recordStream(block, stream);
+    device_allocator_[block->device]->recordStream(block, stream);
   }
 
   std::vector<std::unique_ptr<MTGPUCachingAllocator>> device_allocator_;
@@ -1234,7 +1241,7 @@ struct C10_API MusaCachingAllocator final : at::Allocator {
     TORCH_MUSA_CHECK(musaGetDevice(&device));
     if (nbytes) {
       if (use_caching_allocator_) {
-        allocator_impl_->malloc(&data, device, nbytes);
+        allocator_impl_->malloc(&data, device, nbytes, getCurrentMUSAStream(device));
       } else {
         ::c10::musa::AutoGrowthBestFitAllocator::get_allocator()->AllocateImpl(
             nbytes, &data);

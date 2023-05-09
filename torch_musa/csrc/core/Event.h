@@ -17,4 +17,3 @@ inline bool THMPEvent_Check(PyObject* obj) {
 }
 
 #endif // THMP_EVENT_INC
-

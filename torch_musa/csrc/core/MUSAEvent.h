@@ -1,13 +1,10 @@
 #ifndef TORCH_MUSA_CSRC_CORE_MUSA_EVENT_H_
 #define TORCH_MUSA_CSRC_CORE_MUSA_EVENT_H_
 
-/* #include <ATen/MUSA/ATenMUSAGeneral.h> */
-/* #include <ATen/MUSA/MUSAContext.h> */
 #include <c10/core/impl/GPUTrace.h>
 #include "torch_musa/csrc/core/MUSAStream.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 #include "torch_musa/csrc/core/MUSAException.h"
-
 #include "musa_runtime_api.h"
 
 #include <cstdint>

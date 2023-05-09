@@ -1,6 +1,7 @@
 #ifndef ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUALLOCATOR_H_
 #define ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUALLOCATOR_H_
 
+#include <list>
 #include <ATen/ATen.h>
 #include <c10/core/CPUAllocator.h>
 #include <c10/core/DeviceType.h>
@@ -8,8 +9,6 @@
 
 #include <mudnn.h>
 #include <musa_runtime.h>
-#include <list>
-
 #include "torch_musa/csrc/core/MUSAStream.h"
 
 // yang.zhao: Macros defined in c10/cuda/CUDAMacros.h,
@@ -44,7 +43,6 @@
 #endif
 
 // yang.zhao: predefined classes copied from CUDACachingAllocator.h
-
 
 namespace c10 {
 
@@ -217,7 +215,6 @@ void EmptyCache();
 void ResetPeakStats();
 DeviceStats GetDeviceStats(int64_t device);
 std::vector<SegmentInfo> GetMemorySnapshot();
-
 void recordStream(const DataPtr& dataPtr, MUSAStream stream);
 
 } // namespace MUSACachingAllocator
