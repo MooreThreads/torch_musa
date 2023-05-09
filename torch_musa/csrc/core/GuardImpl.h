@@ -8,10 +8,10 @@
 
 #include "musa_runtime_api.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/core/Allocator.h"
 #include "torch_musa/csrc/core/Device.h"
 #include "torch_musa/csrc/core/MUSAException.h"
 #include "torch_musa/csrc/core/MUSAStream.h"
-#include "torch_musa/csrc/core/Allocator.h"
 
 namespace c10 {
 namespace musa {
@@ -105,14 +105,13 @@ struct MUSAGuardImpl final : public c10::impl::DeviceGuardImplInterface {
     auto musa_flag = musaEventDefault;
     switch (flag) {
       case c10::EventFlag::PYTORCH_DEFAULT:
-      // c10::EventFlag defined CUDA_EVENT_DISABLE_TIME,
-      // we don't need this enum, so just use it.
-      /* case EventFlag::MUSA_EVENT_DISABLE_TIMING: */
+        // c10::EventFlag defined CUDA_EVENT_DISABLE_TIME,
+        // we don't need this enum, so just use PYTORCH_DEFAULT.
         musa_flag = musaEventDisableTiming;
         break;
       case c10::EventFlag::BACKEND_DEFAULT:
-      // c10::EventFlag defined MUSA_EVENT_DEFAULT,
-      // we don't need this enum, so just use it.
+        // c10::EventFlag defined CUDA_EVENT_DEFAULT,
+        // we don't need this enum, so just use BACKEND_DEFAULT.
         musa_flag = musaEventDefault;
         break;
       default:
@@ -126,7 +125,8 @@ struct MUSAGuardImpl final : public c10::impl::DeviceGuardImplInterface {
     }
   }
 
-  void destroyEvent(void* event, const DeviceIndex device_index) const noexcept override {
+  void destroyEvent(void* event, const DeviceIndex device_index)
+      const noexcept override {
     if (!event)
       return;
     auto musa_event = static_cast<musaEvent_t>(event);
@@ -149,7 +149,8 @@ struct MUSAGuardImpl final : public c10::impl::DeviceGuardImplInterface {
     MUSAStream musa_stream{stream};
     const Device orig_device = getDevice();
     setDevice(stream.device());
-    TORCH_MUSA_CHECK(musaStreamWaitEvent(musa_stream, musa_event, 0)); // TODO:check musa API
+    TORCH_MUSA_CHECK(
+        musaStreamWaitEvent(musa_stream, musa_event, 0)); // TODO:check musa API
     const c10::impl::PyInterpreter* interp = c10::impl::GPUTrace::get_trace();
     if (C10_UNLIKELY(interp)) {
       (*interp)->trace_gpu_event_wait(
@@ -159,9 +160,8 @@ struct MUSAGuardImpl final : public c10::impl::DeviceGuardImplInterface {
     setDevice(orig_device);
   }
 
-
   bool queryEvent(void* event) const override {
-    if(!event)
+    if (!event)
       return true;
     musaEvent_t musa_event = static_cast<musaEvent_t>(event);
     const musaError_t err = TORCH_MUSA_ERROR_HANDLE(musaEventQuery(musa_event));
@@ -175,10 +175,10 @@ struct MUSAGuardImpl final : public c10::impl::DeviceGuardImplInterface {
   }
 
   void record(
-    void** event,
-    const Stream& stream,
-    const DeviceIndex device_index,
-    const c10::EventFlag flag) const override {
+      void** event,
+      const Stream& stream,
+      const DeviceIndex device_index,
+      const c10::EventFlag flag) const override {
     TORCH_CHECK(
         device_index == -1 || device_index == stream.device_index(),
         "Event device index ",

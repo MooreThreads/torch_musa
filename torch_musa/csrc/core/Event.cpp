@@ -4,12 +4,12 @@
 #include <torch/csrc/utils/pycfunction_helpers.h>
 #include <torch/csrc/utils/python_arg_parser.h>
 
+#include <structmember.h>
 #include "musa_runtime_api.h"
+#include "torch_musa/csrc/core/Device.h"
+#include "torch_musa/csrc/core/Event.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 #include "torch_musa/csrc/core/Stream.h"
-#include "torch_musa/csrc/core/Event.h"
-#include "torch_musa/csrc/core/Device.h"
-#include <structmember.h>
 
 PyObject* THMPEventClass = nullptr;
 
@@ -194,7 +194,9 @@ static PyMethodDef THMPEvent_methods[] = {
     {nullptr}};
 
 PyTypeObject THMPEventType = {
-    PyVarObject_HEAD_INIT(nullptr, 0) "torch_musa._MUSAC._MusaEventBase", /* tp_name */
+    PyVarObject_HEAD_INIT(
+        nullptr,
+        0) "torch_musa._MUSAC._MusaEventBase", /* tp_name */
     sizeof(THMPEvent), /* tp_basicsize */
     0, /* tp_itemsize */
     (destructor)THMPEvent_dealloc, /* tp_dealloc */

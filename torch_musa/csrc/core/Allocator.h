@@ -1,11 +1,10 @@
 #ifndef ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUALLOCATOR_H_
 #define ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUALLOCATOR_H_
 
-#include <list>
 #include <ATen/ATen.h>
 #include <c10/core/CPUAllocator.h>
 #include <c10/core/DeviceType.h>
-#pragma GCC diagnostic pop
+#include <list>
 
 #include <mudnn.h>
 #include <musa_runtime.h>

@@ -10,9 +10,9 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/core/MUSAEvent.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 #include "torch_musa/csrc/core/MUSAStream.h"
-#include "torch_musa/csrc/core/MUSAEvent.h"
 
 #include <mudnn.h>
 
@@ -152,15 +152,13 @@ void permute_to_contiguous(const Tensor& self, const Tensor& src) {
   CHECK_MUDNN_STATUS(op.Run(h, contiguous_out, contiguous_in), "Run");
 }
 
-using namespace c10::musa;
-using namespace at::musa;
-
 void mtgpu_impl_copy_d2d(
     const Tensor& tensor_self,
     const Tensor& tensor_src,
     bool non_blocking = false) {
+  using namespace c10::musa;
+  using namespace at::musa;
   // when tensor_src is empty , we just return
-
   if (tensor_src.dim() != 0 && tensor_src.numel() == 0) {
     return;
   }
@@ -193,7 +191,8 @@ void mtgpu_impl_copy_d2d(
   }
 
   if (memcpy_eligible) {
-    bool needs_MemcpyPeer = canDeviceAccessPeer(src_device.index(), dst_device.index());
+    bool needs_MemcpyPeer =
+        canDeviceAccessPeer(src_device.index(), dst_device.index());
     void* dst = const_cast<void*>(tensor_self.data_ptr());
     void* src = const_cast<void*>(tensor_src.data_ptr());
     size_t size = tensor_src.nbytes();
@@ -234,7 +233,7 @@ void mtgpu_impl_copy_d2d(
 }
 
 void mtgpu_impl_datacast(const Tensor& tensor_self, const Tensor& tensor_src) {
-  MUSAGuard device_guard(tensor_src.device());
+  c10::musa::MUSAGuard device_guard(tensor_src.device());
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Unary op;
 

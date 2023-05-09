@@ -11,9 +11,9 @@
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/Allocator.h"
 #include "torch_musa/csrc/core/Device.h"
+#include "torch_musa/csrc/core/Event.h"
 #include "torch_musa/csrc/core/Sleep.h"
 #include "torch_musa/csrc/core/Stream.h"
-#include "torch_musa/csrc/core/Event.h"
 
 // yang.zhao: copied from torch/csrc/utils.cpp to avoid including other things.
 void THPUtils_invalidArguments(

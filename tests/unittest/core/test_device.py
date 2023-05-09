@@ -182,7 +182,7 @@ def _test_copy_sync_current_stream(x, y):
 
     s0.synchronize()
 
-    assert torch.all(x == y) == True
+    assert torch.all(x == y)
 
 
 @testing.skip_if_not_multiple_musa_device
@@ -204,10 +204,10 @@ def test_to_cpu_blocking_by_default():
     """Testing block copy to cpu"""
     src = torch.randn(1000000, device="musa")
     torch_musa.synchronize()
-    torch_musa._sleep(FIFTY_MIL_CYCLES)
+    torch_musa._sleep(int(100 * get_cycles_per_ms()))
     dst = src.to(device="cpu")
     assert torch_musa.current_stream().query() is True
-    assert torch.all(src.cpu() == dst) == True
+    assert torch.all(src.cpu() == dst)
     assert dst.is_pinned() is False
 
 
@@ -350,15 +350,15 @@ def test_streams_multi_gpu_query():
         torch_musa._sleep(FIFTY_MIL_CYCLES)
 
     assert s0.query() is True
-    # assert s1.query() is False
+    assert s1.query() is False
 
     with torch_musa.device(d0):
         assert s0.query() is True
-        # assert s1.query() is False
+        assert s1.query() is False
 
     with torch_musa.device(d1):
         assert s0.query() is True
-        # assert s1.query() is False
+        assert s1.query() is False
 
     # deliberately using a different device
     with torch_musa.device(d0):
@@ -441,7 +441,7 @@ def test_malloc_multi_device():
     torch_musa.set_device(curr_device)  # reset device
 
 
-@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one mtGPU")
+@testing.skip_if_not_multiple_musa_device
 def test_stream_event_device():
     """Test stream event device"""
     d0 = torch.device("musa:0")
@@ -474,7 +474,7 @@ def test_stream_event_repr():
     assert ("torch_musa.Event" in e.__repr__()) is True
 
 
-@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one mtGPU")
+@testing.skip_if_not_multiple_musa_device
 def test_tensor_device():
     assert torch.FloatTensor(1).to("musa").get_device() == 0
     assert torch.FloatTensor(1).to("musa:1").get_device() == 1
@@ -564,7 +564,7 @@ def _test_stream_event_nogil(sync_func, p2c, c2p):
         c2p.put(sync_func(FIFTY_MIL_CYCLES))
 
 
-@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one GPU")
+@testing.skip_if_not_multiple_musa_device
 def test_stream_event_nogil():
     """Testing stream and event with nogil"""
     for sync_func in [_stream_synchronize, _event_synchronize, _event_wait]:
@@ -600,7 +600,7 @@ def test_stream_event_nogil():
         # assert parent_time + child_time > total_time * 1.4
 
 
-@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one GPU")
+@testing.skip_if_not_multiple_musa_device
 def test_events_wait():
     """Testing evetns wait"""
     d0 = torch.device("musa:0")
@@ -628,7 +628,7 @@ def test_events_wait():
     assert s1.query() is True
 
 
-@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one GPU")
+@testing.skip_if_not_multiple_musa_device
 def test_events_multi_gpu_query():
     """Testing event query on multi-gpu env"""
     d0 = torch.device("musa:0")
@@ -671,7 +671,7 @@ def test_events_multi_gpu_query():
         assert e1.query() is True
 
 
-@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one GPU")
+@testing.skip_if_not_multiple_musa_device
 def test_events_multi_gpu_elapsed_time():
     """Testing events elapsed time on multi-gpu env"""
     d0 = torch.device("musa:0")
@@ -742,7 +742,7 @@ def test_record_stream():
 
     assert result.tolist() == [1, 2, 3, 4]
 
-    if not TEST_CUDAMALLOCASYNC:
+    if not TEST_MUSAMALLOCASYNC:
         # In the native allocator, we expect "tmp"'s side-stream-tagged block will be reused
         # in that side stream after result.copy_(tmp) in the main stream finishes.
         torch_musa.current_stream().synchronize()

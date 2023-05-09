@@ -1,12 +1,12 @@
-#include <regex>
 #include <c10/util/flat_hash_map.h>
+#include <regex>
 
 #include <mudnn.h>
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/core/Allocator.h"
 #include "torch_musa/csrc/core/Device.h"
 #include "torch_musa/csrc/core/MUSAException.h"
 #include "torch_musa/csrc/utils/Logging.h"
-#include "torch_musa/csrc/core/Allocator.h"
 
 namespace c10 {
 
@@ -140,7 +140,12 @@ struct Block {
   int gc_count; // counter for prioritizing older / less useful blocks for
                 // garbage collection
 
-  Block(int device, musaStream_t stream, size_t size, BlockPool* pool, void* ptr)
+  Block(
+      int device,
+      musaStream_t stream,
+      size_t size,
+      BlockPool* pool,
+      void* ptr)
       : device(device),
         stream(stream),
         stream_uses(),
@@ -195,9 +200,13 @@ static std::string format_size(uint64_t size) {
   return os.str();
 }
 
-
 struct AllocParams {
-  AllocParams(int device, size_t size, musaStream_t stream, BlockPool* pool, size_t alloc_size)
+  AllocParams(
+      int device,
+      size_t size,
+      musaStream_t stream,
+      BlockPool* pool,
+      size_t alloc_size)
       : search_key(device, stream, size),
         pool(pool),
         alloc_size(alloc_size),
@@ -900,7 +909,8 @@ class MTGPUCachingAllocator {
 
   bool trigger_free_memory_callbacks() {
     bool freed_memory = false;
-    for (const auto& name : c10::musa::FreeMusaMemoryCallbacksRegistry()->Keys()) {
+    for (const auto& name :
+         c10::musa::FreeMusaMemoryCallbacksRegistry()->Keys()) {
       freed_memory |=
           c10::musa::FreeMusaMemoryCallbacksRegistry()->Create(name)->Execute();
     }
@@ -1109,8 +1119,6 @@ class MTGPUCachingAllocator {
       }
     }
   }
-
-  
 };
 
 } // namespace MUSACachingAllocator
@@ -1241,7 +1249,8 @@ struct C10_API MusaCachingAllocator final : at::Allocator {
     TORCH_MUSA_CHECK(musaGetDevice(&device));
     if (nbytes) {
       if (use_caching_allocator_) {
-        allocator_impl_->malloc(&data, device, nbytes, getCurrentMUSAStream(device));
+        allocator_impl_->malloc(
+            &data, device, nbytes, getCurrentMUSAStream(device));
       } else {
         ::c10::musa::AutoGrowthBestFitAllocator::get_allocator()->AllocateImpl(
             nbytes, &data);
