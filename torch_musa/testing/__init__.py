@@ -9,5 +9,6 @@ from .base_test_tool import (
     get_all_support_types,
     get_all_types,
     skip_if_musa_unavailable,
-    skip_if_not_multiple_musa_device
+    skip_if_not_multiple_musa_device,
+    MULTIGPU_AVAILABLE,
 )
