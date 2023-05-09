@@ -6,8 +6,21 @@ from contextlib import ExitStack, nullcontext
 from typing import Callable
 
 import types
+import pytest
 import numpy as np
 import torch
+import torch_musa
+
+
+MUSA_AVAILABLE = torch_musa.is_available()
+MULTIGPU_AVAILABLE = MUSA_AVAILABLE and torch_musa.device_count() >= 2
+
+skip_if_musa_unavailable = pytest.mark.skipif(
+    not MUSA_AVAILABLE, reason="No MUSA device is detected"
+)
+skip_if_not_multiple_musa_device = pytest.mark.skipif(
+    not MULTIGPU_AVAILABLE, reason="Expect multiple MUSA devices"
+)
 
 
 def get_raw_data():
@@ -27,8 +40,10 @@ def get_raw_data():
 def get_all_support_types():
     return [torch.float32, torch.int32, torch.int64]
 
+
 def get_all_types():
     return [torch.bool, torch.uint8, torch.float32, torch.int32, torch.float64, torch.int64]
+
 
 class Comparator:
     """
@@ -76,9 +91,7 @@ class AbsDiffComparator(Comparator):
         Use absolute tolerance to compare the result and golden.
         """
         super().__init__()
-        self._comparator = (
-            lambda result, golden: torch.abs(golden - result).max() < abs_diff
-        )
+        self._comparator = lambda result, golden: torch.abs(golden - result).max() < abs_diff
 
 
 class RelDiffComparator(Comparator):
@@ -90,8 +103,7 @@ class RelDiffComparator(Comparator):
         """
         super().__init__()
         self._comparator = (
-            lambda result, golden: torch.abs((golden - result) / golden).max()
-            < rel_diff
+            lambda result, golden: torch.abs((golden - result) / golden).max() < rel_diff
         )
 
 
@@ -137,15 +149,11 @@ class OpTest:
                 if isinstance(self._input_args[k], torch.Tensor):
                     self._input_args[k] = self._input_args[k].to(device)
                 if isinstance(self._input_args[k], np.ndarray):
-                    self._input_args[k] = torch.from_numpy(self._input_args[k]).to(
-                        device
-                    )
+                    self._input_args[k] = torch.from_numpy(self._input_args[k]).to(device)
                 elif isinstance(self._input_args[k], list):
                     for i in range(len(self._input_args[k])):
                         if isinstance(self._input_args[k][i], np.ndarray):
-                            self._input_args[k][i] = torch.Tensor(
-                                self._input_args[k][i]
-                            ).to(device)
+                            self._input_args[k][i] = torch.Tensor(self._input_args[k][i]).to(device)
                             self._input_args[k][i].retain_grad()
                             if self._input_args[k][i].grad is not None:
                                 self._input_args[k][i].grad.zero_()

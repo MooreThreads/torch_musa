@@ -1,15 +1,15 @@
 """Test device features."""
 # pylint: disable=invalid-name, comparison-with-itself, unused-variable, C0415, C0121
-import torch
 import pytest
+import torch
 import torch_musa
+from torch_musa import testing
 
-TEST_MUSA = torch_musa.is_available()
-TEST_MULTIGPU = TEST_MUSA and torch_musa.device_count() >= 2
+
 FIFTY_MIL_CYCLES = 50000000
 
 
-@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one mtGPU")
+@testing.skip_if_not_multiple_musa_device
 def test_musa_set_device():
     """Test cases include set_device and device context"""
     x = torch.randn(5, 5)
@@ -29,7 +29,7 @@ def test_musa_set_device():
     assert torch_musa.current_device() == 0
 
 
-@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected no mtGPU")
+@testing.skip_if_not_multiple_musa_device
 def test_get_musa_devcie_index():
     """Test exception case about torch_musa.device(xxx)"""
     with torch_musa.device("musa:1"):
@@ -46,7 +46,7 @@ def test_get_musa_devcie_index():
         torch_musa.device("cpu")
 
 
-@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected no mtGPU")
+@testing.skip_if_not_multiple_musa_device
 def test_can_device_access_peer():
     """Test canAccessPeer and DeviceProperties"""
     assert torch_musa.can_device_access_peer(0, 0) is False
@@ -58,7 +58,7 @@ def test_can_device_access_peer():
         torch_musa.can_device_access_peer(-1, 1)
 
 
-@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one mtGPU")
+@testing.skip_if_not_multiple_musa_device
 def test_device_of():
     """Test device of context"""
     x = torch.randn(5, 5).to("musa:1")
@@ -83,7 +83,7 @@ def test_get_musa_device_index():
         _get_musa_device_index(torch.device("cpu"), optional=True)
 
 
-@pytest.mark.skipif(not TEST_MUSA, reason="detected no mtGPU")
+@testing.skip_if_musa_unavailable
 def test_synchronize():
     """Test torch_musa synchronize feature"""
     torch_musa.synchronize()
@@ -92,7 +92,7 @@ def test_synchronize():
     torch_musa.synchronize(0)
     torch_musa.synchronize(torch.device("musa:0"))
 
-    if TEST_MULTIGPU:
+    if torch_musa.device_count() > 1:
         torch_musa.synchronize("musa:1")
         torch_musa.synchronize(1)
         torch_musa.synchronize(torch.device("musa:1"))
@@ -104,7 +104,7 @@ def test_synchronize():
         torch_musa.synchronize("cpu")
 
 
-@pytest.mark.skipif(not TEST_MUSA, reason="detected no mtGPU")
+@testing.skip_if_musa_unavailable
 def test_musa_get_device_name():
     """Testing the behaviour with None as an argument"""
     current_device = torch_musa.current_device()
@@ -117,7 +117,7 @@ def test_musa_get_device_name():
     assert current_device_name == device_name_no_argument
 
 
-@pytest.mark.skipif(not TEST_MUSA, reason="detected no mtGPU")
+@testing.skip_if_musa_unavailable
 def test_musa_get_device_capability():
     """Testing the behaviour with None as an argument"""
     current_device = torch_musa.current_device()
@@ -130,7 +130,7 @@ def test_musa_get_device_capability():
     assert current_device_capability, device_capability_no_argument
 
 
-@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one mtGPU")
+@testing.skip_if_not_multiple_musa_device
 def test_copy_device():
     "Testing copy on multi cards"
     x = torch.randn(5, 5).to("musa")
@@ -183,7 +183,7 @@ def _test_copy_sync_current_stream(x, y):
     assert torch.all(x == y) == True
 
 
-@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one mtGPU")
+@testing.skip_if_not_multiple_musa_device
 def test_copy_streams():
     """Testing copy with diff streams"""
     d0 = torch.device("musa:0")
@@ -197,7 +197,7 @@ def test_copy_streams():
     _test_copy_sync_current_stream(x0, x2)
 
 
-@pytest.mark.skipif(not TEST_MUSA, reason="detected no mtGPU")
+@testing.skip_if_musa_unavailable
 def test_to_cpu_blocking_by_default():
     """Testing block copy to cpu"""
     src = torch.randn(1000000, device="musa")
@@ -209,7 +209,7 @@ def test_to_cpu_blocking_by_default():
     assert dst.is_pinned() is False
 
 
-@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one mtGPU")
+@testing.skip_if_not_multiple_musa_device
 def test_current_stream():
     "Testing NULL stream"
     d0 = torch.device("musa:0")
@@ -238,7 +238,7 @@ def test_current_stream():
         torch_musa.current_stream(torch.device("cpu"))
 
 
-@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one mtGPU")
+@testing.skip_if_not_multiple_musa_device
 def test_default_stream():
     "Testing No-NULL stream from stream pool"
     d0 = torch.device("musa:0")
@@ -269,7 +269,7 @@ def test_default_stream():
         torch_musa.default_stream(torch.device("cpu"))
 
 
-@pytest.mark.skipif(not TEST_MUSA, reason="detected only one mtGPU")
+@testing.skip_if_not_multiple_musa_device
 def test_streams():
     "Testing stream base methods"
     default_stream = torch_musa.current_stream()
@@ -287,7 +287,7 @@ def test_streams():
     # assert default_stream.query() is True
 
 
-@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one mtGPU")
+@testing.skip_if_not_multiple_musa_device
 def test_stream_context():
     "Testing stream context"
     s0 = torch_musa.current_stream()
@@ -320,7 +320,7 @@ def test_stream_context():
     assert 0 == torch_musa.current_device()
 
 
-@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one mtGPU")
+@testing.skip_if_not_multiple_musa_device
 def test_streams_multi_gpu():
     "Testing stream across multi cards"
     default_stream = torch_musa.current_stream()
@@ -332,7 +332,7 @@ def test_streams_multi_gpu():
         assert torch_musa.current_stream() != default_stream
 
 
-@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one mtGPU")
+@testing.skip_if_not_multiple_musa_device
 def test_streams_multi_gpu_query():
     "Testing streams query"
     d0 = torch.device("musa:0")
@@ -374,7 +374,7 @@ def test_streams_multi_gpu_query():
         assert s1.query() is True
 
 
-@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one mtGPU")
+@testing.skip_if_not_multiple_musa_device
 def test_streams_multi_gpu_eq():
     "Testing streams equal"
     d0 = torch.device("musa:0")
@@ -406,7 +406,7 @@ def test_streams_multi_gpu_eq():
     assert hash(s0) != hash(s3)
 
 
-@pytest.mark.skipif(not TEST_MULTIGPU, reason="multi-GPU not supported")
+@testing.skip_if_not_multiple_musa_device
 def test_streams_priority():
     "Testing streams priority"
     low, high = torch_musa.Stream.priority_range()
@@ -422,12 +422,12 @@ def test_streams_priority():
 
 
 # TODO(mt-ai): Need import musart
-@pytest.mark.skipif(True, reason="Waiting musart import")
+@pytest.mark.skip(reason="Waiting musart import")
 def test_external_streams():
     "Testing external streams"
 
 
-@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected no mtGPU")
+@testing.skip_if_not_multiple_musa_device
 def test_malloc_multi_device():
     """Test multiple device allocator"""
     curr_device = torch_musa.current_device()

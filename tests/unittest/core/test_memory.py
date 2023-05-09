@@ -5,10 +5,7 @@ import torch
 from torch import nn
 
 import torch_musa
-
-
-TEST_MUSA = torch_musa.is_available()
-TEST_MULTIGPU = TEST_MUSA and torch_musa.device_count() >= 2
+from torch_musa import testing
 
 
 def test_single_op():
@@ -74,7 +71,7 @@ def test_single_device_ops():
     assert reserved == 320 * 1024 * 1024  # reserved 320MB
 
 
-@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected no mtGPU")
+@testing.skip_if_not_multiple_musa_device
 def test_all_devices_ops():
     """Test memory stats ops when specify all devices"""
     torch_musa.empty_cache()
