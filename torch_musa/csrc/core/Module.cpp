@@ -36,20 +36,6 @@ void THPUtils_invalidArguments(
           .c_str());
 }
 
-void AddPyMethodDefs(std::vector<PyMethodDef>& vector, PyMethodDef* methods) {
-  if (!vector.empty()) {
-    // remove nullptr terminator
-    vector.pop_back();
-  }
-  while (true) {
-    vector.push_back(*methods);
-    if (!methods->ml_name) {
-      break;
-    }
-    methods++;
-  }
-}
-
 py::object PyMusa_EmptyCache() {
   c10::musa::MUSACachingAllocator::EmptyCache();
   return py::none();
@@ -145,34 +131,15 @@ py::object PyMusa_MemorySnapshot() {
   return result;
 }
 
-void InitMusaModule(PyObject* module) {
-  // TODO(mt-ai) we need to have an init function for musa device.
-  THMPStream_init(module);
-
-  // Device properties info
-  c10::musa::registerMusaDeviceProperties(module);
+void AddMusaDeviceMethods(PyObject* module) {
   auto py_module = py::reinterpret_borrow<py::module>(module);
 
-  // Memory Management
-  py_module.def("_musa_emptyCache", []() { return PyMusa_EmptyCache(); });
-  py_module.def(
-      "_musa_resetPeakStats", []() { return PyMusa_ResetPeakStats(); });
-  py_module.def("_musa_memoryStats", [](int64_t device) {
-    return PyMusa_MemoryStats(device);
-  });
-  py_module.def(
-      "_musa_memorySnapshot", []() { return PyMusa_MemorySnapshot(); });
-
-  // Device Management
   py_module.def(
       "_musa_getDeviceCount", []() { return c10::musa::device_count(); });
   py_module.def(
       "_musa_getDevice", []() { return c10::musa::current_device(); });
   py_module.def(
       "_musa_setDevice", [](int64_t device) { c10::musa::set_device(device); });
-  // Synchronize musa device.
-  py_module.def("_musa_synchronize", []() { c10::musa::Synchronize(); });
-
   py_module.def("_musa_exchangeDevice", [](int64_t device) {
     return c10::musa::exchangeDevice(device);
   });
@@ -180,13 +147,19 @@ void InitMusaModule(PyObject* module) {
       "_musa_canDeviceAccessPeer", [](int64_t device, int64_t peer_device) {
         return c10::musa::canDeviceAccessPeer(device, peer_device);
       });
-
   py_module.def(
       "_get_device_properties",
       [](int64_t device) -> musaDeviceProp* {
         return c10::musa::getDeviceProperties(device);
       },
       py::return_value_policy::reference);
+
+  // Synchronize musa device.
+  py_module.def("_musa_synchronize", []() { c10::musa::Synchronize(); });
+}
+
+void AddMusaStreamMethods(PyObject* module) {
+  auto py_module = py::reinterpret_borrow<py::module>(module);
 
   py_module.def("_musa_getDefaultStream", [](int64_t device_index) {
     auto stream = c10::musa::getDefaultMUSAStream(device_index);
@@ -217,4 +190,30 @@ void InitMusaModule(PyObject* module) {
     }
     c10::musa::setCurrentMUSAStream(stream);
   });
+}
+
+void AddMusaMemoryMethods(PyObject* module) {
+  auto py_module = py::reinterpret_borrow<py::module>(module);
+
+  py_module.def("_musa_emptyCache", []() { return PyMusa_EmptyCache(); });
+  py_module.def(
+      "_musa_resetPeakStats", []() { return PyMusa_ResetPeakStats(); });
+  py_module.def("_musa_memoryStats", [](int64_t device) {
+    return PyMusa_MemoryStats(device);
+  });
+  py_module.def(
+      "_musa_memorySnapshot", []() { return PyMusa_MemorySnapshot(); });
+}
+
+void InitMusaModule(PyObject* module) {
+  // TODO(mt-ai) Let's lazily init musa devices first.
+  THMPStream_init(module);
+  auto py_module = py::reinterpret_borrow<py::module>(module);
+
+  AddMusaDeviceMethods(module);
+  AddMusaStreamMethods(module);
+  AddMusaMemoryMethods(module);
+
+  // Register MUSA device properties
+  c10::musa::registerMusaDeviceProperties(module);
 }

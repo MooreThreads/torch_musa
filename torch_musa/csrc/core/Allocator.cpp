@@ -1102,10 +1102,9 @@ class MusaCachingAllocatorImpl {
  public:
   MusaCachingAllocatorImpl() {
     const int64_t dev_num = static_cast<int64_t>(c10::musa::device_count());
-    device_allocators_.reserve(dev_num);
+    device_allocator_.reserve(dev_num);
     for (int i = 0; i < dev_num; ++i) {
-      device_allocators_.emplace_back(
-          std::make_unique<MTGPUCachingAllocator>());
+      device_allocator_.emplace_back(std::make_unique<MTGPUCachingAllocator>());
     }
   }
 
@@ -1124,11 +1123,11 @@ class MusaCachingAllocatorImpl {
 
   void malloc(void** devPtr, int device, size_t size) {
     TORCH_INTERNAL_ASSERT(
-        0 <= device && static_cast<size_t>(device) < device_allocators_.size(),
+        0 <= device && static_cast<size_t>(device) < device_allocator_.size(),
         "Allocator not initialized for device ",
         device,
         ": did you call init?");
-    Block* block = device_allocators_[device]->malloc(device, size);
+    Block* block = device_allocator_[device]->malloc(device, size);
     add_allocated_block(block);
     *devPtr = (void*)block->ptr;
   }
@@ -1141,24 +1140,24 @@ class MusaCachingAllocatorImpl {
     if (!block) {
       TORCH_CHECK(false, "invalid device pointer: ", ptr);
     }
-    device_allocators_[block->device]->free(block);
+    device_allocator_[block->device]->free(block);
   }
 
   void empty_cache() {
-    for (auto& da : device_allocators_) {
+    for (auto& da : device_allocator_) {
       da->empty_cache();
     }
   }
 
   void reset_peak_stats() {
-    for (auto& da : device_allocators_) {
+    for (auto& da : device_allocator_) {
       da->reset_peak_stats();
     }
   }
 
   std::vector<SegmentInfo> snapshot() {
     std::vector<SegmentInfo> result;
-    for (auto& da : device_allocators_) {
+    for (auto& da : device_allocator_) {
       auto snap = da->snapshot();
       result.insert(result.end(), snap.begin(), snap.end());
     }
@@ -1167,10 +1166,10 @@ class MusaCachingAllocatorImpl {
   }
 
   DeviceStats get_stats(int64_t device) {
-    return device_allocators_[device]->get_stats();
+    return device_allocator_[device]->get_stats();
   }
 
-  std::vector<std::unique_ptr<MTGPUCachingAllocator>> device_allocators_;
+  std::vector<std::unique_ptr<MTGPUCachingAllocator>> device_allocator_;
 
  private:
   std::mutex mutex_;
