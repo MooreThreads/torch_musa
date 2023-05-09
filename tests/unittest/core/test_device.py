@@ -1,11 +1,12 @@
 """Test device features."""
-# pylint: disable=invalid-name, comparison-with-itself, unused-variable, C0415
+# pylint: disable=invalid-name, comparison-with-itself, unused-variable, C0415, C0121
 import torch
 import pytest
 import torch_musa
 
 TEST_MUSA = torch_musa.is_available()
 TEST_MULTIGPU = TEST_MUSA and torch_musa.device_count() >= 2
+FIFTY_MIL_CYCLES = 50000000
 
 
 @pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one mtGPU")
@@ -129,8 +130,7 @@ def test_musa_get_device_capability():
     assert current_device_capability, device_capability_no_argument
 
 
-# TODO(Xiaokang Shang): Open after device allocator ready.
-@pytest.mark.skipif(True, reason="Wait device allocator")
+@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one mtGPU")
 def test_copy_device():
     "Testing copy on multi cards"
     x = torch.randn(5, 5).to("musa")
@@ -138,6 +138,9 @@ def test_copy_device():
         y = x.to("musa")
         assert y.get_device() == 1
         assert y.to("musa") is y
+        z = y.to("musa:0")
+        assert z.get_device() == 0
+        assert z.to("musa:0") is z
 
     x = torch.randn(5, 5)
     with torch_musa.device(1):
@@ -147,6 +150,63 @@ def test_copy_device():
         z = y.to("musa:0")
         assert z.get_device() == 0
         assert z.to("musa:0") is z
+
+
+def _test_copy_sync_current_stream(x, y):
+    x_plus_one = x + 1
+    s0 = torch_musa.Stream(device=x.device)
+    s1 = torch_musa.Stream(device=x.device)
+    s2 = torch_musa.Stream(device=x.device)
+    s3 = torch_musa.Stream(device=x.device)
+
+    # same dst stream different src streams
+    with torch_musa.stream(s0):
+        torch_musa._sleep(FIFTY_MIL_CYCLES)
+        with torch_musa.stream(s1):
+            y.copy_(x_plus_one)
+
+    with torch_musa.stream(s2), torch_musa.stream(s1):
+        y.copy_(x)
+
+    s1.synchronize()
+
+    with torch_musa.stream(s1):
+        torch_musa._sleep(FIFTY_MIL_CYCLES)
+        with torch_musa.stream(s0):
+            y.copy_(x_plus_one)
+
+    with torch_musa.stream(s3), torch_musa.stream(s0):
+        y.copy_(x)
+
+    s0.synchronize()
+
+    assert torch.all(x == y) == True
+
+
+@pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one mtGPU")
+def test_copy_streams():
+    """Testing copy with diff streams"""
+    d0 = torch.device("musa:0")
+    x0 = torch.zeros(5, 5, device=d0)
+
+    d1 = torch.device("musa:1")
+    x1 = torch.zeros(5, 5, device=d1)
+    _test_copy_sync_current_stream(x0, x1)
+
+    x2 = torch.zeros(5, 5, device=d0)
+    _test_copy_sync_current_stream(x0, x2)
+
+
+@pytest.mark.skipif(not TEST_MUSA, reason="detected no mtGPU")
+def test_to_cpu_blocking_by_default():
+    """Testing block copy to cpu"""
+    src = torch.randn(1000000, device="musa")
+    torch_musa.synchronize()
+    torch_musa._sleep(FIFTY_MIL_CYCLES)
+    dst = src.to(device="cpu")
+    assert torch_musa.current_stream().query() is True
+    assert torch.all(src.cpu() == dst) == True
+    assert dst.is_pinned() is False
 
 
 @pytest.mark.skipif(not TEST_MULTIGPU, reason="detected only one mtGPU")
@@ -285,19 +345,18 @@ def test_streams_multi_gpu_query():
 
     with torch_musa.device(d1):
         s1 = torch_musa.current_stream()
-        # TODO(mt-ai): replace with musa sleep
-        # torch_musa._sleep(FIFTY_MIL_CYCLES)
+        torch_musa._sleep(FIFTY_MIL_CYCLES)
 
     assert s0.query() is True
-    # assert s1.query() is False
+    assert s1.query() is False
 
     with torch_musa.device(d0):
         assert s0.query() is True
-        # assert s1.query() is False
+        assert s1.query() is False
 
     with torch_musa.device(d1):
         assert s0.query() is True
-        # assert s1.query() is False
+        assert s1.query() is False
 
     # deliberately using a different device
     with torch_musa.device(d0):

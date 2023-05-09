@@ -11,6 +11,7 @@
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/Allocator.h"
 #include "torch_musa/csrc/core/Device.h"
+#include "torch_musa/csrc/core/Sleep.h"
 #include "torch_musa/csrc/core/Stream.h"
 
 // yang.zhao: copied from torch/csrc/utils.cpp to avoid including other things.
@@ -190,6 +191,9 @@ void AddMusaStreamMethods(PyObject* module) {
     }
     c10::musa::setCurrentMUSAStream(stream);
   });
+
+  // Sleep function
+  py_module.def("_musa_sleep", [](int64_t cycles) { at::musa::sleep(cycles); });
 }
 
 void AddMusaMemoryMethods(PyObject* module) {
