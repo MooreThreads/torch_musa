@@ -1,7 +1,6 @@
 #ifndef ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUUTILS_H_
 #define ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUUTILS_H_
 
-#include <ATen/ATen.h>
 #include <ATen/Dispatch.h>
 
 #include <mudnn.h>
