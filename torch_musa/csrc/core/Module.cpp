@@ -11,6 +11,7 @@
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/Allocator.h"
 #include "torch_musa/csrc/core/Device.h"
+#include "torch_musa/csrc/core/Event.h"
 #include "torch_musa/csrc/core/Sleep.h"
 #include "torch_musa/csrc/core/Stream.h"
 
@@ -212,6 +213,7 @@ void AddMusaMemoryMethods(PyObject* module) {
 void InitMusaModule(PyObject* module) {
   // TODO(mt-ai) Let's lazily init musa devices first.
   THMPStream_init(module);
+  THMPEvent_init(module);
   auto py_module = py::reinterpret_borrow<py::module>(module);
 
   AddMusaDeviceMethods(module);

@@ -4,11 +4,11 @@
 #include <ATen/ATen.h>
 #include <c10/core/CPUAllocator.h>
 #include <c10/core/DeviceType.h>
-#pragma GCC diagnostic pop
+#include <list>
 
 #include <mudnn.h>
 #include <musa_runtime.h>
-#include <list>
+#include "torch_musa/csrc/core/MUSAStream.h"
 
 // yang.zhao: Macros defined in c10/cuda/CUDAMacros.h,
 //            replacing all CUDA with MUSA
@@ -49,6 +49,8 @@ class C10_MUSA_API MUSAOutOfMemoryError : public c10::Error {
   using Error::Error;
 };
 
+namespace musa {
+
 // Caching allocator will execute every registered callback if it's unable to
 // find a block inside of already allocated area.
 class C10_MUSA_API FreeMemoryCallback {
@@ -60,8 +62,6 @@ class C10_MUSA_API FreeMemoryCallback {
 C10_DECLARE_REGISTRY(FreeMusaMemoryCallbacksRegistry, FreeMemoryCallback);
 #define REGISTER_FREE_MEMORY_CALLBACK(name, ...) \
   C10_REGISTER_CLASS(FreeMusaMemoryCallbacksRegistry, name, __VA_ARGS__);
-
-namespace musa {
 
 void raw_delete(void* ptr);
 
@@ -214,6 +214,7 @@ void EmptyCache();
 void ResetPeakStats();
 DeviceStats GetDeviceStats(int64_t device);
 std::vector<SegmentInfo> GetMemorySnapshot();
+void recordStream(const DataPtr& dataPtr, MUSAStream stream);
 
 } // namespace MUSACachingAllocator
 } // namespace musa

@@ -35,6 +35,10 @@ class MUSAStream {
     return unwrap() == other.unwrap();
   }
 
+  bool operator!=(const MUSAStream& other) const noexcept {
+    return unwrap() != other.unwrap();
+  }
+
   operator musaStream_t() const {
     return stream();
   }

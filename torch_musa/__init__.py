@@ -27,6 +27,7 @@ from .core.stream import (
     ExternalStream,
     stream,
     Stream,
+    Event,
 )
 
 from .core.serialization import register_deserialization

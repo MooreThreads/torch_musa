@@ -12,3 +12,5 @@ from .base_test_tool import (
     skip_if_not_multiple_musa_device,
     MULTIGPU_AVAILABLE,
 )
+
+from .common_utils import get_cycles_per_ms

@@ -10,6 +10,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/core/MUSAEvent.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 #include "torch_musa/csrc/core/MUSAStream.h"
 
@@ -155,8 +156,9 @@ void mtgpu_impl_copy_d2d(
     const Tensor& tensor_self,
     const Tensor& tensor_src,
     bool non_blocking = false) {
+  using namespace c10::musa;
+  using namespace at::musa;
   // when tensor_src is empty , we just return
-
   if (tensor_src.dim() != 0 && tensor_src.numel() == 0) {
     return;
   }
@@ -170,15 +172,27 @@ void mtgpu_impl_copy_d2d(
   Device dst_device = tensor_self.device();
   Device src_device = tensor_src.device();
 
-  c10::musa::MUSAGuard device_guard(src_device);
-  muHandle& h = GetMudnnHandle();
+  MUSAGuard device_guard(src_device);
 
-  c10::musa::MUSAStream copy_stream =
-      c10::musa::getCurrentMUSAStream(src_device.index());
+  MUSAStream copy_stream = getCurrentMUSAStream(src_device.index());
+  if (src_device != dst_device) {
+    // This is a cross-device copy on the src current stream and dst current
+    // stream. We perform a two-way barrier between both devices' streams
+    // before the copy. This ensures that any write-after-write and
+    // write-after-read dependencies on the destination side are handled, so
+    // that no one is operating on the dst memory when we perform the copy.
+    // src waits on dst barrier (src already waits on src)
+    MUSAEvent dst_ready;
+    device_guard.set_device(dst_device);
+    dst_ready.record(getCurrentMUSAStream(dst_device.index()));
+
+    device_guard.set_device(src_device);
+    dst_ready.block(copy_stream);
+  }
 
   if (memcpy_eligible) {
     bool needs_MemcpyPeer =
-        c10::musa::canDeviceAccessPeer(src_device.index(), dst_device.index());
+        canDeviceAccessPeer(src_device.index(), dst_device.index());
     void* dst = const_cast<void*>(tensor_self.data_ptr());
     void* src = const_cast<void*>(tensor_src.data_ptr());
     size_t size = tensor_src.nbytes();
@@ -201,6 +215,18 @@ void mtgpu_impl_copy_d2d(
 
   if (!non_blocking) {
     TORCH_MUSA_CHECK(musaStreamSynchronize(copy_stream));
+  }
+
+  if (src_device != dst_device) {
+    // dst waits on src barrier (dst already waits on dst). We cannot
+    // operate on dst's copy until the copy is complete.
+
+    // Still on src_device, record stream event
+    MUSAEvent src_ready;
+    src_ready.record(copy_stream);
+
+    device_guard.set_device(dst_device);
+    src_ready.block(getCurrentMUSAStream(dst_device.index()));
   }
 
   TORCH_MUSA_CHECK(musaGetLastError());

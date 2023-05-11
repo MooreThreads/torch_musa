@@ -12,13 +12,17 @@
     }                                                                \
   } while (0)
 
-#define TORCH_MUSA_WARN(EXPR)                                  \
+#define TORCH_MUSA_CHECK_WARN(EXPR)                            \
   do {                                                         \
     const musaError_t __err = EXPR;                            \
     if (C10_UNLIKELY(__err != musaSuccess)) {                  \
+      auto error_unused = musaGetLastError();                  \
+      (void)error_unused;                                      \
       TORCH_WARN("MUSA warning: ", musaGetErrorString(__err)); \
     }                                                          \
   } while (0)
+
+#define TORCH_MUSA_WARN(EXPR) TORCH_MUSA_CHECK_WARN(EXPR)
 
 #define TORCH_MUSA_ERROR_HANDLE(EXPR) EXPR
 
