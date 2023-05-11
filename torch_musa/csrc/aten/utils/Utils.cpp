@@ -66,7 +66,7 @@ inline void SetTensorTypeAndAddr(const Tensor& t, muTensor& m_t) {
       m_t.SetType(muTensor::Type::UINT8);
       break;
     default:
-      TORCH_CHECK(false, "Unsupported tensor dtype: ", t);
+      TORCH_CHECK(false, "Unsupported tensor dtype: ", t.dtype());
       throw;
   }
   m_t.SetAddr(t.data_ptr());
