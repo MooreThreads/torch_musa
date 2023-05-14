@@ -87,14 +87,13 @@ void InternalMemFree(void* ptr) {
   if (!ptr) {
     return;
   }
-  c10::musa::AutoGrowthBestFitAllocator::get_allocator()->FreeImpl(ptr);
+  c10::musa::raw_delete(ptr);
 }
 
 ::musa::dnn::MemoryHandler InternalMemAlloc(size_t s) {
   void* data = nullptr;
   if (s) {
-    c10::musa::AutoGrowthBestFitAllocator::get_allocator()->AllocateImpl(
-        s, &data);
+    data = c10::musa::raw_alloc(s);
   }
   return ::musa::dnn::MemoryHandler(data, InternalMemFree);
 }

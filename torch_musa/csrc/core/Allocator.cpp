@@ -1232,15 +1232,7 @@ class MusaCachingAllocatorImpl {
 struct C10_API MusaCachingAllocator final : at::Allocator {
  public:
   MusaCachingAllocator() {
-    const char* env = getenv("MTGPU_ALLOC_TYPE");
-    use_caching_allocator_ = true;
-    if (env != nullptr && std::string(env) == "naive") {
-      DLOG_INFO << "Use naive allocator.";
-      use_caching_allocator_ = false;
-    } else {
-      DLOG_INFO << "Use caching allocator.";
-      allocator_impl_ = new MusaCachingAllocatorImpl();
-    }
+    allocator_impl_ = new MusaCachingAllocatorImpl();
   }
 
   at::DataPtr allocate(size_t nbytes) const override {
@@ -1248,16 +1240,33 @@ struct C10_API MusaCachingAllocator final : at::Allocator {
     int device;
     TORCH_MUSA_CHECK(musaGetDevice(&device));
     if (nbytes) {
-      if (use_caching_allocator_) {
-        allocator_impl_->malloc(
-            &data, device, nbytes, getCurrentMUSAStream(device));
-      } else {
-        ::c10::musa::AutoGrowthBestFitAllocator::get_allocator()->AllocateImpl(
-            nbytes, &data);
-      }
+      allocator_impl_->malloc(
+          &data, device, nbytes, getCurrentMUSAStream(device));
     }
     return {
         data, data, &raw_delete, at::Device(at::native::musa::kMUSA, device)};
+  }
+
+  void* raw_alloc(size_t nbytes) {
+    if (nbytes == 0) {
+      return nullptr;
+    }
+    int device;
+    TORCH_MUSA_CHECK(musaGetDevice(&device));
+    void* ptr = nullptr;
+    allocator_impl_->malloc(&ptr, device, nbytes, getCurrentMUSAStream(device));
+    return ptr;
+  }
+
+  void* raw_alloc_with_stream(size_t nbytes, musaStream_t stream) {
+    if (nbytes == 0) {
+      return nullptr;
+    }
+    int device;
+    TORCH_MUSA_CHECK(musaGetDevice(&device));
+    void* ptr = nullptr;
+    allocator_impl_->malloc(&ptr, device, nbytes, stream);
+    return ptr;
   }
 
   at::DeleterFnPtr raw_deleter() const override {
@@ -1272,8 +1281,6 @@ struct C10_API MusaCachingAllocator final : at::Allocator {
     get_allocator()->recordStream(dataPtr, stream);
   }
 
-  bool use_caching_allocator_;
-
  private:
   MusaCachingAllocatorImpl* allocator_impl_;
 };
@@ -1287,6 +1294,16 @@ MusaCachingAllocator* GetMusaCachingAllocator() {
 void raw_delete(void* ptr) {
   MusaCachingAllocator* palloc = c10::musa::GetMusaCachingAllocator();
   palloc->get_allocator()->free(ptr);
+}
+
+void* raw_alloc(size_t nbytes) {
+  MusaCachingAllocator* palloc = c10::musa::GetMusaCachingAllocator();
+  return palloc->raw_alloc(nbytes);
+}
+
+void* raw_alloc_with_stream(size_t nbytes, musaStream_t stream) {
+  MusaCachingAllocator* palloc = c10::musa::GetMusaCachingAllocator();
+  return palloc->raw_alloc_with_stream(nbytes, stream);
 }
 
 REGISTER_ALLOCATOR(at::native::musa::kMUSA, &g_musa_alloc);
