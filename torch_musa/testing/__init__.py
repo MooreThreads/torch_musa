@@ -11,6 +11,7 @@ from .base_test_tool import (
     skip_if_musa_unavailable,
     skip_if_not_multiple_musa_device,
     MULTIGPU_AVAILABLE,
+    test_on_nonzero_card_if_multiple_musa_device
 )
 
 from .common_utils import get_cycles_per_ms

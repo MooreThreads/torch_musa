@@ -8,6 +8,7 @@ from torch_musa import testing
 
 data = [1, 2, 4, 8, 16]
 
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("embedding_dim", data)
 @pytest.mark.parametrize("batch", data)
 @pytest.mark.parametrize("sequence_length", data)
@@ -19,6 +20,7 @@ def test_layer_norm_nlp(embedding_dim, batch, sequence_length):
     assert testing.DefaultComparator(abs_diff=1e-3)(output, output_musa.cpu())
 
 
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("N", data)
 @pytest.mark.parametrize("C", data)
 @pytest.mark.parametrize("W", data)

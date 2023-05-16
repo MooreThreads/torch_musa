@@ -19,36 +19,42 @@ all_dtypes = [
 ]
 
 
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("src_dtype", all_dtypes)
 def test_cast_to_float64(input_data, src_dtype):
     call_cast_func(input_data, src_dtype, torch.float64)
 
 
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("src_dtype", all_dtypes)
 def test_cast_to_float32(input_data, src_dtype):
     call_cast_func(input_data, src_dtype, torch.float32)
 
 
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("src_dtype", all_dtypes)
 def test_cast_to_int64(input_data, src_dtype):
     call_cast_func(input_data, src_dtype, torch.int64)
 
 
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("src_dtype", all_dtypes)
 def test_cast_to_int32(input_data, src_dtype):
     call_cast_func(input_data, src_dtype, torch.int32)
 
 
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("src_dtype", all_dtypes)
 def test_cast_to_uint8(input_data, src_dtype):
     call_cast_func(input_data, src_dtype, torch.uint8)
 
 
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("src_dtype", all_dtypes)
 def test_cast_to_bool(input_data, src_dtype):

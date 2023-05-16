@@ -28,6 +28,9 @@ FILE(GLOB cuda_porting_cpp_files
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/c10/musa/MUSA_PORT_MiscFunctions.cpp)
 
 FILE(GLOB cuda_porting_mu_files
+    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryOpsKernel.mu
+    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TensorCompare.mu
+    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/BinaryBitwiseOpsKernels.mu
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/group_norm_kernel.mu
     core/*.mu
     )

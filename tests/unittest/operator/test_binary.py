@@ -1,10 +1,9 @@
 """Test binary operators."""
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
 import random
-import torch
-import pytest
-import torch_musa
 
+import pytest
+import torch
 from torch_musa import testing
 
 input_datas = [
@@ -27,6 +26,8 @@ all_funcs_except_div = [
     torch.ge,
     torch.greater_equal,
     torch.greater,
+    torch.min,
+    torch.max
 ]
 
 all_support_types = testing.get_all_support_types()
@@ -44,6 +45,7 @@ def function(input_data, dtype, other_dtype, func):
 
 
 # normal case
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_datas)
 @pytest.mark.parametrize("dtype", all_support_types)
 @pytest.mark.parametrize("other_dtype", all_support_types)
@@ -53,6 +55,7 @@ def test_binary(input_data, dtype, other_dtype, func):
 
 
 # test div, remainder which only support float and make sure other is not zero
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_datas)
 @pytest.mark.parametrize("dtype", [torch.float32])
 @pytest.mark.parametrize("func", [torch.div, torch.remainder])
@@ -61,6 +64,7 @@ def test_div(input_data, dtype, func):
 
 
 # test add_alpha and sub_alpha(only support float)
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize(
     "input_data",
     [
@@ -88,6 +92,7 @@ def test_binary_with_alpha(input_data, dtype, func):
 
 
 # test binary with scalar
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize(
     "input_data",
     [
@@ -104,6 +109,7 @@ def test_binary_with_other_scalar(input_data, dtype, func):
     function(input_data, dtype, dtype, func)
 
 
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize(
     "input_data",
     [
@@ -130,6 +136,7 @@ def test_binary_compare_with_other_scalar(input_data, dtype, func):
     function(input_data, dtype, dtype, func)
 
 
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize(
     "input_data",
     [
@@ -144,4 +151,44 @@ def test_binary_compare_with_other_scalar(input_data, dtype, func):
     [torch.add, torch.sub, torch.mul],
 )
 def test_binary_with_input_scalar(input_data, dtype, func):
+    function(input_data, dtype, dtype, func)
+
+
+# torch.bitwise_and not support torch.float32
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize(
+    "input_data",
+    [
+        {"input": torch.randn(10), "other": torch.randn(10)},
+        {"input": torch.randn(10, 10), "other": torch.randn(10, 10)},
+        {"input": torch.randn(10, 10, 2), "other": torch.randn(10, 10, 2)},
+        {"input": torch.randn(10, 10, 2, 2), "other": torch.randn(10, 10, 2, 2)},
+        {
+            "input": torch.randn(10, 10, 2, 2, 1),
+            "other": torch.randn(10, 10, 2, 2, 1),
+        },
+        {
+            "input": torch.randn(10, 10, 2, 2, 1, 3),
+            "other": torch.randn(10, 10, 2, 2, 1, 3),
+        },
+        {
+            "input": torch.randn(10, 10, 2, 2, 1, 3, 2),
+            "other": torch.randn(10, 10, 2, 2, 1, 3, 2),
+        },
+        {
+            "input": torch.randn(10, 10, 2, 2, 1, 3, 2, 2),
+            "other": torch.randn(10, 10, 2, 2, 1, 3, 2, 2),
+        },
+        {"input": torch.tensor(1.2), "other": torch.randn(30, 30)},
+        {"input": torch.randn(30), "other": torch.tensor(1.2)},
+        {"input": torch.randn(30, 1), "other": torch.randn(30, 30)},
+        {"input": torch.randn(30, 1), "other": torch.randn(1, 30)},
+    ],
+)
+@pytest.mark.parametrize("dtype", [torch.int32, torch.int64])
+@pytest.mark.parametrize(
+    "func",
+    [torch.bitwise_and],
+)
+def test_bitwise_and(input_data, dtype, func):
     function(input_data, dtype, dtype, func)

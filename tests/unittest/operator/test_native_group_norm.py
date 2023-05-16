@@ -27,6 +27,7 @@ affine = [True]
 eps = [1e-5, 0, 0.5]
 
 
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_dtype", input_dtype)
 @pytest.mark.parametrize("parameter", parameter)
 @pytest.mark.parametrize("affine", affine)

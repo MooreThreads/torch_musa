@@ -86,7 +86,7 @@ input_data = [
     },
 ]
 
-
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
 def test_addmm(input_data):
     test = testing.OpTest(func=torch.addmm, input_args=input_data)

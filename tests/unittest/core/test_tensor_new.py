@@ -6,6 +6,8 @@ import numpy as np
 import torch_musa
 from torch_musa import testing
 
+TEST_MUSA = torch_musa.is_available()
+TEST_MULTIGPU = TEST_MUSA and torch_musa.device_count() >= 2
 
 data_type = [torch.float32, torch.int32, torch.int64, torch.float64]
 

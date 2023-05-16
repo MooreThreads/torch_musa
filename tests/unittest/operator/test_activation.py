@@ -4,7 +4,6 @@ import numpy as np
 import torch
 import pytest
 import torch_musa
-
 from torch_musa import testing
 
 input_datas = [
@@ -24,6 +23,8 @@ all_basic_funcs = [
     torch.exp,
     torch.cos,
     torch.sin,
+    torch.log,
+    torch.atan
 ]
 
 all_nn_funcs = [
@@ -45,14 +46,14 @@ def function(input_data, dtype, func):
     test = testing.OpTest(func=func, input_args=input_data)
     test.check_result()
 
-
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_datas)
 @pytest.mark.parametrize("dtype", [torch.float32])
 @pytest.mark.parametrize("func", all_basic_funcs)
 def test_all_basic_funcs(input_data, dtype, func):
     function(input_data, dtype, func)
 
-
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_datas)
 @pytest.mark.parametrize("dtype", [torch.float32])
 @pytest.mark.parametrize("func", all_basic_funcs)
@@ -63,12 +64,13 @@ def test_all_basic_funcs_out(input_data, dtype, func):
 
 
 # =================================== Test torch.neg begin =================================== #
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_datas)
 @pytest.mark.parametrize("dtype", [torch.float32, torch.int32, torch.int64])
 def test_neg(input_data, dtype):
     function(input_data, dtype, torch.neg)
 
-
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_datas)
 @pytest.mark.parametrize("dtype", [torch.float32, torch.int32, torch.int64])
 def test_neg_out(input_data, dtype):
@@ -81,6 +83,7 @@ def test_neg_out(input_data, dtype):
 
 
 # =================================== Test nn functions begin =================================== #
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_datas)
 @pytest.mark.parametrize("dtype", [torch.float32])
 @pytest.mark.parametrize("func", all_nn_funcs)
@@ -92,6 +95,7 @@ def test_nn_funcs(input_data, dtype, func):
 
 
 # =================================== Test torch.nn.GELU begin =================================== #
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_datas)
 @pytest.mark.parametrize("dtype", [torch.float32])
 @pytest.mark.parametrize("func", [torch.nn.GELU(approximate="none")])
@@ -166,7 +170,7 @@ input_datas = [
 min_value = [-50, -40]
 max_value = [40, 50]
 
-
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_datas)
 @pytest.mark.parametrize("_min", min_value)
 @pytest.mark.parametrize("_max", max_value)
@@ -180,7 +184,7 @@ def test_clamp_min_max(input_data, _min, _max, dtype, func):
     }
     function(input_args, dtype, func)
 
-
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_datas)
 @pytest.mark.parametrize("_min", min_value)
 @pytest.mark.parametrize("dtype", [torch.float32, torch.int64])
@@ -190,7 +194,7 @@ def test_clamp_min(input_data, _min, dtype, func):
     input_args = {"input": input_data["input"], "min": _min}
     function(input_args, dtype, func)
 
-
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_datas)
 @pytest.mark.parametrize("_max", max_value)
 @pytest.mark.parametrize("dtype", [torch.float32, torch.int64])
@@ -199,7 +203,7 @@ def test_clamp_max(input_data, _max, dtype, func):
     input_args = {"input": input_data["input"], "max": _max}
     function(input_args, dtype, func)
 
-
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_datas)
 @pytest.mark.parametrize("_min", min_value)
 @pytest.mark.parametrize("_max", max_value)
@@ -210,7 +214,7 @@ def test_clamp_scalar_min_max_out(input_data, _min, _max, dtype, func):
     input_args = {"input": input_data["input"], "min": _min, "max": _max, "out": out}
     function(input_args, dtype, func)
 
-
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_datas)
 @pytest.mark.parametrize("dtype", [torch.float32, torch.int64])
 @pytest.mark.parametrize("func", [torch.clamp])
@@ -246,12 +250,13 @@ input_datas = [
 
 
 # torch.pow only support float32
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_datas)
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_pow(input_data, dtype):
     function(input_data, dtype, torch.pow)
 
-
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_datas)
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_pow_out(input_data, dtype):

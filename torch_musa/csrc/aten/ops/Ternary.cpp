@@ -103,6 +103,7 @@ Tensor& WhereSelfOut(
     const Tensor& self,
     const Tensor& other,
     Tensor& out) {
+  c10::musa::MUSAGuard device_guard(self.device());
   Tensor contiguous_self, contiguous_other;
   auto result_type = at::native::result_type(self, other);
   if (self.dtype() != other.dtype()) {
@@ -162,6 +163,7 @@ Tensor WhereSelf(
     const Tensor& condition,
     const Tensor& self,
     const Tensor& other) {
+  c10::musa::MUSAGuard device_guard(self.device());
   auto result_type = at::native::result_type(self, other);
   Tensor output = empty_mtgpu(
       other.sizes(),
@@ -196,6 +198,7 @@ Tensor& AddcMulOut(
       output.device().type() == kMUSA,
       "Device of output tensor of addcmul must be MUSA, but now it is ",
       output.device());
+  c10::musa::MUSAGuard device_guard(self.device());
   TernarycommonDtypeCall(
       self, input1, input2, alpha_scalar, output, TERNARY_MODE::ADDCMUL);
   return output;
@@ -239,6 +242,7 @@ Tensor& AddcDivOut(
       output.dtype() == at::ScalarType::Float,
       "Dtype of output tensor of addcdiv only support Float32, but now it is ",
       output.dtype());
+  c10::musa::MUSAGuard device_guard(self.device());
   TernarycommonDtypeCall(
       self, input1, input2, alpha_scalar, output, TERNARY_MODE::ADDCDIV);
   return output;

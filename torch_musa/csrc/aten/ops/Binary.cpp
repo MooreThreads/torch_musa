@@ -59,6 +59,46 @@ inline bool IsComparisonOp(const BINARY_MODE m) {
       m == BINARY_MODE::GT || m == BINARY_MODE::LE || m == BINARY_MODE::LT;
 }
 
+extern Tensor create_out(
+    IntArrayRef sizes,
+    IntArrayRef strides,
+    const TensorOptions& options);
+
+void check_inplace(
+    const Tensor& self,
+    IntArrayRef sizes,
+    const TensorOptions& options) {
+  // These checks are needed on those operators that:
+  //   1) don't use 'TensorIterator' (e.g. 'addmm' and 'baddbmm')
+  //   2) have particular typing rules (e.g. 'cumsum' and 'cumprod')
+  // For other operators (e.g. 'add'), 'TensorIterator' already checks
+  // these things separately.
+  TORCH_CHECK(
+      options.dtype() == self.dtype(),
+      "Bad in-place call: ",
+      "input tensor dtype ",
+      self.dtype(),
+      " and output tensor dtype ",
+      options.dtype(),
+      " should match");
+  TORCH_CHECK(
+      options.device() == self.device(),
+      "Bad in-place call: ",
+      "input tensor device ",
+      self.device(),
+      " and output tensor device ",
+      options.device(),
+      " should match");
+  TORCH_CHECK(
+      sizes == self.sizes(),
+      "Bad in-place call: ",
+      "input tensor size ",
+      self.sizes(),
+      " and output tensor size ",
+      sizes,
+      " should match");
+}
+
 Tensor Binary(
     const std::string op_name,
     const Tensor& self,
@@ -342,7 +382,8 @@ DEFINE_BINARY_OP(Greater, BINARY_MODE::GT)
 DEFINE_BINARY_OP(GreaterEqual, BINARY_MODE::GE)
 DEFINE_BINARY_OP(Remainder, BINARY_MODE::FLOORMOD)
 DEFINE_BINARY_OP(Less, BINARY_MODE::LT)
-DEFINE_BINARY_OP(Bitwise_And, BINARY_MODE::LOGICAL_AND)
+DEFINE_BINARY_OP(Maximum, BINARY_MODE::MAX)
+DEFINE_BINARY_OP(Minimum, BINARY_MODE::MIN)
 
 Tensor& Div_out_mode(
     const Tensor& self,
@@ -491,6 +532,137 @@ Tensor ThresholdBwd(
   return grad_input;
 }
 
+namespace {
+struct structured_bitwise_and_out_out final
+    : public at::native::structured_bitwise_and_out {
+  structured_bitwise_and_out_out(Tensor& out0) : outputs_{std::ref(out0)} {}
+
+  void set_output_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_bitwise_and_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+
+  void set_output_raw_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_bitwise_and_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+
+  const Tensor& maybe_get_output(int64_t output_idx) override {
+    return outputs_[output_idx].get();
+  }
+  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
+};
+
+struct structured_bitwise_and_out_inplace final
+    : public at::native::structured_bitwise_and_out {
+  structured_bitwise_and_out_inplace(Tensor& self) : outputs_{std::ref(self)} {}
+  void set_output_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    const auto& out = outputs_[output_idx].get();
+    check_inplace(out, sizes, options);
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_bitwise_and_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+  void set_output_raw_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    const auto& out = outputs_[output_idx].get();
+    check_inplace(out, sizes, options);
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_bitwise_and_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+  const Tensor& maybe_get_output(int64_t output_idx) override {
+    return outputs_[output_idx].get();
+  }
+  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
+};
+
+struct structured_bitwise_and_out_functional final
+    : public at::native::structured_bitwise_and_out {
+  void set_output_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    outputs_[output_idx] = create_out(sizes, strides, options);
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_bitwise_and_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+  void set_output_raw_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    outputs_[output_idx] = create_out(sizes, strides, options);
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_bitwise_and_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+  const Tensor& maybe_get_output(int64_t output_idx) override {
+    return *outputs_[output_idx];
+  }
+  std::array<c10::ExclusivelyOwned<Tensor>, 1> outputs_;
+};
+} // namespace
+
+Tensor& BitWise_AndTensor_out(
+    const Tensor& self,
+    const Tensor& other,
+    Tensor& out) {
+  // No device check
+
+  structured_bitwise_and_out_out op(out);
+  op.meta(self, other);
+  op.impl(self, other, op.maybe_get_output(0));
+  return out;
+}
+
+at::Tensor& BitWise_And_Tensor(at::Tensor& self, const at::Tensor& other) {
+  // No device check
+  structured_bitwise_and_out_inplace op(self);
+  op.meta(self, other);
+  op.impl(self, other, op.outputs_[0]);
+  return self;
+}
+
+at::Tensor BitWise_AndTensor(const at::Tensor& self, const at::Tensor& other) {
+  // No device check
+  structured_bitwise_and_out_functional op;
+  op.meta(self, other);
+  op.impl(self, other, *op.outputs_[0]);
+  return std::move(op.outputs_[0]).take();
+}
+
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("add.Tensor", &AddTensor);
   m.impl("add_.Tensor", &Add_Tensor);
@@ -519,6 +691,13 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("mul_.Tensor", &Mul_Tensor);
   m.impl("mul.out", &Mul_out);
 
+  m.impl("minimum.out", &Minimum_out);
+  m.impl("maximum.out", &Maximum_out);
+
+  m.impl("bitwise_and.Tensor", &BitWise_AndTensor);
+  m.impl("bitwise_and_.Tensor", &BitWise_And_Tensor);
+  m.impl("bitwise_and.Tensor_out", &BitWise_AndTensor_out);
+
   m.impl("ne.Tensor", &NotEqualTensor);
   m.impl("ne_.Tensor", &NotEqual_Tensor);
   m.impl("ne.Tensor_out", &NotEqual_out);
@@ -526,10 +705,6 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("not_equal.Tensor", &NotEqualTensor);
   m.impl("not_equal_.Tensor", &NotEqual_Tensor);
   m.impl("not_equal.Tensor_out", &NotEqual_out);
-
-  m.impl("bitwise_and.Tensor", &Bitwise_AndTensor);
-  m.impl("bitwise_and_.Tensor", &Bitwise_And_Tensor);
-  m.impl("bitwise_and.Tensor_out", &Bitwise_And_out);
 
   m.impl("sub.Tensor", &SubTensor);
   m.impl("sub_.Tensor", &Sub_Tensor);

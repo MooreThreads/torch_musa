@@ -14,6 +14,7 @@ input_data = [
     torch.randn(256, 100, 16, 16),
 ]
 
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
 def test_batch_norm(input_data):
     m = torch.nn.BatchNorm2d(100)

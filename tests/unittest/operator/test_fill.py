@@ -17,6 +17,7 @@ for data in testing.get_raw_data():
     input_data.append({"input": data, "value": 10})
 
 
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("data_type", data_type)
 def test_fill(input_data, data_type):

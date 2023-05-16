@@ -4,6 +4,7 @@
 
 from contextlib import ExitStack, nullcontext
 from typing import Callable
+from functools import wraps
 
 import types
 import pytest
@@ -22,6 +23,20 @@ skip_if_not_multiple_musa_device = pytest.mark.skipif(
     not MULTIGPU_AVAILABLE, reason="Expect multiple MUSA devices"
 )
 
+def test_on_nonzero_card_if_multiple_musa_device(musa_device: int):
+    """
+    Decorator for conducting operators' test on nonzero card.
+    """
+    def wrapper(test_func):
+        @wraps(test_func)
+        def infunc(*args, **kwargs):
+            if MULTIGPU_AVAILABLE:
+                with torch_musa.device(musa_device):
+                    print(f"testing on card {musa_device}...")
+                    test_func(*args, **kwargs)
+            test_func(*args, **kwargs)
+        return infunc
+    return wrapper
 
 def get_raw_data():
     return [

@@ -23,6 +23,7 @@ dilation = [1, 2]
 return_indice = [False, True]
 
 
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("kernel_size", kernel_size)
 @pytest.mark.parametrize("stride", stride)
@@ -45,6 +46,7 @@ def test_avgpool2d(
     )
     test.check_result(input_data)
 
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("kernel_size", kernel_size)
 @pytest.mark.parametrize("stride", stride)

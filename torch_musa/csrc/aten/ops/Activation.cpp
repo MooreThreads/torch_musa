@@ -129,7 +129,9 @@ DEFINE_ACTIVATE_OP(Exp, ::musa::dnn::Unary::Mode::EXP)
 DEFINE_ACTIVATE_OP(Sin, ::musa::dnn::Unary::Mode::SIN)
 DEFINE_ACTIVATE_OP(Cos, ::musa::dnn::Unary::Mode::COS)
 DEFINE_ACTIVATE_OP(Abs, ::musa::dnn::Unary::Mode::ABS)
+DEFINE_ACTIVATE_OP(Atan, ::musa::dnn::Unary::Mode::ATAN)
 DEFINE_ACTIVATE_OP(Ceil, ::musa::dnn::Unary::Mode::CEIL)
+DEFINE_ACTIVATE_OP(Log, ::musa::dnn::Unary::Mode::LOG)
 
 #define SCALAR_COMPARISON(op_name, mode)                         \
   Tensor& op_name##Out(                                          \
@@ -436,6 +438,50 @@ Tensor& PowScalarOut(const Tensor& self, const Scalar& value, Tensor& output) {
   return output;
 }
 
+namespace {
+struct structured_clamp_min_out_out final
+    : public at::native::structured_clamp_min_out {
+  structured_clamp_min_out_out(Tensor& out0) : outputs_{std::ref(out0)} {}
+
+  void set_output_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_clamp_min_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+
+  void set_output_raw_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_clamp_min_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+
+  const Tensor& maybe_get_output(int64_t output_idx) override {
+    return outputs_[output_idx].get();
+  }
+  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
+};
+} // namespace
+
+Tensor& ClampMinOut(const Tensor& self, const Scalar& min, Tensor& out) {
+  // No device check
+  structured_clamp_min_out_out op(out);
+  op.meta(self, min);
+  op.impl(self, min, op.maybe_get_output(0));
+  return out;
+}
+
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("abs", &Abs);
   m.impl("abs_", &Abs_);
@@ -475,6 +521,12 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("tanh_", &Tanh_);
   m.impl("tanh.out", &TanhOut);
 
+  m.impl("atan", &Atan);
+  m.impl("atan_", &Atan_);
+  m.impl("atan.out", &AtanOut);
+
+  m.impl("log.out", &LogOut);
+
   m.impl("gelu", &GELU);
   m.impl("gelu.out", &GELUOut);
 
@@ -482,6 +534,7 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("clamp_", &Clamp_);
   m.impl("clamp.out", &ClampOut);
   m.impl("clamp.Tensor_out", &ClampTensorOut);
+  m.impl("clamp_min.out", &ClampMinOut);
 
   m.impl("reciprocal", &Reciprocal);
   m.impl("reciprocal_", &Reciprocal_);

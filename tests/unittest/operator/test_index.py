@@ -43,6 +43,7 @@ dtypes = [torch.float32]
 
 
 # test index_input
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_datas)
 @pytest.mark.parametrize("dtype", dtypes)
 def test_index_put(input_data, dtype):
@@ -55,6 +56,7 @@ def test_index_put(input_data, dtype):
 tensor_dtype = [torch.int32, torch.int64, torch.float32, torch.float64]
 
 
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("tensor_dtype", tensor_dtype)
 def test_index_put_different_device_indices(tensor_dtype):
     input_data = np.random.randn(1, 20)
@@ -127,6 +129,7 @@ input_datas = [
 dtypes = testing.get_all_support_types()
 
 
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_datas)
 @pytest.mark.parametrize("dtype", dtypes)
 def test_index_select(input_data, dtype):
