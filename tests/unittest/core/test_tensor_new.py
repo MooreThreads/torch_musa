@@ -6,8 +6,8 @@ import numpy as np
 import torch_musa
 from torch_musa import testing
 
-TEST_MUSA = torch_musa.is_available()
-TEST_MULTIGPU = TEST_MUSA and torch_musa.device_count() >= 2
+TEST_MUSA = torch.musa.is_available()
+TEST_MULTIGPU = TEST_MUSA and torch.musa.device_count() >= 2
 
 data_type = [torch.float32, torch.int32, torch.int64, torch.float64]
 
@@ -48,7 +48,7 @@ def test_tensor_a_new(input_data, data_type):
     assert new_mtgpu_result.dtype == new_cpu_result.dtype
 
     if testing.MULTIGPU_AVAILABLE:
-        with torch_musa.device(1):
+        with torch.musa.device(1):
             mtgpu_tensor = torch.tensor(
                 data=input_data["input"], dtype=data_type, device="musa"
             )
@@ -64,6 +64,6 @@ def test_new():
     assert x.new([0, 1, 2]).get_device() == 0
     assert x.new([0, 1, 2], device="musa:1").get_device() == 1
 
-    with torch_musa.device(1):
+    with torch.musa.device(1):
         assert x.new([0, 1, 2]).get_device() == 0
         assert x.new([0, 1, 2], device="musa:1").get_device() == 1
