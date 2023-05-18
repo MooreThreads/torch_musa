@@ -31,6 +31,7 @@ all_nn_funcs = [
     torch.nn.ReLU(),
     # torch.nn.GELU(approximate="none"),
     torch.nn.SiLU(),
+    torch.nn.LeakyReLU()
 ]
 
 

@@ -85,7 +85,11 @@ def transform_line(
 
     new_line += line[last_end_idx:]
     for key, value in replace_map.items():
-        new_line = new_line.replace(key, value)
+        # Note: header files in cub library are suffixed with ".cuh" instead of ".muh",
+        # which is not consistent with other musa libraries. So here we need to skip 
+        # header files replacement of cub library.
+        if "cub/" not in new_line:
+            new_line = new_line.replace(key, value)
 
     return new_line
 
@@ -133,7 +137,7 @@ def transform_file(
                 new_line = transform_line(line, automaton, replace_map)
                 write_handle.write(new_line)
     file_name = os.path.basename(path)
-    if file_name.endswith(".cu") or file_name.endswith(".cuh") or "CUDA" in file_name or "cuda" in file_name:
+    if "cub/" not in file_name and file_name.endswith(".cu") or file_name.endswith(".cuh") or "CUDA" in file_name or "cuda" in file_name:
         musa_file_name = file_name.replace(".cu", ".mu").replace("CUDA", "MUSA_PORT_").replace("cuda", "musa")
         musa_file_path = path.replace(file_name, musa_file_name)
         os.remove(path)

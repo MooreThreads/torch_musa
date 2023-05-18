@@ -440,6 +440,34 @@ Tensor& PowScalarOut(const Tensor& self, const Scalar& value, Tensor& output) {
   return output;
 }
 
+Tensor LeakyRelu(const Tensor& input, const Scalar& neg_slope = 0.01) {
+  return Unary(__func__, input, [&](::musa::dnn::Unary& op) {
+    CHECK_MUDNN_STATUS(op.SetAlpha(neg_slope.to<double>()), "SetAlpha");
+    CHECK_MUDNN_STATUS(
+        op.SetMode(::musa::dnn::Unary::Mode::LEAKY_RELU), "SetMode");
+  });
+}
+
+Tensor& LeakyRelu_(Tensor& input, const Scalar& neg_slope = 0.01) {
+  Unary_("leaky_relu_", input, [&](::musa::dnn::Unary& op) {
+    CHECK_MUDNN_STATUS(op.SetAlpha(neg_slope.to<double>()), "SetAlpha");
+    CHECK_MUDNN_STATUS(
+        op.SetMode(::musa::dnn::Unary::Mode::LEAKY_RELU), "SetMode");
+  });
+  return input;
+}
+
+Tensor& LeakyReluOut(
+    const Tensor& input,
+    const Scalar& neg_slope,
+    Tensor& output) {
+  UnaryOut("leaky_relu.out", output, input, [&](::musa::dnn::Unary& op) {
+    CHECK_MUDNN_STATUS(op.SetAlpha(neg_slope.to<double>()), "SetAlpha");
+    CHECK_MUDNN_STATUS(
+        op.SetMode(::musa::dnn::Unary::Mode::LEAKY_RELU), "SetMode");
+  });
+  return output;
+}
 namespace {
 struct structured_clamp_min_out_out final
     : public at::native::structured_clamp_min_out {
@@ -573,6 +601,10 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("pow.Tensor_Scalar", &PowScalar);
   m.impl("pow_.Scalar", &PowScalar_);
   m.impl("pow.Tensor_Scalar_out", &PowScalarOut);
+
+  m.impl("leaky_relu", &LeakyRelu);
+  m.impl("leaky_relu_", &LeakyRelu_);
+  m.impl("leaky_relu.out", &LeakyReluOut);
 }
 
 } // namespace musa

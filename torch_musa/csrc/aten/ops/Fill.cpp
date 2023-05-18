@@ -32,50 +32,14 @@ void set_value(::musa::dnn::Fill& f, Tensor& self, const Scalar& value) {
   }
 }
 
-// TODO(yao-wang): Fill is not in the list of long-term-supporting ops of
-// muDNN. We port this op with MUSA toolkit.
-void FillCall(Tensor& self, const Scalar& value) {
-  if (!self.is_contiguous()) {
-    AT_ERROR("Fill op doesn't support non-contiguous tensor now");
-  }
-
-  c10::musa::MUSAGuard device_guard(self.device());
-  ::musa::dnn::Fill f;
-
-  set_value(f, self, value);
-
-  muHandle& h = GetMudnnHandle();
-  // When self tensor is contiguous but storage_offset is not 0,
-  // first creates a new contiguous tensor, then fill value in the new tensor,
-  // copy new tensor value back to self tensor at last.
-  if (self.storage_offset()) {
-    auto new_contiguous_tensor = at::empty(
-        self.sizes(), self.options().memory_format(MemoryFormat::Contiguous));
-    auto out = CreateMUTensor(new_contiguous_tensor);
-    CHECK_MUDNN_STATUS(f.Run(h, out), "Run");
-    self.copy_(new_contiguous_tensor);
-  } else {
-    auto out = CreateMUTensor(self);
-    CHECK_MUDNN_STATUS(f.Run(h, out), "Run");
-  }
-}
-
 Tensor& Fill(Tensor& self, const Scalar& value) {
-  // TODO(@caizhi): use musa porting to instead putting to cpu.
   c10::musa::MUSAGuard device_guard(self.device());
-  if (self.scalar_type() == at::ScalarType::Double) {
-    self = self.to("cpu");
-    at::fill(self, value);
-    self = self.to("musa");
-    return self;
-  }
-  FillCall(self, value);
-  return self;
+  return at::native::fill_(self, value);
 }
 
 Tensor& Zero_(Tensor& self) {
-  FillCall(self, 0);
-  return self;
+  c10::musa::MUSAGuard device_guard(self.device());
+  return at::native::zero_(self);
 }
 
 void MaskedFillCall(Tensor& self, const Tensor& mask, const Scalar& value) {
