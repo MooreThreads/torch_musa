@@ -273,10 +273,10 @@ Tensor BinarycommonDtype(
     Scalar const& alpha_scalar,
     BINARY_MODE m) {
   // TODO(@caizhi): use musa porting to instead putting to cpu.
-  if ((self.scalar_type() == ScalarType::Bool ||
+  if ((self.scalar_type() == ScalarType::Bool &&
        other.scalar_type() == ScalarType::Bool) ||
-      self.scalar_type() == ScalarType::Double ||
-      other.scalar_type() == ScalarType::Double) {
+      (self.scalar_type() == ScalarType::Double &&
+       other.scalar_type() == ScalarType::Double)) {
     if (m == BINARY_MODE::MUL) {
       return at::mul(self.cpu(), other.cpu()).to("musa");
     } else if (m == BINARY_MODE::TRUEDIV) {
