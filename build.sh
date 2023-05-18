@@ -14,6 +14,7 @@ BUILD_TORCH_MUSA=1
 ONLY_PATCH=0
 CLEAN=0
 COMPILE_FP64=0
+PYTORCH_TAG=v2.0.0
 
 usage() {
   echo -e "\033[1;32mThis script is used to build PyTorch and Torch_MUSA. \033[0m"
@@ -59,13 +60,17 @@ clone_pytorch() {
   if [ ! -z ${PYTORCH_REPO_PATH} ]; then
     PYTORCH_PATH=${PYTORCH_REPO_PATH}
     echo -e "\033[34mPyTorch repo path is ${PYTORCH_PATH} ...\033[0m"
+    pushd ${PYTORCH_PATH}
+    git checkout ${PYTORCH_TAG}
+    echo -e "\033[34m Switch the Pytorch repo to tag ${PYTORCH_TAG} \033[0m"
+    popd
   else
     ABSOLUTE_PATH=`cd $(dirname ${PYTORCH_PATH}) && pwd`"/pytorch"
     echo -e "\033[34mUsing default pytorch repo path: ${ABSOLUTE_PATH}\033[0m"
     if [ ! -d "${PYTORCH_PATH}" ]; then
       pushd ${TORCH_MUSA_HOME}/..
       echo -e "\033[34mPyTorch repo does not exist, now git clone PyTorch to ${ABSOLUTE_PATH} ...\033[0m"
-      git clone -b v2.0.0 https://github.com/pytorch/pytorch.git --depth=1
+      git clone -b ${PYTORCH_TAG} https://github.com/pytorch/pytorch.git --depth=1
       popd 
     fi
   fi
