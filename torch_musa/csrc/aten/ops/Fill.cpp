@@ -62,6 +62,7 @@ void FillCall(Tensor& self, const Scalar& value) {
 
 Tensor& Fill(Tensor& self, const Scalar& value) {
   // TODO(@caizhi): use musa porting to instead putting to cpu.
+  c10::musa::MUSAGuard device_guard(self.device());
   if (self.scalar_type() == at::ScalarType::Double) {
     self = self.to("cpu");
     at::fill(self, value);

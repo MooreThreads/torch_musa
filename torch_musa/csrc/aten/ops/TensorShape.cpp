@@ -384,6 +384,7 @@ Tensor& IndexPut(
   if (self.numel() == 0) {
     return self;
   }
+  c10::musa::MUSAGuard device_guard(self.device());
 
   if (indices[0].has_value()) {
     if (indices[0]->scalar_type() == ScalarType::Bool) {

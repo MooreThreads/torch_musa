@@ -20,6 +20,7 @@ void UnaryCall(
     Tensor& o,
     const Tensor& i,
     std::function<void(::musa::dnn::Unary&)> func) {
+  c10::musa::MUSAGuard device_guard(i.device());
   muHandle& h = GetMudnnHandle();
   auto in = CreateMUTensor(i);
   auto out = CreateMUTensor(o);
@@ -61,7 +62,7 @@ Tensor UnaryBool(
       input.sizes().vec(),
       ScalarType::Bool,
       c10::nullopt,
-      kMUSA,
+      input.device(),
       c10::nullopt,
       at::MemoryFormat::Contiguous);
   UnaryBoolOut(op_name, output, input, value, mode);
@@ -145,7 +146,7 @@ DEFINE_ACTIVATE_OP(Log, ::musa::dnn::Unary::Mode::LOG)
         self.sizes().vec(),                                      \
         ScalarType::Bool,                                        \
         c10::nullopt,                                            \
-        kMUSA,                                                   \
+        self.device(),                                           \
         c10::nullopt,                                            \
         at::MemoryFormat::Contiguous);                           \
     op_name##Out(self, value, output);                           \
@@ -297,6 +298,7 @@ Tensor& ClampTensorOut(
       out.device().type() == kMUSA,
       "Device of output tensor of Clamp.TensorOut must be MUSA, but now is ",
       out.device());
+  c10::musa::MUSAGuard device_guard(self.device());
   auto has_min = min.has_value() && min->defined();
   auto has_max = max.has_value() && max->defined();
   Tensor cpu_min;

@@ -132,8 +132,7 @@ Tensor Binary(
   // 1. self will be in cpu if '1 + Tensor'.
   // 2. other wiil be in cpu if 'Tensor + 1'.
   // We use get musa devcie info to set context, so we need this check.
-  Device device =
-      self.device().type() == DeviceType::CPU ? other.device() : self.device();
+  Device device = is_musa(self) ? self.device() : other.device();
   c10::musa::MUSAGuard guard(device);
 
   Tensor contiguous_self = Contiguous(self);
@@ -273,6 +272,8 @@ Tensor BinarycommonDtype(
     Scalar const& alpha_scalar,
     BINARY_MODE m) {
   // TODO(@caizhi): use musa porting to instead putting to cpu.
+  Device device = is_musa(self) ? self.device() : other.device();
+  c10::musa::MUSAGuard device_guard(device);
   if ((self.scalar_type() == ScalarType::Bool &&
        other.scalar_type() == ScalarType::Bool) ||
       (self.scalar_type() == ScalarType::Double &&
