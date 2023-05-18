@@ -77,6 +77,11 @@ void InternalMemFree(void* ptr);
 
 bool is_musa(const Tensor& t);
 
+Tensor create_out(
+    IntArrayRef sizes,
+    IntArrayRef strides,
+    const TensorOptions& options);
+
 } // namespace musa
 } // namespace native
 } // namespace at

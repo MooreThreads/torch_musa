@@ -104,6 +104,7 @@ def port_cuda(
         "<c10/musa/impl/CUDAGuardImpl.h>": "\"torch_musa/csrc/core/GuardImpl.h\"",
         "<c10/musa/CUDAException.h>": "\"torch_musa/csrc/core/MUSAException.h\"",
         "<ATen/musa/CUDADevice.h>": "\"torch_musa/csrc/core/Device.h\"",
+        "<ATen/musa/CUDABlas.h>": "\"torch_musa/csrc/aten/musa/MUSABlas.h\"",
         "<ATen/musa/CUDAContext.h>": "\"torch_musa/csrc/aten/musa/MUSAContext.h\"",
         "<ATen/musa/Exceptions.h>": "\"torch_musa/csrc/aten/musa/Exceptions.h\"",
         # TODO(caizhi): replace headers about Allocator with headers inside torch_musa

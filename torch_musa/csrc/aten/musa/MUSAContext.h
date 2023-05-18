@@ -9,8 +9,8 @@
 
 #include <ATen/Context.h>
 #include <ATen/core/ATenGeneral.h>
-#include <ATen/musa/Exceptions.h>
 
+#include "torch_musa/csrc/aten/musa/Exceptions.h"
 #include "torch_musa/csrc/core/MUSAStream.h"
 
 namespace at {

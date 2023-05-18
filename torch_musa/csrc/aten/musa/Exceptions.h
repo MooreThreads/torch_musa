@@ -3,6 +3,8 @@
 
 #include <mublas.h>
 
+#include "torch_musa/csrc/core/MUSAException.h"
+
 namespace at {
 namespace musa {
 namespace blas {
@@ -18,6 +20,8 @@ const char* _mublasGetErrorEnum(mublasStatus_t error);
         at::musa::blas::_mublasGetErrorEnum(__err), \
         " when calling `" #EXPR "`");               \
   } while (0)
+
+#define AT_MUSA_CHECK(EXPR) TORCH_MUSA_CHECK(EXPR)
 
 } // namespace blas
 } // namespace musa

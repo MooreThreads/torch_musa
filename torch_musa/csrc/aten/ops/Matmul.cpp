@@ -6,6 +6,7 @@
 #include <mudnn.h>
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
+#include "torch_musa/csrc/aten/ops/musa/musa_ops.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 namespace at {
@@ -244,6 +245,7 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("mm.out", &MmOut);
   m.impl("bmm", &Bmm);
   m.impl("bmm.out", &BmmOut);
+  m.impl("baddbmm", &Baddbmm);
 }
 
 } // namespace musa

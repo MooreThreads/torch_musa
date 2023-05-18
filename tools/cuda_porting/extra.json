@@ -8,6 +8,8 @@
     "#ifdef CUDART_VERSION": "#if 0",
     "REGISTER_CUDA_DISPATCH": "REGISTER_MUSA_DISPATCH",
     "RegisterCUDADispatch": "RegisterMUSADispatch",
+    "AT_CUDA_CHECK": "AT_MUSA_CHECK",
+    "TORCH_CUDABLAS_CHECK": "TORCH_MUSABLAS_CHECK",
     "CUDAStream": "MUSAStream",
     "CUDAGuard": "MUSAGuard",
     "CUDAConfig.h": "MUSAConfig.h",

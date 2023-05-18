@@ -2,14 +2,11 @@
 #include <ATen/ops/cumsum_native.h>
 #include <c10/util/Exception.h>
 
+#include "torch_musa/csrc/aten/utils/Utils.h"
+
 namespace at {
 namespace native {
 namespace musa {
-
-extern Tensor create_out(
-    IntArrayRef sizes,
-    IntArrayRef strides,
-    const TensorOptions& options);
 
 namespace {
 void resize_out(

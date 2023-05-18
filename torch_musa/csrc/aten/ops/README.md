@@ -8,7 +8,6 @@ there ares some ops that implemented on CPU:
  - \_index_put_impl_  # index's type == bool (rn50 doesn't hit this case)
  - scatter.src_out
  - scatter.src
- - native_group_norm_backward
 
 
 ## Use device guard rightly
