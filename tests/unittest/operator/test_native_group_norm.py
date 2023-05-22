@@ -1,4 +1,4 @@
-# pylint: disable=missing-function-docstring, missing-module-docstring redefined-outer-name, unused-import
+# pylint: disable=missing-function-docstring, missing-module-docstring redefined-outer-name, unused-import, not-callable
 import torch
 import pytest
 from torch_musa import testing
@@ -32,7 +32,7 @@ eps = [1e-5, 0, 0.5]
 @pytest.mark.parametrize("parameter", parameter)
 @pytest.mark.parametrize("affine", affine)
 @pytest.mark.parametrize("eps", eps)
-def test_native_layer_norm(input_dtype, parameter, affine, eps):
+def test_native_group_norm(input_dtype, parameter, affine, eps):
     test = testing.OpTest(
         func=torch.nn.GroupNorm,
         input_args={
@@ -45,9 +45,27 @@ def test_native_layer_norm(input_dtype, parameter, affine, eps):
     )
     test.check_result(
         inputs={
-            "input": torch.tensor(
-                parameter["data"].clone().detach(), dtype=input_dtype, requires_grad=True
-            )
+            "input": torch.tensor(parameter["data"].detach().numpy(),
+                                  dtype=input_dtype,
+                                  requires_grad=True)
         },
         train=True,
     )
+
+@testing.skip_if_not_multiple_musa_device
+def test_native_group_norm_device():
+    data = torch.randn(6, 6, 6, requires_grad=True)
+    num_groups = 3
+    num_channels = 6
+    affine = True
+    eps = 0.5
+    group_norm = torch.nn.GroupNorm(num_groups, num_channels, eps, affine)
+    group_norm(data).sum().backward()
+
+    musa_data = torch.tensor(data.detach().numpy(), requires_grad=True, device="musa:1")
+    musa_group_norm = group_norm.to("musa:1")
+    musa_group_norm(musa_data).sum().backward()
+
+    assert testing.DefaultComparator(1e-5)(musa_data.grad.cpu(), data.grad)
+    assert musa_data.grad.shape == data.grad.shape
+    assert musa_data.grad.dtype == data.grad.dtype

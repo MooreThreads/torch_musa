@@ -23,6 +23,17 @@
   } while (0)
 
 #define TORCH_MUSA_WARN(EXPR) TORCH_MUSA_CHECK_WARN(EXPR)
+#define C10_MUSA_CHECK(EXPR)                                        \
+  do {                                                              \
+    const musaError_t __err = EXPR;                                 \
+    c10::musa::c10_musa_check_implementation(                       \
+        static_cast<int32_t>(__err),                                \
+        __FILE__,                                                   \
+        __func__, /* Line number data type not well-defined between \
+                      compilers, so we perform an explicit cast */  \
+        static_cast<uint32_t>(__LINE__),                            \
+        true);                                                      \
+  } while (0)
 
 #define TORCH_MUSA_ERROR_HANDLE(EXPR) EXPR
 

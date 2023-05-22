@@ -181,25 +181,6 @@ static bool BlockComparator(const Block* a, const Block* b) {
   return (uintptr_t)a->ptr < (uintptr_t)b->ptr;
 }
 
-static std::string format_size(uint64_t size) {
-  std::ostringstream os;
-  os.precision(2);
-  os << std::fixed;
-  if (size <= 1024) {
-    os << size << " bytes";
-  } else if (size <= 1048576) {
-    os << (size / 1024.0);
-    os << " KiB";
-  } else if (size <= 1073741824ULL) {
-    os << size / 1048576.0;
-    os << " MiB";
-  } else {
-    os << size / 1073741824.0;
-    os << " GiB";
-  }
-  return os.str();
-}
-
 struct AllocParams {
   AllocParams(
       int device,
@@ -587,7 +568,7 @@ class MTGPUCachingAllocator {
     set_fraction_ = true;
   }
 
-  void recordStream(Block* block, MUSAStream stream) {
+  void record_stream(Block* block, MUSAStream stream) {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
     if (stream.stream() == block->stream) {
       return;
@@ -1113,7 +1094,9 @@ class MTGPUCachingAllocator {
   void cache_info_aux(const BlockPool& pool, size_t* total, size_t* largest) {
     for (const auto& block : pool.blocks) {
       const size_t blocksize = block->size;
-      *total += blocksize;
+      if (total) {
+        *total += blocksize;
+      }
       if (blocksize > *largest) {
         *largest = blocksize;
       }
@@ -1130,6 +1113,8 @@ namespace musa {
 
 using namespace ::c10::musa::MUSACachingAllocator;
 
+void local_raw_delete(void* ptr);
+
 class MusaCachingAllocatorImpl {
  public:
   MusaCachingAllocatorImpl() {
@@ -1138,6 +1123,10 @@ class MusaCachingAllocatorImpl {
     for (int i = 0; i < dev_num; ++i) {
       device_allocator_.emplace_back(std::make_unique<MTGPUCachingAllocator>());
     }
+  }
+
+  bool initialized() {
+    return device_allocator_.size() > 0;
   }
 
   Block* get_allocated_block(void* ptr, bool remove = false) {
@@ -1175,6 +1164,24 @@ class MusaCachingAllocatorImpl {
     device_allocator_[block->device]->free(block);
   }
 
+  void set_memory_fraction(double fraction, int device) {
+    TORCH_INTERNAL_ASSERT(
+        0 <= device && static_cast<size_t>(device) < device_allocator_.size(),
+        "Allocator not initialized for device ",
+        device);
+    TORCH_INTERNAL_ASSERT(
+        0 <= fraction && fraction <= 1,
+        "invalid fraction:",
+        fraction,
+        ". Please set within (0, 1).");
+    int activated_device;
+    C10_MUSA_CHECK(musaGetDevice(&activated_device));
+    if (activated_device != device) {
+      C10_MUSA_CHECK(musaSetDevice(device));
+    }
+    device_allocator_[device]->set_memory_fraction(fraction);
+  }
+
   void empty_cache() {
     for (auto& da : device_allocator_) {
       da->empty_cache();
@@ -1185,6 +1192,27 @@ class MusaCachingAllocatorImpl {
     for (auto& da : device_allocator_) {
       da->reset_peak_stats();
     }
+  }
+
+  void reset_peak_stats(int device) {
+    device_allocator_[device]->reset_peak_stats();
+  }
+
+  void cache_info(int dev_id, size_t* largestBlock) {
+    device_allocator_[dev_id]->cache_info(nullptr, largestBlock);
+  }
+
+  void cache_info_with_total(int dev_id, size_t* largestBlock, size_t* total) {
+    device_allocator_[dev_id]->cache_info(total, largestBlock);
+  }
+
+  void* get_base_allocation(void* ptr, size_t* outSize) {
+    Block* block = get_allocated_block(ptr);
+    if (!block) {
+      TORCH_CHECK(false, "invalid device pointer: ", ptr);
+    }
+    return device_allocator_[block->device]->get_base_allocation(
+        block, outSize);
   }
 
   std::vector<SegmentInfo> snapshot() {
@@ -1201,18 +1229,22 @@ class MusaCachingAllocatorImpl {
     return device_allocator_[device]->get_stats();
   }
 
-  void recordStream(const DataPtr& ptr, MUSAStream stream) {
+  void reset_accumulated_stats(int device) {
+    device_allocator_[device]->reset_accumulated_stats();
+  }
+
+  void record_stream(const DataPtr& ptr, MUSAStream stream) {
     if (!ptr.get()) {
       return;
     }
 
-    if (ptr.get_deleter() != &raw_delete)
+    if (ptr.get_deleter() != &local_raw_delete)
       return;
 
     Block* block = get_allocated_block(ptr.get());
     // block must not be null reaching here
     TORCH_INTERNAL_ASSERT(block != nullptr, "No allocated block can be found");
-    device_allocator_[block->device]->recordStream(block, stream);
+    device_allocator_[block->device]->record_stream(block, stream);
   }
 
   std::vector<std::unique_ptr<MTGPUCachingAllocator>> device_allocator_;
@@ -1229,10 +1261,24 @@ class MusaCachingAllocatorImpl {
   }
 };
 
-struct C10_API MusaCachingAllocator final : at::Allocator {
+struct C10_API MusaCachingAllocator final : MUSAAllocator {
  public:
   MusaCachingAllocator() {
     allocator_impl_ = new MusaCachingAllocatorImpl();
+  }
+
+  void init(int device_count) override {
+    // TODO(@MTAI): all device allocators have been initialized in constructor
+    // of MusaCachingAllocator. Implement lazy initialization would be better as
+    // CUDA. Related code :
+    // https://github.com/pytorch/pytorch/blob/v2.0.0/torch/csrc/cuda/Module.cpp#L1059
+    // https://github.com/pytorch/pytorch/blob/v2.0.0/aten/src/ATen/Context.h#L107
+    // https://github.com/pytorch/pytorch/blob/v2.0.0/aten/src/ATen/cuda/detail/CUDAHooks.cpp#L81
+    (void)device_count;
+  }
+
+  bool initialized() override {
+    return allocator_impl_->initialized();
   }
 
   at::DataPtr allocate(size_t nbytes) const override {
@@ -1244,10 +1290,13 @@ struct C10_API MusaCachingAllocator final : at::Allocator {
           &data, device, nbytes, getCurrentMUSAStream(device));
     }
     return {
-        data, data, &raw_delete, at::Device(at::native::musa::kMUSA, device)};
+        data,
+        data,
+        local_raw_delete,
+        at::Device(at::native::musa::kMUSA, device)};
   }
 
-  void* raw_alloc(size_t nbytes) {
+  void* raw_alloc(size_t nbytes) override {
     if (nbytes == 0) {
       return nullptr;
     }
@@ -1258,7 +1307,7 @@ struct C10_API MusaCachingAllocator final : at::Allocator {
     return ptr;
   }
 
-  void* raw_alloc_with_stream(size_t nbytes, musaStream_t stream) {
+  void* raw_alloc_with_stream(size_t nbytes, musaStream_t stream) override {
     if (nbytes == 0) {
       return nullptr;
     }
@@ -1270,15 +1319,117 @@ struct C10_API MusaCachingAllocator final : at::Allocator {
   }
 
   at::DeleterFnPtr raw_deleter() const override {
-    return &raw_delete;
+    return &local_raw_delete;
   }
 
-  MusaCachingAllocatorImpl* get_allocator() const {
+  void raw_delete(void* ptr) override {
+    allocator_impl_->free(ptr);
+  }
+
+  void emptyCache() override {
+    allocator_impl_->empty_cache();
+  }
+
+  MusaCachingAllocatorImpl* get_allocator_impl() const {
     return allocator_impl_;
   }
 
-  void recordStream(const DataPtr& dataPtr, MUSAStream stream) {
-    get_allocator()->recordStream(dataPtr, stream);
+  void setMemoryFraction(double fraction, int device) override {
+    allocator_impl_->set_memory_fraction(fraction, device);
+  }
+
+  void cacheInfo(int dev_id, size_t* largestBlock) override {
+    allocator_impl_->cache_info(dev_id, largestBlock);
+  }
+
+  void cacheInfoWithTotal(int dev_id, size_t* largestBlock, size_t* total) {
+    allocator_impl_->cache_info_with_total(dev_id, largestBlock, total);
+  }
+
+  void* getBaseAllocation(void* ptr, size_t* outSize) override {
+    return allocator_impl_->get_base_allocation(ptr, outSize);
+  }
+
+  void recordStream(const DataPtr& dataPtr, MUSAStream stream) override {
+    allocator_impl_->record_stream(dataPtr, stream);
+  }
+
+  DeviceStats getDeviceStats(int device) override {
+    return allocator_impl_->get_stats(device);
+  }
+
+  void resetAccumulatedStats(int device) override {
+    allocator_impl_->reset_accumulated_stats(device);
+  }
+
+  void resetPeakStats(int device) override {
+    allocator_impl_->reset_peak_stats(device);
+  }
+
+  SnapshotInfo snapshot() override {
+    auto segment_info = allocator_impl_->snapshot();
+    SnapshotInfo snapshot_info;
+    snapshot_info.segments = segment_info;
+    // TODO(MTAI): Enable TraceEntry in SnapshotInfo in the future.
+    return snapshot_info;
+  }
+
+  void notifyCaptureBegin(
+      int device,
+      CaptureId_t graph_id,
+      MempoolId_t mempool_id) override {
+    C10_THROW_ERROR(
+        NotImplementedError,
+        "notifyCaptureBegin in MUSACachingAllocator is not supported now!");
+  }
+
+  void notifyCaptureAboutToEnd(int device, CaptureId_t graph_id) override {
+    C10_THROW_ERROR(
+        NotImplementedError,
+        "notifyCaptureAboutToEnd in MUSACachingAllocator is not supported now!");
+  }
+
+  void notifyCaptureEnded(int device, CaptureId_t graph_id) override {
+    C10_THROW_ERROR(
+        NotImplementedError,
+        "notifyCaptureEnded in MUSACachingAllocator is not supported now!");
+  }
+
+  void notifyCaptureDestroy(int device, MempoolId_t mempool_id) override {
+    C10_THROW_ERROR(
+        NotImplementedError,
+        "notifyCaptureDestroy in MUSACachingAllocator is not supported now!");
+  }
+
+  std::shared_ptr<void> getIpcDevPtr(std::string handle) override {
+    C10_THROW_ERROR(
+        NotImplementedError,
+        "getIpcDevPtr in MUSACachingAllocator is not supported now!");
+    return nullptr;
+  }
+
+  void recordHistory(
+      bool enabled,
+      CreateContextFn context_recorder,
+      size_t alloc_trace_max_entries,
+      bool alloc_trace_record_context) override {
+    C10_THROW_ERROR(
+        NotImplementedError,
+        "recordHistory in MUSACachingAllocator is not supported now!");
+  }
+
+  void attachOutOfMemoryObserver(OutOfMemoryObserver observer) override {
+    C10_THROW_ERROR(
+        NotImplementedError,
+        "attachOutOfMemoryObserver in MUSACachingAllocator is not supported now!");
+  }
+
+  bool needsPoolSpecificPeerAccess() override {
+    return false;
+  }
+
+  std::string name() override {
+    return "MUSACachingAllocator";
   }
 
  private:
@@ -1291,9 +1442,13 @@ MusaCachingAllocator* GetMusaCachingAllocator() {
   return &g_musa_alloc;
 }
 
+void local_raw_delete(void* ptr) {
+  g_musa_alloc.get_allocator_impl()->free(ptr);
+}
+
 void raw_delete(void* ptr) {
   MusaCachingAllocator* palloc = c10::musa::GetMusaCachingAllocator();
-  palloc->get_allocator()->free(ptr);
+  palloc->get_allocator_impl()->free(ptr);
 }
 
 void* raw_alloc(size_t nbytes) {
@@ -1319,28 +1474,48 @@ Allocator* get() {
   return c10::musa::GetMusaCachingAllocator();
 }
 
+// Size pretty-printer
+inline std::string format_size(uint64_t size) {
+  std::ostringstream os;
+  os.precision(2);
+  os << std::fixed;
+  if (size <= 1024) {
+    os << size << " bytes";
+  } else if (size <= 1048576) {
+    os << (size / 1024.0);
+    os << " KiB";
+  } else if (size <= 1073741824ULL) {
+    os << size / 1048576.0;
+    os << " MiB";
+  } else {
+    os << size / 1073741824.0;
+    os << " GiB";
+  }
+  return os.str();
+}
+
 void EmptyCache() {
   c10::musa::MusaCachingAllocator* palloc =
       c10::musa::GetMusaCachingAllocator();
-  palloc->get_allocator()->empty_cache();
+  palloc->get_allocator_impl()->empty_cache();
 }
 
 void ResetPeakStats() {
   c10::musa::MusaCachingAllocator* palloc =
       c10::musa::GetMusaCachingAllocator();
-  palloc->get_allocator()->reset_peak_stats();
+  palloc->get_allocator_impl()->reset_peak_stats();
 }
 
 DeviceStats GetDeviceStats(int64_t device) {
   c10::musa::MusaCachingAllocator* palloc =
       c10::musa::GetMusaCachingAllocator();
-  return palloc->get_allocator()->get_stats(device);
+  return palloc->get_allocator_impl()->get_stats(device);
 }
 
 std::vector<SegmentInfo> GetMemorySnapshot() {
   c10::musa::MusaCachingAllocator* palloc =
       c10::musa::GetMusaCachingAllocator();
-  return palloc->get_allocator()->snapshot();
+  return palloc->get_allocator_impl()->snapshot();
 }
 
 void recordStream(const DataPtr& dataPtr, MUSAStream stream) {

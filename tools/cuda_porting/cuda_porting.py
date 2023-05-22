@@ -107,11 +107,15 @@ def port_cuda(
         "<c10/musa/MUSAGuard.h>": "\"torch_musa/csrc/core/MUSAGuard.h\"",
         "<c10/musa/impl/CUDAGuardImpl.h>": "\"torch_musa/csrc/core/GuardImpl.h\"",
         "<c10/musa/CUDAException.h>": "\"torch_musa/csrc/core/MUSAException.h\"",
+        "<c10/musa/CUDAMiscFunctions.h>": "\"torch_musa/csrc/core/MUSAMiscFunctions.h\"",
+        "<c10/musa/CUDACachingAllocator.h>": "\"torch_musa/csrc/core/Allocator.h\"",
+        "<c10/musa/CUDAGraphsC10Utils.h>": "\"torch_musa/csrc/core/MUSAGraphsC10Utils.h\"",
         "<ATen/musa/CUDADevice.h>": "\"torch_musa/csrc/core/Device.h\"",
         "<ATen/musa/CUDABlas.h>": "\"torch_musa/csrc/aten/musa/MUSABlas.h\"",
         "<ATen/musa/CUDAContext.h>": "\"torch_musa/csrc/aten/musa/MUSAContext.h\"",
         "<ATen/musa/Exceptions.h>": "\"torch_musa/csrc/aten/musa/Exceptions.h\"",
-        # TODO(caizhi): replace headers about Allocator with headers inside torch_musa
+        "<ATen/musa/PinnedMemoryAllocator.h>": "\"torch_musa/csrc/core/PinnedMemoryAllocator.h\"",
+        "<ATen/musa/CachingHostAllocator.h>": "\"torch_musa/csrc/core/CachingHostAllocator.h\"",
     }
 
     # 1. Copy and cuda-port files

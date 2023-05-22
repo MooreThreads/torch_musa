@@ -577,7 +577,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeGroupNormBwd(
     c10::SymInt HxW,
     int64_t group,
     ::std::array<bool, 3> output_mask) {
-  // implemented by cuda-porting
+  c10::musa::MUSAGuard device_guard(grad_out.device());
   return at::native::native_group_norm_backward(
       grad_out,
       input,

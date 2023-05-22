@@ -51,9 +51,9 @@ def test_baddbmm_device():
                                beta=beta,
                                alpha=alpha)
 
-    musa_input = cpu_input.clone().detach().to("musa:1")
-    musa_batch1 = cpu_batch1.clone().detach().to("musa:1")
-    musa_batch2 = cpu_batch2.clone().detach().to("musa:1")
+    musa_input = cpu_input.to("musa:1")
+    musa_batch1 = cpu_batch1.to("musa:1")
+    musa_batch2 = cpu_batch2.to("musa:1")
     musa_result = torch.baddbmm(input=musa_input,
                                 batch1=musa_batch1,
                                 batch2=musa_batch2,

@@ -3,11 +3,12 @@
 
 import warnings
 import sys
-from distutils.version import LooseVersion
+from packaging.version import Version
 import torch
 
-torch_min_version = LooseVersion("2.0.0")
-if torch.__version__ < torch_min_version:
+TORCH_MIN_VERSION = Version("2.0.0")
+TORCH_VERSION = Version(torch.__version__).base_version
+if Version(TORCH_VERSION) < TORCH_MIN_VERSION:
     raise RuntimeError(
         "torch version must not be less than v2.0.0 when using torch_musa,",
         " but now torch version is " + torch.__version__)

@@ -1,5 +1,5 @@
-#ifndef ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUALLOCATOR_H_
-#define ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUALLOCATOR_H_
+#ifndef TORCH_MUSA_CSRC_CORE_ALLOCATOR_H_
+#define TORCH_MUSA_CSRC_CORE_ALLOCATOR_H_
 
 #include <ATen/ATen.h>
 #include <c10/core/CPUAllocator.h>
@@ -8,6 +8,8 @@
 
 #include <mudnn.h>
 #include <musa_runtime.h>
+
+#include "torch_musa/csrc/core/MUSAGraphsC10Utils.h"
 #include "torch_musa/csrc/core/MUSAStream.h"
 
 // yang.zhao: Macros defined in c10/cuda/CUDAMacros.h,
@@ -70,6 +72,21 @@ void raw_delete(void* ptr);
 namespace MUSACachingAllocator {
 
 Allocator* get();
+
+// Size pretty-printer
+std::string format_size(uint64_t size);
+
+struct Context {
+  virtual ~Context() = default;
+};
+
+typedef std::shared_ptr<Context> (*CreateContextFn)(void);
+
+using OutOfMemoryObserver = std::function<void(
+    int64_t device,
+    int64_t allocated,
+    int64_t device_total,
+    int64_t device_free)>;
 
 struct Stat {
   int64_t current = 0;
@@ -145,6 +162,82 @@ struct SegmentInfo {
   std::vector<BlockInfo> blocks;
 };
 
+struct TraceEntry {
+  enum Action {
+    ALLOC, // API made to the caching allocator for new memory
+    FREE_REQUESTED, // API call made to the caching allocator to free memory
+    FREE_COMPLETED, // The allocator might have to delay a free because
+                    // it is still in use on another stream via record_stream
+                    // This event is generated when a free actually completes.
+    SEGMENT_ALLOC, // a call to musaMalloc to get more memory from the OS
+    SEGMENT_FREE, // a call to musaFree to return memory to the OS (e.g. to
+                  // defragement or empty_caches)
+    SNAPSHOT, // a call to snapshot, used to correlate memory snapshots to trace
+              // events
+    OOM // the allocator threw an OutOfMemoryError (addr_ is the amount of free
+        // bytes reported by cuda)
+  };
+  TraceEntry(
+      Action action,
+      int64_t addr,
+      size_t size,
+      musaStream_t stream,
+      std::shared_ptr<Context> context = nullptr)
+      : action_(action),
+        addr_(addr),
+        context_(context),
+        stream_(stream),
+        size_(size) {}
+  Action action_;
+  int64_t addr_; // for OOM, this is the amount of free bytes reported by cuda
+  std::shared_ptr<Context> context_;
+  musaStream_t stream_;
+  int64_t size_;
+};
+
+struct SnapshotInfo {
+  std::vector<SegmentInfo> segments;
+  std::vector<std::vector<TraceEntry>> device_traces;
+};
+
+class MUSAAllocator : public Allocator {
+ public:
+  virtual void* raw_alloc(size_t nbytes) = 0;
+  virtual void* raw_alloc_with_stream(size_t nbytes, musaStream_t stream) = 0;
+  virtual void raw_delete(void* ptr) = 0;
+  virtual void init(int device_count) = 0;
+  virtual bool initialized() = 0;
+  virtual void setMemoryFraction(double fraction, int device) = 0;
+  virtual void emptyCache() = 0;
+  virtual void cacheInfo(int dev_id, size_t* largestBlock) = 0;
+  virtual void cacheInfoWithTotal(
+      int dev_id,
+      size_t* largestBlock,
+      size_t* total) = 0;
+  virtual void* getBaseAllocation(void* ptr, size_t* size) = 0;
+  virtual void recordStream(const DataPtr&, MUSAStream stream) = 0;
+  virtual DeviceStats getDeviceStats(int device) = 0;
+  virtual void resetAccumulatedStats(int device) = 0;
+  virtual void resetPeakStats(int device) = 0;
+  virtual SnapshotInfo snapshot() = 0;
+  virtual void notifyCaptureBegin(
+      int device,
+      CaptureId_t graph_id,
+      MempoolId_t mempool_id) = 0;
+  virtual void notifyCaptureAboutToEnd(int device, CaptureId_t graph_id) = 0;
+  virtual void notifyCaptureEnded(int device, CaptureId_t graph_id) = 0;
+  virtual void notifyCaptureDestroy(int device, MempoolId_t mempool_id) = 0;
+  virtual std::shared_ptr<void> getIpcDevPtr(std::string handle) = 0;
+  virtual void recordHistory(
+      bool enabled,
+      CreateContextFn context_recorder,
+      size_t alloc_trace_max_entries,
+      bool alloc_trace_record_context) = 0;
+  virtual void attachOutOfMemoryObserver(OutOfMemoryObserver observer) = 0;
+  virtual bool needsPoolSpecificPeerAccess() = 0;
+  virtual std::string name() = 0;
+};
+
 void EmptyCache();
 void ResetPeakStats();
 DeviceStats GetDeviceStats(int64_t device);
@@ -154,4 +247,4 @@ void recordStream(const DataPtr& dataPtr, MUSAStream stream);
 } // namespace MUSACachingAllocator
 } // namespace musa
 } // namespace c10
-#endif // ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUALLOCATOR_H_
+#endif // TORCH_MUSA_CSRC_CORE_ALLOCATOR_H_
