@@ -1,4 +1,3 @@
-#include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/ExpandUtils.h>
 #include <ATen/NativeFunctions.h>
@@ -8,7 +7,6 @@
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 namespace at {
-namespace native {
 namespace musa {
 ::std::tuple<Tensor, Tensor> NativeDropout(
     const Tensor& input,
@@ -107,5 +105,4 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
 }
 
 } // namespace musa
-} // namespace native
 } // namespace at

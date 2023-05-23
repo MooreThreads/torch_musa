@@ -89,7 +89,6 @@ def port_cuda(
         "c10_cuda_check_implementation": "c10_musa_check_implementation",
         ".cuh>": ".muh>",
         "cuda_dispatch.h": "musa_dispatch.h",
-        "musa::detail::canUse32BitIndexMath": "::at::musa::detail::canUse32BitIndexMath",
         # TODO(caizhi): enable cub library porting
         "at::musa::cub::mask_exclusive_sum(": "",
         "mask_data, maskPrefixSum_data, mask_numel);": "",

@@ -4,7 +4,6 @@
 #include <c10/core/ScalarType.h>
 
 namespace at {
-namespace native {
 namespace musa {
 
 Tensor Tril(const Tensor& self, int64_t diagonal);
@@ -17,7 +16,6 @@ Tensor Baddbmm(
     const Scalar& alpha);
 
 } // namespace musa
-} // namespace native
 } // namespace at
 
 #endif // TORCH_MUSA_CSRC_ATEN_OPS_MUSA_MUSA_OPS_H

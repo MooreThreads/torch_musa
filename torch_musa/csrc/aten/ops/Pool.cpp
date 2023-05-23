@@ -1,4 +1,3 @@
-#include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/NamedTensorUtils.h>
 #include <ATen/NativeFunctions.h>
@@ -11,7 +10,6 @@
 #include <mudnn.h>
 
 namespace at {
-namespace native {
 namespace musa {
 
 struct PoolParams {
@@ -54,8 +52,8 @@ void PoolCall(
       "SetNdInfo");
   if (p.divisor_override.has_value()) {
     CHECK_MUDNN_STATUS(
-        pool.SetDivisor(
-            safe_downcast<int, int64_t>(p.divisor_override.value())),
+        pool.SetDivisor(at::native::safe_downcast<int, int64_t>(
+            p.divisor_override.value())),
         "SetDivisor");
   }
   CHECK_MUDNN_STATUS(pool.Run(h, out, in, inds), "Run");
@@ -89,8 +87,8 @@ void PoolCallBwd(
       "SetNdInfo");
   if (p.divisor_override.has_value()) {
     CHECK_MUDNN_STATUS(
-        pool.SetDivisor(
-            safe_downcast<int, int64_t>(p.divisor_override.value())),
+        pool.SetDivisor(at::native::safe_downcast<int, int64_t>(
+            p.divisor_override.value())),
         "SetDivisor");
   }
   CHECK_MUDNN_STATUS(pool.RunBwd(h, out, in, inds), "Run");
@@ -207,12 +205,12 @@ void AvgPool2dConfigParams(
       "divisor must be not zero");
   p.divisor_override = divisor_override;
 
-  p.k[0] = safe_downcast<int, int64_t>(kH);
-  p.k[1] = safe_downcast<int, int64_t>(kW);
-  p.pad[0] = safe_downcast<int, int64_t>(padH);
-  p.pad[1] = safe_downcast<int, int64_t>(padW);
-  p.d[0] = safe_downcast<int, int64_t>(dH);
-  p.d[1] = safe_downcast<int, int64_t>(dW);
+  p.k[0] = at::native::safe_downcast<int, int64_t>(kH);
+  p.k[1] = at::native::safe_downcast<int, int64_t>(kW);
+  p.pad[0] = at::native::safe_downcast<int, int64_t>(padH);
+  p.pad[1] = at::native::safe_downcast<int, int64_t>(padW);
+  p.d[0] = at::native::safe_downcast<int, int64_t>(dH);
+  p.d[1] = at::native::safe_downcast<int, int64_t>(dW);
   p.dil[0] = 1;
   p.dil[1] = 1;
   p.mode = count_include_pad
@@ -229,12 +227,12 @@ void AvgPool2dInternal(
   int64_t n_input_plane = input.size(-3);
   int64_t input_height = input.size(-2);
   int64_t input_width = input.size(-1);
-  int64_t output_height = pooling_output_shape<int64_t>(
+  int64_t output_height = at::native::pooling_output_shape<int64_t>(
       input_height, p.k[0], p.pad[0], p.d[0], 1, ceil_mode);
-  int64_t output_width = pooling_output_shape<int64_t>(
+  int64_t output_width = at::native::pooling_output_shape<int64_t>(
       input_width, p.k[1], p.pad[1], p.d[1], 1, ceil_mode);
   auto memory_format = input.suggest_memory_format();
-  pool2d_shape_check(
+  at::native::pool2d_shape_check(
       input,
       p.k[0],
       p.k[1],
@@ -272,29 +270,33 @@ void MaxPool2dConfigParams(
   TORCH_CHECK(
       ker.size() == 1 || ker.size() == 2,
       "max_pool2d: ker must either be a single int, or a tuple of two ints")
-  p.k[0] = safe_downcast<int, int64_t>(ker[0]);
-  p.k[1] = ker.size() == 1 ? p.k[0] : safe_downcast<int, int64_t>(ker[1]);
+  p.k[0] = at::native::safe_downcast<int, int64_t>(ker[0]);
+  p.k[1] = ker.size() == 1 ? p.k[0]
+                           : at::native::safe_downcast<int, int64_t>(ker[1]);
 
   TORCH_CHECK(
       str.size() == 0 || str.size() == 1 || str.size() == 2,
       "max_pool2d: str must either be omitted, a single int, or a "
       "tuple of two ints")
-  p.d[0] = str.empty() ? p.k[0] : safe_downcast<int, int64_t>(str[0]);
+  p.d[0] =
+      str.empty() ? p.k[0] : at::native::safe_downcast<int, int64_t>(str[0]);
   p.d[1] = str.empty()  ? p.k[1]
       : str.size() == 1 ? p.d[0]
-                        : safe_downcast<int, int64_t>(str[1]);
+                        : at::native::safe_downcast<int, int64_t>(str[1]);
 
   TORCH_CHECK(
       pad.size() == 1 || pad.size() == 2,
       "max_pool2d: pad must be either be a single int, or a tuple of two ints");
-  p.pad[0] = safe_downcast<int, int64_t>(pad[0]);
-  p.pad[1] = pad.size() == 1 ? p.pad[0] : safe_downcast<int, int64_t>(pad[1]);
+  p.pad[0] = at::native::safe_downcast<int, int64_t>(pad[0]);
+  p.pad[1] = pad.size() == 1 ? p.pad[0]
+                             : at::native::safe_downcast<int, int64_t>(pad[1]);
 
   TORCH_CHECK(
       dil.size() == 1 || dil.size() == 2,
       "max_pool2d: dil must be either a single int, or a tuple of two ints");
-  p.dil[0] = safe_downcast<int, int64_t>(dil[0]);
-  p.dil[1] = dil.size() == 1 ? p.dil[0] : safe_downcast<int, int64_t>(dil[1]);
+  p.dil[0] = at::native::safe_downcast<int, int64_t>(dil[0]);
+  p.dil[1] = dil.size() == 1 ? p.dil[0]
+                             : at::native::safe_downcast<int, int64_t>(dil[1]);
   p.mode = ::musa::dnn::Pooling::Mode::MAXPOOL;
 }
 
@@ -312,9 +314,9 @@ void MaxPool2dInternal(
   int64_t inH = contiguous_input.size(-2);
   int64_t inW = contiguous_input.size(-1);
 
-  int64_t output_height = pooling_output_shape<int64_t>(
+  int64_t output_height = at::native::pooling_output_shape<int64_t>(
       inH, p.k[0], p.pad[0], p.d[0], p.dil[0], ceil_mode);
-  int64_t output_width = pooling_output_shape<int64_t>(
+  int64_t output_width = at::native::pooling_output_shape<int64_t>(
       inW, p.k[1], p.pad[1], p.d[1], p.dil[1], ceil_mode);
 
   // Our own code
@@ -560,12 +562,12 @@ Tensor& AvgPool2dOutBwd(
   int64_t n_input_plane = input.size(-3);
   int64_t input_height = input.size(-2);
   int64_t input_width = input.size(-1);
-  int64_t output_height = pooling_output_shape<int64_t>(
+  int64_t output_height = at::native::pooling_output_shape<int64_t>(
       input_height, params.k[0], params.pad[0], params.d[0], 1, ceil_mode);
-  int64_t output_width = pooling_output_shape<int64_t>(
+  int64_t output_width = at::native::pooling_output_shape<int64_t>(
       input_width, params.k[1], params.pad[1], params.d[1], 1, ceil_mode);
   auto memory_format = input.suggest_memory_format();
-  avg_pool2d_backward_shape_check(
+  at::native::avg_pool2d_backward_shape_check(
       input,
       grad_output,
       nbatch,
@@ -661,5 +663,4 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
 }
 
 } // namespace musa
-} // namespace native
 } // namespace at

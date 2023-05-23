@@ -1,7 +1,6 @@
 #ifndef ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUTENSORFACTORY_H_
 #define ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUTENSORFACTORY_H_
 
-#include <ATen/ATen.h>
 #include <ATen/Dispatch.h>
 #include <ATen/Functions.h>
 #include <ATen/NativeFunctions.h>
@@ -15,7 +14,6 @@
 #include "torch_musa/csrc/core/MUSAGuard.h"
 
 namespace at {
-namespace native {
 namespace musa {
 
 Tensor empty_mtgpu(
@@ -42,7 +40,6 @@ Tensor Contiguous(
     MemoryFormat memory_format = MemoryFormat::Contiguous);
 
 } // namespace musa
-} // namespace native
 } // namespace at
 
 #endif // ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUTENSORFACTORY_H_

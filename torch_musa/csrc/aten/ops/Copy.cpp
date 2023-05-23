@@ -1,4 +1,3 @@
-#include <ATen/ATen.h>
 #include <ATen/Dispatch.h>
 #include <ATen/Functions.h>
 #include <ATen/NamedTensorUtils.h>
@@ -20,9 +19,7 @@
 #include <unordered_set>
 
 namespace at {
-namespace native {
 namespace musa {
-
 namespace {
 
 enum class Memcpy_type {
@@ -394,5 +391,4 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
 }
 
 } // namespace musa
-} // namespace native
 } // namespace at

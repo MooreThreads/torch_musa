@@ -1,4 +1,3 @@
-#include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/ExpandUtils.h>
 #include <ATen/NamedTensorUtils.h>
@@ -13,7 +12,6 @@
 #include <mudnn.h>
 
 namespace at {
-namespace native {
 namespace musa {
 
 std::tuple<at::Tensor&, at::Tensor&> NllLossOut(
@@ -363,5 +361,4 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
 }
 
 } // namespace musa
-} // namespace native
 } // namespace at

@@ -1,7 +1,6 @@
 #ifndef TORCH_MUSA_CSRC_CORE_ALLOCATOR_H_
 #define TORCH_MUSA_CSRC_CORE_ALLOCATOR_H_
 
-#include <ATen/ATen.h>
 #include <c10/core/CPUAllocator.h>
 #include <c10/core/DeviceType.h>
 #include <list>

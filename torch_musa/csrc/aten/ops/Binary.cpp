@@ -1,4 +1,3 @@
-#include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/ExpandUtils.h>
 #include <ATen/NativeFunctions.h>
@@ -12,7 +11,6 @@
 #include <mudnn.h>
 
 namespace at {
-namespace native {
 namespace musa {
 using BINARY_MODE = ::musa::dnn::Binary::Mode;
 using UNARY_MODE = ::musa::dnn::Unary::Mode;
@@ -285,7 +283,7 @@ Tensor BinarycommonDtype(
     }
   }
   ScalarType common_dtype = at::result_type(self, other);
-  alpha_check(common_dtype, alpha_scalar);
+  at::native::alpha_check(common_dtype, alpha_scalar);
   Tensor contiguous_self = self.to(common_dtype);
   Tensor contiguous_other = other.to(common_dtype);
   return Binary(op_name, contiguous_self, contiguous_other, m, alpha_scalar);
@@ -298,7 +296,7 @@ void BinarycommonDtype_(
     Scalar const& alpha_scalar,
     BINARY_MODE m) {
   ScalarType commonDtype = at::result_type(self, other);
-  alpha_check(commonDtype, alpha_scalar);
+  at::native::alpha_check(commonDtype, alpha_scalar);
   Tensor other_ = other.to(commonDtype);
   Binary(op_name, self, other_, m, alpha_scalar, true);
   return;
@@ -311,7 +309,7 @@ void BinarycommonDtypeInternal(
     Scalar const& alpha_scalar,
     BINARY_MODE m) {
   ScalarType common_dtype = at::result_type(self, other);
-  alpha_check(common_dtype, alpha_scalar);
+  at::native::alpha_check(common_dtype, alpha_scalar);
   Tensor contiguous_other = other.to(common_dtype);
   Binary(op_name, self, contiguous_other, m, alpha_scalar, true);
   return;
@@ -325,7 +323,7 @@ void BinarycommonDtypeCall(
     Tensor& output,
     BINARY_MODE m) {
   ScalarType common_dtype = at::result_type(self, other);
-  alpha_check(common_dtype, alpha_scalar);
+  at::native::alpha_check(common_dtype, alpha_scalar);
   Tensor contiguous_self = Contiguous(self.to(common_dtype));
   Tensor contiguous_other = Contiguous(other.to(common_dtype));
   BinaryCall(
@@ -466,8 +464,8 @@ at::Tensor& GELUBwd_out(
   auto contiguous_self = Contiguous(self);
 
   grad_input.resize_(self.sizes());
-  auto approximate_type = get_gelutype_enum(approximate);
-  auto mode = approximate_type == GeluType::None
+  auto approximate_type = at::native::get_gelutype_enum(approximate);
+  auto mode = approximate_type == at::native::GeluType::None
       ? ::musa::dnn::Binary::Mode::GELU_NONE_BW
       : ::musa::dnn::Binary::Mode::GELU_TANH_BW;
   BinaryCall(
@@ -739,5 +737,4 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
 }
 
 } // namespace musa
-} // namespace native
 } // namespace at

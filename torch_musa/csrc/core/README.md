@@ -4,7 +4,7 @@ This allocator is designed in the same way as CUDA Caching Allocator.
 
 ## Basic Design
 
-There is only one allocator for devices (need multiple allocators to support multi-gpu memory management). It is derived from `at::Allocator` so that all the tensors with dispatch key `at::native::musa::kMUSA` will call `malloc` and `free` func in this allocator.<br></br>
+There is only one allocator for devices (need multiple allocators to support multi-gpu memory management). It is derived from `at::Allocator` so that all the tensors with dispatch key `at::musa::kMUSA` will call `malloc` and `free` func in this allocator.<br></br>
 The implementation of allocator can be find in file `Allocator.cpp`.
 
 ### Data stuctures

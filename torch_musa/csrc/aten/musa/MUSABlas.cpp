@@ -1,8 +1,6 @@
 /*
   Provides the implementations of MUSA BLAS function templates.
  */
-
-#include <ATen/ATen.h>
 #include <c10/macros/Export.h>
 #include <c10/util/Exception.h>
 #include <c10/util/irange.h>

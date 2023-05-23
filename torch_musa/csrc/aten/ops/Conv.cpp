@@ -1,4 +1,3 @@
-#include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/NativeFunctions.h>
 #include <ATen/native/ConvUtils.h>
@@ -11,7 +10,6 @@
 #include <mudnn.h>
 
 namespace at {
-namespace native {
 namespace musa {
 
 void conv2d_shape_check(
@@ -64,7 +62,7 @@ void AddBias(Tensor& out, const Tensor& bias) {
     return;
   }
   TORCH_CHECK(bias.dim() == 1, "Dimension of bias should be 1");
-  out.add_(reshape_bias(out.dim(), bias));
+  out.add_(at::native::reshape_bias(out.dim(), bias));
 }
 
 Tensor Conv2d(
@@ -141,7 +139,7 @@ Tensor Conv2dTranspose(
     IntArrayRef output_padding,
     int64_t groups,
     IntArrayRef dilation) {
-  auto input_size = conv_input_size(
+  auto input_size = at::native::conv_input_size(
       grad_output.sizes(),
       weight.sizes(),
       padding,
@@ -504,5 +502,4 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
 }
 
 } // namespace musa
-} // namespace native
 } // namespace at

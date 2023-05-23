@@ -1,4 +1,3 @@
-#include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/NativeFunctions.h>
 #include <torch/library.h>
@@ -9,7 +8,6 @@
 #include <mudnn.h>
 
 namespace at {
-namespace native {
 namespace musa {
 
 Scalar LocalScalarDense_(const Tensor& self) {
@@ -40,5 +38,4 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
 }
 
 } // namespace musa
-} // namespace native
 } // namespace at

@@ -8,7 +8,6 @@
 #include "torch_musa/csrc/core/MUSAException.h"
 
 namespace at {
-namespace native {
 namespace musa {
 
 #define UNUSED(x) (void)(x)
@@ -83,7 +82,6 @@ Tensor create_out(
     const TensorOptions& options);
 
 } // namespace musa
-} // namespace native
 } // namespace at
 
 #endif // ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUUTILS_H_

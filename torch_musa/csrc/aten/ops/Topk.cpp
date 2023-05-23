@@ -1,4 +1,3 @@
-#include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/NamedTensorUtils.h>
 #include <ATen/NativeFunctions.h>
@@ -11,7 +10,6 @@
 #include <mudnn.h>
 
 namespace at {
-namespace native {
 namespace musa {
 
 using Status = ::musa::dnn::Status;
@@ -124,5 +122,4 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
 }
 
 } // namespace musa
-} // namespace native
 } // namespace at

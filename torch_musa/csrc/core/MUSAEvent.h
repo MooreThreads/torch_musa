@@ -80,7 +80,7 @@ struct MUSAEvent {
 
   optional<at::Device> device() const {
     if (is_created_) {
-      return at::Device(at::native::musa::kMUSA, device_index_);
+      return at::Device(at::musa::kMUSA, device_index_);
     } else {
       return {};
     }

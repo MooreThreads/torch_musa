@@ -1,4 +1,3 @@
-#include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/NativeFunctions.h>
 #include <ATen/native/UpSample.h>
@@ -9,7 +8,6 @@
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 namespace at {
-namespace native {
 namespace musa {
 
 Tensor& UpSampleNearest2dOut(
@@ -26,9 +24,9 @@ Tensor& UpSampleNearest2dOut(
   int contiguous_inputheight = self.size(2);
   int contiguous_inputwidth = self.size(3);
 
-  const float height_scale = compute_scales_value<float>(
+  const float height_scale = at::native::compute_scales_value<float>(
       scales_h, contiguous_inputheight, output_height);
-  const float width_scale = compute_scales_value<float>(
+  const float width_scale = at::native::compute_scales_value<float>(
       scales_w, contiguous_inputwidth, output_width);
 
   if (self.suggest_memory_format() == at::MemoryFormat::ChannelsLast) {
@@ -66,7 +64,7 @@ Tensor UpSampleNearest2d(
     c10::optional<double> scales_w) {
   c10::musa::MUSAGuard device_guard(self.device());
   auto result = at::empty(
-      upsample_2d_common_check(self.sizes(), output_size),
+      at::native::upsample_2d_common_check(self.sizes(), output_size),
       self.options().memory_format(self.suggest_memory_format()));
   UpSampleNearest2dOut(self, output_size, scales_h, scales_w, result);
   return result;
@@ -87,9 +85,9 @@ Tensor& UpSampleNearest2dBwdOut(
   int contiguous_inputheight = contiguous_inputsize[2];
   int contiguous_inputwidth = contiguous_inputsize[3];
 
-  float height_scale = compute_scales_value<float>(
+  float height_scale = at::native::compute_scales_value<float>(
       scales_h, contiguous_inputheight, output_height);
-  float width_scale = compute_scales_value<float>(
+  float width_scale = at::native::compute_scales_value<float>(
       scales_w, contiguous_inputwidth, output_width);
 
   if (grad_output.suggest_memory_format() == at::MemoryFormat::ChannelsLast) {
@@ -146,5 +144,4 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
 }
 
 } // namespace musa
-} // namespace native
 } // namespace at

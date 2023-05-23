@@ -1,4 +1,3 @@
-#include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/NativeFunctions.h>
 #include <torch/library.h>
@@ -10,7 +9,6 @@
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 namespace at {
-namespace native {
 namespace musa {
 // To judge whether the matrix is ​​transposed, the following two conditions
 // need to be met
@@ -249,5 +247,4 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
 }
 
 } // namespace musa
-} // namespace native
 } // namespace at

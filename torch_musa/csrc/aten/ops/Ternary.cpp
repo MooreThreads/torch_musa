@@ -1,4 +1,4 @@
-#include <ATen/ATen.h>
+#include <ATen/ExpandUtils.h>
 #include <ATen/native/BinaryOps.h>
 #include <torch/library.h>
 
@@ -8,7 +8,6 @@
 #include <mudnn.h>
 
 namespace at {
-namespace native {
 namespace musa {
 using TERNARY_MODE = ::musa::dnn::Ternary::Mode;
 
@@ -52,7 +51,7 @@ void TernarycommonDtypeCall(
     Tensor& output,
     TERNARY_MODE m) {
   auto common_dtype = at::result_type(input1, input2);
-  alpha_check(common_dtype, alpha_scalar);
+  at::native::alpha_check(common_dtype, alpha_scalar);
   Tensor contiguous_self = Contiguous(self.to(common_dtype));
   Tensor contiguous_input1 = Contiguous(input1.to(common_dtype));
   Tensor contiguous_input2 = Contiguous(input2.to(common_dtype));
@@ -257,5 +256,4 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
 }
 
 } // namespace musa
-} // namespace native
 } // namespace at

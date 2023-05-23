@@ -1,4 +1,3 @@
-#include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/NativeFunctions.h>
 #include <ATen/native/Resize.h>
@@ -12,7 +11,6 @@
 #include <mudnn.h>
 
 namespace at {
-namespace native {
 namespace musa {
 
 void ConfigFormat(Tensor& t, muTensor& mt, bool auto_contiguous) {
@@ -103,5 +101,4 @@ bool is_musa(const Tensor& t) {
 }
 
 } // namespace musa
-} // namespace native
 } // namespace at

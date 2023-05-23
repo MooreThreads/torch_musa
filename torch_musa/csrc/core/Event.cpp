@@ -75,7 +75,7 @@ static PyObject* THMPEvent_from_ipc_handle(
       ", but got ",
       handle_string.size());
   TORCH_CHECK(
-      device.type() == at::native::musa::kMUSA,
+      device.type() == at::musa::kMUSA,
       "Event can only be created on "
       "MUSA devices, but got device type ",
       device.type())

@@ -4,15 +4,12 @@
 #include <ATen/native/layer_norm.h>
 #include <torch/library.h>
 
-#pragma GCC diagnostic pop
-
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 #include <mudnn.h>
 
 namespace at {
-namespace native {
 namespace musa {
 
 void check_dims_match_num_input_features(
@@ -255,7 +252,8 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
       at::borrow_from_optional_tensor(bias_opt);
   const Tensor& bias = *bias_maybe_owned;
 
-  auto M_N = _check_layer_norm_inputs(input, normalized_shape, weight, bias);
+  auto M_N = at::native::_check_layer_norm_inputs(
+      input, normalized_shape, weight, bias);
   auto M = M_N.first;
   Tensor input_contiguous = Contiguous(input);
   auto output = at::empty_like(input_contiguous);
@@ -382,7 +380,8 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
       at::borrow_from_optional_tensor(bias_opt);
   const Tensor& bias = *bias_maybe_owned;
 
-  auto M_N = _check_layer_norm_inputs(input, normalized_shape, weight, bias);
+  auto M_N = at::native::_check_layer_norm_inputs(
+      input, normalized_shape, weight, bias);
   auto M = M_N.first;
   auto X = Contiguous(input);
   auto gamma = weight.defined() ? Contiguous(weight) : weight;
@@ -601,5 +600,4 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
 }
 
 } // namespace musa
-} // namespace native
 } // namespace at

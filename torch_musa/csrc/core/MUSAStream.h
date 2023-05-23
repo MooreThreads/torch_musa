@@ -14,7 +14,7 @@
 namespace c10 {
 namespace musa {
 
-using at::native::musa::kMUSA;
+using at::musa::kMUSA;
 using c10::Device;
 using c10::DeviceIndex;
 using c10::DeviceType;

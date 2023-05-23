@@ -1,4 +1,3 @@
-#include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/NativeFunctions.h>
 #include <ATen/native/Activation.h>
@@ -10,7 +9,6 @@
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 namespace at {
-namespace native {
 namespace musa {
 
 using UNARY_MODE = ::musa::dnn::Unary::Mode;
@@ -166,9 +164,9 @@ SCALAR_COMPARISON(EqScalar, UNARY_MODE::EQ)
 SCALAR_COMPARISON(NeScalar, UNARY_MODE::NE)
 
 Tensor GELU(const Tensor& self, c10::string_view approximate) {
-  auto approximate_type = get_gelutype_enum(approximate);
+  auto approximate_type = at::native::get_gelutype_enum(approximate);
   TORCH_CHECK(
-      approximate_type == GeluType::None,
+      approximate_type == at::native::GeluType::None,
       "Musa GELU op only support approximate is None now!");
   return Unary(__func__, self, [&](::musa::dnn::Unary& op) {
     CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::GELU), "SetMode");
@@ -179,9 +177,9 @@ Tensor& GELUOut(
     const Tensor& self,
     c10::string_view approximate,
     Tensor& output) {
-  auto approximate_type = get_gelutype_enum(approximate);
+  auto approximate_type = at::native::get_gelutype_enum(approximate);
   TORCH_CHECK(
-      approximate_type == GeluType::None,
+      approximate_type == at::native::GeluType::None,
       "Musa GELU op only support approximate is None now!");
   UnaryOut(__func__, output, self, [&](::musa::dnn::Unary& op) {
     CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::GELU), "SetMode");
@@ -608,5 +606,4 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
 }
 
 } // namespace musa
-} // namespace native
 } // namespace at

@@ -9,7 +9,6 @@
 #include "torch_musa/csrc/utils/Logging.h"
 
 namespace c10 {
-
 namespace musa {
 
 C10_DEFINE_REGISTRY(FreeMusaMemoryCallbacksRegistry, FreeMemoryCallback);
@@ -1289,11 +1288,7 @@ struct C10_API MusaCachingAllocator final : MUSAAllocator {
       allocator_impl_->malloc(
           &data, device, nbytes, getCurrentMUSAStream(device));
     }
-    return {
-        data,
-        data,
-        local_raw_delete,
-        at::Device(at::native::musa::kMUSA, device)};
+    return {data, data, local_raw_delete, at::Device(at::musa::kMUSA, device)};
   }
 
   void* raw_alloc(size_t nbytes) override {
@@ -1461,7 +1456,7 @@ void* raw_alloc_with_stream(size_t nbytes, musaStream_t stream) {
   return palloc->raw_alloc_with_stream(nbytes, stream);
 }
 
-REGISTER_ALLOCATOR(at::native::musa::kMUSA, &g_musa_alloc);
+REGISTER_ALLOCATOR(at::musa::kMUSA, &g_musa_alloc);
 
 } // namespace musa
 } // namespace c10

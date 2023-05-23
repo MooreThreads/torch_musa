@@ -1,4 +1,3 @@
-#include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/NamedTensorUtils.h>
 #include <ATen/NativeFunctions.h>
@@ -7,10 +6,7 @@
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
-#include <mudnn.h>
-
 namespace at {
-namespace native {
 namespace musa {
 
 Tensor& BernoulliFloat(
@@ -19,7 +15,7 @@ Tensor& BernoulliFloat(
     c10::optional<at::Generator> generator) {
   auto cpu_tensor =
       ::at::empty(self.sizes(), self.options().device(DeviceType::CPU));
-  auto cpu_result = bernoulli_(cpu_tensor, p, generator);
+  auto cpu_result = at::native::bernoulli_(cpu_tensor, p, generator);
   self.copy_(cpu_result);
   return self;
 }
@@ -31,7 +27,7 @@ Tensor& Normal(
     c10::optional<Generator> gen) {
   Device self_device = self.device();
   self = self.to("cpu"); // assign to reference ?
-  self = normal_(self, mean, std, gen);
+  self = at::native::normal_(self, mean, std, gen);
   self = self.to(self_device);
   return self;
 }
@@ -43,7 +39,7 @@ Tensor& Uniform(
     c10::optional<Generator> gen) {
   auto cpu_tensor =
       ::at::empty(self.sizes(), self.options().device(DeviceType::CPU));
-  auto cpu_result = uniform_(cpu_tensor, from, to, gen);
+  auto cpu_result = at::native::uniform_(cpu_tensor, from, to, gen);
   self.copy_(cpu_result);
   return self;
 }
@@ -55,5 +51,4 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
 }
 
 } // namespace musa
-} // namespace native
 } // namespace at

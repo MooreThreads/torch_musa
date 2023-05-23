@@ -1,4 +1,3 @@
-#include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/NativeFunctions.h>
 #include <torch/library.h>
@@ -9,7 +8,6 @@
 #include <mudnn.h>
 
 namespace at {
-namespace native {
 namespace musa {
 ::std::tuple<at::Tensor, at::Tensor> _WeightNormInterface(
     const at::Tensor& v,
@@ -24,5 +22,4 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
 }
 
 } // namespace musa
-} // namespace native
 } // namespace at

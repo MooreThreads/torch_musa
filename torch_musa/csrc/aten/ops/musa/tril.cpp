@@ -5,7 +5,6 @@
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 namespace at {
-namespace native {
 namespace musa {
 
 namespace {
@@ -68,5 +67,4 @@ Tensor Tril(const Tensor& self, int64_t diagonal) {
   return self;
 }
 } // namespace musa
-} // namespace native
 } // namespace at

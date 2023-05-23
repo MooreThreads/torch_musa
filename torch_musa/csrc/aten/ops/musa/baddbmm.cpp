@@ -11,7 +11,6 @@
 #include "torch_musa/csrc/core/MUSAGuard.h"
 
 namespace at {
-namespace native {
 namespace musa {
 
 struct structured_baddbmm_out_musa_functional final
@@ -30,8 +29,7 @@ struct structured_baddbmm_out_musa_functional final
     } else {
       guard_.reset_device(options.device());
     }
-    outputs_[output_idx] =
-        at::native::musa::create_out(sizes, strides, options);
+    outputs_[output_idx] = at::musa::create_out(sizes, strides, options);
   }
   void set_output_raw_strided(
       int64_t output_idx,
@@ -47,8 +45,7 @@ struct structured_baddbmm_out_musa_functional final
     } else {
       guard_.reset_device(options.device());
     }
-    outputs_[output_idx] =
-        at::native::musa::create_out(sizes, strides, options);
+    outputs_[output_idx] = at::musa::create_out(sizes, strides, options);
   }
   const Tensor& maybe_get_output(int64_t output_idx) override {
     return *outputs_[output_idx];
@@ -69,5 +66,4 @@ Tensor Baddbmm(
   return std::move(op.outputs_[0]).take();
 }
 } // namespace musa
-} // namespace native
 } // namespace at

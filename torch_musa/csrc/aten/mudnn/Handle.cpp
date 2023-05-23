@@ -3,7 +3,6 @@
 #include "torch_musa/csrc/core/MUSAStream.h"
 
 namespace at {
-namespace native {
 namespace {
 
 void CreateMuDNNHandle(mudnnHandle_t* handle) {
@@ -46,5 +45,4 @@ using MudnnPoolType = at::musa::DeviceThreadHandlePool<
   return *handle;
 }
 
-} // namespace native
 } // namespace at

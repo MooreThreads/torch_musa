@@ -1,9 +1,12 @@
-#include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/MemoryOverlap.h>
 #include <ATen/NativeFunctions.h>
 #include <ATen/core/List.h>
 #include <ATen/native/IndexingUtils.h>
+#include <ATen/ops/_reshape_alias_native.h>
+#include <ATen/ops/as_strided_native.h>
+#include <ATen/ops/unfold_native.h>
+#include <ATen/ops/view_native.h>
 #include <c10/util/irange.h>
 #include <torch/library.h>
 
@@ -11,7 +14,6 @@
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 namespace at {
-namespace native {
 
 // borrowed from Aten/native/TensorAdvancedIndexing.cpp
 // directly include cpp file will cause undefined symbols error.
@@ -99,27 +101,6 @@ std::vector<int64_t> compute_shapes(Tensor self, std::vector<Tensor> indices) {
   return output_dims;
 }
 
-// borrowed from Aten/native/TensorAdvancedIndexing.cpp
-
-extern Tensor as_strided_tensorimpl(
-    const Tensor& self,
-    IntArrayRef size,
-    IntArrayRef stride,
-    optional<int64_t> storage_offset_);
-
-extern Tensor _reshape_alias(
-    const Tensor& self,
-    IntArrayRef sizes,
-    IntArrayRef strides);
-
-extern Tensor view(const Tensor& self, IntArrayRef size);
-
-extern Tensor unfold(
-    const Tensor& self,
-    int64_t dimension,
-    int64_t size,
-    int64_t step);
-
 namespace musa {
 
 static C10_UNUSED std::vector<Tensor> expandTensorsMusa(
@@ -146,7 +127,7 @@ static C10_UNUSED std::vector<Tensor> expandTensorsMusa(
         for (const auto j : c10::irange(index.dim())) {
           int64_t srcIdx = result.size() + j;
           if (index.size(j) != self.size(srcIdx)) {
-            invalid_mask(self, srcIdx, index, j);
+            at::native::invalid_mask(self, srcIdx, index, j);
           }
         }
         // Replace with nonzeros
@@ -166,7 +147,7 @@ std::vector<Tensor> make_indices(
     Tensor self,
     const torch::List<c10::optional<at::Tensor>>& orig,
     bool& is_mask) {
-  checkIndexTensorTypes(orig);
+  at::native::checkIndexTensorTypes(orig);
   // first expand BoolTensor (masks) or ByteTensor (masks) into 1 or more
   // LongTensors
   auto indices = expandTensorsMusa(self, orig, is_mask);
@@ -451,16 +432,15 @@ Tensor& IndexPut(
 }
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("as_strided", &as_strided_tensorimpl);
-  m.impl("view", &view);
-  m.impl("_reshape_alias", &_reshape_alias);
+  m.impl("as_strided", &at::native::as_strided_tensorimpl);
+  m.impl("view", &at::native::view);
+  m.impl("_reshape_alias", &at::native::_reshape_alias);
   m.impl("index_select", &IndexSelect);
   m.impl("index_select.out", &IndexSelectOut);
   m.impl("index.Tensor", &IndexTensor);
   m.impl("_index_put_impl_", &IndexPut);
-  m.impl("unfold", &unfold);
+  m.impl("unfold", &at::native::unfold);
 }
 
 } // namespace musa
-} // namespace native
 } // namespace at
