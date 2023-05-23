@@ -12,6 +12,7 @@
 #include "torch_musa/csrc/core/MUSAEvent.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 #include "torch_musa/csrc/core/MUSAStream.h"
+#include "torch_musa/csrc/core/PeerToPeerAccess.h"
 
 #include <mudnn.h>
 
@@ -313,6 +314,13 @@ inline void mtgpu_impl_copy(
 
 } // namespace
 
+static bool maybe_enable_p2p_access(Device dst_device, Device src_device) {
+  if (dst_device.is_cpu() || src_device.is_cpu()) {
+    return false;
+  }
+  return at::musa::get_p2p_access(src_device.index(), dst_device.index());
+}
+
 Tensor mtgpu_copy_from(
     const Tensor& src,
     const Tensor& self,
@@ -322,6 +330,7 @@ Tensor mtgpu_copy_from(
   // At least one of src and dst should be MUSA, otherwise it is impossible
   // to fall into this function!
   TORCH_INTERNAL_ASSERT(is_musa(self) || is_musa(src));
+  maybe_enable_p2p_access(self.device(), src.device());
 
   // d2d copy handles all the situations, including pure copy, cast and permute
   if (is_musa(src) && is_musa(self)) {

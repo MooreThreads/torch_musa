@@ -12,6 +12,7 @@
 #include "torch_musa/csrc/core/Allocator.h"
 #include "torch_musa/csrc/core/Device.h"
 #include "torch_musa/csrc/core/Event.h"
+#include "torch_musa/csrc/core/MUSAHooksInterface.h"
 #include "torch_musa/csrc/core/Sleep.h"
 #include "torch_musa/csrc/core/Stream.h"
 
@@ -133,8 +134,17 @@ py::object PyMusa_MemorySnapshot() {
   return result;
 }
 
+static py::object THMPModule_initExtension() {
+  static c10::once_flag thm_init;
+  c10::call_once(thm_init, [] { at::detail::getMUSAHooks().initMUSA(); });
+  return py::none();
+}
+
 void AddMusaDeviceMethods(PyObject* module) {
   auto py_module = py::reinterpret_borrow<py::module>(module);
+
+  // init musa
+  py_module.def("_musa_init", []() { THMPModule_initExtension(); });
 
   py_module.def(
       "_musa_getDeviceCount", []() { return c10::musa::device_count(); });

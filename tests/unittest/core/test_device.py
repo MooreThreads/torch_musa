@@ -172,6 +172,8 @@ def _test_copy_sync_current_stream(x, y):
 
     s1.synchronize()
 
+    assert torch.all(x.cpu() == y.cpu())
+
     with torch.musa.stream(s1):
         torch.musa._sleep(FIFTY_MIL_CYCLES)
         with torch.musa.stream(s0):
@@ -182,7 +184,7 @@ def _test_copy_sync_current_stream(x, y):
 
     s0.synchronize()
 
-    assert torch.all(x == y)
+    assert torch.all(x.cpu() == y.cpu())
 
 
 @testing.skip_if_not_multiple_musa_device
