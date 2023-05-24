@@ -32,8 +32,8 @@ spec:
     - infinity
     resources:
       limits:
-        cpu: "32"
-        memory: "128Gi"
+        cpu: "16"
+        memory: "64Gi"
     # Mount the volume named "artifacts" to path "/artifacts", readwrite
     volumeMounts:
     - mountPath: /artifacts

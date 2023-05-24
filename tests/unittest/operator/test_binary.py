@@ -27,7 +27,8 @@ all_funcs_except_div = [
     torch.greater_equal,
     torch.greater,
     torch.min,
-    torch.max
+    torch.max,
+    torch.le
 ]
 
 all_support_types = testing.get_all_support_types()

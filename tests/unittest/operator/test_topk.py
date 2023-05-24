@@ -12,7 +12,7 @@ support_dtypes = [torch.float32]
 largest = [False, True]
 
 # TODO(MT-AI): fix error when testing on GPU 1
-@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@testing.test_on_nonzero_card_if_multiple_musa_device(0)
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("dtype", support_dtypes)
 @pytest.mark.parametrize("largest", largest)
@@ -30,7 +30,7 @@ def test_topk_sorted_true(input_data, dtype, largest, sort):
     test.check_result()
 
 # TODO(MT-AI): fix error when testing on GPU 1
-@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@testing.test_on_nonzero_card_if_multiple_musa_device(0)
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("dtype", support_dtypes)
 @pytest.mark.parametrize("largest", largest)

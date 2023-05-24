@@ -60,7 +60,7 @@ def test_addcmul(input_data, dtype, value):
 
 
 # addcdiv only support float32
-@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@testing.test_on_nonzero_card_if_multiple_musa_device(0)
 @pytest.mark.parametrize("input_data", input_datas)
 @pytest.mark.parametrize("dtype", [torch.float32])
 @pytest.mark.parametrize("value", values)

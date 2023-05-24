@@ -24,7 +24,9 @@ all_basic_funcs = [
     torch.cos,
     torch.sin,
     torch.log,
-    torch.atan
+    torch.atan,
+    torch.round,
+    torch.sgn
 ]
 
 all_nn_funcs = [
@@ -81,6 +83,15 @@ def test_neg_out(input_data, dtype):
 
 
 # =================================== Test torch.neg end =================================== #
+
+
+# =================================== Test torch.bitwise_not begin ========================= #
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_datas)
+@pytest.mark.parametrize("dtype", [torch.int32, torch.int64])
+def test_bitwise_not(input_data, dtype):
+    function(input_data, dtype, torch.bitwise_not)
+# =================================== Test torch.bitwise_not end =========================== #
 
 
 # =================================== Test nn functions begin =================================== #

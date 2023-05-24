@@ -77,6 +77,7 @@ def port_cuda(
         "AT_DISPATCH_CASE(SCALARTYPE2, __VA_ARGS__)": "",
         "AT_DISPATCH_FLOATING_TYPES_AND_HALF": "AT_DISPATCH_FLOATING_TYPES_NO_HALF",
         "AT_DISPATCH_ALL_TYPES_AND(at::ScalarType::Half,": "AT_DISPATCH_ALL_TYPES(",
+        "AT_DISPATCH_ALL_TYPES_AND(kHalf,": "AT_DISPATCH_ALL_TYPES(",
         "AT_DISPATCH_COMPLEX_TYPES_AND(kComplexHalf,": "AT_DISPATCH_COMPLEX_TYPES(",
     }
     disable_half_automaton = get_automaton(disable_half_map)

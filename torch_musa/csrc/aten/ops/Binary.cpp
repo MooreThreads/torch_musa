@@ -62,40 +62,10 @@ extern Tensor create_out(
     IntArrayRef strides,
     const TensorOptions& options);
 
-void check_inplace(
+extern void check_inplace(
     const Tensor& self,
     IntArrayRef sizes,
-    const TensorOptions& options) {
-  // These checks are needed on those operators that:
-  //   1) don't use 'TensorIterator' (e.g. 'addmm' and 'baddbmm')
-  //   2) have particular typing rules (e.g. 'cumsum' and 'cumprod')
-  // For other operators (e.g. 'add'), 'TensorIterator' already checks
-  // these things separately.
-  TORCH_CHECK(
-      options.dtype() == self.dtype(),
-      "Bad in-place call: ",
-      "input tensor dtype ",
-      self.dtype(),
-      " and output tensor dtype ",
-      options.dtype(),
-      " should match");
-  TORCH_CHECK(
-      options.device() == self.device(),
-      "Bad in-place call: ",
-      "input tensor device ",
-      self.device(),
-      " and output tensor device ",
-      options.device(),
-      " should match");
-  TORCH_CHECK(
-      sizes == self.sizes(),
-      "Bad in-place call: ",
-      "input tensor size ",
-      self.sizes(),
-      " and output tensor size ",
-      sizes,
-      " should match");
-}
+    const TensorOptions& options);
 
 Tensor Binary(
     const std::string op_name,
@@ -379,6 +349,7 @@ DEFINE_BINARY_OP(Equal, BINARY_MODE::EQ)
 DEFINE_BINARY_OP(NotEqual, BINARY_MODE::NE)
 DEFINE_BINARY_OP(Greater, BINARY_MODE::GT)
 DEFINE_BINARY_OP(GreaterEqual, BINARY_MODE::GE)
+DEFINE_BINARY_OP(LessEqual, BINARY_MODE::LE)
 DEFINE_BINARY_OP(Remainder, BINARY_MODE::FLOORMOD)
 DEFINE_BINARY_OP(Less, BINARY_MODE::LT)
 DEFINE_BINARY_OP(Maximum, BINARY_MODE::MAX)
@@ -713,6 +684,10 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("remainder_.Tensor", &Remainder_Tensor);
   m.impl("remainder.Tensor_out", &Remainder_out);
   m.impl("remainder.Scalar_Tensor", &RemainderScalarTensor);
+
+  m.impl("le.Tensor", &LessEqualTensor);
+  m.impl("le_.Tensor", &LessEqual_Tensor);
+  m.impl("le.Tensor_out", &LessEqual_out);
 
   m.impl("lt.Tensor", &LessTensor);
   m.impl("lt_.Tensor", &Less_Tensor);

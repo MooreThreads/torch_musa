@@ -1,6 +1,8 @@
 #include <ATen/Config.h>
 #include <ATen/NativeFunctions.h>
+#include <ATen/core/op_registration/adaption.h>
 #include <ATen/native/Activation.h>
+#include <ATen/native/Resize.h>
 #include <torch/library.h>
 #include <torch/torch.h>
 #include <limits>
@@ -10,7 +12,19 @@
 
 namespace at {
 namespace musa {
-
+extern Tensor create_out(
+    IntArrayRef sizes,
+    IntArrayRef strides,
+    const TensorOptions& options);
+extern void check_inplace(
+    const Tensor& self,
+    IntArrayRef sizes,
+    const TensorOptions& options);
+extern void resize_out(
+    const Tensor& out,
+    IntArrayRef sizes,
+    IntArrayRef strides,
+    const TensorOptions& options);
 using UNARY_MODE = ::musa::dnn::Unary::Mode;
 
 void UnaryCall(
@@ -122,6 +136,7 @@ void UnaryOut(
 DEFINE_ACTIVATE_OP(Relu, ::musa::dnn::Unary::Mode::RELU)
 DEFINE_ACTIVATE_OP(Silu, ::musa::dnn::Unary::Mode::SILU)
 DEFINE_ACTIVATE_OP(Sqrt, ::musa::dnn::Unary::Mode::SQRT)
+DEFINE_ACTIVATE_OP(Round, ::musa::dnn::Unary::Mode::ROUND)
 DEFINE_ACTIVATE_OP(Tanh, ::musa::dnn::Unary::Mode::TANH)
 DEFINE_ACTIVATE_OP(Sigmoid, ::musa::dnn::Unary::Mode::SIGMOID)
 DEFINE_ACTIVATE_OP(Exp, ::musa::dnn::Unary::Mode::EXP)
@@ -466,6 +481,7 @@ Tensor& LeakyReluOut(
   });
   return output;
 }
+
 namespace {
 struct structured_clamp_min_out_out final
     : public at::native::structured_clamp_min_out {
@@ -502,6 +518,66 @@ struct structured_clamp_min_out_out final
 };
 } // namespace
 
+namespace {
+struct structured_bitwise_not_out_out final
+    : public at::native::structured_bitwise_not_out {
+  structured_bitwise_not_out_out(Tensor& out0) : outputs_{std::ref(out0)} {}
+
+  void set_output_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+
+    const auto& out = outputs_[output_idx].get();
+    resize_out(out, sizes, strides, options);
+
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_bitwise_not_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+
+  void set_output_raw_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+
+    const auto& out = outputs_[output_idx].get();
+    resize_out(out, sizes, strides, options);
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_bitwise_not_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+
+  const Tensor& maybe_get_output(int64_t output_idx) override {
+    return outputs_[output_idx].get();
+  }
+  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
+  c10::musa::OptionalMUSAGuard guard_;
+};
+} // namespace
+
 Tensor& ClampMinOut(const Tensor& self, const Scalar& min, Tensor& out) {
   // No device check
   structured_clamp_min_out_out op(out);
@@ -510,10 +586,352 @@ Tensor& ClampMinOut(const Tensor& self, const Scalar& min, Tensor& out) {
   return out;
 }
 
+Tensor& BitwiseNotOut(const Tensor& self, Tensor& out) {
+  // No device check
+
+  structured_bitwise_not_out_out op(out);
+  op.meta(self);
+  op.impl(self, op.maybe_get_output(0));
+  return out;
+}
+
+struct structured_sgn_out_out final : public at::native::structured_sgn_out {
+  structured_sgn_out_out(Tensor& out0) : outputs_{std::ref(out0)} {}
+
+  void set_output_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+
+    const auto& out = outputs_[output_idx].get();
+    resize_out(out, sizes, strides, options);
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_sgn_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+
+  void set_output_raw_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+
+    const auto& out = outputs_[output_idx].get();
+    resize_out(out, sizes, strides, options);
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_sgn_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+
+  const Tensor& maybe_get_output(int64_t output_idx) override {
+    return outputs_[output_idx].get();
+  }
+  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
+  c10::musa::OptionalMUSAGuard guard_;
+};
+
+Tensor& SgnOut(const Tensor& self, Tensor& out) {
+  c10::optional<Device> common_device = nullopt;
+  c10::impl::check_and_update_common_device(
+      common_device, out, "SgnOut", "out");
+  c10::impl::check_and_update_common_device(
+      common_device, self, "SgnOut", "self");
+  structured_sgn_out_out op(out);
+  op.meta(self);
+  op.impl(self, op.maybe_get_output(0));
+  return out;
+}
+
+struct structured_bitwise_not_out_functional final
+    : public at::native::structured_bitwise_not_out {
+  void set_output_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+
+    outputs_[output_idx] = create_out(sizes, strides, options);
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_bitwise_not_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+
+  void set_output_raw_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+
+    outputs_[output_idx] = create_out(sizes, strides, options);
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_bitwise_not_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+
+  const Tensor& maybe_get_output(int64_t output_idx) override {
+    return *outputs_[output_idx];
+  }
+  std::array<c10::ExclusivelyOwned<Tensor>, 1> outputs_;
+  c10::musa::OptionalMUSAGuard guard_;
+};
+
+at::Tensor BitwiseNot(const at::Tensor& self) {
+  // No device check
+
+  structured_bitwise_not_out_functional op;
+  op.meta(self);
+  op.impl(self, *op.outputs_[0]);
+  return std::move(op.outputs_[0]).take();
+}
+
+struct structured_bitwise_not_out_inplace final
+    : public at::native::structured_bitwise_not_out {
+  structured_bitwise_not_out_inplace(Tensor& self) : outputs_{std::ref(self)} {}
+
+  void set_output_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+
+    const auto& out = outputs_[output_idx].get();
+    check_inplace(out, sizes, options);
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_bitwise_not_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+
+  void set_output_raw_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+
+    const auto& out = outputs_[output_idx].get();
+    check_inplace(out, sizes, options);
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_bitwise_not_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+
+  const Tensor& maybe_get_output(int64_t output_idx) override {
+    return outputs_[output_idx].get();
+  }
+  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
+  c10::musa::OptionalMUSAGuard guard_;
+};
+
+at::Tensor& BitwiseNot_(at::Tensor& self) {
+  // No device check
+
+  structured_bitwise_not_out_inplace op(self);
+  op.meta(self);
+  op.impl(self, op.outputs_[0]);
+  return self;
+}
+
+struct structured_sgn_out_functional final
+    : public at::native::structured_sgn_out {
+  void set_output_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+
+    outputs_[output_idx] = create_out(sizes, strides, options);
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_sgn_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+
+  void set_output_raw_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+
+    outputs_[output_idx] = create_out(sizes, strides, options);
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_sgn_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+
+  const Tensor& maybe_get_output(int64_t output_idx) override {
+    return *outputs_[output_idx];
+  }
+  std::array<c10::ExclusivelyOwned<Tensor>, 1> outputs_;
+  c10::musa::OptionalMUSAGuard guard_;
+};
+
+at::Tensor Sgn(const at::Tensor& self) {
+  c10::optional<Device> common_device = nullopt;
+  c10::impl::check_and_update_common_device(common_device, self, "Sgn", "self");
+  structured_sgn_out_functional op;
+  op.meta(self);
+  op.impl(self, *op.outputs_[0]);
+  return std::move(op.outputs_[0]).take();
+}
+
+struct structured_sgn_out_inplace final
+    : public at::native::structured_sgn_out {
+  structured_sgn_out_inplace(Tensor& self) : outputs_{std::ref(self)} {}
+
+  void set_output_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+
+    const auto& out = outputs_[output_idx].get();
+    check_inplace(out, sizes, options);
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_sgn_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+
+  void set_output_raw_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+
+    const auto& out = outputs_[output_idx].get();
+    check_inplace(out, sizes, options);
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_sgn_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+
+  const Tensor& maybe_get_output(int64_t output_idx) override {
+    return outputs_[output_idx].get();
+  }
+  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
+  c10::musa::OptionalMUSAGuard guard_;
+};
+
+at::Tensor& Sgn_(at::Tensor& self) {
+  c10::optional<Device> common_device = nullopt;
+  c10::impl::check_and_update_common_device(
+      common_device, self, "Sgn_", "self");
+  structured_sgn_out_inplace op(self);
+  op.meta(self);
+  op.impl(self, op.outputs_[0]);
+  return self;
+}
+
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("abs", &Abs);
   m.impl("abs_", &Abs_);
   m.impl("abs.out", &AbsOut);
+
+  m.impl("sgn.out", &SgnOut);
+  m.impl("sgn", &Sgn);
+  m.impl("sgn_", &Sgn_);
+
+  m.impl("bitwise_not", &BitwiseNot);
+  m.impl("bitwise_not_", &BitwiseNot_);
+  m.impl("bitwise_not.out", &BitwiseNotOut);
 
   m.impl("eq.Scalar", &EqScalar);
   m.impl("eq_.Scalar", &EqScalar_);
@@ -544,6 +962,10 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
 
   m.impl("sqrt", &Sqrt);
   m.impl("sqrt.out", &SqrtOut);
+
+  m.impl("round", &Round);
+  m.impl("round_", &Round_);
+  m.impl("round.out", &RoundOut);
 
   m.impl("tanh", &Tanh);
   m.impl("tanh_", &Tanh_);

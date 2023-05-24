@@ -4,6 +4,8 @@
 #include <ATen/NativeFunctions.h>
 #include <ATen/TensorUtils.h>
 #include <ATen/WrapDimUtils.h>
+#include <ATen/core/op_registration/adaption.h>
+#include <ATen/native/Resize.h>
 #include <torch/library.h>
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
@@ -13,6 +15,15 @@
 
 namespace at {
 namespace musa {
+extern Tensor create_out(
+    IntArrayRef sizes,
+    IntArrayRef strides,
+    const TensorOptions& options);
+extern void resize_out(
+    const Tensor& out,
+    IntArrayRef sizes,
+    IntArrayRef strides,
+    const TensorOptions& options);
 
 std::tuple<at::Tensor&, at::Tensor&> NllLossOut(
     const at::Tensor& input,
@@ -351,7 +362,182 @@ Tensor KLDivBwd(
   return grad_input;
 }
 
+struct structured_mse_loss_out_out final
+    : public at::native::structured_mse_loss_out {
+  structured_mse_loss_out_out(Tensor& out0) : outputs_{std::ref(out0)} {}
+
+  void set_output_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+
+    const auto& out = outputs_[output_idx].get();
+    resize_out(out, sizes, strides, options);
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_mse_loss_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+
+  void set_output_raw_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+
+    const auto& out = outputs_[output_idx].get();
+    resize_out(out, sizes, strides, options);
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_mse_loss_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+
+  const Tensor& maybe_get_output(int64_t output_idx) override {
+    return outputs_[output_idx].get();
+  }
+  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
+  c10::musa::OptionalMUSAGuard guard_;
+};
+
+Tensor& MseLossOut(
+    const Tensor& self,
+    const Tensor& target,
+    int64_t reduction,
+    Tensor& out) {
+  // No device check
+
+  structured_mse_loss_out_out op(out);
+  op.meta(self, target, reduction);
+  op.impl(self, target, reduction, op.maybe_get_output(0));
+  return out;
+}
+
+Tensor MseLossBwd(
+    const Tensor& grad_output,
+    const Tensor& self,
+    const Tensor& target,
+    int64_t reduction) {
+  c10::optional<Device> common_device = nullopt;
+  c10::impl::check_and_update_common_device(
+      common_device, grad_output, "MseLossBwd", "grad_output");
+  c10::impl::check_and_update_common_device(
+      common_device, self, "MseLossBwd", "self");
+  c10::impl::check_and_update_common_device(
+      common_device, target, "MseLossBwd", "target");
+
+  const OptionalDeviceGuard device_guard(device_of(self));
+  return at::native::mse_loss_backward(grad_output, self, target, reduction);
+}
+
+at::Tensor& MseLossBwdGradInput(
+    const at::Tensor& grad_output,
+    const at::Tensor& self,
+    const at::Tensor& target,
+    int64_t reduction,
+    at::Tensor& grad_input) {
+  c10::optional<Device> common_device = nullopt;
+  c10::impl::check_and_update_common_device(
+      common_device, grad_input, "MseLossBwdGradInput", "grad_input");
+  c10::impl::check_and_update_common_device(
+      common_device, grad_output, "MseLossBwdGradInput", "grad_output");
+  c10::impl::check_and_update_common_device(
+      common_device, self, "MseLossBwdGradInput", "self");
+  c10::impl::check_and_update_common_device(
+      common_device, target, "MseLossBwdGradInput", "target");
+
+  const OptionalDeviceGuard device_guard(device_of(self));
+  return at::native::mse_loss_backward_out(
+      grad_output, self, target, reduction, grad_input);
+}
+
+struct structured_mse_loss_out_functional final
+    : public at::native::structured_mse_loss_out {
+  void set_output_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+
+    outputs_[output_idx] = create_out(sizes, strides, options);
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_mse_loss_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+
+  void set_output_raw_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+
+    outputs_[output_idx] = create_out(sizes, strides, options);
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_mse_loss_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+
+  const Tensor& maybe_get_output(int64_t output_idx) override {
+    return *outputs_[output_idx];
+  }
+  std::array<c10::ExclusivelyOwned<Tensor>, 1> outputs_;
+  c10::musa::OptionalMUSAGuard guard_;
+};
+
+Tensor MseLoss(const Tensor& self, const Tensor& target, int64_t reduction) {
+  // No device check
+
+  structured_mse_loss_out_functional op;
+  op.meta(self, target, reduction);
+  op.impl(self, target, reduction, *op.outputs_[0]);
+  return std::move(op.outputs_[0]).take();
+}
+
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
+  m.impl("mse_loss", &MseLoss);
+  m.impl("mse_loss.out", &MseLossOut);
+  m.impl("mse_loss_backward", &MseLossBwd);
+  m.impl("mse_loss_backward.grad_input", &MseLossBwdGradInput);
+
   m.impl("nll_loss_forward.output", &NllLossOut);
   m.impl("nll_loss_forward", &NllLoss);
   m.impl("nll_loss_backward.grad_input", &NllLossBwdGradInput);
