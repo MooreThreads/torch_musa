@@ -109,6 +109,7 @@ def port_cuda(
         "<c10/musa/CUDAException.h>": "\"torch_musa/csrc/core/MUSAException.h\"",
         "<c10/musa/CUDAMiscFunctions.h>": "\"torch_musa/csrc/core/MUSAMiscFunctions.h\"",
         "<c10/musa/CUDACachingAllocator.h>": "\"torch_musa/csrc/core/Allocator.h\"",
+        "<c10/musa/MUSACachingAllocator.h>": "\"torch_musa/csrc/core/Allocator.h\"",
         "<c10/musa/CUDAGraphsC10Utils.h>": "\"torch_musa/csrc/core/MUSAGraphsC10Utils.h\"",
         "<ATen/musa/CUDADevice.h>": "\"torch_musa/csrc/core/Device.h\"",
         "<ATen/musa/CUDABlas.h>": "\"torch_musa/csrc/aten/musa/MUSABlas.h\"",

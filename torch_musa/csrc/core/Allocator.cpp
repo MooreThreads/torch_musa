@@ -1441,6 +1441,15 @@ void local_raw_delete(void* ptr) {
   g_musa_alloc.get_allocator_impl()->free(ptr);
 }
 
+REGISTER_ALLOCATOR(at::musa::kMUSA, &g_musa_alloc);
+
+} // namespace musa
+} // namespace c10
+
+namespace c10 {
+namespace musa {
+namespace MUSACachingAllocator {
+
 void raw_delete(void* ptr) {
   MusaCachingAllocator* palloc = c10::musa::GetMusaCachingAllocator();
   palloc->get_allocator_impl()->free(ptr);
@@ -1455,15 +1464,6 @@ void* raw_alloc_with_stream(size_t nbytes, musaStream_t stream) {
   MusaCachingAllocator* palloc = c10::musa::GetMusaCachingAllocator();
   return palloc->raw_alloc_with_stream(nbytes, stream);
 }
-
-REGISTER_ALLOCATOR(at::musa::kMUSA, &g_musa_alloc);
-
-} // namespace musa
-} // namespace c10
-
-namespace c10 {
-namespace musa {
-namespace MUSACachingAllocator {
 
 Allocator* get() {
   return c10::musa::GetMusaCachingAllocator();

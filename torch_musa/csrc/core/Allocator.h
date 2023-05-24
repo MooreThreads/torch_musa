@@ -64,11 +64,11 @@ C10_DECLARE_REGISTRY(FreeMusaMemoryCallbacksRegistry, FreeMemoryCallback);
 #define REGISTER_FREE_MEMORY_CALLBACK(name, ...) \
   C10_REGISTER_CLASS(FreeMusaMemoryCallbacksRegistry, name, __VA_ARGS__);
 
+namespace MUSACachingAllocator {
+
 void* raw_alloc(size_t nbytes);
 void* raw_alloc_with_stream(size_t nbytes, MUSAStream stream);
 void raw_delete(void* ptr);
-
-namespace MUSACachingAllocator {
 
 Allocator* get();
 

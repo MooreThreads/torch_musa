@@ -31,7 +31,13 @@ FILE(GLOB MU_SRCS
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/FillKernel.mu
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/WeightNorm.mu
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/IndexKernel.mu
-    #${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/musa/cub.mu
+    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/LegacyThrustHelpers.mu
+    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/musa/cub.mu
+    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/EmbeddingBackwardKernel.mu
+    # Compiling following files takes too long, disable them temporarily
+    # ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Embedding.mu
+    # ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Indexing.mu
+    # ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/musa/cub-RadixSortPairs.mu
     core/*.mu
     )
 
@@ -40,14 +46,14 @@ append_cxx_flag_if_supported("-Wno-unused-parameter" CMAKE_CXX_FLAGS)
 append_cxx_flag_if_supported("-Wno-unused-variable" CMAKE_CXX_FLAGS)
 append_cxx_flag_if_supported("-Wno-sign-compare" CMAKE_CXX_FLAGS)
 append_cxx_flag_if_supported("-w" CMAKE_CXX_FLAGS)
-set(MUSA_MCC_FLAGS -D__MUSA_NO_HALF_OPERATORS__)
-set(MUSA_MCC_FLAGS -U__CUDA__)
+string(APPEND MUSA_MCC_FLAGS " -U__CUDA__")
 
 if(NOT ENABLE_COMPILE_FP64)
     string(APPEND MUSA_MCC_FLAGS " -mathx-disable-fp64")  # disable fp64
 endif()
 #set(MUSA_VERBOSE_BUILD ON)
-musa_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/aten/ops/musa)
+# TODO(@caizhi): Use FindOpenMP.cmake to replace absolute paths
+musa_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/aten/ops/musa /usr/lib/llvm-11/include/openmp/)
 musa_add_library(${MUSA_KERNELS_LIB} SHARED ${MU_SRCS} ${PORTING_CSRCS} ${ATEN_MUSA_CSRCS})
 
 set(CUBLAS_LIB $ENV{MUSA_HOME}/lib/libmublas.so)

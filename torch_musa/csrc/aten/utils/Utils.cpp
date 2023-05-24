@@ -85,13 +85,13 @@ void InternalMemFree(void* ptr) {
   if (!ptr) {
     return;
   }
-  c10::musa::raw_delete(ptr);
+  c10::musa::MUSACachingAllocator::raw_delete(ptr);
 }
 
 ::musa::dnn::MemoryHandler InternalMemAlloc(size_t s) {
   void* data = nullptr;
   if (s) {
-    data = c10::musa::raw_alloc(s);
+    data = c10::musa::MUSACachingAllocator::raw_alloc(s);
   }
   return ::musa::dnn::MemoryHandler(data, InternalMemFree);
 }

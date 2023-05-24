@@ -6,6 +6,7 @@
     "TORCH_CUDABLAS_CHECK": "TORCH_MUSABLAS_CHECK",
     "CUDAStream": "MUSAStream",
     "CUDAGuard": "MUSAGuard",
+    "CUDACachingAllocator": "MUSACachingAllocator",
     "CUDAConfig.h": "MUSAConfig.h",
     "CUDADataType.h": "MUSA_PORT_DataType.h",
     "CUDAEvent.h": "MUSA_PORT_Event.h",
