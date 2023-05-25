@@ -26,7 +26,9 @@ all_basic_funcs = [
     torch.log,
     torch.atan,
     torch.round,
-    torch.sgn
+    torch.sgn,
+    torch.log10,
+    torch.floor
 ]
 
 all_nn_funcs = [
@@ -65,6 +67,23 @@ def test_all_basic_funcs_out(input_data, dtype, func):
     input_args = {"input": input_data["input"], "out": out}
     function(input_args, dtype, func)
 
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_datas)
+# torch.bitwise_not only support integral and Boolean type
+@pytest.mark.parametrize("dtype", [torch.int32, torch.int64])
+@pytest.mark.parametrize("func", [torch.bitwise_not])
+def test_bitwise_not(input_data, dtype, func):
+    function(input_data, dtype, func)
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_datas)
+@pytest.mark.parametrize("dtype", [torch.int32, torch.int64])
+@pytest.mark.parametrize("func", [torch.bitwise_not])
+def test_bitwise_not_out(input_data, dtype, func):
+    out = torch.tensor(np.array([]))
+    input_args = {"input": input_data["input"], "out": out}
+    function(input_args, dtype, func)
+
 
 # =================================== Test torch.neg begin =================================== #
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -83,15 +102,6 @@ def test_neg_out(input_data, dtype):
 
 
 # =================================== Test torch.neg end =================================== #
-
-
-# =================================== Test torch.bitwise_not begin ========================= #
-@testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@pytest.mark.parametrize("input_data", input_datas)
-@pytest.mark.parametrize("dtype", [torch.int32, torch.int64])
-def test_bitwise_not(input_data, dtype):
-    function(input_data, dtype, torch.bitwise_not)
-# =================================== Test torch.bitwise_not end =========================== #
 
 
 # =================================== Test nn functions begin =================================== #

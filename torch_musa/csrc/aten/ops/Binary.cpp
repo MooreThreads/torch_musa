@@ -354,6 +354,8 @@ DEFINE_BINARY_OP(Remainder, BINARY_MODE::FLOORMOD)
 DEFINE_BINARY_OP(Less, BINARY_MODE::LT)
 DEFINE_BINARY_OP(Maximum, BINARY_MODE::MAX)
 DEFINE_BINARY_OP(Minimum, BINARY_MODE::MIN)
+DEFINE_BINARY_OP(LogicalAnd, BINARY_MODE::LOGICAL_AND)
+DEFINE_BINARY_OP(Pow, BINARY_MODE::POW)
 
 Tensor& Div_out_mode(
     const Tensor& self,
@@ -603,6 +605,167 @@ struct structured_bitwise_and_out_functional final
   }
   std::array<c10::ExclusivelyOwned<Tensor>, 1> outputs_;
 };
+
+struct structured_xlogy_out_functional final
+    : public at::native::structured_xlogy_out {
+  void set_output_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+    outputs_[output_idx] = create_out(sizes, strides, options);
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_xlogy_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+
+  void set_output_raw_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+    outputs_[output_idx] = create_out(sizes, strides, options);
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_xlogy_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+
+  const Tensor& maybe_get_output(int64_t output_idx) override {
+    return *outputs_[output_idx];
+  }
+  std::array<c10::ExclusivelyOwned<Tensor>, 1> outputs_;
+  c10::musa::OptionalMUSAGuard guard_;
+};
+
+struct structured_xlogy_out_inplace final
+    : public at::native::structured_xlogy_out {
+  structured_xlogy_out_inplace(Tensor& self) : outputs_{std::ref(self)} {}
+  void set_output_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+    const auto& out = outputs_[output_idx].get();
+    check_inplace(out, sizes, options);
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_xlogy_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+
+  void set_output_raw_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+    const auto& out = outputs_[output_idx].get();
+    check_inplace(out, sizes, options);
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_xlogy_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+
+  const Tensor& maybe_get_output(int64_t output_idx) override {
+    return outputs_[output_idx].get();
+  }
+
+  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
+  c10::musa::OptionalMUSAGuard guard_;
+};
+
+struct structured_xlogy_out_out final
+    : public at::native::structured_xlogy_out {
+  structured_xlogy_out_out(Tensor& out0) : outputs_{std::ref(out0)} {}
+  void set_output_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+    const auto& out = outputs_[output_idx].get();
+    resize_out(out, sizes, strides, options);
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_xlogy_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+
+  void set_output_raw_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+    const auto& out = outputs_[output_idx].get();
+    resize_out(out, sizes, strides, options);
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_xlogy_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+
+  const Tensor& maybe_get_output(int64_t output_idx) override {
+    return outputs_[output_idx].get();
+  }
+
+  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
+  c10::musa::OptionalMUSAGuard guard_;
+};
 } // namespace
 
 Tensor& BitWise_AndTensor_out(
@@ -631,6 +794,33 @@ at::Tensor BitWise_AndTensor(const at::Tensor& self, const at::Tensor& other) {
   op.meta(self, other);
   op.impl(self, other, *op.outputs_[0]);
   return std::move(op.outputs_[0]).take();
+}
+
+at::Tensor xlogy_Tensor(const at::Tensor& self, const at::Tensor& other) {
+  // No device check
+  structured_xlogy_out_functional op;
+  op.meta(self, other);
+  op.impl(self, other, *op.outputs_[0]);
+  return std::move(op.outputs_[0]).take();
+}
+
+at::Tensor& xlogy__Tensor(at::Tensor& self, const at::Tensor& other) {
+  // No device check
+  structured_xlogy_out_inplace op(self);
+  op.meta(self, other);
+  op.impl(self, other, op.outputs_[0]);
+  return self;
+}
+
+at::Tensor& xlogy_out_OutTensor(
+    const at::Tensor& self,
+    const at::Tensor& other,
+    at::Tensor& out) {
+  // No device check
+  structured_xlogy_out_out op(out);
+  op.meta(self, other);
+  op.impl(self, other, op.maybe_get_output(0));
+  return out;
 }
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
@@ -709,6 +899,16 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
 
   m.impl("gelu_backward", &GELUBwd);
   m.impl("gelu_backward.grad_input", &GELUBwd_out);
+
+  m.impl("logical_and", &LogicalAndTensor);
+  m.impl("logical_and_", &LogicalAnd_Tensor);
+  m.impl("logical_and.out", &LogicalAnd_out);
+
+  m.impl("xlogy.Tensor", &xlogy_Tensor);
+  m.impl("xlogy_.Tensor", &xlogy__Tensor);
+  m.impl("xlogy.OutTensor", &xlogy_out_OutTensor);
+
+  m.impl("pow.Tensor_Tensor_out", &Pow_out);
 }
 
 } // namespace musa

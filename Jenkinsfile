@@ -81,6 +81,7 @@ pipeline {
         }
       }
       when {
+        beforeAgent true
         allOf {
           branch 'main'
           expression { ifTriggeredByTimer() }

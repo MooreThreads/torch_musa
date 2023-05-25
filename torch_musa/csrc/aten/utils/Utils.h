@@ -81,6 +81,17 @@ Tensor create_out(
     IntArrayRef strides,
     const TensorOptions& options);
 
+void check_inplace(
+    const Tensor& self,
+    IntArrayRef sizes,
+    const TensorOptions& options);
+
+void resize_out(
+    const Tensor& out,
+    IntArrayRef sizes,
+    IntArrayRef strides,
+    const TensorOptions& options);
+
 } // namespace musa
 } // namespace at
 

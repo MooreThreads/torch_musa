@@ -117,7 +117,7 @@ def port_cuda(
         "<ATen/musa/CUDAContext.h>": "\"torch_musa/csrc/aten/musa/MUSAContext.h\"",
         "<ATen/musa/Exceptions.h>": "\"torch_musa/csrc/aten/musa/Exceptions.h\"",
         "<ATen/musa/PinnedMemoryAllocator.h>": "\"torch_musa/csrc/core/PinnedMemoryAllocator.h\"",
-        "<ATen/musa/CachingHostAllocator.h>": "\"torch_musa/csrc/core/CachingHostAllocator.h\"",
+        "<ATen/musa/CachingHostAllocator.h>": "\"torch_musa/csrc/core/CachingHostAllocator.h\""
     }
 
     # 1. Copy and cuda-port files

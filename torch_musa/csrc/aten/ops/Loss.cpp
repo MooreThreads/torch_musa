@@ -313,19 +313,17 @@ Tensor KLDiv(
     output = at::empty({}, input.options());
   } else if (reduction == at::Reduction::Sum) {
     kldiv.SetReductionMode(::musa::dnn::KLDivLoss::Mode::SUM);
-    output = at::empty({}, input.options());
+    output = at::empty({0}, input.options());
   } else {
     kldiv.SetReductionMode(::musa::dnn::KLDivLoss::Mode::NONE);
     output = at::empty_like(input);
   }
   kldiv.SetLogTarget(log_target);
-
   Tensor contiguous_input = Contiguous(input);
   auto mt_input = CreateMUTensor(contiguous_input);
   Tensor contiguous_target = Contiguous(target);
   auto mt_target = CreateMUTensor(contiguous_target);
   auto mt_output = CreateMUTensor(output);
-
   kldiv.Run(h, mt_output, mt_input, mt_target, InternalMemAlloc);
   return output;
 }
@@ -542,8 +540,6 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("nll_loss_forward", &NllLoss);
   m.impl("nll_loss_backward.grad_input", &NllLossBwdGradInput);
   m.impl("nll_loss_backward", &NllLossBwd);
-  m.impl("kl_div", &KLDiv);
-  m.impl("kl_div_backward", &KLDivBwd);
 }
 
 } // namespace musa

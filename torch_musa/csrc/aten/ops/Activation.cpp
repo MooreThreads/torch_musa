@@ -12,19 +12,6 @@
 
 namespace at {
 namespace musa {
-extern Tensor create_out(
-    IntArrayRef sizes,
-    IntArrayRef strides,
-    const TensorOptions& options);
-extern void check_inplace(
-    const Tensor& self,
-    IntArrayRef sizes,
-    const TensorOptions& options);
-extern void resize_out(
-    const Tensor& out,
-    IntArrayRef sizes,
-    IntArrayRef strides,
-    const TensorOptions& options);
 using UNARY_MODE = ::musa::dnn::Unary::Mode;
 
 void UnaryCall(
@@ -146,6 +133,8 @@ DEFINE_ACTIVATE_OP(Abs, ::musa::dnn::Unary::Mode::ABS)
 DEFINE_ACTIVATE_OP(Atan, ::musa::dnn::Unary::Mode::ATAN)
 DEFINE_ACTIVATE_OP(Ceil, ::musa::dnn::Unary::Mode::CEIL)
 DEFINE_ACTIVATE_OP(Log, ::musa::dnn::Unary::Mode::LOG)
+DEFINE_ACTIVATE_OP(Log10, ::musa::dnn::Unary::Mode::LOG10)
+DEFINE_ACTIVATE_OP(Floor, ::musa::dnn::Unary::Mode::FLOOR)
 
 #define SCALAR_COMPARISON(op_name, mode)                         \
   Tensor& op_name##Out(                                          \
@@ -1025,6 +1014,14 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("leaky_relu", &LeakyRelu);
   m.impl("leaky_relu_", &LeakyRelu_);
   m.impl("leaky_relu.out", &LeakyReluOut);
+
+  m.impl("log10", &Log10);
+  m.impl("log10_", &Log10_);
+  m.impl("log10.out", &Log10Out);
+
+  m.impl("floor", &Floor);
+  m.impl("floor_", &Floor_);
+  m.impl("floor.out", &FloorOut);
 }
 
 } // namespace musa
