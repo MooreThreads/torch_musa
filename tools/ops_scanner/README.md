@@ -3,6 +3,7 @@
 ## Files manifest
 - ops_scanner_base.py
 - scan_cuda_full_ops.py
+- scan_musa_full_ops.py
 - scan_mudnn_support_ops.py
 - check_cuda_ops_in_mudnn.py
 - README.md
@@ -10,7 +11,17 @@
 ## Usage
 Please execute command under **torch_musa root** directory.
 
-1.scan cuda ops:
+1.scan musa ops:
+
+```
+python -m tools.ops_scanner.scan_musa_full_ops  \
+--scan-dir /home/torch_musa/torch_musa/csrc/aten/ops  \
+--file-ext .cpp  \
+--regex 'm\.impl\(\"(.*?)\"'  \
+--output-path ./torch_musa_full_ops.xlsx
+```
+
+2.scan cuda ops:
 
 ```
 python -m tools.ops_scanner.scan_cuda_full_ops  \
@@ -20,7 +31,7 @@ python -m tools.ops_scanner.scan_cuda_full_ops  \
 --output-path ./cuda_full_ops.xlsx
 ```
 
-2.scan mudnn ops:
+3.scan mudnn ops:
 
 ```
 python -m tools.ops_scanner.scan_mudnn_support_ops  \
@@ -30,7 +41,7 @@ python -m tools.ops_scanner.scan_mudnn_support_ops  \
 --output-path ./mudnn_support_ops.xlsx
 ```
 
-3.check cuda ops in mudnn
+4.check cuda ops in mudnn
 
 ```
 python -m tools.ops_scanner.check_cuda_ops_in_mudnn  \
