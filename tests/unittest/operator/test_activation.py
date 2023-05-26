@@ -17,6 +17,7 @@ for data in testing.get_raw_data():
 all_basic_funcs = [
     torch.abs,
     torch.sqrt,
+    torch.rsqrt,
     torch.tanh,
     torch.reciprocal,
     torch.sigmoid,
@@ -35,7 +36,7 @@ all_nn_funcs = [
     torch.nn.ReLU(),
     # torch.nn.GELU(approximate="none"),
     torch.nn.SiLU(),
-    torch.nn.LeakyReLU()
+    torch.nn.LeakyReLU(),
 ]
 
 

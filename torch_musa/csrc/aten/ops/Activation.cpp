@@ -124,6 +124,7 @@ DEFINE_ACTIVATE_OP(Relu, ::musa::dnn::Unary::Mode::RELU)
 DEFINE_ACTIVATE_OP(Silu, ::musa::dnn::Unary::Mode::SILU)
 DEFINE_ACTIVATE_OP(Sqrt, ::musa::dnn::Unary::Mode::SQRT)
 DEFINE_ACTIVATE_OP(Round, ::musa::dnn::Unary::Mode::ROUND)
+DEFINE_ACTIVATE_OP(Rsqrt, ::musa::dnn::Unary::Mode::RSQRT)
 DEFINE_ACTIVATE_OP(Tanh, ::musa::dnn::Unary::Mode::TANH)
 DEFINE_ACTIVATE_OP(Sigmoid, ::musa::dnn::Unary::Mode::SIGMOID)
 DEFINE_ACTIVATE_OP(Exp, ::musa::dnn::Unary::Mode::EXP)
@@ -955,6 +956,9 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("round", &Round);
   m.impl("round_", &Round_);
   m.impl("round.out", &RoundOut);
+
+  m.impl("rsqrt", &Rsqrt);
+  m.impl("rsqrt.out", &RsqrtOut);
 
   m.impl("tanh", &Tanh);
   m.impl("tanh_", &Tanh_);

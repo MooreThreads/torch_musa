@@ -216,6 +216,21 @@ Tensor SumIntList(
       self, dim.value(), keepdim, opt_dtype, ::musa::dnn::Reduce::Mode::ADD);
 }
 
+Tensor Prod(const Tensor& self, c10::optional<ScalarType> dtype) {
+  return Reduction(
+      self, IntArrayRef{}, false, dtype, ::musa::dnn::Reduce::Mode::PROD);
+}
+
+Tensor& ProdIntOut(
+    const Tensor& self,
+    long dim,
+    bool keepdim,
+    c10::optional<ScalarType> dtype,
+    Tensor& output) {
+  ReduceCall(output, self, dim, ::musa::dnn::Reduce::Mode::PROD);
+  return output;
+}
+
 Tensor& NormDtypeOut(
     const Tensor& self,
     const c10::optional<at::Scalar>& p,
@@ -586,6 +601,9 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("sum.dim_DimnameList", &SumDimnameList);
   m.impl("sum.DimnameList_out", &SumDimnameListOut);
   m.impl("sum.dim_IntList", &SumIntList);
+
+  m.impl("prod", &Prod);
+  m.impl("prod.int_out", &ProdIntOut);
 
   m.impl("norm.out", &NormOut);
   m.impl("norm.dtype_out", &NormDtypeOut);
