@@ -80,9 +80,10 @@ apply_patches() {
   echo -e "\033[34mApplying patches to ${PYTORCH_PATH} ...\033[0m"
   # clean PyTorch before patching
   if [ -d "$PYTORCH_PATH/.git" ]; then
-    echo -e "\033[34mCleaning the PyTorch environment before patching. \033[0m"
+    echo -e "\033[34mStash and checkout the PyTorch environment before patching. \033[0m"
     pushd $PYTORCH_PATH
-    git reset --hard
+    git stash
+    git checkout ${PYTORCH_TAG}
     popd
   fi
 
