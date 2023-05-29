@@ -3,7 +3,7 @@ set -e
 
 CUR_DIR=$(cd $(dirname $0);pwd)
 TORCH_MUSA_HOME=$CUR_DIR
-PYTORCH_PATH=${PYTORCH_REPO_PATH-${TORCH_MUSA_HOME}/../pytorch}
+PYTORCH_PATH=${PYTORCH_REPO_PATH:-${TORCH_MUSA_HOME}/../pytorch}
 PATCHES_DIR=${TORCH_MUSA_HOME}/torch_patches/
 
 BUILD_WHEEL=0
@@ -57,7 +57,7 @@ done
 
 clone_pytorch() {
   # if PyTorch repo exists already, we skip gitting clone PyTorch
-  if [ ! -z ${PYTORCH_PATH} ]; then
+  if [ -d ${PYTORCH_PATH} ]; then
     echo -e "\033[34mPyTorch repo path is ${PYTORCH_PATH} ...\033[0m"
     pushd ${PYTORCH_PATH}
     git checkout ${PYTORCH_TAG}
