@@ -15,8 +15,18 @@ at::Tensor Flip(const at::Tensor& self, at::IntArrayRef dims) {
   return at::native::flip(self, dims);
 }
 
+at::Tensor Roll(
+    const at::Tensor& self,
+    at::IntArrayRef shifts,
+    at::IntArrayRef dims) {
+  c10::musa::MUSAGuard device_guard(self.device());
+  // TODO(@zhi-cai): remove cuda strings that may appear during cuda-porting
+  return at::native::roll_cuda(self, shifts, dims);
+}
+
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("flip", &Flip);
+  m.impl("roll", &Roll);
 }
 
 } // namespace musa
