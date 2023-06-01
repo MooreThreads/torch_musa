@@ -486,6 +486,14 @@ struct structured_clamp_min_out_out final
       IntArrayRef strides,
       TensorOptions options,
       DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
     // super must happen after, so that downstream can use maybe_get_output
     // to retrieve the output
     at::native::structured_clamp_min_out::set_output_raw_strided(
@@ -500,6 +508,14 @@ struct structured_clamp_min_out_out final
       DimnameList names) override {
     // super must happen after, so that downstream can use maybe_get_output
     // to retrieve the output
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
     at::native::structured_clamp_min_out::set_output_raw_strided(
         output_idx, sizes, strides, options, names);
   }
@@ -508,6 +524,7 @@ struct structured_clamp_min_out_out final
     return outputs_[output_idx].get();
   }
   std::array<std::reference_wrapper<Tensor>, 1> outputs_;
+  c10::musa::OptionalMUSAGuard guard_;
 };
 } // namespace
 

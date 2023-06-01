@@ -517,6 +517,14 @@ struct structured_bitwise_and_out_out final
       DimnameList names) override {
     // super must happen after, so that downstream can use maybe_get_output
     // to retrieve the output
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
     at::native::structured_bitwise_and_out::set_output_raw_strided(
         output_idx, sizes, strides, options, names);
   }
@@ -529,6 +537,14 @@ struct structured_bitwise_and_out_out final
       DimnameList names) override {
     // super must happen after, so that downstream can use maybe_get_output
     // to retrieve the output
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
     at::native::structured_bitwise_and_out::set_output_raw_strided(
         output_idx, sizes, strides, options, names);
   }
@@ -537,6 +553,7 @@ struct structured_bitwise_and_out_out final
     return outputs_[output_idx].get();
   }
   std::array<std::reference_wrapper<Tensor>, 1> outputs_;
+  c10::musa::OptionalMUSAGuard guard_;
 };
 
 struct structured_bitwise_and_out_inplace final
@@ -548,6 +565,14 @@ struct structured_bitwise_and_out_inplace final
       IntArrayRef strides,
       TensorOptions options,
       DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
     const auto& out = outputs_[output_idx].get();
     check_inplace(out, sizes, options);
     // super must happen after, so that downstream can use maybe_get_output
@@ -561,6 +586,14 @@ struct structured_bitwise_and_out_inplace final
       IntArrayRef strides,
       TensorOptions options,
       DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
     const auto& out = outputs_[output_idx].get();
     check_inplace(out, sizes, options);
     // super must happen after, so that downstream can use maybe_get_output
@@ -572,6 +605,7 @@ struct structured_bitwise_and_out_inplace final
     return outputs_[output_idx].get();
   }
   std::array<std::reference_wrapper<Tensor>, 1> outputs_;
+  c10::musa::OptionalMUSAGuard guard_;
 };
 
 struct structured_bitwise_and_out_functional final
@@ -582,6 +616,14 @@ struct structured_bitwise_and_out_functional final
       IntArrayRef strides,
       TensorOptions options,
       DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
     outputs_[output_idx] = create_out(sizes, strides, options);
     // super must happen after, so that downstream can use maybe_get_output
     // to retrieve the output
@@ -594,6 +636,14 @@ struct structured_bitwise_and_out_functional final
       IntArrayRef strides,
       TensorOptions options,
       DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
     outputs_[output_idx] = create_out(sizes, strides, options);
     // super must happen after, so that downstream can use maybe_get_output
     // to retrieve the output
@@ -604,6 +654,7 @@ struct structured_bitwise_and_out_functional final
     return *outputs_[output_idx];
   }
   std::array<c10::ExclusivelyOwned<Tensor>, 1> outputs_;
+  c10::musa::OptionalMUSAGuard guard_;
 };
 
 struct structured_xlogy_out_functional final
