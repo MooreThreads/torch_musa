@@ -94,7 +94,8 @@ docker run -it --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-si
 
 | Docker Tag | Description |
 | ---- | --- |
-| [**latest/v0.1.7**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | toolkits rc1.3.0 + MUSA-Runtime_use_armory<br> muAlg _dev-0.1.0 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.1.0 |
+| [**latest/v0.1.10**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | toolkits rc1.3.0 20230525<br> muAlg _dev-0.1.1 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.1.1 |
+| [**v0.1.7**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | toolkits rc1.3.0 + MUSA-Runtime_use_armory<br> muAlg _dev-0.1.0 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.1.0 |
 | [**v0.1.6**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | toolkits rc1.3.0 |
 | [**v0.1.5**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) |  |
 

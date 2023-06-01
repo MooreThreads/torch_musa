@@ -4,8 +4,8 @@ set -ex
 MT_OPENCV_URL="http://oss.mthreads.com/release-ci/Math-X/mt_opencv.tar.gz"
 MU_RAND_URL="http://oss.mthreads.com/release-ci/Math-X/muRAND_dev1.0.0.tar.gz"
 MU_SPARSE_URL="http://oss.mthreads.com/release-ci/Math-X/muSPARSE_dev0.1.0.tar.gz"
-MU_ALG_URL="http://oss.mthreads.com/release-ci/Math-X/muAlg_dev-0.1.0-Linux.deb"
-MU_TRUST_URL="http://oss.mthreads.com/release-ci/Math-X/muThrust_dev-0.1.0-Linux.deb"
+MU_ALG_URL="http://oss.mthreads.com/release-ci/Math-X/muAlg_dev-0.1.1-Linux.deb"
+MU_TRUST_URL="http://oss.mthreads.com/release-ci/Math-X/muThrust_dev-0.1.1-Linux.deb"
 WORK_DIR="${PWD}"
 DATE=$(date +%Y%m%d)
 

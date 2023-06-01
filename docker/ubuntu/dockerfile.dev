@@ -80,24 +80,45 @@ RUN pushd /home/torch_musa && \
     ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
     conda create -n ${ENV_NAME} python=${PYTHON_VERSION} --yes && \
     source activate ${ENV_NAME} && \
-    pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple some-package && \
+    pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
+    pip install -r requirements.txt && \
     pip install numpy==1.23.1 pytest==7.2.2 protobuf==3.19.0 \
     googleapis-common-protos==1.56.4 importlib-metadata==4.11.3 \
-    pillow==9.2.0 pylint==2.17.3 requests -i https://pypi.tuna.tsinghua.edu.cn/simple some-package && \
-    pip install --no-deps torchvision==0.15.0 -i https://pypi.tuna.tsinghua.edu.cn/simple some-package && \
-    popd
+    pillow==9.2.0 pylint==2.17.3 requests black && \
+    pip install --no-deps torchvision==0.15.0 && \
+    popd && \
+    source deactivate
+
+# create softlink for mkl libraries if needed
+COPY ./common/create_softlink4mkl.sh create_softlink4mkl.sh
+RUN ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
+    bash create_softlink4mkl.sh /opt/conda/envs/${ENV_NAME}/lib && \
+    rm -f create_softlink4mkl.sh
 
 # prepare some envs & build original pytorch and torch_musa from scratch
 ENV MUSA_HOME=/usr/local/musa
 ENV LD_LIBRARY_PATH=$MUSA_HOME/lib:$LD_LIBRARY_PATH
 ENV PATH=/usr/local/musa/bin:/opt/conda/bin:$PATH
-RUN ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \ 
-    sudo echo "export MUSA_HOME=${MUSA_HOME}"                                     >> ~/.bashrc && \
-    sudo echo -e "export LD_LIBRARY_PATH=\$MUSA_HOME/lib:\$LD_LIBRARY_PATH\n"     >> ~/.bashrc && \
-    sudo echo "export PATH=/usr/local/musa/bin:/opt/conda/bin:$PATH"              >> ~/.bashrc && \
-    sudo echo "source activate ${ENV_NAME}"                                       >> ~/.bashrc && \
-    source activate ${ENV_NAME} && \
+RUN ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
+    source activate && \
+    source deactivate && \
+    conda activate ${ENV_NAME} && \
     pushd /home/torch_musa && \
-    pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
     bash build.sh && \
-    popd
+    popd && \
+    conda deactivate
+
+# add variables to the beginning of ~/.bashrc
+# cause shell maybe termintated by this command [ -z "$PS1" ] && return
+RUN ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
+    sudo sed -i '1s|^|\. /opt/conda/etc/profile\.d/conda\.sh\n|' ~/.bashrc && \
+    sudo CMAKE_PREFIX_PATH=$(echo -e "export CMAKE_PREFIX_PATH=${CONDA_PREFIX:-\"$(dirname $(which conda))/../\"}") && \
+    sudo sed -i "2s|^|${CMAKE_PREFIX_PATH}\n|" ~/.bashrc && \
+    sudo sed -i '3s|^|export MUSA_HOME=/usr/local/musa\n|' ~/.bashrc && \
+    sudo LD_LIBRARY_PATH_STR=$(echo -e "export LD_LIBRARY_PATH=$LD_LIBRARY_PATH") && \
+    sudo sed -i "4s|^|${LD_LIBRARY_PATH_STR}\n|" ~/.bashrc && \
+    sudo PATH_STR=$(echo -e "export PATH=$PATH\n") && \
+    sudo sed -i "5s|^|${PATH_STR}\n|" ~/.bashrc && \
+    sudo PYTHON_ENV=$(echo -e "conda activate ${ENV_NAME}") && \
+    sudo sed -i "6s|^|${PYTHON_ENV}\n|" ~/.bashrc
+

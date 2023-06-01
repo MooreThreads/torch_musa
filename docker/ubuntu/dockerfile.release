@@ -61,11 +61,12 @@ COPY ../requirements.txt requirements.txt
 RUN ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
     conda create -n ${ENV_NAME} python=${PYTHON_VERSION} --yes && \
     source activate ${ENV_NAME} && \
-    pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple some-package && \
+    pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
+    pip install -r requirements.txt && \
     pip install numpy==1.23.1 pytest==7.2.2 protobuf==3.19.0 \
     googleapis-common-protos==1.56.4 importlib-metadata==4.11.3 \
-    pillow==9.2.0 pylint==2.17.3 requests -i https://pypi.tuna.tsinghua.edu.cn/simple some-package && \
-    pip install --no-deps torchvision==0.15.0 -i https://pypi.tuna.tsinghua.edu.cn/simple some-package && \
+    pillow==9.2.0 pylint==2.17.3 requests && \
+    pip install --no-deps torchvision==0.15.0 && \
     rm -f requirements.txt
 
 # install torch and torch_musa from wheel packages

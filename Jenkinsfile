@@ -37,7 +37,7 @@ pipeline {
           steps {
             container('main') {
               sh 'git config --global --add safe.directory \"*\"'
-              sh '/opt/conda/condabin/conda run -n test_environment --no-capture-output /bin/bash tools/lint/pylint.sh'
+              sh '/opt/conda/condabin/conda run -n py38 --no-capture-output /bin/bash tools/lint/pylint.sh'
             }
           }
         }
@@ -45,7 +45,7 @@ pipeline {
           steps {
             container('main') {
               sh 'git config --global --add safe.directory \"*\"'
-              sh '/opt/conda/condabin/conda run -n test_environment --no-capture-output /bin/bash tools/lint/git-clang-format.sh --rev origin/main'
+              sh '/opt/conda/condabin/conda run -n py38 --no-capture-output /bin/bash tools/lint/git-clang-format.sh --rev origin/main'
             }
           }
         }
@@ -55,7 +55,7 @@ pipeline {
       steps {
         container('main') {
           sh '/bin/bash --login scripts/update_daily_mudnn.sh'
-          sh '/bin/bash --login build.sh'
+          sh '/bin/bash --login -c "conda run -n py38 --no-capture-output /bin/bash build.sh"'
         }
       }
     }
@@ -91,14 +91,14 @@ pipeline {
         container('main') {
           sh '/bin/bash --login scripts/update_daily_mudnn.sh'
           // Build wheel packages under python3.8, using the existing conda environment
-          sh '/bin/bash --login -c "/opt/conda/condabin/conda run -n test_environment --no-capture-output /bin/bash scripts/build_wheel.sh"'
+          sh '/bin/bash --login -c "/opt/conda/condabin/conda run -n py38 --no-capture-output /bin/bash scripts/build_wheel.sh"'
           // Copy built wheel packages to shared directory "/artifacts"
           sh 'cp dist/*.whl /artifacts/ && cp ${PYTORCH_REPO_PATH}/dist/*.whl /artifacts/'
 
           // Build wheel packages under python3.9, create a new conda environment
           sh '/bin/bash --login -c "/opt/conda/condabin/conda env create -f docker/common/conda-env-torch_musa-py39.yaml" && \
               /opt/conda/condabin/conda run -n py39 --no-capture-output pip install -r docker/common/requirements-py39.txt -i \
-              https://pypi.tuna.tsinghua.edu.cn/simple some-package'
+              https://pypi.tuna.tsinghua.edu.cn/simple'
           sh '/bin/bash --login -c "/opt/conda/condabin/conda run -n py39 --no-capture-output /bin/bash scripts/build_wheel.sh"'
           sh 'cp dist/*.whl /artifacts/ && cp ${PYTORCH_REPO_PATH}/dist/*.whl /artifacts/'
           
