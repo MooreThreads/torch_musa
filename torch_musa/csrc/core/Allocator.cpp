@@ -1337,7 +1337,8 @@ struct C10_API MusaCachingAllocator final : MUSAAllocator {
     allocator_impl_->cache_info(dev_id, largestBlock);
   }
 
-  void cacheInfoWithTotal(int dev_id, size_t* largestBlock, size_t* total) {
+  void cacheInfoWithTotal(int dev_id, size_t* largestBlock, size_t* total)
+      override {
     allocator_impl_->cache_info_with_total(dev_id, largestBlock, total);
   }
 
