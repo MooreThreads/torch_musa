@@ -7,6 +7,7 @@
 #include <c10/core/TensorOptions.h>
 #include <torch/library.h>
 
+#include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/MUSAEvent.h"

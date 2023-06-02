@@ -8,6 +8,7 @@
 #include <torch/csrc/utils/python_numbers.h>
 #include <vector>
 
+#include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/Allocator.h"
 #include "torch_musa/csrc/core/Device.h"
@@ -134,9 +135,24 @@ py::object PyMusa_MemorySnapshot() {
   return result;
 }
 
+static void bindGetDeviceProperties(PyObject* module) {
+  // Add method to torch_musa
+  auto m = py::handle(module).cast<py::module>();
+  m.def(
+      "_get_device_properties",
+      [](int64_t device) -> musaDeviceProp* {
+        return at::musa::getDeviceProperties(device);
+      },
+      py::return_value_policy::reference);
+}
+
 static py::object THMPModule_initExtension() {
   static c10::once_flag thm_init;
   c10::call_once(thm_init, [] { at::detail::getMUSAHooks().initMUSA(); });
+  auto m = THPObjectPtr(PyImport_ImportModule("torch_musa"));
+  if (!m)
+    throw python_error();
+  bindGetDeviceProperties(m);
   return py::none();
 }
 
@@ -157,14 +173,8 @@ void AddMusaDeviceMethods(PyObject* module) {
   });
   py_module.def(
       "_musa_canDeviceAccessPeer", [](int64_t device, int64_t peer_device) {
-        return c10::musa::canDeviceAccessPeer(device, peer_device);
+        return at::musa::canDeviceAccessPeer(device, peer_device);
       });
-  py_module.def(
-      "_get_device_properties",
-      [](int64_t device) -> musaDeviceProp* {
-        return c10::musa::getDeviceProperties(device);
-      },
-      py::return_value_policy::reference);
 
   // Synchronize musa device.
   py_module.def("_musa_synchronize", []() { c10::musa::Synchronize(); });
@@ -229,7 +239,6 @@ void InitMusaModule(PyObject* module) {
   AddMusaDeviceMethods(module);
   AddMusaStreamMethods(module);
   AddMusaMemoryMethods(module);
-
   // Register MUSA device properties
-  c10::musa::registerMusaDeviceProperties(module);
+  at::musa::registerMusaDeviceProperties(module);
 }

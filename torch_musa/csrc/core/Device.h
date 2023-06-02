@@ -21,13 +21,7 @@ DeviceIndex exchangeDevice(DeviceIndex);
 
 void set_device(DeviceIndex);
 
-musaDeviceProp* getDeviceProperties(int device);
-
-bool canDeviceAccessPeer(int device, int peer_device);
-
 void Synchronize();
-
-void registerMusaDeviceProperties(PyObject* module);
 
 } // namespace musa
 } // namespace c10

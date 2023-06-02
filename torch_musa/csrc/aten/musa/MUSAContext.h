@@ -51,12 +51,17 @@ inline bool is_available() {
 
 musaDeviceProp* getCurrentDeviceProperties();
 
+musaDeviceProp* getDeviceProperties(int device);
+
+bool canDeviceAccessPeer(int device, int peer_device);
+
 int warp_size();
 
 Allocator* getMUSADeviceAllocator();
 
 mublasHandle_t getCurrentMUSABlasHandle();
 
+void registerMusaDeviceProperties(PyObject* module);
 } // namespace musa
 } // namespace at
 #endif // TORCH_MUSA_CSRC_ATEN_MUSA_MUSACONTEXT_H_

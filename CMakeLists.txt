@@ -81,6 +81,8 @@ string(APPEND CMAKE_CXX_FLAGS " -Wno-unused-variable")
 string(APPEND CMAKE_CXX_FLAGS " -Wno-unused-function")
 string(APPEND CMAKE_CXX_FLAGS " -Wno-sign-compare")
 string(APPEND CMAKE_CXX_FLAGS " -Wno-missing-field-initializers")
+string(APPEND CMAKE_CXX_FLAGS " -Wno-non-template-friend")  #TODO(MT-AI): remove this CXX_FLAG after https://jira.mthreads.com/browse/SW-22268 resolved.
+string(APPEND CMAKE_CXX_FLAGS " -Wno-comment") #TODO(MT-AI): remove this CXX_FLAG after https://jira.mthreads.com/browse/SW-22268 resolved.
 
 # Use ld.gold if available, fall back to ld.bfd (the default ld) if not
 if(USE_GOLD_LINKER)

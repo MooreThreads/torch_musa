@@ -113,7 +113,7 @@ def get_device_properties(device: _device_t) -> _MusaDeviceProperties:
     device = _get_musa_device_index(device, optional=True)
     if device < 0 or device >= device_count():
         raise AssertionError("Invalid device id")
-    return torch_musa._MUSAC._get_device_properties(device)
+    return torch_musa._get_device_properties(device)
 
 
 def can_device_access_peer(device: _device_t, peer_device: _device_t) -> bool:

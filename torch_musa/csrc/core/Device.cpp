@@ -8,21 +8,69 @@ namespace musa {
 
 namespace {
 
-DeviceIndex num_mtgpus = -1;
-c10::once_flag init_flag;
-std::deque<c10::once_flag> device_flags;
-std::vector<musaDeviceProp> device_properties;
-
-void initMUSAContextVectors() {
-  num_mtgpus = device_count();
-  device_flags.resize(num_mtgpus);
-  device_properties.resize(num_mtgpus);
+int32_t driver_version() {
+  int driver_version = -1;
+  musaDriverGetVersion(&driver_version);
+  return driver_version;
 }
 
-void initDeviceProperty(DeviceIndex device_index) {
-  musaDeviceProp device_prop;
-  TORCH_MUSA_CHECK(musaGetDeviceProperties(&device_prop, device_index));
-  device_properties[device_index] = device_prop;
+int device_count_impl(bool fail_if_no_driver) {
+  int count;
+  auto err = musaGetDeviceCount(&count);
+  if (err == musaSuccess) {
+    return count;
+  }
+  musaError_t last_err C10_UNUSED = musaGetLastError();
+  switch (err) {
+    case musaErrorNoDevice:
+      // Zero devices is ok here
+      count = 0;
+      break;
+    case musaErrorInsufficientDriver: {
+      auto version = driver_version();
+      if (version <= 0) {
+        if (!fail_if_no_driver) {
+          // No MUSA driver means no devices
+          count = 0;
+          break;
+        }
+        TORCH_CHECK(
+            false,
+            "Found no driver on your system. Please check that you "
+            "have an Mthreads GPU and installed a driver");
+      } else {
+        TORCH_CHECK(
+            false,
+            "The driver on your system is too old (found version ",
+            version,
+            ").");
+      }
+    } break;
+    case musaErrorInitializationError:
+      TORCH_CHECK(
+          false,
+          "MUSA driver initialization failed, you might not "
+          "have a Mthreads GPU.");
+      break;
+    case musaErrorUnknown:
+      TORCH_CHECK(
+          false,
+          "MUSA unknown error - this may be due to an "
+          "incorrectly set up environment, e.g. changing env "
+          "variable MUSA_VISIBLE_DEVICES after program start. "
+          "Setting the available devices to be zero.");
+      break;
+    default:
+      TORCH_CHECK(
+          false,
+          "Unexpected error from musaGetDeviceCount(). Did you run "
+          "some musa functions before calling NumCudaDevices() "
+          "that might have already set an error? Error ",
+          err,
+          ": ",
+          musaGetErrorString(err));
+  }
+  return count;
 }
 
 } // anonymous namespace
@@ -31,15 +79,16 @@ DeviceIndex device_count() noexcept {
   // initialize number of devices only once
   static int count = []() {
     try {
-      int result;
-      TORCH_MUSA_CHECK(musaGetDeviceCount(&result));
+      int result = device_count_impl(/*fail_if_no_driver=*/false);
       TORCH_INTERNAL_ASSERT(
           result <= std::numeric_limits<DeviceIndex>::max(),
           "Too many MUSA devices, DeviceIndex overflowed");
       return result;
     } catch (const c10::Error& ex) {
-      // Terminated if fail and log the following message.
-      TORCH_INTERNAL_ASSERT(false, "MUSA initialization: ", ex.msg());
+      // We don't want to fail, but still log the warning
+      // msg() returns the message without the stack trace
+      TORCH_WARN("MUSA initialization: ", ex.msg());
+      return 0;
     }
   }();
 
@@ -67,51 +116,8 @@ DeviceIndex exchangeDevice(DeviceIndex device) {
   return cur_device;
 }
 
-musaDeviceProp* getDeviceProperties(int device) {
-  c10::call_once(init_flag, initMUSAContextVectors);
-  if (device == -1)
-    device = current_device();
-  AT_ASSERT(device >= 0 && device < num_mtgpus);
-  c10::call_once(device_flags[device], initDeviceProperty, device);
-  return &device_properties[device];
-}
-
-bool canDeviceAccessPeer(int device, int peer_device) {
-  c10::call_once(init_flag, initMUSAContextVectors);
-  if (device == -1)
-    device = current_device();
-  AT_ASSERT(device >= 0 && device < num_mtgpus);
-  AT_ASSERT(peer_device >= 0 && peer_device < num_mtgpus);
-  int can_access = 0;
-  TORCH_MUSA_CHECK(musaDeviceCanAccessPeer(&can_access, device, peer_device));
-  return can_access != 0;
-}
-
 void Synchronize() {
   musaDeviceSynchronize();
-}
-
-void registerMusaDeviceProperties(PyObject* module) {
-  // Add _musaDeviceProperties class to torch_musa._MUSAC.
-  auto py_module = pybind11::handle(module).cast<pybind11::module>();
-  py::class_<musaDeviceProp>(py_module, "_MusaDeviceProperties")
-      .def_readonly("name", &musaDeviceProp::name)
-      .def_readonly("major", &musaDeviceProp::major)
-      .def_readonly("minor", &musaDeviceProp::minor)
-      .def_readonly("is_multi_gpu_board", &musaDeviceProp::isMultiGpuBoard)
-      .def_readonly("is_integrated", &musaDeviceProp::integrated)
-      .def_readonly(
-          "multi_processor_count", &musaDeviceProp::multiProcessorCount)
-      .def_readonly("total_memory", &musaDeviceProp::totalGlobalMem)
-      .def("__repr__", [](const musaDeviceProp& prop) {
-        std::ostringstream stream;
-        stream << "_MusaDeviceProperties(name='" << prop.name << "', major='"
-               << prop.major << ", minor=" << prop.minor
-               << ", total_memory=" << prop.totalGlobalMem / (1024 * 1024)
-               << "MB, multi_processor_count=" << prop.multiProcessorCount
-               << ")";
-        return stream.str();
-      });
 }
 
 } // namespace musa
