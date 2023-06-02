@@ -55,6 +55,8 @@ def get_raw_data():
 def get_all_support_types():
     return [torch.float32, torch.int32, torch.int64]
 
+def get_all_support_types_withfp16():
+    return [torch.float16, torch.float32, torch.int32, torch.int64]
 
 def get_all_types():
     return [torch.bool, torch.uint8, torch.float32, torch.int32, torch.float64, torch.int64]

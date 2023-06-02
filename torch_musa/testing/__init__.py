@@ -7,6 +7,7 @@ from .base_test_tool import (
     OpTest,
     get_raw_data,
     get_all_support_types,
+    get_all_support_types_withfp16,
     get_all_types,
     skip_if_musa_unavailable,
     skip_if_not_multiple_musa_device,

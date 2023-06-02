@@ -5,7 +5,7 @@ import pytest
 import torch_musa
 from torch_musa import testing
 
-data_type = testing.get_all_support_types()
+data_type = testing.get_all_support_types_withfp16()
 
 inputdata = [
     {"input": torch.randn(4, 2), "shifts": (2, 1), "dims": (0, 1)},

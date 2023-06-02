@@ -69,19 +69,6 @@ def port_cuda(
     ]
     main_automaton = init_ac_automaton(map_files)
 
-    # Prepare disable half dtype map
-    # TODO(caizhi): the following map is used to disable half dtype in operations.
-    # It will be deleted when mcc compiler supports half dtype.
-    disable_half_map = {
-        "AT_DISPATCH_CASE(SCALARTYPE1, __VA_ARGS__)": "",
-        "AT_DISPATCH_CASE(SCALARTYPE2, __VA_ARGS__)": "",
-        "AT_DISPATCH_FLOATING_TYPES_AND_HALF": "AT_DISPATCH_FLOATING_TYPES_NO_HALF",
-        "AT_DISPATCH_ALL_TYPES_AND(at::ScalarType::Half,": "AT_DISPATCH_ALL_TYPES(",
-        "AT_DISPATCH_ALL_TYPES_AND(kHalf,": "AT_DISPATCH_ALL_TYPES(",
-        "AT_DISPATCH_COMPLEX_TYPES_AND(kComplexHalf,": "AT_DISPATCH_COMPLEX_TYPES(",
-    }
-    disable_half_automaton = get_automaton(disable_half_map)
-
     # Prepare replace map which is not handled in cuda-porting tools
     extra_replace_map = {
         "cudaOccupancy": "musaOccupancy",
@@ -91,6 +78,7 @@ def port_cuda(
         ".cuh>": ".muh>",
         "cuda_dispatch.h": "musa_dispatch.h",
         ".is_cuda()": ".is_privateuseone()",
+        "DeviceType::CUDA": "DeviceType::PrivateUse1",
         # TODO(caizhi): enable cub library porting
         "at::musa::cub::mask_exclusive_sum(": "",
         "mask_data, maskPrefixSum_data, mask_numel);": "",
@@ -155,7 +143,6 @@ def port_cuda(
 
                 dst_file = os.path.join(destination_folder, f)
                 dst_file = transform_file(dst_file, main_automaton, extra_replace_map)
-                transform_file(dst_file, disable_half_automaton)
 
     # 2. Copy several special files about macros files
     special_copy_files = {

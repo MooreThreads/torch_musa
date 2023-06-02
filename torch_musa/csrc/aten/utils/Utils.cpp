@@ -42,6 +42,9 @@ void ConfigFormat(Tensor& t, muTensor& mt, bool auto_contiguous) {
 inline void SetTensorTypeAndAddr(const Tensor& t, muTensor& m_t) {
   auto t_type = t.scalar_type();
   switch (t_type) {
+    case ScalarType::Half:
+      m_t.SetType(muTensor::Type::HALF);
+      break;
     case ScalarType::Float:
       m_t.SetType(muTensor::Type::FLOAT);
       break;
