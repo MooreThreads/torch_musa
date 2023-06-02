@@ -7,6 +7,7 @@ FILE(GLOB _CSRCS
     aten/utils/*.cpp
     aten/mudnn/*.cpp
     core/*.cpp
+    utils/*.cpp
     )
 
 LIST(APPEND MUSA_CSRCS ${_CSRCS})
@@ -48,6 +49,7 @@ FILE(GLOB MU_SRCS
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TensorTransformations.mu
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationHardswishKernel.mu
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationHardsigmoidKernel.mu
+    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistributionUniform.mu
     core/*.mu
     )
 

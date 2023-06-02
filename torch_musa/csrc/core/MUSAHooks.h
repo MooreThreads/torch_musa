@@ -1,3 +1,4 @@
+#include "torch_musa/csrc/core/Device.h"
 #include "torch_musa/csrc/core/MUSAHooksInterface.h"
 
 namespace at {
@@ -7,6 +8,8 @@ namespace detail {
 struct MUSAHooks : public MUSAHooksInterface {
   MUSAHooks(MUSAHooksArgs) {}
   void initMUSA() const override;
+  const Generator& getDefaultMUSAGenerator(
+      DeviceIndex device_index) const override;
   Device getDeviceFromPtr(void* data) const override;
   bool hasMUSA() const override;
   int64_t current_device() const override;

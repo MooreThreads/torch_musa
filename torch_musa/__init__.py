@@ -3,7 +3,6 @@
 
 import warnings
 import sys
-import threading
 from packaging.version import Version
 import torch
 
@@ -32,35 +31,6 @@ except ImportError as err:
 torch.__setattr__("musa", sys.modules[__name__])
 
 
-_initialized = False
-_tls = threading.local()
-_initialization_lock = threading.Lock()
-
-
-def is_initialized():
-    """Return wherether Torch MUSA state has been initialized."""
-    return _initialized
-
-
-def init():
-    """Initialize Torch MUSA state. Will call this if `import torch_musa`.
-
-    Does nothing if the Torch MUSA state is already initialized.
-    """
-    global _initialized
-    if is_initialized() or hasattr(_tls, "is_initializing"):
-        return
-    with _initialization_lock:
-        if is_initialized():
-            return
-
-    _MUSAC._musa_init()
-    _tls.is_initializing = True
-    _initialized = True
-
-
-init()
-
 from .core.device import Device as device
 from .core.device import DeviceOf as device_of
 from .core.device import (
@@ -74,6 +44,7 @@ from .core.device import (
     get_device_properties,
     can_device_access_peer,
     _exchange_device,
+    _DeviceGuard,
 )
 
 from .core.stream import (
@@ -101,11 +72,16 @@ from .core.memory import (
     max_memory_reserved,
 )
 
+
+from .core._lazy_init import _lazy_init
+
+from .core.random import *
+
 register_deserialization()
-
-
-from . import testing
 
 
 def _sleep(cycles):
     torch_musa._MUSAC._musa_sleep(cycles)
+
+
+from . import testing

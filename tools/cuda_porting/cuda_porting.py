@@ -79,6 +79,7 @@ def port_cuda(
         "cuda_dispatch.h": "musa_dispatch.h",
         ".is_cuda()": ".is_privateuseone()",
         "DeviceType::CUDA": "DeviceType::PrivateUse1",
+        "philox_cuda_state": "philox_musa_state",
         # TODO(caizhi): enable cub library porting
         "at::musa::cub::mask_exclusive_sum(": "",
         "mask_data, maskPrefixSum_data, mask_numel);": "",
@@ -105,7 +106,11 @@ def port_cuda(
         "<ATen/musa/CUDAContext.h>": "\"torch_musa/csrc/aten/musa/MUSAContext.h\"",
         "<ATen/musa/Exceptions.h>": "\"torch_musa/csrc/aten/musa/Exceptions.h\"",
         "<ATen/musa/PinnedMemoryAllocator.h>": "\"torch_musa/csrc/core/PinnedMemoryAllocator.h\"",
-        "<ATen/musa/CachingHostAllocator.h>": "\"torch_musa/csrc/core/CachingHostAllocator.h\""
+        "<ATen/musa/CachingHostAllocator.h>": "\"torch_musa/csrc/core/CachingHostAllocator.h\"",
+        "<ATen/musa/MUSAGeneratorImpl.h>": "\"torch_musa/csrc/aten/musa/MUSAGeneratorImpl.h\"",
+        "<ATen/musa/detail/PhiloxCudaStateRaw.muh>": "\"torch_musa/csrc/aten/musa/PhiloxCudaStateRaw.muh\"",
+        "<ATen/musa/detail/UnpackRaw.muh>": "\"torch_musa/csrc/aten/musa/UnpackRaw.muh\"",
+        "<ATen/musa/CUDAGraphsUtils.muh>": "\"torch_musa/csrc/aten/musa/MUSAGraphsUtils.muh\"",
     }
 
     # 1. Copy and cuda-port files

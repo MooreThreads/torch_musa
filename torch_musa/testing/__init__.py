@@ -15,4 +15,4 @@ from .base_test_tool import (
     test_on_nonzero_card_if_multiple_musa_device
 )
 
-from .common_utils import get_cycles_per_ms
+from .common_utils import get_cycles_per_ms, freeze_rng_state

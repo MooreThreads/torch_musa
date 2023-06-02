@@ -3,12 +3,14 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <torch/csrc/Exceptions.h>
+#include <torch/csrc/Generator.h>
 #include <torch/csrc/utils/invalid_arguments.h>
 #include <torch/csrc/utils/pybind.h>
 #include <torch/csrc/utils/python_numbers.h>
 #include <vector>
 
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
+#include "torch_musa/csrc/aten/musa/MUSAGeneratorImpl.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/Allocator.h"
 #include "torch_musa/csrc/core/Device.h"
@@ -16,6 +18,7 @@
 #include "torch_musa/csrc/core/MUSAHooksInterface.h"
 #include "torch_musa/csrc/core/Sleep.h"
 #include "torch_musa/csrc/core/Stream.h"
+#include "torch_musa/csrc/utils/musa_lazy_init.h"
 
 // yang.zhao: copied from torch/csrc/utils.cpp to avoid including other things.
 void THPUtils_invalidArguments(
@@ -147,12 +150,41 @@ static void bindGetDeviceProperties(PyObject* module) {
 }
 
 static py::object THMPModule_initExtension() {
+#if C10_ASAN_ENABLED
+  TORCH_WARN(
+      "torch.cuda: your pytorch binary has address sanitizer (asan) built in, "
+      "asan is currently not compatible with torch.cuda module, "
+      "you might get unexpected behavior (eg. out of memory, crash, etc.), "
+      "please rebuild pytorch without asan if you need to use this module");
+#endif
   static c10::once_flag thm_init;
   c10::call_once(thm_init, [] { at::detail::getMUSAHooks().initMUSA(); });
   auto m = THPObjectPtr(PyImport_ImportModule("torch_musa"));
   if (!m)
     throw python_error();
+
+  bool has_half = true;
+
+  auto set_module_attr = [&](const char* name, PyObject* v) {
+    // PyObject_SetAttrString doesn't steal reference. So no need to incref.
+    if (PyObject_SetAttrString(m, name, v) < 0) {
+      throw python_error();
+    }
+  };
+
+  set_module_attr("has_half", has_half ? Py_True : Py_False);
+
+  const int64_t num_gpus = c10::musa::device_count();
+  auto default_musa_generators = PyTuple_New(static_cast<Py_ssize_t>(num_gpus));
+  for (const auto i : c10::irange(num_gpus)) {
+    auto cast_gen = (THPGenerator*)THPGenerator_initDefaultGenerator(
+        at::musa::detail::getDefaultMUSAGenerator(i));
+    // This reference is meant to be given away, so no need to incref here.
+    PyTuple_SetItem(default_musa_generators, i, (PyObject*)cast_gen);
+  }
+  set_module_attr("default_generators", default_musa_generators);
   bindGetDeviceProperties(m);
+
   return py::none();
 }
 
@@ -164,15 +196,21 @@ void AddMusaDeviceMethods(PyObject* module) {
 
   py_module.def(
       "_musa_getDeviceCount", []() { return c10::musa::device_count(); });
-  py_module.def(
-      "_musa_getDevice", []() { return c10::musa::current_device(); });
-  py_module.def(
-      "_musa_setDevice", [](int64_t device) { c10::musa::set_device(device); });
+  py_module.def("_musa_getDevice", []() {
+    torch::utils::musa_lazy_init();
+    return c10::musa::current_device();
+  });
+  py_module.def("_musa_setDevice", [](int64_t device) {
+    torch::utils::musa_lazy_init();
+    c10::musa::set_device(device);
+  });
   py_module.def("_musa_exchangeDevice", [](int64_t device) {
+    torch::utils::musa_lazy_init();
     return c10::musa::exchangeDevice(device);
   });
   py_module.def(
       "_musa_canDeviceAccessPeer", [](int64_t device, int64_t peer_device) {
+        torch::utils::musa_lazy_init();
         return at::musa::canDeviceAccessPeer(device, peer_device);
       });
 

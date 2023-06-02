@@ -1,5 +1,6 @@
 #ifndef TORCH_MUSA_CSRC_CORE_MUSAFUNCTIONS_H_
 #define TORCH_MUSA_CSRC_CORE_MUSAFUNCTIONS_H_
+#include "torch_musa/csrc/core/Device.h"
 
 namespace c10 {
 namespace musa {

@@ -1,3 +1,4 @@
+#include <ATen/core/Generator.h>
 #include <c10/core/Device.h>
 #include <c10/util/Exception.h>
 #include <c10/util/Registry.h>
@@ -9,6 +10,13 @@ struct MUSAHooksInterface {
 
   virtual void initMUSA() const {
     TORCH_CHECK(false, "Cannot initialize MUSA without torch_musa library.")
+  }
+
+  virtual const Generator& getDefaultMUSAGenerator(
+      DeviceIndex device_index = -1) const {
+    (void)device_index; // Suppress unused variable warning
+    TORCH_CHECK(
+        false, "Cannot get default MUSA generator without torch_musa library.");
   }
 
   virtual c10::Device getDeviceFromPtr(void* /*data*/) const {

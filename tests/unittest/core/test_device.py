@@ -6,7 +6,7 @@ import torch
 import pytest
 import torch_musa
 from torch_musa import testing
-from torch_musa.testing import get_cycles_per_ms
+from torch_musa.testing import get_cycles_per_ms, freeze_rng_state
 
 FIFTY_MIL_CYCLES = 50000000
 
@@ -695,7 +695,7 @@ def test_events_multi_gpu_elapsed_time():
     e1.synchronize()
     with torch.musa.device(d0):
         with pytest.raises(RuntimeError):
-            assert Greater(e0.elapsed_time(e1), 0)
+            assert e0.elapsed_time(e1) > 0
 
     with torch.musa.device(d1):
         with pytest.raises(RuntimeError):
@@ -751,3 +751,15 @@ def test_record_stream():
         with torch.musa.stream(stream):
             tmp3 = torch.musa.FloatTensor(t.size())
             assert tmp3.data_ptr() == ptr[0], "allocation not re-used"
+
+
+def test_torch_manual_seed_seeds_musa_devices():
+    with freeze_rng_state():
+        x = torch.zeros(4, 4).float().to("musa")
+        torch.musa.manual_seed(2)
+        assert torch.musa.initial_seed() == 2
+        x.uniform_()
+        torch.musa.manual_seed(2)
+        y = x.clone().uniform_()
+        assert torch.all(x == y)
+        assert torch.musa.initial_seed() == 2

@@ -37,11 +37,8 @@ Tensor& Uniform(
     double from,
     double to,
     c10::optional<Generator> gen) {
-  auto cpu_tensor =
-      ::at::empty(self.sizes(), self.options().device(DeviceType::CPU));
-  auto cpu_result = at::native::uniform_(cpu_tensor, from, to, gen);
-  self.copy_(cpu_result);
-  return self;
+  c10::musa::MUSAGuard device_guard(self.device());
+  return at::native::uniform_(self, from, to, gen);
 }
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {

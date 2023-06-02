@@ -4,6 +4,7 @@ import ctypes
 from typing import Any, Optional
 import torch
 import torch_musa
+from ._lazy_init import _lazy_init
 from ._utils import _dummy_type, _get_musa_device_index
 from ._utils import DeviceUnion as _device_t
 from .device import Device as device
@@ -304,6 +305,7 @@ def current_stream(device: Optional[_device_t] = None) -> Stream:
             by :func:`~torch_musa.current_device`, if :attr:`device` is ``None``
             (default).
     """
+    _lazy_init()
     streamdata = torch_musa._MUSAC._musa_getCurrentStream(
         _get_musa_device_index(device, optional=True)
     )
@@ -321,6 +323,7 @@ def default_stream(device: Optional[_device_t] = None) -> Stream:
             :func:`~torch_musa._MUSAC.current_device`, if :attr:`device` is ``None``
             (default).
     """
+    _lazy_init()
     streamdata = torch_musa._MUSAC._musa_getDefaultStream(
         _get_musa_device_index(device, optional=True)
     )

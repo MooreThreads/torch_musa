@@ -1,10 +1,13 @@
 """
 This package adds support for Moore Threads GPU device type implementation.
 """
+# pylint: disable=W0622
+
 
 from typing import Any, Tuple, Optional
 from functools import lru_cache
 import torch_musa._MUSAC
+from ._lazy_init import _lazy_init
 from ._utils import _get_musa_device_index, _dummy_type
 from ._utils import DeviceUnion as _device_t
 
@@ -110,6 +113,7 @@ def get_device_properties(device: _device_t) -> _MusaDeviceProperties:
     Returns:
         _MusaDeviceProperties: the properties of the device.
     """
+    _lazy_init()
     device = _get_musa_device_index(device, optional=True)
     if device < 0 or device >= device_count():
         raise AssertionError("Invalid device id")
@@ -118,6 +122,7 @@ def get_device_properties(device: _device_t) -> _MusaDeviceProperties:
 
 def can_device_access_peer(device: _device_t, peer_device: _device_t) -> bool:
     """Checks if peer access between two device is possible."""
+    _lazy_init()
     device = _get_musa_device_index(device, optional=True)
     peer_device = _get_musa_device_index(peer_device)
     if device < 0 or device >= device_count():
@@ -129,6 +134,7 @@ def can_device_access_peer(device: _device_t, peer_device: _device_t) -> bool:
 
 def current_device() -> int:
     """Returns the index of a currently selected device."""
+    _lazy_init()
     return torch_musa._MUSAC._musa_getDevice()
 
 
@@ -139,6 +145,7 @@ def is_available() -> bool:
 
 def synchronize(device: _device_t = None) -> None:
     """Waits for all kernels in all streams on a MUSA device to complete."""
+    _lazy_init()
     with torch_musa.device(device):
         return torch_musa._MUSAC._musa_synchronize()
 
@@ -147,3 +154,16 @@ def synchronize(device: _device_t = None) -> None:
 def device_count() -> int:
     """Returns the number of Moore Threads GPUs avaiable."""
     return torch_musa._MUSAC._musa_getDeviceCount()
+
+
+class _DeviceGuard:
+    def __init__(self, index: int):
+        self.idx = index
+        self.prev_idx = -2
+
+    def __enter__(self):
+        self.prev_idx = torch_musa._exchange_device(self.idx)
+
+    def __exit__(self, type: Any, value: Any, traceback: Any):
+        torch_musa._exchange_device(self.prev_idx)
+        return False
