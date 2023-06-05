@@ -356,6 +356,7 @@ DEFINE_BINARY_OP(Maximum, BINARY_MODE::MAX)
 DEFINE_BINARY_OP(Minimum, BINARY_MODE::MIN)
 DEFINE_BINARY_OP(LogicalAnd, BINARY_MODE::LOGICAL_AND)
 DEFINE_BINARY_OP(Pow, BINARY_MODE::POW)
+DEFINE_BINARY_OP(FloorDivide, BINARY_MODE::FLOORDIV)
 
 Tensor& Div_out_mode(
     const Tensor& self,
@@ -1094,6 +1095,10 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
 
   m.impl("hardsigmoid_backward", &HardSigmoidBwd);
   m.impl("hardsigmoid_backward.grad_input", &HardSigmoidBwd_out);
+
+  m.impl("floor_divide", &FloorDivideTensor);
+  m.impl("floor_divide_.Tensor", &FloorDivide_Tensor);
+  m.impl("floor_divide.out", &FloorDivide_out);
 }
 
 } // namespace musa

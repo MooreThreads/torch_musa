@@ -57,11 +57,11 @@ def test_binary(input_data, dtype, other_dtype, func):
     function(input_data, dtype, other_dtype, func)
 
 
-# test div, remainder which only support float and make sure other is not zero
+# test div, remainder, floor_divide which only support float and make sure other is not zero
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_datas)
 @pytest.mark.parametrize("dtype", [torch.float32])
-@pytest.mark.parametrize("func", [torch.div, torch.remainder])
+@pytest.mark.parametrize("func", [torch.div, torch.remainder, torch.floor_divide])
 def test_div(input_data, dtype, func):
     function(input_data, dtype, dtype, func)
 
