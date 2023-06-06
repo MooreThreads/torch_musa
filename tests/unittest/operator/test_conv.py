@@ -49,7 +49,16 @@ def test_conv2d(input_data):
         bias=input_data["bias"],
         device="cpu",
     )
-    musa_conv2d = torch.nn.Conv2d(
+    cpu_output = conv2d(cpu_input)
+    musa_conv2d = conv2d.to("musa")
+    musa_output = musa_conv2d(musa_input.to("musa")) # pylint:disable=E1102
+    comparator = testing.DefaultComparator(abs_diff=1e-6)
+    assert comparator(cpu_output, musa_output.cpu())
+    cpu_output.sum().backward()
+    musa_output.sum().backward()
+    assert comparator(cpu_input.grad, musa_input.grad.cpu())
+
+    cpu_model = torch.nn.ConvTranspose2d(
         in_channels=input_data["in_channels"],
         out_channels=input_data["out_channels"],
         kernel_size=input_data["kernel_size"],
@@ -58,11 +67,11 @@ def test_conv2d(input_data):
         dilation=input_data["dilation"],
         groups=input_data["groups"],
         bias=input_data["bias"],
-        device="musa",
+        device="cpu",
     )
-    conv2d.load_state_dict(musa_conv2d.state_dict())
-    cpu_output = conv2d(cpu_input)
-    musa_output = musa_conv2d(musa_input.to("musa"))
+    cpu_output = cpu_model(cpu_input)
+    musa_model = cpu_model.to("musa")
+    musa_output = musa_model(musa_input.to("musa")) # pylint:disable=E1102
     comparator = testing.DefaultComparator(abs_diff=1e-6)
     assert comparator(cpu_output, musa_output.cpu())
     cpu_output.sum().backward()

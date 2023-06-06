@@ -427,6 +427,39 @@ Tensor Conv1dWeightBwd(
       grad_input, grad_weight, grad_bias};
 }
 
+::std::tuple<Tensor, Tensor, Tensor> Conv2dTransposeBwd(
+    const Tensor& grad_output,
+    const Tensor& input,
+    const Tensor& weight,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef output_padding,
+    IntArrayRef dilation,
+    int64_t groups,
+    ::std::array<bool, 3> output_mask) {
+  TORCH_CHECK(
+      weight.dim() == 4 && input.dim() == 4,
+      "Expected 4D for weight tensor and input.");
+  Tensor grad_input;
+  Tensor grad_weight;
+  Tensor grad_bias;
+
+  if (output_mask[0]) {
+    Tensor bias_opt = at::zeros({weight.size(0)}, input.options());
+    grad_input = Conv2d(
+        grad_output, weight, bias_opt, stride, padding, dilation, groups);
+  }
+  if (output_mask[1]) {
+    grad_weight = Conv2dWeightBwd(
+        input, grad_output, weight, stride, padding, groups, dilation);
+  }
+  if (output_mask[2]) {
+    grad_bias = at::sum(grad_output, IntArrayRef{0, 2, 3});
+  }
+  return std::tuple<Tensor&, Tensor&, Tensor&>{
+      grad_input, grad_weight, grad_bias};
+}
+
 ::std::tuple<Tensor, Tensor, Tensor> ConvolutionBwd(
     const Tensor& grad_output,
     const Tensor& input,
@@ -438,8 +471,6 @@ Tensor Conv1dWeightBwd(
     IntArrayRef output_padding,
     int64_t groups,
     ::std::array<bool, 3> output_mask) {
-  TORCH_CHECK(
-      !transposed, "Transposed Convolution Backward is not implemented yet!");
   TORCH_CHECK(
       weight.device().type() == kMUSA,
       "Device of weight tensor of Convolution Backward must be MUSA, ",
@@ -485,15 +516,28 @@ Tensor Conv1dWeightBwd(
         groups,
         output_mask);
   }
-  return Convolution2dBwd(
-      grad_output,
-      input,
-      weight,
-      stride,
-      padding,
-      dilation,
-      groups,
-      output_mask);
+  if (transposed) {
+    return Conv2dTransposeBwd(
+        grad_output,
+        input,
+        weight,
+        stride,
+        padding,
+        output_padding,
+        dilation,
+        groups,
+        output_mask);
+  } else {
+    return Convolution2dBwd(
+        grad_output,
+        input,
+        weight,
+        stride,
+        padding,
+        dilation,
+        groups,
+        output_mask);
+  }
 }
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
