@@ -1,13 +1,15 @@
 #include <ATen/ATen.h>
+#include <ATen/Config.h>
+#include <ATen/NamedTensorUtils.h>
+#include <ATen/NativeFunctions.h>
 #include <ATen/TensorUtils.h>
 #include <ATen/core/Tensor.h>
+#include <ATen/core/op_registration/adaption.h>
 #include <ATen/ops/reflection_pad1d_backward_native.h>
+#include <mudnn.h>
 #include <torch/library.h>
-
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-
-#include <mudnn.h>
 
 namespace at {
 namespace musa {
@@ -192,7 +194,16 @@ at::Tensor& ReflectionPad1dBackwardOutGradInput(
   return grad_input;
 }
 
+Tensor ReflectionPad2d(const Tensor& self, IntArrayRef padding) {
+  c10::optional<Device> common_device = nullopt;
+  c10::impl::check_and_update_common_device(
+      common_device, self, "ReflectionPad2d", "self");
+  const OptionalDeviceGuard device_guard(device_of(self));
+  return at::native::reflection_pad2d_cuda(self, padding);
+}
+
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
+  m.impl("reflection_pad2d", &ReflectionPad2d);
   m.impl("reflection_pad1d", &ReflectPad1D);
   m.impl("reflection_pad1d.out", &ReflectPad1DOut);
   m.impl(
