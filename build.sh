@@ -112,11 +112,11 @@ build_pytorch() {
   pip install -r ${TORCH_MUSA_HOME}/requirements.txt  # extra requirements
   if [ $BUILD_WHEEL -eq 1 ]; then
     rm -rf dist
-    DEBUG=${DEBUG_MODE} USE_ASAN=${ASAN_MODE} USE_MKL=1 USE_MKLDNN=1 USE_MKLDNN_CBLAS=1 python setup.py bdist_wheel
+    DEBUG=${DEBUG_MODE} USE_ASAN=${ASAN_MODE} USE_STATIC_MKL=${USE_STATIC_MKL} USE_MKL=1 USE_MKLDNN=1 USE_MKLDNN_CBLAS=1 python setup.py bdist_wheel
     rm -rf torch.egg-info
     pip install dist/*.whl
   else
-    DEBUG=${DEBUG_MODE} USE_ASAN=${ASAN_MODE} USE_MKL=1 USE_MKLDNN=1 USE_MKLDNN_CBLAS=1 python setup.py install
+    DEBUG=${DEBUG_MODE} USE_ASAN=${ASAN_MODE} USE_STATIC_MKL=${USE_STATIC_MKL} USE_MKL=1 USE_MKLDNN=1 USE_MKLDNN_CBLAS=1 python setup.py install
   fi
 
   popd

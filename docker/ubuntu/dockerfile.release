@@ -35,7 +35,8 @@ RUN cd /home && \
     tar -zxf ./musa_toolkits_install.tar.gz && \
     cd ./musa_toolkits_install && \
     bash ./install.sh && \
-    rm -f ../musa_toolkits_install.tar.gz
+    rm -f ../musa_toolkits_install.tar.gz && \
+    rm -rf ../musa_toolkit*
 
 # install muDNN
 RUN wget --no-check-certificate ${MUDNN_URL} -O /home/mudnn.tar && \
@@ -43,12 +44,18 @@ RUN wget --no-check-certificate ${MUDNN_URL} -O /home/mudnn.tar && \
     pushd /home/mudnn && \
     bash install_mudnn.sh && \
     rm -f /home/mudnn.tar && \
+    rm -rf /home/mudnn && \
     popd
 
 # install math libs
 COPY ./common/install_math.sh install_math.sh
 RUN bash install_math.sh && \
     rm -f install_math.sh
+
+# install mccl
+COPY ./common/install_mccl.sh install_mccl.sh
+RUN bash install_mccl.sh && \
+    rm -f install_mccl.sh
 
 # install conda
 COPY ./common/install_conda.sh install_conda.sh
@@ -57,16 +64,18 @@ RUN bash install_conda.sh && \
 
 # setup conda virtual environment for torch_musa
 ENV PATH=/opt/conda/bin:$PATH
-COPY ../requirements.txt requirements.txt
+COPY ./requirements.txt requirements.txt
 RUN ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
     conda create -n ${ENV_NAME} python=${PYTHON_VERSION} --yes && \
     source activate ${ENV_NAME} && \
+    source deactivate && \
+    conda activate ${ENV_NAME} && \
     pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
     pip install -r requirements.txt && \
     pip install numpy==1.23.1 pytest==7.2.2 protobuf==3.19.0 \
     googleapis-common-protos==1.56.4 importlib-metadata==4.11.3 \
     pillow==9.2.0 pylint==2.17.3 requests && \
-    pip install --no-deps torchvision==0.15.0 && \
+    # pip install --no-deps torchvision==0.15.0 && \
     rm -f requirements.txt
 
 # install torch and torch_musa from wheel packages
@@ -76,14 +85,18 @@ ENV MUSA_HOME=/usr/local/musa
 ENV LD_LIBRARY_PATH=$MUSA_HOME/lib:$LD_LIBRARY_PATH
 ENV PATH=/usr/local/musa/bin:/opt/conda/bin:$PATH
 RUN ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
+    sudo echo -e ". /opt/conda/etc/profile.d/conda.sh"                            >> ~/.bashrc && \
     sudo echo "export MUSA_HOME=${MUSA_HOME}"                                     >> ~/.bashrc && \
     sudo echo -e "export LD_LIBRARY_PATH=\$MUSA_HOME/lib:\$LD_LIBRARY_PATH\n"     >> ~/.bashrc && \
     sudo echo "export PATH=/usr/local/musa/bin:/opt/conda/bin:$PATH"              >> ~/.bashrc && \
-    sudo echo "source activate ${ENV_NAME}"                                       >> ~/.bashrc && \
+    sudo echo "conda activate ${ENV_NAME}"                                        >> ~/.bashrc && \
     source activate ${ENV_NAME} && \
+    source deactivate && \
+    conda activate ${ENV_NAME} && \
     mkdir -p /home/whls && \
     wget --no-check-certificate -P /home/whls $TORCH_WHL_URL && \
     wget --no-check-certificate -P /home/whls $TORCH_MUSA_WHL_URL && \
     WHLS=$(find /home/whls -name "*.whl") && \
     pip install ${WHLS} && \
-    sudo rm -rf /home/whls
+    sudo rm -rf /home/whls && \
+    conda deactivate

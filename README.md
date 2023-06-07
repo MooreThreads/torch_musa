@@ -89,15 +89,19 @@ python setup.py install
 ### Docker Image
 
 ```bash
-docker run -it --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev:v0.1.7 /bin/bash
+docker run -it --privileged --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev:latest /bin/bash
 ```
+<details>
+<summary>Docker Image List</summary>
 
 | Docker Tag | Description |
 | ---- | --- |
-| [**latest/v0.1.10**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | musatoolkits-20230525 (ddk_20230425.deb or newer)<br> muAlg _dev-0.1.1 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.1.1 |
+| [**latest/v0.1.12**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | musatoolkits-20230605 (ddk_20230604 develop or newer)<br> mudnn 20230605; mccl_rc1.1.0 <br> muAlg _dev-0.1.1 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.1.1 |
+| [**v0.1.11**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | musatoolkits-20230605 (ddk_20230604 develop or newer)<br> mudnn 20230605 <br> muAlg _dev-0.1.1 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.1.1 |
+| [**v0.1.10**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | musatoolkits-20230525 (ddk_20230425.deb or newer)<br> muAlg _dev-0.1.1 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.1.1 |
 | [**v0.1.7**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | toolkits rc1.3.0 + MUSA-Runtime_use_armory<br> muAlg _dev-0.1.0 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.1.0 |
-| [**v0.1.6**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | toolkits rc1.3.0 |
-| [**v0.1.5**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) |  |
+
+</details>  
 
 ## Getting Started
 ```bash

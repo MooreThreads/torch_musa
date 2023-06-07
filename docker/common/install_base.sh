@@ -36,7 +36,8 @@ install_ubuntu() {
     unzip \
     gawk \
     bison \
-    expect
+    expect \
+    libnuma-dev
 
   # Cleanup package manager
   apt-get autoclean && apt-get clean

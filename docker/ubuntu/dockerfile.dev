@@ -55,6 +55,16 @@ COPY ./common/install_math.sh install_math.sh
 RUN bash install_math.sh && \
     rm -f install_math.sh
 
+# install mccl
+COPY ./common/install_mccl.sh install_mccl.sh
+RUN bash install_mccl.sh && \
+    rm -f install_mccl.sh
+
+# install static libraries of mkl
+COPY ./common/install_mkl.sh install_mkl.sh
+RUN bash install_mkl.sh && \
+    rm -f install_mkl.sh
+
 # config git
 RUN git config --global http.sslverify false && \
     git config --global https.sslverify false
@@ -103,8 +113,9 @@ RUN ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
     source activate && \
     source deactivate && \
     conda activate ${ENV_NAME} && \
+    export CMAKE_PREFIX_PATH=${CONDA_PREFIX:-"$(dirname $(which conda))/../"} && \
     pushd /home/torch_musa && \
-    bash build.sh && \
+    bash build.sh -t && \
     popd && \
     conda deactivate
 
@@ -112,13 +123,13 @@ RUN ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
 # cause shell maybe termintated by this command [ -z "$PS1" ] && return
 RUN ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
     sudo sed -i '1s|^|\. /opt/conda/etc/profile\.d/conda\.sh\n|' ~/.bashrc && \
-    sudo CMAKE_PREFIX_PATH=$(echo -e "export CMAKE_PREFIX_PATH=${CONDA_PREFIX:-\"$(dirname $(which conda))/../\"}") && \
-    sudo sed -i "2s|^|${CMAKE_PREFIX_PATH}\n|" ~/.bashrc && \
-    sudo sed -i '3s|^|export MUSA_HOME=/usr/local/musa\n|' ~/.bashrc && \
-    sudo LD_LIBRARY_PATH_STR=$(echo -e "export LD_LIBRARY_PATH=$LD_LIBRARY_PATH") && \
-    sudo sed -i "4s|^|${LD_LIBRARY_PATH_STR}\n|" ~/.bashrc && \
-    sudo PATH_STR=$(echo -e "export PATH=$PATH\n") && \
-    sudo sed -i "5s|^|${PATH_STR}\n|" ~/.bashrc && \
-    sudo PYTHON_ENV=$(echo -e "conda activate ${ENV_NAME}") && \
-    sudo sed -i "6s|^|${PYTHON_ENV}\n|" ~/.bashrc
-
+    sudo sed -i '2s|^|export MUSA_HOME=/usr/local/musa\n|' ~/.bashrc && \
+    LD_LIBRARY_PATH_STR=$(echo -e "export LD_LIBRARY_PATH=$LD_LIBRARY_PATH") && \
+    sudo sed -i "3s|^|${LD_LIBRARY_PATH_STR}\n|" ~/.bashrc && \
+    PATH_STR=$(echo -e "export PATH=$PATH\n") && \
+    sudo sed -i "4s|^|${PATH_STR}\n|" ~/.bashrc && \
+    PYTHON_ENV=$(echo -e "conda activate ${ENV_NAME}") && \
+    sudo sed -i "5s|^|${PYTHON_ENV}\n|" ~/.bashrc && \
+    CMAKE_PREFIX_PATH=$(echo -e "export CMAKE_PREFIX_PATH=\${CONDA_PREFIX:-\"\$(dirname \$(which conda))/../\"}""") && \
+    sudo sed -i "6s|^|${CMAKE_PREFIX_PATH}\n|" ~/.bashrc && \
+    sudo echo $PYTHON_ENV >> ~/.bashrc
