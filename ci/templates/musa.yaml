@@ -30,6 +30,8 @@ spec:
       value: all
     command:
     - sleep
+    securityContext:
+       privileged: true
     args:
     - infinity
     resources:

@@ -5,7 +5,7 @@ project(Torch_MUSA CXX C)
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
   set(LINUX TRUE)
 else()
-  message(FATAL_ERROR, "torch_musa could be built only on Linux now!")
+  message(FATAL_ERROR "torch_musa could be built only on Linux now!")
 endif()
 
 set(CMAKE_INSTALL_MESSAGE NEVER)
@@ -192,7 +192,7 @@ include_directories(${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/include/torch/c
 if(DEFINED PYTHON_INCLUDE_DIR)
   include_directories(${PYTHON_INCLUDE_DIR})
 else()
-  message(FATAL_ERROR, "Cannot find installed Python head file directory")
+  message(FATAL_ERROR "Cannot find installed Python head file directory")
 endif()
 
 add_subdirectory(${PROJECT_SOURCE_DIR}/torch_musa/csrc)
