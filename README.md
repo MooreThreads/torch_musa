@@ -17,9 +17,7 @@ Musa PyTorch is an extension that adds Moore Threads's MUSA as a standalone PyTo
   - [Building Step by Step From Source](#building-step-by-step-from-source)
   - [Docker Image](#docker-image)
 - [Getting Started](#getting-started)
-- [Releases and Contributing](#releases-and-contributing)
-- [The Team](#the-team)
-- [License](#license)
+- [FAQ](#faq)
 
 <!-- tocstop -->
 
@@ -126,14 +124,5 @@ if torch.musa.device_count() > 1:
     torch.musa.synchronize("musa:1")
 ```
 
-### Limitations
-Though a user can access most PyTorch features seamlessly with torch_musa, there are several
-features temporarily unavailable.
-...
-
-## Releases and Contributing
-
-
-## The Team
-
-## License
+## FAQ
+For more detailed information, please refer to the files in the [docs folder](https://github.mthreads.com/mthreads/torch_musa/tree/main/docs).
