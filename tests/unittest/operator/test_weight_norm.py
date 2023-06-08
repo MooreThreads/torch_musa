@@ -26,4 +26,3 @@ def test_weight_norm(input_data):
     r_cpu = m(input_data)
     r_musa = m.to("musa")(input_data.to("musa"))
     testing.DefaultComparator()(r_cpu, r_musa.cpu())
-    
