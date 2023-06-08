@@ -1164,6 +1164,30 @@ at::Tensor& HardTanhBackwardOut(
       grad_output, self, min_val, max_val, grad_input);
 }
 
+at::Tensor PRelu(const at::Tensor& self, const at::Tensor& weight) {
+  c10::optional<Device> common_device = nullopt;
+  c10::impl::check_and_update_common_device(
+      common_device, self, "PRelu", "self");
+  c10::impl::check_and_update_common_device(
+      common_device, weight, "PRelu", "weight");
+  const OptionalDeviceGuard device_guard(device_of(self));
+  return at::native::_prelu_kernel(self, weight);
+}
+::std::tuple<at::Tensor, at::Tensor> PReluBackward(
+    const at::Tensor& grad_output,
+    const at::Tensor& self,
+    const at::Tensor& weight) {
+  c10::optional<Device> common_device = nullopt;
+  c10::impl::check_and_update_common_device(
+      common_device, grad_output, "PReluBackward", "grad_output");
+  c10::impl::check_and_update_common_device(
+      common_device, self, "PReluBackward", "self");
+  c10::impl::check_and_update_common_device(
+      common_device, weight, "PReluBackward", "weight");
+  const OptionalDeviceGuard device_guard(device_of(self));
+  return at::native::_prelu_kernel_backward(grad_output, self, weight);
+}
+
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("abs", &Abs);
   m.impl("abs_", &Abs_);
@@ -1294,6 +1318,9 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("hardtanh.out", &HardTanhOut);
   m.impl("hardtanh_backward", &HardTanhBackward);
   m.impl("hardtanh_backward.grad_input", &HardTanhBackwardOut);
+
+  m.impl("_prelu_kernel", &PRelu);
+  m.impl("_prelu_kernel_backward", &PReluBackward);
 }
 
 } // namespace musa
