@@ -646,6 +646,76 @@ Tensor AdaptiveAvgPool2dBwd(const Tensor& grad_output, const Tensor& input) {
   return grad_input;
 }
 
+::std::tuple<at::Tensor, at::Tensor> MaxPool3dIndices(
+    const at::Tensor& self,
+    at::IntArrayRef kernel_size,
+    at::IntArrayRef stride,
+    at::IntArrayRef padding,
+    at::IntArrayRef dilation,
+    bool ceil_mode) {
+  c10::musa::MUSAGuard device_guard(self.device());
+  return at::native::max_pool3d_with_indices_cuda(
+      self, kernel_size, stride, padding, dilation, ceil_mode);
+}
+
+::std::tuple<at::Tensor&, at::Tensor&> MaxPool3dIndicesOut(
+    const at::Tensor& self,
+    at::IntArrayRef kernel_size,
+    at::IntArrayRef stride,
+    at::IntArrayRef padding,
+    at::IntArrayRef dilation,
+    bool ceil_mode,
+    at::Tensor& out,
+    at::Tensor& indices) {
+  c10::musa::MUSAGuard device_guard(self.device());
+  return at::native::max_pool3d_with_indices_out_cuda(
+      self, kernel_size, stride, padding, dilation, ceil_mode, out, indices);
+}
+
+at::Tensor MaxPool3dIndicesBwd(
+    const at::Tensor& grad_output,
+    const at::Tensor& self,
+    at::IntArrayRef kernel_size,
+    at::IntArrayRef stride,
+    at::IntArrayRef padding,
+    at::IntArrayRef dilation,
+    bool ceil_mode,
+    const at::Tensor& indices) {
+  c10::musa::MUSAGuard device_guard(self.device());
+  return at::native::max_pool3d_with_indices_backward_cuda(
+      grad_output,
+      self,
+      kernel_size,
+      stride,
+      padding,
+      dilation,
+      ceil_mode,
+      indices);
+}
+
+at::Tensor& MaxPool3dIndicesBwdOut(
+    const at::Tensor& grad_output,
+    const at::Tensor& self,
+    at::IntArrayRef kernel_size,
+    at::IntArrayRef stride,
+    at::IntArrayRef padding,
+    at::IntArrayRef dilation,
+    bool ceil_mode,
+    const at::Tensor& indices,
+    at::Tensor& grad_input) {
+  c10::musa::MUSAGuard device_guard(self.device());
+  return at::native::max_pool3d_with_indices_backward_out_cuda(
+      grad_output,
+      self,
+      kernel_size,
+      stride,
+      padding,
+      dilation,
+      ceil_mode,
+      indices,
+      grad_input);
+}
+
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("_adaptive_avg_pool2d", &AdaptiveAvgPool2d);
   m.impl("adaptive_avg_pool2d.out", &AdaptiveAvgPool2dOut);
@@ -660,6 +730,14 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("max_pool2d_with_indices_backward", &MaxPool2dIndicesBwd);
   m.impl("max_pool2d_with_indices.out", &MaxPool2dIndicesOut);
   m.impl("max_pool2d_with_indices_backward_out", &MaxPool2dIndicesBwdOut);
+
+  // For max_pooling, muDNN only support max_pool2d for now, we use porting
+  // here.
+  m.impl("max_pool3d_with_indices", &MaxPool3dIndices);
+  m.impl("max_pool3d_with_indices_backward", &MaxPool3dIndicesBwd);
+  m.impl("max_pool3d_with_indices.out", &MaxPool3dIndicesOut);
+  m.impl(
+      "max_pool3d_with_indices_backward.grad_input", &MaxPool3dIndicesBwdOut);
 }
 
 } // namespace musa

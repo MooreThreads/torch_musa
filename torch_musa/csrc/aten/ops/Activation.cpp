@@ -1119,6 +1119,51 @@ at::Tensor& HardSigmoidOut(const at::Tensor& self, at::Tensor& out) {
 }
 // hardsigmoid
 
+at::Tensor HardTanh(
+    const at::Tensor& self,
+    const at::Scalar& min_val,
+    const at::Scalar& max_val) {
+  c10::musa::MUSAGuard device_guard(self.device());
+  return at::native::hardtanh(self, min_val, max_val);
+}
+
+at::Tensor& HardTanh_(
+    at::Tensor& self,
+    const at::Scalar& min_val,
+    const at::Scalar& max_val) {
+  c10::musa::MUSAGuard device_guard(self.device());
+  return at::native::hardtanh_(self, min_val, max_val);
+}
+
+at::Tensor& HardTanhOut(
+    const at::Tensor& self,
+    const at::Scalar& min_val,
+    const at::Scalar& max_val,
+    at::Tensor& out) {
+  c10::musa::MUSAGuard device_guard(self.device());
+  return at::native::hardtanh_out(self, min_val, max_val, out);
+}
+
+at::Tensor HardTanhBackward(
+    const at::Tensor& grad_output,
+    const at::Tensor& self,
+    const at::Scalar& min_val,
+    const at::Scalar& max_val) {
+  c10::musa::MUSAGuard device_guard(self.device());
+  return at::native::hardtanh_backward(grad_output, self, min_val, max_val);
+}
+
+at::Tensor& HardTanhBackwardOut(
+    const at::Tensor& grad_output,
+    const at::Tensor& self,
+    const at::Scalar& min_val,
+    const at::Scalar& max_val,
+    at::Tensor& grad_input) {
+  c10::musa::MUSAGuard device_guard(self.device());
+  return at::native::hardtanh_backward_out(
+      grad_output, self, min_val, max_val, grad_input);
+}
+
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("abs", &Abs);
   m.impl("abs_", &Abs_);
@@ -1243,6 +1288,12 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("floor", &Floor);
   m.impl("floor_", &Floor_);
   m.impl("floor.out", &FloorOut);
+
+  m.impl("hardtanh", &HardTanh);
+  m.impl("hardtanh_", &HardTanh_);
+  m.impl("hardtanh.out", &HardTanhOut);
+  m.impl("hardtanh_backward", &HardTanhBackward);
+  m.impl("hardtanh_backward.grad_input", &HardTanhBackwardOut);
 }
 
 } // namespace musa

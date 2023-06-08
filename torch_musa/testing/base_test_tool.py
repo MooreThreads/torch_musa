@@ -3,6 +3,7 @@
 # pylint: disable=unused-import, too-many-branches, not-callable
 
 from contextlib import ExitStack, nullcontext
+import random
 from typing import Callable
 from functools import wraps
 
@@ -131,6 +132,7 @@ class OpTest:
         input_args (list): Input arguments for op.
         comparators (list): Comparator used to compare results.
         ignored_result_indices (list): Indices of results which will be ignored when comparing.
+        seed (int): random seed may be used in nn.Module's initialization.
     """
 
     def __init__(
@@ -139,12 +141,19 @@ class OpTest:
         input_args=None,
         comparators=DefaultComparator(equal_nan=True),
         ignored_result_indices=None,
+        seed=42,
     ):
         assert func is not None, "no function defined."
         self._func = func
         self._input_args = input_args
         self._comparators = [comparators]
         self._ignored_result_indices = ignored_result_indices
+        self._seed = seed
+
+    def set_random_seed(self):
+        random.seed(self._seed)
+        np.random.seed(self._seed)
+        torch.manual_seed(self._seed)
 
     def _call_func(self, inputs, device, train: bool = False, test_out: bool = False):
         """Run op on specific device.
@@ -187,6 +196,8 @@ class OpTest:
             if inputs is None:
                 reduce = self._func(**self._input_args)
                 if train:
+                    if isinstance(reduce, (list, tuple)):
+                        reduce = reduce[0]
                     reduce.sum().backward()
             elif isinstance(inputs, list):
                 inputs_list = []
@@ -205,12 +216,18 @@ class OpTest:
                         inputs[k] = torch.from_numpy(inputs[k]).to(device)
                     if train and inputs[k].requires_grad:
                         inputs[k].retain_grad()
-                        if inputs[k].grad:
+                        if inputs[k].grad is not None:
                             inputs[k].grad.zero_()
+                # For models with learnable parameters such as nn.Conv2d, it is necessary to
+                # ensure that the model's parameters are consistent when performing calculations
+                # on CPU and MUSA respectively, so we use same seed here.
+                self.set_random_seed()
                 func = self._func(**self._input_args)
                 func.to(device)
                 reduce = func(**inputs)
                 if train:
+                    if isinstance(reduce, (list, tuple)):
+                        reduce = reduce[0]
                     reduce.sum().backward()
                     for _, val in inputs.items():
                         if val.requires_grad:

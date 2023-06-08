@@ -292,3 +292,22 @@ def test_pow_out(input_data, dtype):
 
 
 # =================================== Test torch.pow end =================================== #
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data",
+    [
+        torch.randn(2, requires_grad=True),
+        torch.randn(2, 3, 16, 16, requires_grad=True),
+        torch.randn(2, 3, 4, 5, 6, requires_grad=True),
+        torch.randn(2, 3, 16, 16, 1, 2, requires_grad=True),
+        torch.randn(2, 3, 16, 16, 1, 2, 3, requires_grad=True),
+        torch.randn(2, 3, 16, 16, 1, 2, 3, 4, requires_grad=True),
+    ]
+)
+@pytest.mark.parametrize("bounds", [[-1.0, 1.0], [-0.5, 0.5], [-0.99, 0.89]])
+def test_hardtanh(input_data, bounds):
+    params = {"min_val": bounds[0],
+              "max_val": bounds[1]}
+    test = testing.OpTest(func=torch.nn.Hardtanh, input_args=params)
+    test.check_result({"input": input_data}, train=True)
