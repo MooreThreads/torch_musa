@@ -4,7 +4,6 @@ from functools import partial
 import torch
 from torch import nn
 import pytest
-import torch_musa
 
 from torch_musa import testing
 
@@ -41,15 +40,9 @@ def test_reflection_pad2d(input_data, dtype):
 @pytest.mark.parametrize("pad", [(3, 1), (2, 2)])
 @pytest.mark.parametrize("mode", ["reflect"])
 def test_reflection_pad1d(input_data, dtype, pad, mode):
-    func = partial(torch.nn.functional.pad, pad=pad, mode=mode)
-    cpu_input = input_data.to(dtype)
-    musa_input = input_data.to(dtype)
-
-    cpu_result = func(cpu_input)
-    musa_result = func(musa_input.to("musa"))
-
-    comparator = testing.DefaultComparator()
-    assert comparator(cpu_result, musa_result.cpu())
-    cpu_result.sum().backward()
-    musa_result.sum().backward()
-    assert comparator(cpu_input.grad, musa_input.grad.cpu())
+    input_data = input_data.to(dtype)
+    test = testing.OpTest(func=torch.nn.functional.pad,
+                          input_args={"input": input_data,
+                                      "pad": pad,
+                                      "mode": mode})
+    test.check_result(train=True)

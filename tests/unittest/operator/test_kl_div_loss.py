@@ -1,27 +1,25 @@
 """Test kl_div operator."""
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
-from functools import partial
 import pytest
 import torch
 import torch.nn.functional as F
 from torch_musa import testing
 
 
-
 input_datas = [
-    {"input": torch.randn([1, 10], requires_grad=True),
+    {"input": torch.randn([1, 10]),
      "target": torch.randn([1, 10])},
-    {"input": torch.randn([2, 3, 6], requires_grad=True),
+    {"input": torch.randn([2, 3, 6]),
      "target": torch.randn([2, 3, 6])},
-     {"input": torch.randn([2, 3, 6, 10], requires_grad=True),
+     {"input": torch.randn([2, 3, 6, 10]),
      "target": torch.randn([2, 3, 6, 10])},
-     {"input": torch.randn([2, 3, 6, 10, 20], requires_grad=True),
+     {"input": torch.randn([2, 3, 6, 10, 20]),
      "target": torch.randn([2, 3, 6, 10, 20])},
-     {"input": torch.randn([4, 5, 6, 7, 8, 9], requires_grad=True),
+     {"input": torch.randn([4, 5, 6, 7, 8, 9]),
      "target": torch.randn([4, 5, 6, 7, 8, 9])},
-     {"input": torch.randn([4, 5, 6, 7, 8, 9, 16], requires_grad=True),
+     {"input": torch.randn([4, 5, 6, 7, 8, 9, 16]),
      "target": torch.randn([4, 5, 6, 7, 8, 9, 16])},
-     {"input": torch.randn([4, 5, 6, 7, 8, 9, 16, 2], requires_grad=True),
+     {"input": torch.randn([4, 5, 6, 7, 8, 9, 16, 2]),
      "target": torch.randn([4, 5, 6, 7, 8, 9, 16, 2])},
 ]
 
@@ -35,23 +33,14 @@ all_support_types = [torch.float32]
 @pytest.mark.parametrize("dtype", all_support_types)
 @pytest.mark.parametrize("reduction", reduction)
 def test_kl_div(input_data, dtype, reduction):
-    func = partial(F.kl_div, reduction=reduction)
     reduction_dim = input_data["input"].dim() - 1
-    cpu_input = input_data["input"].to(dtype)
-    musa_input = input_data["input"].to(dtype)
+    input_data["input"] = input_data["input"].to(dtype)
 
-    cpu_target = input_data["target"]
-    musa_target = input_data["target"].to("musa")
+    input_tensor = F.log_softmax(input_data["input"], dim=reduction_dim)
+    input_tensor.requires_grad_(True)
+    target_tensor = F.softmax(input_data["target"], dim=reduction_dim)
 
-    cpu_output = func(F.log_softmax(cpu_input, dim=reduction_dim),
-                      F.softmax(cpu_target, dim=reduction_dim))
-    musa_output = func(F.log_softmax(musa_input.to("musa"), dim=reduction_dim),
-                       F.softmax(musa_target.to("musa"), dim=reduction_dim))
-
-    comparator = testing.DefaultComparator()
-    assert comparator(cpu_output, musa_output.cpu())
-
-    cpu_output.sum().backward()
-    musa_output.sum().backward()
-    # import pdb; pdb.set_trace();
-    assert comparator(cpu_input.grad, musa_input.grad.cpu())
+    test = testing.OpTest(func=torch.nn.KLDivLoss,
+                          input_args={"reduction": reduction},
+                          comparators=testing.DefaultComparator())
+    test.check_result({"input": input_tensor, "target": target_tensor}, train=True)

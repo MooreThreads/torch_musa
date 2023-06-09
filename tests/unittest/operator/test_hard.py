@@ -1,11 +1,9 @@
-"""Test kl_div operator."""
+"""Test hardswish, hardsigmoid."""
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
-from functools import partial
 import pytest
 import torch
 import torch.nn.functional as F
 from torch_musa import testing
-
 
 
 input_datas = [
@@ -25,8 +23,6 @@ input_datas = [
      "target": torch.randn([4, 5, 6, 7, 8, 9, 16, 2])},
 ]
 
-reduction = ["batchmean", "sum"]
-
 all_support_types = [torch.float32]
 
 function = [
@@ -38,17 +34,10 @@ function = [
 @pytest.mark.parametrize("input_data", input_datas)
 @pytest.mark.parametrize("dtype", all_support_types)
 def test_hardswish(input_data, dtype):
-    cpu_input = input_data["input"].to(dtype)
-    musa_input = input_data["input"].to(dtype)
+    input_data["input"] = input_data["input"].to(dtype)
 
     for func in function:
-        cpu_output = func(cpu_input)
-        musa_output = func(musa_input.to("musa"))
-
-        comparator = testing.DefaultComparator()
-        assert comparator(cpu_output, musa_output.cpu())
-
-        cpu_output.sum().backward()
-        musa_output.sum().backward()
-        # import pdb; pdb.set_trace();
-        assert comparator(cpu_input.grad, musa_input.grad.cpu())
+        test = testing.OpTest(func=func,
+                              input_args={"input": input_data["input"]},
+                              comparators=testing.DefaultComparator(abs_diff=1e-7))
+        test.check_result(train=True)
