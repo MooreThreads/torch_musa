@@ -7,6 +7,7 @@ import random
 from typing import Callable
 from functools import wraps
 
+import time
 import types
 import pytest
 import numpy as np
@@ -52,6 +53,20 @@ def get_raw_data():
         torch.randn(10, 10, 2, 2, 1, 3, 2, 2),
     ]
 
+def gen_ip_port():
+    '''
+    returns a random (IP, Port) pair [(str, str)] to avoid conflict of multi-test at same time.
+    '''
+    t = int(time.time())
+    x = time.time()-t
+    ip0 = "127"
+    ip1 = t%256
+    ip2 = int(x*256%256)
+    ip3 = int(x*256*256%256)
+    # Port 32768-60999 are used by Linux system
+    # Port 0-10000 are used by local system or custom apps
+    port = t//256%(32768-10000)+10000
+    return f"{ip0}.{ip1}.{ip2}.{ip3}", f"{port}"
 
 def get_all_support_types():
     return [torch.float32, torch.int32, torch.int64]

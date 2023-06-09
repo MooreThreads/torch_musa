@@ -28,7 +28,7 @@ try:
 except ImportError as err:
     raise ImportError("Please try running Python from a different directory!") from err
 
-torch.__setattr__("musa", sys.modules[__name__])
+torch.__setattr__("musa", sys.modules[__name__])  # pylint: disable=C2801
 
 
 from .core.device import Device as device

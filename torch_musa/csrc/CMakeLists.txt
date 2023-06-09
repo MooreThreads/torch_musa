@@ -8,6 +8,7 @@ FILE(GLOB _CSRCS
     aten/mudnn/*.cpp
     core/*.cpp
     utils/*.cpp
+    distributed/*.cpp
     )
 
 LIST(APPEND MUSA_CSRCS ${_CSRCS})

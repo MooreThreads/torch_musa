@@ -18,6 +18,7 @@
 #include "torch_musa/csrc/core/MUSAHooksInterface.h"
 #include "torch_musa/csrc/core/Sleep.h"
 #include "torch_musa/csrc/core/Stream.h"
+#include "torch_musa/csrc/distributed/Register.h"
 #include "torch_musa/csrc/utils/musa_lazy_init.h"
 
 // yang.zhao: copied from torch/csrc/utils.cpp to avoid including other things.
@@ -188,6 +189,10 @@ static py::object THMPModule_initExtension() {
   return py::none();
 }
 
+void AddMusaProcessGroupMethods(PyObject* module) {
+  registerProcessGroupMCCL(module);
+}
+
 void AddMusaDeviceMethods(PyObject* module) {
   auto py_module = py::reinterpret_borrow<py::module>(module);
 
@@ -277,6 +282,7 @@ void InitMusaModule(PyObject* module) {
   AddMusaDeviceMethods(module);
   AddMusaStreamMethods(module);
   AddMusaMemoryMethods(module);
+  AddMusaProcessGroupMethods(module);
   // Register MUSA device properties
   at::musa::registerMusaDeviceProperties(module);
 }

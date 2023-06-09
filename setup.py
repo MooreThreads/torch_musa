@@ -102,7 +102,7 @@ def configure_extension_build():
         return
     extra_link_args = []
     extra_compile_args = [
-        "-std=c++14",
+        "-std=c++17",
         "-Wall",
         "-Wextra",
         "-Werror",

@@ -1,0 +1,59 @@
+From 1b5b9d36afe883f3d2161e17c4861b0f432fd2a0 Mon Sep 17 00:00:00 2001
+From: "yueran.tang" <yueran.tang@mthreads.com>
+Date: Thu, 25 May 2023 08:04:52 +0000
+Subject: [PATCH] [PATCH] [MTAI] feat(distributed): support ddp recursive to
+ musa
+
+---
+ torch/distributed/utils.py      | 17 +++++++++++++++++
+ torch/nn/parallel/_functions.py |  6 ++++++
+ 2 files changed, 23 insertions(+)
+
+diff --git a/torch/distributed/utils.py b/torch/distributed/utils.py
+index f827de1..c252859 100644
+--- a/torch/distributed/utils.py
++++ b/torch/distributed/utils.py
+@@ -55,6 +55,23 @@ def _recursive_to(inputs, target_gpu, use_side_stream_for_tensor_copies):
+     def to_map(obj):
+         if isinstance(obj, (torch.Tensor, PackedSequence)):
+             device = obj.data.device if isinstance(obj, PackedSequence) else obj.device
++            if hasattr(torch, "musa") and torch.musa.is_available():
++                if device == torch.device('musa', target_gpu):
++                    return (obj,)
++                if not use_side_stream_for_tensor_copies:
++                    return (obj.to(target_gpu),)
++                else:
++                    stream = _get_stream(target_gpu)
++                    with torch.musa.stream(stream):
++                        output = obj.to(target_gpu)
++                    with torch.musa.device(target_gpu):
++                        current_stream = torch.musa.current_stream()
++                        current_stream.wait_stream(stream)
++                        if isinstance(obj, PackedSequence):
++                            output.data.record_stream(current_stream)
++                        else:
++                            output.record_stream(current_stream)
++                    return (output,)
+             if device == torch.device("cuda", target_gpu):
+                 return (obj,)
+             if not use_side_stream_for_tensor_copies:
+diff --git a/torch/nn/parallel/_functions.py b/torch/nn/parallel/_functions.py
+index 834d444..4d2ee3e 100644
+--- a/torch/nn/parallel/_functions.py
++++ b/torch/nn/parallel/_functions.py
+@@ -117,6 +117,12 @@ def _get_stream(device: int):
+     global _streams
+     if device == -1:
+         return None
++    if hasattr(torch, 'musa') and torch.musa.is_available():
++        if _streams is None:
++            _streams = [None] * torch.musa.device_count()
++        if _streams[device] is None:
++            _streams[device] = torch.musa.Stream(device)
++        return _streams[device]
+     if _streams is None:
+         _streams = [None] * torch.cuda.device_count()
+     if _streams[device] is None:
+-- 
+2.30.2
+
