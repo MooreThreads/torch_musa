@@ -12,14 +12,15 @@
 #include <mccl.h>
 
 // Macro to throw on a non-successful MCCL return value.
-#define C10D_MCCL_CHECK(cmd, failureReason)                                 \
-  do {                                                                      \
-    mcclResult_t result = cmd;                                              \
-    if (result != mcclSuccess) {                                            \
-      std::string err = "[Error] MCCL error in: " + std::string(__FILE__) + \
-          ":" + std::to_string(__LINE__) + mcclGetErrorWithVersion(result); \
-      TORCH_CHECK(false, "MCCL error occured: ");                           \
-    }                                                                       \
+#define C10D_MCCL_CHECK(cmd, failureReason)                                   \
+  do {                                                                        \
+    mcclResult_t result = cmd;                                                \
+    if (result != mcclSuccess) {                                              \
+      std::string err = "MCCL error in: " + std::string(__FILE__) + ":" +     \
+          std::to_string(__LINE__) + ", " + mcclGetErrorWithVersion(result) + \
+          "\n" + getMcclErrorDetailStr(result, failureReason);                \
+      TORCH_CHECK(false, err);                                                \
+    }                                                                         \
   } while (0)
 
 // Macro to print and abort on a non-successful MCCL return value.
