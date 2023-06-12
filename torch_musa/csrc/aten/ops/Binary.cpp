@@ -109,20 +109,23 @@ Tensor Binary(
   // In some special case that 'other' is scalar and on cpu, UnaryOp could take
   // the place of BinaryOp to optimize performance. such as:
   // torch.tensor([1.2, 2.4]) * 2.0
-  auto SupportOptimizeScalarToUnary = [](BINARY_MODE m,
-                                         const Tensor& input,
-                                         const Tensor& other) {
-    const bool support_mode_type =
-        (m == BINARY_MODE::ADD && input.scalar_type() == ScalarType::Float) ||
-        (m == BINARY_MODE::TRUEDIV &&
-         input.scalar_type() == ScalarType::Float) ||
-        (m == BINARY_MODE::MUL &&
-         (input.scalar_type() == ScalarType::Float ||
-          input.scalar_type() == ScalarType::Long));
-    const bool support_dim_device =
-        other.dim() == 0 && other.device() == DeviceType::CPU;
-    return support_mode_type && support_dim_device;
-  };
+  auto SupportOptimizeScalarToUnary =
+      [](BINARY_MODE m, const Tensor& input, const Tensor& other) {
+        const bool support_mode_type =
+            (m == BINARY_MODE::ADD &&
+             (input.scalar_type() == ScalarType::Float ||
+              input.scalar_type() == ScalarType::Half)) ||
+            (m == BINARY_MODE::TRUEDIV &&
+             (input.scalar_type() == ScalarType::Float ||
+              input.scalar_type() == ScalarType::Half)) ||
+            (m == BINARY_MODE::MUL &&
+             (input.scalar_type() == ScalarType::Float ||
+              input.scalar_type() == ScalarType::Long ||
+              input.scalar_type() == ScalarType::Half));
+        const bool support_dim_device =
+            other.dim() == 0 && other.device() == DeviceType::CPU;
+        return support_mode_type && support_dim_device;
+      };
   const bool optimize_scalar_unary =
       SupportOptimizeScalarToUnary(m, self, other);
   if (!optimize_scalar_unary) {

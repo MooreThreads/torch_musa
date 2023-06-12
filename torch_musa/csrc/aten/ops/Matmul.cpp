@@ -59,7 +59,7 @@ void MmCall(
     CHECK_MUDNN_STATUS(mm.SetTranspose(trans_l, trans_r), "SetTranspose");
     // not support broadcast
     if (alpha.equal(1) && beta.equal(0) && gama.equal(1) &&
-        bias.numel() == out.size(1)) {
+        bias.numel() == out.size(1) && bias.dim() == 1) {
       auto contiguous_bias = Contiguous(bias);
       auto bmt = CreateMUTensor(contiguous_bias);
       // will support set_gamma in the future
@@ -70,7 +70,7 @@ void MmCall(
     } else {
       CHECK_MUDNN_STATUS(mm.SetAlpha(alpha.to<double>()), "SetAlpha");
       CHECK_MUDNN_STATUS(mm.SetBeta(beta.to<double>()), "SetBeta");
-      CHECK_MUDNN_STATUS(mm.Run(h, rst, lmt, rmt), "Run");
+      CHECK_MUDNN_STATUS(mm.Run(h, rst, lmt, rmt, InternalMemAlloc), "Run");
     }
   }
 }
@@ -87,7 +87,8 @@ at::Tensor& AddMmOut(
       "mat1 and mat2 must be a matrix and mat1_shape[1] must equal to "
       "mat2_shape[0]");
   // normal case
-  if (alpha.equal(1) && beta.equal(1) && self.numel() == out.size(1)) {
+  if (alpha.equal(1) && beta.equal(1) && self.numel() == out.size(1) &&
+      self.dim() == 1) {
     MmCall(mat1, mat2, self, out, false, 1, 0, 1);
   } else {
     out.zero_();

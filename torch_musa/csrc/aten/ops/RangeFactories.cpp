@@ -15,32 +15,14 @@
 namespace at {
 namespace musa {
 
+// TODO(zaixing.wang): fp16 mark
 Tensor& ArangeStartOut(
     const Scalar& start,
     const Scalar& end,
     const Scalar& step,
-    Tensor& result) {
-  MUSA_TENSOR_TYPE_CHECK(result);
-  c10::musa::MUSAGuard device_guard(result.device());
-  double size_d =
-      std::ceil((end.toDouble() - start.toDouble()) / step.toDouble());
-  int64_t size = static_cast<int64_t>(size_d);
-  std::vector<int64_t> shape{size};
-  result.resize_(shape);
-  auto out = CreateMUTensor(result);
-  muHandle& h = GetMudnnHandle();
-  ::musa::dnn::Arange op;
-  if (result.scalar_type() == at::ScalarType::Float) {
-    CHECK_MUDNN_STATUS(op.SetStart(start.toDouble()), "SetStart");
-    CHECK_MUDNN_STATUS(op.SetStep(step.toDouble()), "SetStep");
-  } else {
-    CHECK_MUDNN_STATUS(op.SetStart(start.toLong()), "SetStart");
-    CHECK_MUDNN_STATUS(op.SetStep(step.toLong()), "SetStep");
-  }
-  CHECK_MUDNN_STATUS(op.SetEnd(end.toDouble()), "SetEnd");
-
-  CHECK_MUDNN_STATUS(op.Run(h, out), "Run ");
-  return result;
+    Tensor& out) {
+  c10::musa::MUSAGuard device_guard(out.device());
+  return at::native::arange_cuda_out(start, end, step, out);
 }
 
 Tensor& ArangeOut(const Scalar& end, Tensor& result) {
@@ -60,7 +42,6 @@ at::Tensor& LinspaceOut(
 }
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("arange.out", &ArangeOut);
   m.impl("arange.start_out", &ArangeStartOut);
   m.impl("linspace.out", &LinspaceOut);
 }

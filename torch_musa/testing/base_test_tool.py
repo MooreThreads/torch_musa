@@ -1,6 +1,6 @@
 """Some basic functions for tests."""
-# pylint: disable=too-few-public-methods, too-many-locals, too-many-statements
-# pylint: disable=unused-import, too-many-branches, not-callable
+# pylint: disable=too-few-public-methods, too-many-locals, too-many-statements, consider-using-dict-items
+# pylint: disable=unused-import, too-many-branches, not-callable, missing-function-docstring
 
 from contextlib import ExitStack, nullcontext
 import random
@@ -170,7 +170,8 @@ class OpTest:
         np.random.seed(self._seed)
         torch.manual_seed(self._seed)
 
-    def _call_func(self, inputs, device, train: bool = False, test_out: bool = False):
+    def _call_func(self, inputs, device, train: bool = False,
+                   test_out: bool = False, fp16: bool = False):
         """Run op on specific device.
         Args:
             inputs (dict): Inputs arguments for op.
@@ -184,32 +185,29 @@ class OpTest:
         res = []
         grad = []
         mode_context = nullcontext() if train else torch.set_grad_enabled(False)
+        input_args = {}
         with ExitStack() as stack:
             stack.enter_context(mode_context)
             for k in self._input_args:
                 if isinstance(self._input_args[k], torch.Tensor):
-                    self._input_args[k] = self._input_args[k].to(device)
-                if isinstance(self._input_args[k], np.ndarray):
-                    self._input_args[k] = torch.from_numpy(self._input_args[k]).to(device)
-                elif isinstance(self._input_args[k], list):
-                    for i in range(len(self._input_args[k])):
-                        if isinstance(self._input_args[k][i], np.ndarray):
-                            self._input_args[k][i] = torch.Tensor(self._input_args[k][i]).to(device)
-                            self._input_args[k][i].retain_grad()
-                            if self._input_args[k][i].grad is not None:
-                                self._input_args[k][i].grad.zero_()
+                    input_args[k] = self._input_args[k].to(device).clone()
+                    if fp16 and input_args[k].dtype == torch.float32:
+                        input_args[k] = input_args[k].to(torch.float16)
+                else:
+                    input_args[k] = self._input_args[k]
+
 
                 if (
                     train
-                    and isinstance(self._input_args[k], torch.Tensor)
-                    and self._input_args[k].requires_grad
+                    and isinstance(input_args[k], torch.Tensor)
+                    and input_args[k].requires_grad
                 ):
-                    self._input_args[k].retain_grad()
-                    if self._input_args[k].grad is not None:
-                        self._input_args[k].grad.zero_()
+                    input_args[k].retain_grad()
+                    if input_args[k].grad is not None:
+                        input_args[k].grad.zero_()
 
             if inputs is None:
-                reduce = self._func(**self._input_args)
+                reduce = self._func(**input_args)
                 if train:
                     if isinstance(reduce, (list, tuple)):
                         reduce = reduce[0]
@@ -237,7 +235,7 @@ class OpTest:
                 # ensure that the model's parameters are consistent when performing calculations
                 # on CPU and MUSA respectively, so we use same seed here.
                 self.set_random_seed()
-                func = self._func(**self._input_args)
+                func = self._func(**input_args)
                 func.to(device)
                 reduce = func(**inputs)
                 if train:
@@ -254,24 +252,42 @@ class OpTest:
                     inputs = torch.from_numpy(inputs).to(device)
                 reduce = self._func(inputs)
 
-            for k in self._input_args:
+            for k in input_args:
                 if (
                     train
-                    and isinstance(self._input_args[k], torch.Tensor)
-                    and self._input_args[k].requires_grad
+                    and isinstance(input_args[k], torch.Tensor)
+                    and input_args[k].requires_grad
                 ):
-                    grad.append(self._input_args[k].grad.cpu())
+                    grad.append(input_args[k].grad.cpu())
 
             if isinstance(reduce, (tuple, list)):
                 for val in reduce:
                     res.append(val.to("cpu"))
             else:
                 res.append(reduce.to("cpu"))
-            if test_out and "out" in self._input_args:
-                res.append(self._input_args["out"].to("cpu"))
+            if test_out and "out" in input_args:
+                res.append(input_args["out"].to("cpu"))
             for i in grad:
                 res.append(i.clone())
             return res
+
+    def compare_res(self, res1, res2):
+        for i, (m_r, c_r) in enumerate(zip(res1, res2)):
+            if self._ignored_result_indices and i in self._ignored_result_indices:
+                continue
+            if c_r.dtype == torch.float16:
+                c_r = c_r.float()
+            if m_r.dtype == torch.float16:
+                m_r = m_r.float()
+            for comparator in self._comparators:
+                assert c_r.shape == m_r.shape
+                assert c_r.dtype == m_r.dtype
+                assert comparator(c_r, m_r)
+
+    def check_musafp16_vs_musafp32(self):
+        fp32_res = self._call_func(None, "musa")
+        fp16_res = self._call_func(None, "musa", False, False, True)
+        self.compare_res(fp32_res, fp16_res)
 
     def check_result(self, inputs=None, train=False, test_out=False):
         """Run op and compare computing results.
@@ -282,13 +298,7 @@ class OpTest:
         Returns:
             None.
         """
-
         cpu_res = self._call_func(inputs, "cpu", train, test_out)
         mtgpu_res = self._call_func(inputs, "musa", train, test_out)
-        for i, (m_r, c_r) in enumerate(zip(mtgpu_res, cpu_res)):
-            if self._ignored_result_indices and i in self._ignored_result_indices:
-                continue
-            for comparator in self._comparators:
-                assert c_r.shape == m_r.shape
-                assert c_r.dtype == m_r.dtype
-                assert comparator(c_r, m_r)
+        self.compare_res(cpu_res, mtgpu_res)
+        

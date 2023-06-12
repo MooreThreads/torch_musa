@@ -83,9 +83,7 @@ void Unary_(
     const std::string& op_name,
     Tensor& input,
     std::function<void(::musa::dnn::Unary&)> func) {
-  CheckContiguousWithName(op_name, input);
-  MUSA_TENSOR_TYPE_CHECK(input);
-  UnaryCall(op_name, input, input, func);
+  input = Unary(op_name, input, func);
 }
 
 void UnaryOut(
@@ -93,10 +91,7 @@ void UnaryOut(
     Tensor& output,
     const Tensor& input,
     std::function<void(::musa::dnn::Unary&)> func) {
-  CheckContiguousWithName(op_name, output);
-  Tensor contiguous_input = Contiguous(input);
-  MUSA_TENSOR_TYPE_CHECK(contiguous_input);
-  UnaryCall(op_name, output, contiguous_input, func);
+  output = Unary(op_name, input, func);
 }
 
 #define DEFINE_ACTIVATE_OP(op_name, mode)                          \
@@ -264,14 +259,7 @@ Tensor& Clamp_(
     Tensor& self,
     const c10::optional<Scalar>& min,
     const c10::optional<Scalar>& max) {
-  const bool has_min = (min.has_value());
-  const bool has_max = (max.has_value());
-  TORCH_CHECK(
-      has_min || has_max,
-      "torch.clamp: either min, max or both scalars must be defined")
-  MUSA_TENSOR_TYPE_CHECK(self);
-
-  ClampCall(__func__, self, self, has_min, min, has_max, max);
+  self = Clamp(self, min, max);
   return self;
 }
 
@@ -280,14 +268,7 @@ Tensor& ClampOut(
     const c10::optional<Scalar>& min,
     const c10::optional<Scalar>& max,
     Tensor& out) {
-  const bool has_min = (min.has_value());
-  const bool has_max = (max.has_value());
-  TORCH_CHECK(
-      has_min || has_max,
-      "torch.clamp: either min, max or both scalars must be defined")
-  MUSA_TENSOR_TYPE_CHECK(self);
-
-  ClampCall(__func__, out, self, has_min, min, has_max, max);
+  out = Clamp(self, min, max);
   return out;
 }
 
@@ -377,6 +358,15 @@ void NegCall(
       });
       break;
     }
+    case ScalarType::Half: {
+      const double alpha = val.value().to<double>();
+      UnaryCall(op_name, out, self_, [&](::musa::dnn::Unary& op) {
+        CHECK_MUDNN_STATUS(op.SetAlpha(alpha), "SetAlpha");
+        CHECK_MUDNN_STATUS(
+            op.SetMode(::musa::dnn::Unary::Mode::MUL), "SetMode");
+      });
+      break;
+    }
     case ScalarType::Int: {
       const int64_t alpha = val.value().to<int64_t>();
       UnaryCall(op_name, out, self_, [&](::musa::dnn::Unary& op) {
@@ -410,16 +400,12 @@ Tensor Neg(const Tensor& self) {
 }
 
 Tensor& Neg_(Tensor& self) {
-  MUSA_TENSOR_TYPE_CHECK(self);
-  Scalar val = -1;
-  NegCall(__func__, self, self, val);
+  self = Neg(self);
   return self;
 }
 
 Tensor& NegOut(const Tensor& self, Tensor& out) {
-  MUSA_TENSOR_TYPE_CHECK(self);
-  Scalar val = -1;
-  NegCall(__func__, out, self, val);
+  out = Neg(self);
   return out;
 }
 

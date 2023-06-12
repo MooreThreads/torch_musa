@@ -241,8 +241,9 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
       "Device of input tensor of NativeLayerNorm must be MUSA, but now is ",
       input.device());
   TORCH_CHECK(
-      input.scalar_type() == at::ScalarType::Float,
-      "Dtype of input tensor of LayerNorm only support Float32, but now it is ",
+      input.scalar_type() == at::ScalarType::Float ||
+          input.scalar_type() == at::ScalarType::Half,
+      "Dtype of input tensor of LayerNorm only support Float32,Half, but now it is ",
       input.scalar_type());
   c10::musa::MUSAGuard device_guard(input.device());
   c10::MaybeOwned<Tensor> weight_maybe_owned =
@@ -272,8 +273,9 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
         "Device of weight tensor of NativeLayerNorm must be MUSA, but now is ",
         weight.device());
     TORCH_CHECK(
-        weight.scalar_type() == at::ScalarType::Float,
-        "Dtype of weight tensor of LayerNorm only support Float32, ",
+        weight.scalar_type() == at::ScalarType::Float ||
+            weight.scalar_type() == at::ScalarType::Half,
+        "Dtype of weight tensor of LayerNorm only support Float32, Half",
         "but now it is ",
         weight.scalar_type());
   }
@@ -285,8 +287,9 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
         "Device of bias tensor of NativeLayerNorm must be MUSA, but now is ",
         bias.device());
     TORCH_CHECK(
-        bias.scalar_type() == at::ScalarType::Float,
-        "Dtype of bias tensor of LayerNorm only support Float32, ",
+        bias.scalar_type() == at::ScalarType::Float ||
+            bias.scalar_type() == at::ScalarType::Half,
+        "Dtype of bias tensor of LayerNorm only support Float32, Half",
         "but now it is ",
         bias.scalar_type());
   }
