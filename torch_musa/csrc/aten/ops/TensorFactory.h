@@ -24,6 +24,14 @@ Tensor empty_mtgpu(
     c10::optional<bool> pin_memory_opt,
     c10::optional<c10::MemoryFormat> memory_format_opt);
 
+Tensor empty_strided_mtgpu(
+    IntArrayRef size,
+    IntArrayRef stride,
+    c10::optional<ScalarType> dtype_opt,
+    c10::optional<Layout> layout_opt,
+    c10::optional<Device> device_opt,
+    c10::optional<bool> pin_memory_opt);
+
 bool IsContiguous(
     const Tensor& self,
     MemoryFormat memory_format = MemoryFormat::Contiguous);

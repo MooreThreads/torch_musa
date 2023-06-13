@@ -1,6 +1,7 @@
 #include <ATen/Config.h>
 #include <ATen/NativeFunctions.h>
 #include <ATen/native/Resize.h>
+#include <c10/core/ScalarTypeToTypeMeta.h>
 #include <torch/extension.h>
 #include <torch/library.h>
 
@@ -12,6 +13,20 @@
 
 namespace at {
 namespace musa {
+namespace {
+Tensor empty_strided_musa(
+    IntArrayRef size,
+    IntArrayRef stride,
+    const TensorOptions& options) {
+  return empty_strided_mtgpu(
+      size,
+      stride,
+      optTypeMetaToScalarType(options.dtype_opt()),
+      options.layout_opt(),
+      options.device_opt(),
+      options.pinned_memory_opt());
+}
+} // namespace
 
 void ConfigFormat(Tensor& t, muTensor& mt, bool auto_contiguous) {
   if (t.is_contiguous()) {
@@ -101,6 +116,17 @@ void InternalMemFree(void* ptr) {
 
 bool is_musa(const Tensor& t) {
   return t.device().type() == kMUSA;
+}
+
+c10::optional<Tensor> maybe_create_proxy(
+    const Tensor& out,
+    IntArrayRef sizes,
+    IntArrayRef strides,
+    const TensorOptions& options) {
+  if (out.strides() != strides) {
+    return empty_strided_musa(sizes, strides, options);
+  }
+  return c10::nullopt;
 }
 
 } // namespace musa

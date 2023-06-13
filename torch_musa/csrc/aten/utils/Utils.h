@@ -93,6 +93,12 @@ void resize_out(
     IntArrayRef strides,
     const TensorOptions& options);
 
+c10::optional<Tensor> maybe_create_proxy(
+    const Tensor& out,
+    IntArrayRef sizes,
+    IntArrayRef strides,
+    const TensorOptions& options);
+
 } // namespace musa
 } // namespace at
 

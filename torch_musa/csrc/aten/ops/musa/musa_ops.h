@@ -6,8 +6,6 @@
 namespace at {
 namespace musa {
 
-Tensor Tril(const Tensor& self, int64_t diagonal);
-
 Tensor Baddbmm(
     const Tensor& self,
     const Tensor& batch1,
