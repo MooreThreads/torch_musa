@@ -22,6 +22,8 @@ find_package(MUSA REQUIRED)
 
 FILE(GLOB ATEN_MUSA_CSRCS aten/musa/*.cpp)
 
+FILE(GLOB PORTING_CPP_CSRCS ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Activation.cpp)
+
 FILE(GLOB PORTING_CSRCS
     aten/ops/musa/*.cpp)
 
@@ -48,22 +50,22 @@ FILE(GLOB MU_SRCS
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/musa/cub-RadixSortPairs.mu
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ReduceNormKernel.mu
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ReduceMaxValuesKernel.mu
-    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ReflectionPad.mu
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TensorTransformations.mu
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationHardswishKernel.mu
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationHardsigmoidKernel.mu
+    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationLogSigmoidKernel.mu
+    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationGeluKernel.mu
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/CompareKernels.mu
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/LossCTC.mu
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistributionUniform.mu
-    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleBilinear2d.mu
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationPreluKernel.mu
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationHardtanhKernel.mu
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DilatedMaxPool3d.mu
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistributionExponentialKernel.mu
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TriangularOps.mu
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/RangeFactories.mu
-    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/FillKernel.mu
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Indexing.mu
+    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationGluKernel.mu
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/GridSampler.mu
     core/*.mu
     )
@@ -81,7 +83,7 @@ endif()
 #set(MUSA_VERBOSE_BUILD ON)
 # TODO(@caizhi): Use FindOpenMP.cmake to replace absolute paths
 musa_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/aten/ops/musa /usr/lib/llvm-11/include/openmp/)
-musa_add_library(${MUSA_KERNELS_LIB} SHARED ${MU_SRCS} ${PORTING_CSRCS} ${ATEN_MUSA_CSRCS})
+musa_add_library(${MUSA_KERNELS_LIB} SHARED ${MU_SRCS} ${PORTING_CSRCS} ${PORTING_CPP_CSRCS} ${ATEN_MUSA_CSRCS})
 
 set(CUBLAS_LIB $ENV{MUSA_HOME}/lib/libmublas.so)
 target_link_libraries(${MUSA_KERNELS_LIB} ${CUBLAS_LIB})

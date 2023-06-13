@@ -24,7 +24,11 @@ class PortingFile:
 r"""All folders needed for cuda-porting
 """
 PORT_FILES = [
-    PortingFile("aten/src/ATen/native", True, True),
+    PortingFile("aten/src/ATen/native/cuda", True, False),
+    PortingFile("aten/src/ATen/native/nested", True, True),
+    PortingFile("aten/src/ATen/native/quantized", True, True),
+    PortingFile("aten/src/ATen/native/sparse", True, True),
+    PortingFile("aten/src/ATen/native/transformers", True, True),
     PortingFile("aten/src/ATen/cuda", True, False),
     PortingFile("c10/cuda", True, False),
     PortingFile("include", True, True),
