@@ -16,6 +16,8 @@ CLEAN=0
 COMPILE_FP64=0
 PYTORCH_TAG=v2.0.0
 
+USE_STATIC_MKL=${USE_STATIC_MKL:-0}
+
 usage() {
   echo -e "\033[1;32mThis script is used to build PyTorch and Torch_MUSA. \033[0m"
   echo -e "\033[1;32mParameters usage: \033[0m"
