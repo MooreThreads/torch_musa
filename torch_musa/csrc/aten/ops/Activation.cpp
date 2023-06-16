@@ -1174,6 +1174,11 @@ at::Tensor PRelu(const at::Tensor& self, const at::Tensor& weight) {
   return at::native::_prelu_kernel_backward(grad_output, self, weight);
 }
 
+at::Tensor IsNan(const at::Tensor& self) {
+  // DeviceGuard omitted
+  return self != self;
+}
+
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("abs", &Abs);
   m.impl("abs_", &Abs_);
@@ -1307,6 +1312,8 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
 
   m.impl("_prelu_kernel", &PRelu);
   m.impl("_prelu_kernel_backward", &PReluBackward);
+
+  m.impl("isnan", &IsNan);
 }
 
 } // namespace musa

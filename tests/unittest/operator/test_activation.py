@@ -312,3 +312,34 @@ def test_hardtanh(input_data, bounds):
               "max_val": bounds[1]}
     test = testing.OpTest(func=torch.nn.Hardtanh, input_args=params)
     test.check_result({"input": input_data}, train=True)
+
+
+
+def generate_nan_tensor(shape):
+    assert isinstance (shape, (list, tuple))
+    t = torch.randn(shape)
+    mask = torch.rand(shape) < 0.5
+    t[mask] = float("nan")
+
+    return t
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data",
+    [
+        generate_nan_tensor((10, )),
+        generate_nan_tensor((10, 2)),
+        generate_nan_tensor((10, 2, 2)),
+        generate_nan_tensor((10, 2, 3)),
+        generate_nan_tensor((10, 9, 8, 1)),
+        generate_nan_tensor((10, 9, 8, 7, 2)),
+        generate_nan_tensor((10, 9, 2, 2, 1, 4)),
+        generate_nan_tensor((10, 9, 2, 2, 1, 4, 2)),
+        generate_nan_tensor((10, 9, 2, 2, 1, 4, 2, 1)),
+    ]
+
+)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_isnan(input_data, dtype):
+    test = testing.OpTest(func=torch.isnan, input_args={"input": input_data.to(dtype)})
+    test.check_result()
