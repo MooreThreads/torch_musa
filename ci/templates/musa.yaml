@@ -26,8 +26,8 @@ spec:
       value: musa
     - name: PYTORCH_REPO_PATH
       value: /home/pytorch
-    - name: MTHREADS_VISIBLE_DEVICES
-      value: all
+    - name: MUSA_VISIBLE_DEVICES
+      value: 1,2,3
     command:
     - sleep
     securityContext:
