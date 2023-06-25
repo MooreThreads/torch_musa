@@ -763,3 +763,32 @@ def test_torch_manual_seed_seeds_musa_devices():
         y = x.clone().uniform_()
         assert torch.all(x == y)
         assert torch.musa.initial_seed() == 2
+
+
+def test_manual_seed():
+    """Testing manual seed by uniform_ and bernoulli"""
+    with freeze_rng_state():
+        x = torch.zeros(4, 4).float().to("musa")
+        torch.musa.manual_seed(2)
+        assert torch.musa.initial_seed() == 2
+        x.uniform_()
+        a = torch.bernoulli(torch.full_like(x, 0.5))
+        torch.musa.manual_seed(2)
+        y = x.clone().uniform_()
+        b = torch.bernoulli(torch.full_like(x, 0.5))
+        assert torch.all(x == y)
+        assert torch.all(a == b)
+        assert torch.musa.initial_seed() == 2
+
+
+@testing.skip_if_not_multiple_musa_device
+def test_get_set_rng_state_all():
+    """Testing set/get rng state all by normal_"""
+    states = torch.musa.get_rng_state_all()
+    before0 = torch.FloatTensor(100).to("musa").normal_()
+    before1 = torch.FloatTensor(100).to("musa:1").normal_()
+    torch.musa.set_rng_state_all(states)
+    after0 = torch.FloatTensor(100).to("musa").normal_()
+    after1 = torch.FloatTensor(100).to("musa:1").normal_()
+    assert torch.all(before0 == after0)
+    assert torch.all(before1 == after1)

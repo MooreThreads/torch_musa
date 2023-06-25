@@ -63,6 +63,9 @@ inline void SetTensorTypeAndAddr(const Tensor& t, muTensor& m_t) {
     case ScalarType::Float:
       m_t.SetType(muTensor::Type::FLOAT);
       break;
+    case ScalarType::Short:
+      m_t.SetType(muTensor::Type::INT16);
+      break;
     case ScalarType::Int:
       m_t.SetType(muTensor::Type::INT32);
       break;

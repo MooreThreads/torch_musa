@@ -33,6 +33,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # set it at the very beginning so that the entire build is deterministic.
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 
+option(ENABLE_COMPILE_FP64 "Enable FP64" OFF)
 option(USE_ASAN "Use Address Sanitizer" OFF)
 option(USE_TSAN "Use Thread Sanitizer" OFF)
 option(USE_MUSA "Use MUSA" ON)
@@ -139,6 +140,20 @@ endif()
 if(USE_TSAN)
   string(APPEND CMAKE_CXX_FLAGS_DEBUG " -fsanitize=thread")
   string(APPEND CMAKE_LINKER_FLAGS_DEBUG " -fsanitize=thread")
+endif()
+
+if(DEFINED ENV{MUSA_ARCH})
+  set(MUSA_ARCH $ENV{MUSA_ARCH})
+  string(APPEND MUSA_MCC_FLAGS " --cuda-gpu-arch=mp_${MUSA_ARCH}")
+  if(${MUSA_ARCH} EQUAL 21)
+    add_definitions(-DTORCH_MUSA_ARCH=210)
+  elseif(${MUSA_ARCH} EQUAL 22)
+    add_definitions(-DTORCH_MUSA_ARCH=220)
+  elseif(${MUSA_ARCH} EQUAL 31)
+    add_definitions(-DTORCH_MUSA_ARCH=310)
+  else()
+    add_definitions(-DTORCH_MUSA_ARCH=110)
+  endif()
 endif()
 
 #=============================================================

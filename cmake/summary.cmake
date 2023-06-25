@@ -13,7 +13,7 @@ function(torch_musa_build_configuration_summary)
   message(STATUS "USE_PYTHON            : ${USE_PYTHON}")
   message(STATUS "BUILD_TEST            : ${BUILD_TEST}")
   message(STATUS "BUILD_TYPE            : ${CMAKE_BUILD_TYPE}")
- 
+  message(STATUS "MUSA_ARCH             : mp_$ENV{MUSA_ARCH}")
   message(STATUS "PYTORCH_SOURCE_PATH   : $ENV{PYTORCH_REPO_PATH}")
   message(STATUS "PYTORCH_HEADERS_PATH  : ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/include")
   message(STATUS "MUDNN PATH            : ${MUDNN_PATH}")
