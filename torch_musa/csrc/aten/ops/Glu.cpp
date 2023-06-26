@@ -35,7 +35,7 @@ Tensor Glu(const Tensor& self, int64_t dim) {
   auto output_size = self.sizes().vec();
   output_size[dim] = output_size[dim] / 2;
   Tensor self_ = Contiguous(self);
-  auto out = empty_mtgpu(
+  auto out = empty_musa(
       output_size,
       self_.scalar_type(),
       c10::nullopt,

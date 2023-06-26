@@ -174,7 +174,7 @@ Tensor Binary(
         m == BINARY_MODE::GT || m == BINARY_MODE::LE || m == BINARY_MODE::LT ||
         m == BINARY_MODE::LOGICAL_AND || m == BINARY_MODE::LOGICAL_OR ||
         m == BINARY_MODE::LOGICAL_XOR) {
-      output = empty_mtgpu(
+      output = empty_musa(
           output_sizes,
           ScalarType::Bool,
           c10::nullopt,
@@ -182,7 +182,7 @@ Tensor Binary(
           c10::nullopt,
           at::MemoryFormat::Contiguous);
     } else {
-      output = empty_mtgpu(
+      output = empty_musa(
           output_sizes,
           contiguous_self.scalar_type(),
           c10::nullopt,

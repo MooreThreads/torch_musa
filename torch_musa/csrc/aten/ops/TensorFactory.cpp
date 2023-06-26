@@ -12,8 +12,11 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/core/Allocator.h"
 #include "torch_musa/csrc/core/Device.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
+#include "torch_musa/csrc/core/PeerToPeerAccess.h"
+#include "torch_musa/csrc/utils/musa_lazy_init.h"
 
 #include <mudnn.h>
 
@@ -21,7 +24,7 @@ namespace at {
 namespace detail {
 
 // function: create a musa empty tensor
-Tensor empty_mtgpu(
+Tensor empty_musa(
     IntArrayRef size,
     c10::optional<ScalarType> dtype_opt,
     c10::optional<Layout> layout_opt,
@@ -29,7 +32,7 @@ Tensor empty_mtgpu(
     c10::optional<bool> pin_memory_opt,
     c10::optional<c10::MemoryFormat> memory_format_opt) {
   if (layout_opt.has_value()) {
-    LOG(INFO) << "layout_opt is invalid in empty_mtgpu";
+    LOG(INFO) << "layout_opt is invalid in empty_musa";
   }
   auto device = device_or_default(device_opt);
   c10::musa::OptionalMUSAGuard guard(device);
@@ -38,90 +41,98 @@ Tensor empty_mtgpu(
 
   TORCH_CHECK(pin_memory == false, "MUSA only support not pinned memory");
   TORCH_CHECK(device.type() == at::musa::kMUSA, "Device isn't MUSA!");
-  c10::Allocator* allocator;
-
-  allocator = c10::GetAllocator(at::musa::kMUSA);
+  c10::Allocator* allocator = c10::musa::MUSACachingAllocator::get();
 
   auto dtype = dtype_or_default(dtype_opt);
-  constexpr c10::DispatchKeySet mtgpu_ks(at::musa::kMUSAKey);
-  return empty_generic(size, allocator, mtgpu_ks, dtype, memory_format_opt);
+  constexpr c10::DispatchKeySet musa_ks(at::musa::kMUSAKey);
+  return empty_generic(size, allocator, musa_ks, dtype, memory_format_opt);
 }
 
 } // namespace detail
 
 namespace musa {
 // function: resize tensor to a new size
-void resize_bytes_mtgpu(StorageImpl* storage, size_t size_bytes) {
+void resize_bytes_musa(StorageImpl* storage, size_t size_bytes) {
   TORCH_CHECK(
       storage->resizable(), "Trying to resize storage that is not resizable");
+  auto allocator = storage->allocator();
+  TORCH_CHECK(
+      allocator != nullptr, "Trying to resize storage without an allocator");
 
-  at::DataPtr new_data;
-  if (size_bytes != 0) {
-    new_data = storage->allocator()->allocate(size_bytes);
-  }
-  at::DataPtr old_data = storage->set_data_ptr(std::move(new_data));
-  const auto old_capacity = storage->nbytes();
-  const auto copy_capacity = std::min(size_bytes, old_capacity);
-  storage->set_nbytes(size_bytes);
-  if (old_data != nullptr && old_data.get() != nullptr && copy_capacity > 0) {
-    // need to modify this place for our musa memory storage
-    // TODO(guandong.lu): memoryCopy from device to device
-    // memcpy(storage->data(), old_data.get(), copy_capacity);
-    TORCH_CHECK(false, "MUSA currently not support copy from D2D");
-  }
-}
-
-// function: create a new storage or increase the size of the storage
-static inline void maybe_resize_storage_mtgpu(
-    TensorImpl* self,
-    uint64_t new_size) {
-  if (new_size == 0) {
+  auto device = at::musa::current_device();
+  if (size_bytes == 0) {
+    storage->set_data_ptr_noswap(
+        at::DataPtr(nullptr, at::Device(at::musa::kMUSA, device)));
+    storage->set_nbytes(0);
     return;
   }
 
-  const auto new_size_bytes_i =
-      (new_size + self->storage_offset()) * self->dtype().itemsize();
+  at::DataPtr data = allocator->allocate(size_bytes);
+  if (storage->data_ptr()) {
+    // Enable p2p access when the memcpy is across devices
+    torch::utils::musa_lazy_init();
+    at::musa::get_p2p_access(device, storage->device().index());
 
-  const auto new_size_bytes = static_cast<size_t>(new_size_bytes_i);
+    C10_MUSA_CHECK(musaMemcpyAsync(
+        data.get(),
+        storage->data(),
+        std::min(storage->nbytes(), size_bytes),
+        musaMemcpyDeviceToDevice,
+        c10::musa::getCurrentMUSAStream()));
+  }
 
+  // Destructively overwrite data_ptr
+  storage->set_data_ptr_noswap(std::move(data));
+  storage->set_nbytes(size_bytes);
+}
+
+// function: create a new storage or increase the size of the storage
+static inline void maybe_resize_storage_musa(
+    TensorImpl* self,
+    uint64_t new_size_bytes) {
   const Storage& storage = self->unsafe_storage();
   if (!storage) {
     auto new_storage = c10::make_intrusive<StorageImpl>(
         StorageImpl::use_byte_size_t(),
         new_size_bytes,
-        c10::GetAllocator(kMUSA),
+        c10::musa::MUSACachingAllocator::get(),
         true);
     self->set_storage_keep_dtype(std::move(new_storage));
+  } else if (self->numel() == 0) {
+    // Skip resizing if the storage doesn't contain anything.
+    return;
   } else if (new_size_bytes > storage.nbytes()) {
-    resize_bytes_mtgpu(storage.unsafeGetStorageImpl(), new_size_bytes);
+    resize_bytes_musa(storage.unsafeGetStorageImpl(), new_size_bytes);
   }
 }
 
-inline TensorImpl* resize_impl_mtgpu_(
+inline TensorImpl* resize_impl_musa_(
     TensorImpl* self,
     IntArrayRef size,
-    c10::optional<IntArrayRef> stride,
-    bool resize_storage = true) {
+    c10::optional<IntArrayRef> stride) {
   if (self->sizes() == size && (!stride || self->strides() == stride)) {
     return self;
   }
 
-  int64_t storage_size = 1;
+  auto itemsize = self->dtype().itemsize();
+  auto storage_offset = self->storage_offset();
+  size_t storage_size = 1;
   if (stride) {
     self->set_sizes_and_strides(size, *stride);
-    storage_size = at::native::storage_size_for(size, *stride);
+    storage_size = at::detail::computeStorageNbytes(
+        size, *stride, itemsize, storage_offset);
+
   } else {
     self->set_sizes_contiguous(size);
-    storage_size = self->numel();
+    storage_size = at::detail::computeStorageNbytesContiguous(
+        size, itemsize, storage_offset);
   }
-  // allocate here:
-  if (resize_storage) {
-    maybe_resize_storage_mtgpu(self, storage_size);
-  }
+  maybe_resize_storage_musa(self, storage_size);
+
   return self;
 }
 
-Tensor empty_mtgpu(
+Tensor empty_musa(
     IntArrayRef size,
     c10::optional<ScalarType> dtype_opt,
     c10::optional<Layout> layout_opt,
@@ -129,7 +140,7 @@ Tensor empty_mtgpu(
     c10::optional<bool> pin_memory_opt,
     c10::optional<c10::MemoryFormat> memory_format_opt) {
   c10::musa::OptionalMUSAGuard guard(device_opt);
-  return at::detail::empty_mtgpu(
+  return at::detail::empty_musa(
       size,
       dtype_opt,
       layout_opt,
@@ -138,7 +149,7 @@ Tensor empty_mtgpu(
       memory_format_opt);
 }
 
-Tensor empty_strided_mtgpu(
+Tensor empty_strided_musa(
     IntArrayRef size,
     IntArrayRef stride,
     c10::optional<ScalarType> dtype_opt,
@@ -146,12 +157,23 @@ Tensor empty_strided_mtgpu(
     c10::optional<Device> device_opt,
     c10::optional<bool> pin_memory_opt) {
   check_size_nonnegative(size);
-  c10::musa::OptionalMUSAGuard guard(device_opt);
+  torch::utils::musa_lazy_init();
 
-  auto t = at::musa::empty_mtgpu(
-      {0}, dtype_opt, layout_opt, device_opt, pin_memory_opt, c10::nullopt);
-  at::musa::resize_impl_mtgpu_(t.unsafeGetTensorImpl(), size, stride);
-  return t;
+  TORCH_CHECK(
+      !pin_memory_opt.has_value() || !*pin_memory_opt,
+      "Only dense CPU tensors can be pinned");
+  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(
+      layout_or_default(layout_opt) == Layout::Strided);
+
+  auto dtype = dtype_or_default(dtype_opt);
+  auto device = device_or_default(device_opt);
+
+  TORCH_CHECK(device.type() == at::musa::kMUSA, "Device isn't MUSA!");
+  const DeviceGuard device_guard(device);
+  c10::Allocator* allocator = c10::musa::MUSACachingAllocator::get();
+  constexpr c10::DispatchKeySet musa_dispatch_key(at::musa::kMUSAKey);
+  return at::detail::empty_strided_generic(
+      size, stride, allocator, musa_dispatch_key, dtype);
 }
 
 void check_inplace(
@@ -228,7 +250,7 @@ Tensor create_out(
     IntArrayRef strides,
     const TensorOptions& options) {
   if (strides.empty()) {
-    return at::detail::empty_mtgpu(
+    return at::detail::empty_musa(
         sizes,
         optTypeMetaToScalarType(options.dtype_opt()),
         options.layout_opt(),
@@ -237,7 +259,7 @@ Tensor create_out(
         options.memory_format_opt());
   } else {
     // TODO(mt-ai): use memory_format in options
-    return empty_strided_mtgpu(
+    return empty_strided_musa(
         sizes,
         strides,
         optTypeMetaToScalarType(options.dtype_opt()),
@@ -247,7 +269,7 @@ Tensor create_out(
   }
 }
 
-const Tensor& resize_mtgpu_(
+const Tensor& resize_musa_(
     const Tensor& self,
     IntArrayRef size,
     c10::optional<c10::MemoryFormat> optional_memory_format) {
@@ -255,7 +277,7 @@ const Tensor& resize_mtgpu_(
     return at::native::resize_named_tensor_(self, size, optional_memory_format);
   }
   auto* contiguous_self = self.unsafeGetTensorImpl();
-  resize_impl_mtgpu_(contiguous_self, size, /*strides=*/c10::nullopt);
+  resize_impl_musa_(contiguous_self, size, /*strides=*/c10::nullopt);
   if (optional_memory_format.has_value()) {
     auto memory_format = optional_memory_format.value();
     TORCH_CHECK(
@@ -267,10 +289,13 @@ const Tensor& resize_mtgpu_(
   return self;
 }
 
-Tensor& set_mtgpu_(Tensor& result) {
+Tensor& set_musa_(Tensor& result) {
   caffe2::TypeMeta dtype = result.dtype();
   Storage storage(
-      Storage::use_byte_size_t(), 0, c10::GetAllocator(kMUSA), true);
+      Storage::use_byte_size_t(),
+      0,
+      c10::musa::MUSACachingAllocator::get(),
+      true);
   result.set_(storage, 0, {0}, {});
   TORCH_INTERNAL_ASSERT(dtype == result.dtype());
   return result;
@@ -282,7 +307,7 @@ Tensor& set_source_(Tensor& result, Storage source) {
   return result.set_(source, 0, new_size, {});
 }
 
-Tensor& set_storage_mtgpu_(
+Tensor& set_storage_musa_(
     Tensor& result,
     Storage storage,
     int64_t storage_offset,
@@ -294,7 +319,7 @@ Tensor& set_storage_mtgpu_(
   c10::optional<IntArrayRef> stride_opt = stride.data() != nullptr
       ? c10::optional<IntArrayRef>(stride)
       : c10::nullopt;
-  at::musa::resize_impl_mtgpu_(result.unsafeGetTensorImpl(), size, stride_opt);
+  at::musa::resize_impl_musa_(result.unsafeGetTensorImpl(), size, stride_opt);
   return result;
 }
 
@@ -353,11 +378,11 @@ Tensor& EyeOut(int64_t n, Tensor& result) {
 }
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("empty.memory_format", &empty_mtgpu);
-  m.impl("empty_strided", &empty_strided_mtgpu);
-  m.impl("resize_", &resize_mtgpu_);
-  m.impl("set_", &set_mtgpu_);
-  m.impl("set_.source_Storage_storage_offset", &set_storage_mtgpu_);
+  m.impl("empty.memory_format", &empty_musa);
+  m.impl("empty_strided", &empty_strided_musa);
+  m.impl("resize_", &resize_musa_);
+  m.impl("set_", &set_musa_);
+  m.impl("set_.source_Storage_storage_offset", &set_storage_musa_);
   m.impl("set_.source_Storage", &set_source_);
   m.impl("set_.source_Tensor", &set_tensor_);
   m.impl("eye.m_out", &EyeMOut);

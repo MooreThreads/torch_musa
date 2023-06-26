@@ -57,7 +57,7 @@ Tensor UnaryBool(
     const Scalar& value,
     UNARY_MODE mode) {
   // as le/lt/ne/eq/gt/ge... ops return bool type
-  Tensor output = empty_mtgpu(
+  Tensor output = empty_musa(
       input.sizes().vec(),
       ScalarType::Bool,
       c10::nullopt,
@@ -143,7 +143,7 @@ DEFINE_ACTIVATE_OP(Floor, ::musa::dnn::Unary::Mode::FLOOR)
   }                                                              \
                                                                  \
   Tensor op_name(const Tensor& self, const Scalar& value) {      \
-    Tensor output = empty_mtgpu(                                 \
+    Tensor output = empty_musa(                                  \
         self.sizes().vec(),                                      \
         ScalarType::Bool,                                        \
         c10::nullopt,                                            \

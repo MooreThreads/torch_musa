@@ -1,5 +1,5 @@
-#ifndef ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUTENSORFACTORY_H_
-#define ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUTENSORFACTORY_H_
+#ifndef ATEN_SRC_ATEN_NATIVE_MUSA_TENSORFACTORY_H_
+#define ATEN_SRC_ATEN_NATIVE_MUSA_TENSORFACTORY_H_
 
 #include <ATen/Dispatch.h>
 #include <ATen/Functions.h>
@@ -16,7 +16,7 @@
 namespace at {
 namespace musa {
 
-Tensor empty_mtgpu(
+Tensor empty_musa(
     IntArrayRef size,
     c10::optional<ScalarType> dtype_opt,
     c10::optional<Layout> layout_opt,
@@ -24,7 +24,7 @@ Tensor empty_mtgpu(
     c10::optional<bool> pin_memory_opt,
     c10::optional<c10::MemoryFormat> memory_format_opt);
 
-Tensor empty_strided_mtgpu(
+Tensor empty_strided_musa(
     IntArrayRef size,
     IntArrayRef stride,
     c10::optional<ScalarType> dtype_opt,
@@ -50,4 +50,4 @@ Tensor Contiguous(
 } // namespace musa
 } // namespace at
 
-#endif // ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUTENSORFACTORY_H_
+#endif // ATEN_SRC_ATEN_NATIVE_MUSA_TENSORFACTORY_H_

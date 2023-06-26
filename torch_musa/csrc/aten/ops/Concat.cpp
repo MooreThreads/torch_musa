@@ -100,7 +100,7 @@ Tensor Cat(const at::ITensorListRef& tensors, int64_t dim = 0) {
   Device device_opt = valid_tensor.device();
   c10::musa::MUSAGuard device_guard(device_opt);
 
-  Tensor output = empty_mtgpu(
+  Tensor output = empty_musa(
       output_sizes,
       valid_tensor.scalar_type(),
       c10::nullopt,

@@ -140,11 +140,11 @@ Tensor& WhereSelfOut(
     }
   }
 
-  // TODO(caizhi): using "out.resize_()" to replace "empty_mtgpu" would be
+  // TODO(caizhi): using "out.resize_()" to replace "empty_musa" would be
   // better, but now memcpyD2D(*dst, *src) function is not supported in muDNN
   // invoking "out.resize_()", which may be supported in muDNN.
   if (!out.sizes().equals(output_shape)) {
-    out = empty_mtgpu(
+    out = empty_musa(
         output_shape,
         result_type,
         c10::nullopt,
@@ -164,7 +164,7 @@ Tensor WhereSelf(
     const Tensor& other) {
   c10::musa::MUSAGuard device_guard(self.device());
   auto result_type = at::native::result_type(self, other);
-  Tensor output = empty_mtgpu(
+  Tensor output = empty_musa(
       other.sizes(),
       result_type,
       c10::nullopt,

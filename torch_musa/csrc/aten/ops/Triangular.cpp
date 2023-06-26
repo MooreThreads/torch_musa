@@ -179,7 +179,7 @@ void TriCallOut(
 
 Tensor Triu(const Tensor& self, int64_t diagonal = 0) {
   c10::musa::MUSAGuard device_guard(self.device());
-  Tensor output = empty_mtgpu(
+  Tensor output = empty_musa(
       self.sizes(),
       self.scalar_type(),
       c10::nullopt,
@@ -208,7 +208,7 @@ Tensor& TriuOut(const Tensor& self, int64_t diagonal, Tensor& output) {
 
 Tensor Tril(const Tensor& self, int64_t diagonal = 0) {
   c10::musa::MUSAGuard device_guard(self.device());
-  Tensor output = empty_mtgpu(
+  Tensor output = empty_musa(
       self.sizes(),
       self.scalar_type(),
       c10::nullopt,

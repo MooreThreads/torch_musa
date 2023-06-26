@@ -43,7 +43,7 @@ Tensor Bucketize(
   auto boundaries_contiguous = Contiguous(boundaries);
   auto boundaries_input = CreateMUTensor(boundaries_contiguous);
   // note: Unsupported out data type: FLOAT in muDNN, hence out_int32 is dummy
-  Tensor out = empty_mtgpu(
+  Tensor out = empty_musa(
       self.sizes(),
       at::kLong,
       c10::nullopt,

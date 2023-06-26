@@ -18,7 +18,7 @@ Tensor empty_strided_musa(
     IntArrayRef size,
     IntArrayRef stride,
     const TensorOptions& options) {
-  return empty_strided_mtgpu(
+  return at::musa::empty_strided_musa(
       size,
       stride,
       optTypeMetaToScalarType(options.dtype_opt()),

@@ -29,7 +29,7 @@ Tensor Embedding(
   for (auto d : weight.sizes().slice(1)) {
     size.push_back(d);
   }
-  auto output = empty_mtgpu(
+  auto output = empty_musa(
       size,
       weight.scalar_type(),
       c10::nullopt,
@@ -82,7 +82,7 @@ Tensor EmbeddingDenseBwd(
   UNUSED(scale_grad_by_freq);
   c10::musa::MUSAGuard device_guard(grad_output.device());
 
-  Tensor grad_input = empty_mtgpu(
+  Tensor grad_input = empty_musa(
       {num_weights, grad_output.size(-1)},
       grad_output.scalar_type(),
       c10::nullopt,
