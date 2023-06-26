@@ -268,7 +268,7 @@ void ProcessGroupMCCL::WorkMCCL::setException(
   exception_ = exception_ptr;
 }
 
-// Helper that checks if the NCCL kernels are completed on the GPUs
+// Helper that checks if the MCCL kernels are completed on the GPUs
 bool ProcessGroupMCCL::WorkMCCL::finishedGPUExecution() {
   checkAndSetException();
   return finishedGPUExecutionInternal();
@@ -1520,7 +1520,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::pointToPoint(
   std::string key;
   int p2pRank = 0, p2pTargetRank = 0;
   bool isSendRecvSelf = false;
-  // For batch_isend_irecv, ncclGroupStart() would be called upfront
+  // For batch_isend_irecv, mcclGroupStart() would be called upfront
   bool batchP2P = mcclActiveGroupCounter_ > 0;
   if (batchP2P) {
     // For batch P2P, we need to treat it like a collective when selecting
@@ -1542,10 +1542,10 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::pointToPoint(
     coalescedDevices_.push_back(devices);
   }
 
-  // First let NCCL streams wait for input tensors allocation streams
+  // First let MCCL streams wait for input tensors allocation streams
   syncStreams(devices, mcclEvents_[key], mcclStreams_[key]);
 
-  // Work itself will create the CUDA events on all GPUs of tensors
+  // Work itself will create the MUSA events on all GPUs of tensors
   bool can_profile = tensors.size() == 1;
   auto work = initWork(
       devices,
@@ -1555,7 +1555,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::pointToPoint(
       can_profile ? c10::optional<std::vector<at::Tensor>>(tensors)
                   : c10::nullopt);
 
-  // Store references to outputs to be used by WorkNCCL::result and operator<<.
+  // Store references to outputs to be used by WorkMCCL::result and operator<<.
   // Note that these outputs are only valid for recv(), as send() does not
   // modify the inputs but we still create these outputs for use cases such as
   // profiling.
@@ -1563,7 +1563,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::pointToPoint(
 
   c10::musa::OptionalMUSAGuard gpuGuard;
 
-  // Start event should only be recorded before the ncclGroupStart()
+  // Start event should only be recorded before the mcclGroupStart()
   if (desyncDebug_) {
     for (const auto i : c10::irange(tensors.size())) {
       c10::musa::MUSAStream& mcclStream = mcclStreams_[key][i];
@@ -1578,7 +1578,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::pointToPoint(
     c10::musa::MUSAStream& mcclStream = mcclStreams_[key][i];
 
     // Both send tensor and recv tensor are created on a worker stream and used
-    // in different ncclStreams.  Hence, both must record the ncclStream to
+    // in different mcclStreams.  Hence, both must record the mcclStream to
     // prevent being freed before the collective finishes.
     //
     // See [Sync Streams].
@@ -1602,7 +1602,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::pointToPoint(
 
   post(mcclStreams_[key]);
 
-  // End event should only be recorded after the ncclGroupEnd()
+  // End event should only be recorded after the mcclGroupEnd()
   for (const auto i : c10::irange(tensors.size())) {
     c10::musa::MUSAStream& mcclStream = mcclStreams_[key][i];
     if (!coalescing_active_) {
@@ -1624,9 +1624,9 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::pointToPoint(
     work->future_->markCompleted(at::IValue(*work->outputs_));
   }
 
-  // Add a callback that runs profiling end callbacks. wrapCallback() in CUDA
+  // Add a callback that runs profiling end callbacks. wrapCallback() in MUSA
   // future blocks the stream this callback runs on the corresponding
-  // ncclEndEvents_ ensuring appropriate synchronization.
+  // mcclEndEvents_ ensuring appropriate synchronization.
   if (work->recordFunctionEndCallback_) {
     work->future_->addCallback([work](at::ivalue::Future& /* unused */) {
       work->recordFunctionEndCallback_();
@@ -1787,12 +1787,12 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::broadcast(
       "mccl:broadcast");
 }
 
-// _broadcast_oop adds an out-of-place broadcast in PGNCCL
+// _broadcast_oop adds an out-of-place broadcast in PGMCCL
 // Custom collectives may be implemented by coalescing broadcast operations
 // One use-case is implementing a vector all_gather (all_gather_v)
 // where unevenly sized inputs are gathered among participating ranks
 // Since all_gather provides an out-of-place API, an all_gather_v
-// semantic implemented inside pg_nccl.all_gather also needs to support
+// semantic implemented inside pg_mccl.all_gather also needs to support
 // out-of-place, for which an out-of-place broadcast is required to be added
 c10::intrusive_ptr<Work> ProcessGroupMCCL::_broadcast_oop(
     std::vector<at::Tensor>& outputTensors,
@@ -1892,12 +1892,12 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::reduce(
       "mccl:reduce");
 }
 
-// _reduce_oop exposes an out-of-place reduce from PGNCCL
+// _reduce_oop exposes an out-of-place reduce from PGMCCL
 // Custom collectives may be implemented by coalescing reduce operations
 // One use-case is implementing a vector reduce_scatter (reduce_scatter_v)
 // where inputs are reduced and scattered unevenly among participating ranks
 // Since reduce_scatter provides an out-of-place API, a reduce_scatter_v
-// semantic implemented inside pg_nccl.reduce_scatter also needs to support
+// semantic implemented inside pg_mccl.reduce_scatter also needs to support
 // out-of-place, for which an out-of-place reduce is required to be added
 c10::intrusive_ptr<Work> ProcessGroupMCCL::_reduce_oop(
     std::vector<at::Tensor>& outputTensors,
@@ -2237,7 +2237,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::barrier(const BarrierOptions& opts) {
       devices.emplace_back(at::DeviceType::PrivateUse1, device);
     }
   } else if (usedDeviceIdxs_.empty()) {
-    // This means there is not yet a NCCL collective being called
+    // This means there is not yet a MCCL collective being called
     // Here we have to use the best guesses and will use a single GPU to call
     // allreduce to achieve barrier.
     // In case the multiple processes fall into the same node, we use rank to
@@ -2299,18 +2299,57 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::alltoall(
   TORCH_CHECK(false, "alltoall is not supported");
 }
 
+// torch_musa P2P comms call mccl Operators directly.
+// As we only use the latest mccl version and no need of
+// backward compatible.
 c10::intrusive_ptr<Work> ProcessGroupMCCL::send(
     std::vector<at::Tensor>& tensors,
     int dstRank,
     int /* unused */) {
-  TORCH_CHECK(false, "send is not supported");
+  check_gpu_tensors_different_devices(tensors);
+  auto ret = pointToPoint(
+      tensors,
+      [&](at::Tensor& input,
+          mcclComm_t comm,
+          c10::musa::MUSAStream& stream,
+          int dst) {
+        return mcclSend(
+            input.data_ptr(),
+            input.numel(),
+            getMcclDataType(input.scalar_type()),
+            dst,
+            comm,
+            stream.stream());
+      },
+      dstRank,
+      OpType::SEND,
+      "mccl:send");
+  return ret;
 }
 
 c10::intrusive_ptr<Work> ProcessGroupMCCL::recv(
     std::vector<at::Tensor>& tensors,
     int srcRank,
     int /* unused */) {
-  TORCH_CHECK(false, "recv is not supported");
+  check_gpu_tensors_different_devices(tensors);
+  auto ret = pointToPoint(
+      tensors,
+      [&](at::Tensor& output,
+          mcclComm_t comm,
+          c10::musa::MUSAStream& stream,
+          int src) {
+        return mcclRecv(
+            output.data_ptr(),
+            output.numel(),
+            getMcclDataType(output.scalar_type()),
+            src,
+            comm,
+            stream.stream());
+      },
+      srcRank,
+      OpType::RECV,
+      "mccl:recv");
+  return ret;
 }
 
 void ProcessGroupMCCL::groupStart() {
@@ -2323,18 +2362,235 @@ void ProcessGroupMCCL::groupEnd() {
   --mcclActiveGroupCounter_;
 }
 
+// gather impl is assembled by send & recv,
+// mainly same as gather in torch/csrc/cuda/nccl.cpp
+mcclResult_t gather_impl(
+    const at::Tensor& inputs,
+    std::vector<at::Tensor>& outputs,
+    mcclComm_t comm,
+    c10::musa::MUSAStream& stream,
+    int32_t root) {
+  int numranks, cur_rank;
+  C10D_MCCL_ASSERT(mcclCommCount(comm, &numranks));
+  C10D_MCCL_ASSERT(mcclCommUserRank(comm, &cur_rank));
+
+  size_t count = inputs.numel();
+  auto type = getMcclDataType(inputs.scalar_type());
+  const auto* sendbuff = reinterpret_cast<void*>(inputs.data_ptr());
+  // TODO(yueran-tang): Maybe use AutoMcclGroup instead.
+  C10D_MCCL_ASSERT(mcclGroupStart());
+
+  if (cur_rank == root) {
+    for (const auto r : c10::irange(numranks)) {
+      if (r != root) {
+        auto* recvbuff = reinterpret_cast<void*>(outputs[r].data_ptr());
+        C10D_MCCL_ASSERT(mcclRecv(recvbuff, count, type, r, comm, stream));
+      } else {
+        // on its own rank, simply copy from the input
+        outputs[r].copy_(inputs);
+      }
+    }
+  } else {
+    C10D_MCCL_ASSERT(mcclSend(sendbuff, count, type, root, comm, stream));
+  }
+  C10D_MCCL_ASSERT(mcclGroupEnd());
+  return mcclSuccess;
+}
+
 c10::intrusive_ptr<Work> ProcessGroupMCCL::gather(
     std::vector<std::vector<at::Tensor>>& outputTensors,
     std::vector<at::Tensor>& inputTensors,
     const GatherOptions& opts) {
-  TORCH_CHECK(false, "gather is not supported");
+  static auto invalidArgument = [](const std::string& msg) {
+    TORCH_CHECK(false, "ProcessGroupMCCL::gather: " + msg);
+  };
+
+  assertRootRank(invalidArgument, opts.rootRank, size_);
+  check_gpu_tensors_different_devices(inputTensors);
+  assertSingleElementInput(invalidArgument, inputTensors);
+
+  // @lint-ignore CLANGTIDY
+  auto tensor = inputTensors.back();
+
+  std::vector<at::Tensor> outputs;
+
+  if (getRank() == opts.rootRank) {
+    if (outputTensors.size() != 1) {
+      std::stringstream ss;
+      ss << "requires a single-element output list containing a list with "
+         << getSize() << " tensors.";
+      invalidArgument(ss.str());
+    } else if (outputTensors[0].size() != static_cast<size_t>(getSize())) {
+      std::stringstream ss;
+      ss << "Incorrect output list size " << outputTensors[0].size()
+         << ". Output list size should be " << getSize()
+         << ", same as size of the process group.";
+      invalidArgument(ss.str());
+    }
+
+    const auto& options = inputTensors[0].options();
+    const auto& sizes = inputTensors[0].sizes();
+    assertTypeAndSizesMatch(invalidArgument, outputTensors[0], options, sizes);
+    outputs = outputTensors[0];
+  } else {
+    // if not in the root rank, initialize outputs as empty list
+    if (outputTensors.size() != 0) {
+      invalidArgument("requires empty output on non-root");
+    }
+    outputs = {};
+    // append a empty tensor to the list, we don't use it but the
+    // `collective` template function requires it to invoke its function
+    outputs.emplace_back();
+  }
+
+  RECORD_PARAM_COMMS_DATA(
+      static_cast<int>(
+          this->getSequenceNumberForGroup() + 1), // seq + 1 to match collective
+      reinterpret_cast<std::intptr_t>(this), // process group ptr
+      inputTensors, // inputTensors
+      outputTensors, // outputTensors
+      rank_, // rank
+      "gather", // colName
+      tensor.numel(), // inSize
+      tensor.numel() * this->getSize(), // outSize
+      tensor.scalar_type(), // dType
+      std::vector<int64_t>(), // inSplitSizes
+      std::vector<int64_t>()); // outSplitSize
+
+  return collective(
+      inputTensors,
+      outputs,
+      [&](at::Tensor& /* unused */,
+          at::Tensor& /* unused */,
+          mcclComm_t comm,
+          c10::musa::MUSAStream& stream) {
+        const auto root = opts.rootRank;
+        if (getRank() == root) {
+          for (auto output : outputs) {
+            c10::musa::MUSACachingAllocator::recordStream(
+                output.storage().data_ptr(), stream);
+          }
+        }
+        return gather_impl(inputTensors[0], outputs, comm, stream, root);
+      },
+      OpType::GATHER,
+      "mccl:gather");
+}
+
+mcclResult_t scatter_impl(
+    const std::vector<at::Tensor>& inputs,
+    at::Tensor& outputs,
+    mcclComm_t comm,
+    c10::musa::MUSAStream& stream,
+    int32_t root) {
+  int numranks, cur_rank;
+  C10D_MCCL_ASSERT(mcclCommCount(comm, &numranks));
+  C10D_MCCL_ASSERT(mcclCommUserRank(comm, &cur_rank));
+  // TODO(yueran-tang): Maybe use autoMcclGroup instead.
+  C10D_MCCL_ASSERT(mcclGroupStart());
+  if (cur_rank == root) {
+    for (const auto r : c10::irange(numranks)) {
+      if (r != root) {
+        size_t send_count = inputs[r].numel();
+        auto send_type = getMcclDataType(inputs[r].scalar_type());
+        const auto* sendbuff = reinterpret_cast<void*>(inputs[r].data_ptr());
+        C10D_MCCL_ASSERT(
+            mcclSend(sendbuff, send_count, send_type, r, comm, stream));
+      } else {
+        // on its own rank, simply copy it to the output
+        outputs.copy_(inputs[r]);
+      }
+    }
+  } else {
+    size_t recv_count = outputs.numel();
+    auto recv_type = getMcclDataType(outputs.scalar_type());
+    auto* recvbuff = reinterpret_cast<void*>(outputs.data_ptr());
+    C10D_MCCL_ASSERT(
+        mcclRecv(recvbuff, recv_count, recv_type, root, comm, stream));
+  }
+  C10D_MCCL_ASSERT(mcclGroupEnd());
+  return mcclSuccess;
 }
 
 c10::intrusive_ptr<Work> ProcessGroupMCCL::scatter(
     std::vector<at::Tensor>& outputTensors,
     std::vector<std::vector<at::Tensor>>& inputTensors,
     const ScatterOptions& opts) {
-  TORCH_CHECK(false, "scatter is not supported");
+  static auto invalidArgument = [](const std::string& msg) {
+    TORCH_CHECK(false, "ProcessGroupMCCL::scatter: " + msg);
+  };
+
+  assertRootRank(invalidArgument, opts.rootRank, size_);
+  check_gpu_tensors_different_devices(outputTensors);
+  assertSingleElementInput(invalidArgument, outputTensors);
+
+  // @lint-ignore CLANGTIDY
+  auto tensor = outputTensors.back();
+
+  std::vector<at::Tensor> inputs;
+
+  if (getRank() == opts.rootRank) {
+    if (inputTensors.size() != 1) {
+      std::stringstream ss;
+      ss << "requires a single-element input list containing a list with "
+         << getSize() << " tensors.";
+      invalidArgument(ss.str());
+    } else if (inputTensors[0].size() != static_cast<size_t>(getSize())) {
+      std::stringstream ss;
+      ss << "Incorrect input list size " << inputTensors[0].size()
+         << ". Input list size should be " << getSize()
+         << ", same as size of the process group.";
+      invalidArgument(ss.str());
+    }
+
+    const auto& options = outputTensors[0].options();
+    const auto& sizes = outputTensors[0].sizes();
+    assertTypeAndSizesMatch(invalidArgument, inputTensors[0], options, sizes);
+    inputs = inputTensors[0];
+  } else {
+    // if not in the root rank, initialize inputTensors as empty place holder
+    // with an empty list
+    if (inputTensors.size() != 0) {
+      invalidArgument("requires empty input on non-root");
+    }
+    inputs = {};
+    // append a empty tensor to the list, we don't use it but the
+    // `collective` template function requires it to invoke its function
+    inputs.emplace_back();
+  }
+
+  RECORD_PARAM_COMMS_DATA(
+      static_cast<int>(
+          this->getSequenceNumberForGroup() + 1), // seq + 1 to match collective
+      reinterpret_cast<std::intptr_t>(this), // process group ptr
+      inputTensors, // inputTensors
+      outputTensors, // outputTensors
+      rank_, // rank
+      "scatter", // colName
+      tensor.numel(), // inSize
+      tensor.numel() * this->getSize(), // outSize
+      tensor.scalar_type(), // dType
+      std::vector<int64_t>(), // inSplitSizes
+      std::vector<int64_t>()); // outSplitSize
+
+  return collective(
+      outputTensors,
+      inputs,
+      [&](at::Tensor& /* unused */,
+          at::Tensor& /* unused */,
+          mcclComm_t comm,
+          c10::musa::MUSAStream& stream) {
+        const auto root = opts.rootRank;
+        if (getRank() == root) {
+          for (auto input : inputs) {
+            c10::musa::MUSACachingAllocator::recordStream(
+                input.storage().data_ptr(), stream);
+          }
+        }
+        return scatter_impl(inputs, outputTensors[0], comm, stream, root);
+      },
+      OpType::SCATTER,
+      "mccl:scatter");
 }
 
 c10::intrusive_ptr<Work> ProcessGroupMCCL::recvAnysource(

@@ -63,46 +63,71 @@ def _test_allreduce():
     #world_size = dist.get_world_size()
     device = torch.device(f'musa:{rank}')
     tensor = torch.arange(100, dtype=torch.float32).to(device) + 1 + 2 * rank
+    # rank0 : [1, 2, 3, 4, ...]
+    # rank1 : [3, 4, 5, 6, ...]
     dist.all_reduce(tensor, op=ReduceOp.AVG)
+    # rank0 : [2, 3, 4, 5, ...]
+    # rank1 : [2, 3, 4, 5, ...]
 
     result = torch.arange(100, dtype=torch.float32).to(device) + 2
     for x,y in zip(tensor, result):
+        assert x == y
+
+def _test_reduce():
+    rank = dist.get_rank()
+    device = torch.device(f'musa:{rank}')
+    tensor = torch.arange(100, dtype=torch.float32).to(device) + 1 + 2 * rank
+    # rank0 : [1, 2, 3, 4, ...]
+    # rank1 : [3, 4, 5, 6, ...]
+    dist.reduce(tensor, dst=0, op=ReduceOp.AVG)
+    # rank0 : reduced to [2, 3, 4, 5, ...]
+    # rank1 : No change as [3, 4, 5, 6, ...]
+    result = torch.arange(100, dtype=torch.float32).to(device) + 2 + rank
+    for x,y in zip(tensor, result):
+        assert x == y
+
+def _test_gather():
+    rank = dist.get_rank()
+    world_size = dist.get_world_size()
+    device = torch.device(f'musa:{rank}')
+
+    tensor_list = [torch.zeros(100, dtype=torch.float32).to(device) for _ in range(world_size)]
+    tensor = torch.zeros(100, dtype=torch.float32).to(device) + 1 + 2 * rank
+    # Rank0: input is [1...]
+    # Rank1: input is [3...]
+    if rank == 1:
+        dist.gather(tensor, tensor_list, dst=1)
+    else:
+        dist.gather(tensor, dst=1)
+    # Rank1: result is [[1...], [3...]]
+    # Rank0: result is [[0...], [0...]]
+    result_list = [torch.zeros(100, dtype=torch.float32).to(device) + rank * (1 + 2 * _) \
+                   for _ in range(world_size)]
+
+    for T1,T2 in zip(tensor_list, result_list):
+        for x,y in zip(T1, T2):
+            assert x == y
+
+def _test_scatter():
+    rank = dist.get_rank()
+    device = torch.device(f'musa:{rank}')
+
+    tensor_size = 10
+    t_ones = torch.ones(tensor_size).to(device)
+    t_fives = torch.ones(tensor_size).to(device) * 5
+    output_tensor = torch.zeros(tensor_size).to(device)
+    if dist.get_rank() == 0:
+        # Assumes world_size of 2.
+        # # Only tensors, all of which must be the same size.
+        scatter_list = [t_ones, t_fives]
+    else:
+        scatter_list = None
+    dist.scatter(output_tensor, scatter_list, src=0)
+    # Rank 0: [1...]
+    # Rank 1: [5...]
+    result = torch.ones(tensor_size).to(device) + 4 * rank
+    for x,y in zip(output_tensor, result):
         assert x==y
-
-#def _test_reduce():
-#    rank = dist.get_rank()
-#    world_size = dist.get_world_size()
-#    device = torch.device(f'musa:{rank}')
-#    tensor = torch.arange(2, dtype=torch.float32).to(device) + 1 + 2 * rank
-#    dist.reduce(tensor, dst=0, op=ReduceOp.AVG)
-
-#def _test_gather():
-#    rank = dist.get_rank()
-#    world_size = dist.get_world_size()
-#    device = torch.device(f'musa:{rank}')
-#
-#    tensor_list = [torch.arange(100, dtype=torch.float32).to(device) \
-#                   for _ in range(world_size)]
-#    tensor = torch.zeros(100, dtype=torch.float32).to(device) + 1 + 2 * rank
-#    dist.gather(tensor, tensor_list, dst=1)
-
-#def _test_scatter():
-#    rank = dist.get_rank()
-#    world_size = dist.get_world_size()
-#    device = torch.device(f'musa:{rank}')
-#
-#    tensor_size = 10
-#    t_ones = torch.ones(tensor_size)
-#    t_fives = torch.ones(tensor_size) * 5
-#    output_tensor = torch.zeros(tensor_size)
-#    if dist.get_rank() == 0:
-#        # Assumes world_size of 2.
-#        # # Only tensors, all of which must be the same size.
-#        scatter_list = [t_ones, t_fives]
-#    else:
-#        scatter_list = None
-#    dist.scatter(output_tensor, scatter_list, src=0)
-#    # Rank i gets scatter_list[i]. For example, on rank 1:
 
 def _test_reducescatter():
     rank = dist.get_rank()
@@ -144,10 +169,11 @@ def _test_function(rank, world_size):
     _test_broacast()
     _test_allreduce()
     _test_reducescatter()
+    _test_reduce()
+    _test_gather()
+    _test_scatter()
 
-    # gather, scatter barrier are not supported.
-    #_test_gather()
-    #_test_scatter()
+    # barrier is not fully supported at present.
     #_test_barrier()
     # ...
     cleanup()
