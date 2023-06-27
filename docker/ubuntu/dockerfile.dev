@@ -133,3 +133,9 @@ RUN ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
     CMAKE_PREFIX_PATH=$(echo -e "export CMAKE_PREFIX_PATH=\${CONDA_PREFIX:-\"\$(dirname \$(which conda))/../\"}""") && \
     sudo sed -i "6s|^|${CMAKE_PREFIX_PATH}\n|" ~/.bashrc && \
     sudo echo $PYTHON_ENV >> ~/.bashrc
+
+# a workaround for ImportError: /usr/local/lib/libdrm.so.2: file too short
+RUN size=$(stat -Lc %s "/usr/local/lib/libdrm.so.2") && \
+    if [ "$size" -eq 0 ]; then \
+      rm $(readlink -f /usr/local/lib/libdrm.so.2); \
+    fi

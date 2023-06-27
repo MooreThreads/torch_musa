@@ -100,3 +100,9 @@ RUN ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
     pip install ${WHLS} && \
     sudo rm -rf /home/whls && \
     conda deactivate
+
+# a workaround for ImportError: /usr/local/lib/libdrm.so.2: file too short
+RUN size=$(stat -Lc %s "/usr/local/lib/libdrm.so.2") && \
+    if [ "$size" -eq 0 ]; then \
+      rm $(readlink -f /usr/local/lib/libdrm.so.2); \
+    fi

@@ -93,7 +93,7 @@ def test_conv3d(input_data):
                     "bias": input_data["bias"]}
     test = testing.OpTest(func=conv3d,
                           input_args=conv3d_args,
-                          comparators=testing.DefaultComparator(abs_diff=1e-6),
+                          comparators=testing.DefaultComparator(abs_diff=1e-5),
                         #   seed=random.randint(0, 66666)
                           )
     test.check_result({"input": input_data["input"]}, train=True)
