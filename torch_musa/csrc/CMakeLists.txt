@@ -72,6 +72,7 @@ FILE(GLOB MU_SRCS
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Indexing.mu
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationGluKernel.mu
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/GridSampler.mu
+    aten/ops/musa/Embedding.mu
     core/*.mu
     )
 

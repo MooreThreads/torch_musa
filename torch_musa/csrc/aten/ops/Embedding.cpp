@@ -2,6 +2,7 @@
 #include <ATen/NativeFunctions.h>
 #include <torch/library.h>
 
+#include "torch_musa/csrc/aten/ops/Embedding.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
@@ -9,6 +10,7 @@
 
 namespace at {
 namespace musa {
+
 Tensor Embedding(
     const Tensor& weight,
     const Tensor& indices,
@@ -17,13 +19,13 @@ Tensor Embedding(
     bool sparse) {
   TORCH_CHECK(weight.dim() == 2, "'weight' must be 2-D");
   auto indices_arg = TensorArg(indices, "indices", 1);
+  auto weight_arg = TensorArg(weight, "weight", 1);
   checkScalarTypes("embedding", indices_arg, {kLong, kInt});
+  checkScalarTypes("embedding", weight_arg, {kFloat, kHalf});
   // these varibs are not used in musa so far.
   UNUSED(scale_grad_by_freq);
   UNUSED(sparse);
   c10::musa::MUSAGuard device_guard(weight.device());
-  std::vector<int64_t> new_shape(
-      indices.sizes().begin(), indices.sizes().end());
 
   auto size = indices.sizes().vec();
   for (auto d : weight.sizes().slice(1)) {
@@ -37,17 +39,10 @@ Tensor Embedding(
       c10::nullopt,
       at::MemoryFormat::Contiguous);
 
-  Tensor out_ = Contiguous(output);
   Tensor weight_ = Contiguous(weight);
   Tensor indices_ = Contiguous(indices);
-  auto out = CreateMUTensor(out_);
-  auto tbl = CreateMUTensor(weight_);
-  auto idx = CreateMUTensor(indices_);
 
-  muHandle& h = GetMudnnHandle();
-  ::musa::dnn::Embedding op;
-  CHECK_MUDNN_STATUS(op.SetPaddingIdx(padding_idx), "SetPaddingIdx");
-  CHECK_MUDNN_STATUS(op.Run(h, out, tbl, idx), "Run");
+  EmbeddingRun(output, weight_, indices_, padding_idx);
   return output;
 }
 

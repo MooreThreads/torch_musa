@@ -284,9 +284,9 @@ class OpTest:
                 assert c_r.dtype == m_r.dtype
                 assert comparator(c_r, m_r)
 
-    def check_musafp16_vs_musafp32(self):
-        fp32_res = self._call_func(None, "musa")
-        fp16_res = self._call_func(None, "musa", False, False, True)
+    def check_musafp16_vs_musafp32(self, inputs=None, train=False, test_out=False):
+        fp32_res = self._call_func(inputs, "musa", train, test_out)
+        fp16_res = self._call_func(inputs, "musa", train, test_out, True)
         self.compare_res(fp32_res, fp16_res)
 
     def check_result(self, inputs=None, train=False, test_out=False):
