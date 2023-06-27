@@ -36,3 +36,16 @@ def test_layer_norm_cv(N, C, W, H, dtype):
     output = layer_norm(input_data)
     output_musa = layer_norm.to('musa')(input_data.to('musa'))
     assert testing.DefaultComparator(abs_diff=1e-3)(output, output_musa.cpu())
+
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_layer_norm_weight_uncontiguous(dtype):
+    input_data = torch.tensor([1,2,3,4,5], dtype=dtype)
+    layer = torch.nn.LayerNorm(5)
+    cpu_res = layer(input_data)
+
+    layer = layer.to('musa')
+    chunk = torch.zeros(10).to('musa')
+    chunk[5:].copy_(layer.weight)
+    layer.weight.data = chunk[5:].view(layer.weight.shape)
+    musa_res = layer(input_data.to('musa'))
+    assert testing.DefaultComparator(abs_diff=1e-3)(cpu_res, musa_res.cpu())

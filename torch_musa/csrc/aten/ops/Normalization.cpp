@@ -265,8 +265,9 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
   auto mt_output = CreateMUTensor(output);
   muTensor mt_gamma;
   muTensor mt_beta;
+  Tensor gamma;
   if (weight.defined()) {
-    auto gamma = Contiguous(weight);
+    gamma = Contiguous(weight);
     mt_gamma = CreateMUTensor(gamma);
     TORCH_CHECK(
         weight.device().type() == kMUSA,
