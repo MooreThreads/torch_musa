@@ -1,6 +1,7 @@
 """Unit test of distributed comm operators"""
 # pylint: disable = W0611, C0103
 import os
+import time
 import torch
 import torch.nn.parallel
 import torch.distributed as dist
@@ -149,12 +150,43 @@ def _test_reducescatter():
     for x,y in zip(output, result):
         assert x==y
 
-#def _test_barrier():
-#    rank = dist.get_rank()
-#    #world_size = dist.get_world_size()
-#    #device = torch.device(f'musa:{rank}')
-#    if rank == 0:
-#        time.sleep(10)
+def _test_all_to_all():
+    rank = dist.get_rank()
+    world_size = dist.get_world_size()
+    torch_musa.set_device(rank)
+    device = torch.device('musa')
+    tensor_size = 10
+    # In rankN TensorList[M] is arange() + M + N*Cards
+    # Rank0: [1, 2, 3...][2, 3, 4...]
+    # Rank1: [3, 4, 5...][4, 5, 6...]
+    input_tensor_list = [torch.arange(tensor_size, dtype=torch.float32).to(device) + \
+            1 + world_size * rank + _ for _ in range(world_size)]
+    output_list = [torch.zeros(tensor_size).to(device) for _ in range(world_size)]
+    dist.all_to_all(output_list, input_tensor_list)
+    # Rank0 result: [1, 2, 3...][3, 4, 5...]
+    # Rank1 result: [2, 3, 4...][4, 5, 6...]
+    result = [torch.arange(tensor_size, dtype=torch.float32).to(device) + _ * 2 + 1 + \
+            rank for _ in range(world_size)]
+    for T1, T2 in zip(output_list, result):
+        for x,y in zip(T1, T2):
+            assert x==y
+
+def _test_barrier():
+    rank = dist.get_rank()
+    #world_size = dist.get_world_size()
+    #device = torch.device(f'musa:{rank}')
+    dist.barrier()
+    t0 = time.time()
+    if rank == 0:
+        time.sleep(1)
+    dist.barrier()
+    t1 = time.time()
+    dist.barrier()
+    if rank == 1:
+        time.sleep(1)
+    t2 = time.time()
+    assert t1 - t0 > 0.5
+    assert t2 - t0 > 0.5 + rank
 
 def _test_demo(demo_fn, world_size):
     mp.spawn(demo_fn,
@@ -172,10 +204,8 @@ def _test_function(rank, world_size):
     _test_reduce()
     _test_gather()
     _test_scatter()
-
-    # barrier is not fully supported at present.
-    #_test_barrier()
-    # ...
+    _test_all_to_all()
+    _test_barrier()
     cleanup()
 
 @testing.skip_if_not_multiple_musa_device
