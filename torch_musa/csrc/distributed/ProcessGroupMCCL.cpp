@@ -682,17 +682,17 @@ void ProcessGroupMCCL::abortTimedOutCollectives(
 
 void ProcessGroupMCCL::mcclCommWatchdog() {
   try {
-    LOG_INFO << "[Rank " << rank_ << "] MCCL watchdog thread started!";
+    LOG(INFO) << "[Rank " << rank_ << "] MCCL watchdog thread started!";
     mcclCommWatchdogInternal();
-    LOG_INFO << "[Rank " << rank_
-             << "] MCCL watchdog thread terminated normally";
+    LOG(INFO) << "[Rank " << rank_
+              << "] MCCL watchdog thread terminated normally";
   } catch (std::exception& e) {
-    LOG_INFO << "[Rank " << rank_
-             << "] MCCL watchdog thread terminated with exception: "
-             << e.what();
+    LOG(INFO) << "[Rank " << rank_
+              << "] MCCL watchdog thread terminated with exception: "
+              << e.what();
   } catch (...) {
-    LOG_INFO << "[Rank " << rank_
-             << "] MCCL watchdog thread terminated with unknown exception";
+    LOG(INFO) << "[Rank " << rank_
+              << "] MCCL watchdog thread terminated with unknown exception";
   }
 }
 
@@ -714,15 +714,15 @@ void ProcessGroupMCCL::mcclCommWatchdogInternal() {
         if (mcclErrorException) {
           auto exceptionMsg =
               getExceptionMsgFromExceptionPtr(mcclErrorException);
-          LOG_INFO
+          LOG(INFO)
               << "[Rank " << rank_
               << "] Received MCCL errors for communicators in the cache: \n"
               << "MCCL error: \n"
               << exceptionMsg;
 
           if (blockingWait_ || asyncErrorHandling_ != NoHandling) {
-            LOG_INFO << "[Rank " << rank_
-                     << "] Aborting communicators that received errors";
+            LOG(INFO) << "[Rank " << rank_
+                      << "] Aborting communicators that received errors";
             // We abort MCCL communicators that have received errors from this
             // thread, and exceptions are set on the corresponding work objects.
             // The workCleanupThread will then loop through the unfinished
@@ -767,9 +767,9 @@ void ProcessGroupMCCL::mcclCommWatchdogInternal() {
         const auto& storeKey = getMcclAbortedCommStoreKey(abortedCommId);
         auto rankStr = std::to_string(rank_);
         store_->set(storeKey, rankStr);
-        LOG_INFO << "[Rank " << rank_
-                 << "] Watchdog wrote aborted communicator id to store: "
-                 << storeKey;
+        LOG(INFO) << "[Rank " << rank_
+                  << "] Watchdog wrote aborted communicator id to store: "
+                  << storeKey;
       }
 
       // Check for any communicators in the store and abort them if needed.
@@ -1120,7 +1120,7 @@ std::vector<std::shared_ptr<MCCLComm>>& ProcessGroupMCCL::getMCCLComm(
   // At this point MCCL should have been initialized, hence we can accurately
   // get the env value even if MCCL sets it by reading from mccl.conf file
   if (getRank() == 0) {
-    LOG_INFO << "MCCL_DEBUG: " << parse_env("MCCL_DEBUG");
+    LOG(INFO) << "MCCL_DEBUG: " << parse_env("MCCL_DEBUG");
   }
 
   // See [Group Start/End Note]
