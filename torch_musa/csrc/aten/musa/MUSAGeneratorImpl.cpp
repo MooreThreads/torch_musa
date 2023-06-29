@@ -1,4 +1,5 @@
 #include <ATen/Utils.h>
+#include <ATen/core/GeneratorForPrivateuseone.h>
 #include <c10/core/StreamGuard.h>
 #include <c10/util/CallOnce.h>
 
@@ -348,5 +349,11 @@ MUSAGeneratorImpl* MUSAGeneratorImpl::clone_impl() const {
   gen->set_philox_offset_per_thread(this->philox_offset_per_thread_);
   return gen;
 }
+
+at::Generator MakeGeneratorForPrivateuse1(c10::DeviceIndex id) {
+  return at::make_generator<MUSAGeneratorImpl>(id);
+}
+
+REGISTER_GENERATOR_PRIVATEUSE1(MakeGeneratorForPrivateuse1);
 
 } // namespace at

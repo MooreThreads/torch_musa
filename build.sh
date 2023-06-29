@@ -85,7 +85,7 @@ apply_patches() {
   if [ -d "$PYTORCH_PATH/.git" ]; then
     echo -e "\033[34mStash and checkout the PyTorch environment before patching. \033[0m"
     pushd $PYTORCH_PATH
-    git stash
+    git stash -u
     git checkout ${PYTORCH_TAG}
     popd
   fi
@@ -165,6 +165,7 @@ main() {
   fi
   if [ ${BUILD_TORCH} -eq 1 ]; then
     clone_pytorch
+    clean_pytorch
     apply_patches
     build_pytorch
   fi
