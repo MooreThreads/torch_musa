@@ -15,7 +15,6 @@
 #include "torch_musa/csrc/core/Allocator.h"
 #include "torch_musa/csrc/core/Device.h"
 #include "torch_musa/csrc/core/Event.h"
-#include "torch_musa/csrc/core/MUSAHooksInterface.h"
 #include "torch_musa/csrc/core/Sleep.h"
 #include "torch_musa/csrc/core/Stream.h"
 #include "torch_musa/csrc/distributed/Register.h"
@@ -158,8 +157,7 @@ static py::object THMPModule_initExtension() {
       "you might get unexpected behavior (eg. out of memory, crash, etc.), "
       "please rebuild pytorch without asan if you need to use this module");
 #endif
-  static c10::once_flag thm_init;
-  c10::call_once(thm_init, [] { at::detail::getMUSAHooks().initMUSA(); });
+  at::musa::lazyInitMUSA();
   auto m = THPObjectPtr(PyImport_ImportModule("torch_musa"));
   if (!m)
     throw python_error();

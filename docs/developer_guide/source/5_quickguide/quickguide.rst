@@ -164,3 +164,35 @@ torch_musa中python api基本与PyTorch原生api接口保持一致，极大降�
           correct += (predicted == labels.to(device)).sum().item()
   
   print(f'Accuracy of the network on the 10000 test images: {100 * correct // total} %')
+
+
+C++部署示例代码
+---------------
+
+.. code-block:: cpp
+
+  #include <torch/script.h>
+  #include <torch_musa/csrc/core/Device.h>
+  #include <iostream>
+  #include <memory>
+
+  int main(int argc, const char* argv[]) {
+    // Register 'musa' for PrivateUse1 as we save model with 'musa'.
+    c10::register_privateuse1_backend("musa");
+
+    torch::jit::script::Module module;
+    // Load model which saved with torch jit.trace or jit.script.
+    module = torch::jit::load(argv[1]);
+
+    std::vector<torch::jit::IValue> inputs;
+    // Ready for input data.
+    torch::Tensor input = torch::rand({1, 3, 224, 224}).to("musa");
+    inputs.push_back(input);
+
+    // Model execute.
+    at::Tensor output = module.forward(inputs).toTensor();
+
+    return 0;
+  }
+
+详细用法请参考 `examples/cpp <https://github.mthreads.com/mthreads/torch_musa/tree/main/examples/cpp>`_ 下内容。

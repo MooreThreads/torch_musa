@@ -10,6 +10,7 @@
 #include <c10/core/TensorOptions.h>
 #include <torch/library.h>
 
+#include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/Allocator.h"
@@ -31,6 +32,7 @@ Tensor empty_musa(
     c10::optional<Device> device_opt,
     c10::optional<bool> pin_memory_opt,
     c10::optional<c10::MemoryFormat> memory_format_opt) {
+  at::musa::lazyInitMUSA();
   if (layout_opt.has_value()) {
     LOG(INFO) << "layout_opt is invalid in empty_musa";
   }
@@ -70,7 +72,7 @@ void resize_bytes_musa(StorageImpl* storage, size_t size_bytes) {
   at::DataPtr data = allocator->allocate(size_bytes);
   if (storage->data_ptr()) {
     // Enable p2p access when the memcpy is across devices
-    torch::utils::musa_lazy_init();
+    at::musa::lazyInitMUSA();
     at::musa::get_p2p_access(device, storage->device().index());
 
     C10_MUSA_CHECK(musaMemcpyAsync(
@@ -156,8 +158,8 @@ Tensor empty_strided_musa(
     c10::optional<Layout> layout_opt,
     c10::optional<Device> device_opt,
     c10::optional<bool> pin_memory_opt) {
+  at::musa::lazyInitMUSA();
   check_size_nonnegative(size);
-  torch::utils::musa_lazy_init();
 
   TORCH_CHECK(
       !pin_memory_opt.has_value() || !*pin_memory_opt,

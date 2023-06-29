@@ -9,8 +9,10 @@
 
 #include <ATen/Context.h>
 #include <ATen/core/ATenGeneral.h>
+#include <pybind11/pybind11.h>
 
 #include "torch_musa/csrc/aten/musa/Exceptions.h"
+#include "torch_musa/csrc/core/MUSAHooksInterface.h"
 #include "torch_musa/csrc/core/MUSAStream.h"
 
 namespace at {
@@ -61,6 +63,12 @@ Allocator* getMUSADeviceAllocator();
 
 mublasHandle_t getCurrentMUSABlasHandle();
 
+inline void lazyInitMUSA() {
+  static c10::once_flag thm_init;
+  c10::call_once(thm_init, [&] { at::detail::getMUSAHooks().initMUSA(); });
+}
+
+namespace py = pybind11;
 void registerMusaDeviceProperties(PyObject* module);
 } // namespace musa
 } // namespace at

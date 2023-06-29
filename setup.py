@@ -158,6 +158,15 @@ setup(
     package_data={
         "torch_musa": [
             "lib/*.so*",
+            "csrc/core/*.h",
+            "csrc/core/*.muh",
+            "csrc/utils/*.h",
+            "csrc/aten/mudnn/*.h",
+            "csrc/aten/musa/*.h",
+            "csrc/aten/ops/*.h",
+            "csrc/aten/ops/musa/*.h",
+            "csrc/aten/utils/*.h",
+            "share/cmake/*.cmake",
         ],
     },
     extras_require={},
