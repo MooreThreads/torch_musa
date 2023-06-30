@@ -179,13 +179,8 @@ void TriCallOut(
 
 Tensor Triu(const Tensor& self, int64_t diagonal = 0) {
   c10::musa::MUSAGuard device_guard(self.device());
-  Tensor output = empty_musa(
-      self.sizes(),
-      self.scalar_type(),
-      c10::nullopt,
-      kMUSA,
-      c10::nullopt,
-      at::MemoryFormat::Contiguous);
+  Tensor output = at::empty_like(
+      self, self.options().memory_format(at::MemoryFormat::Contiguous));
   TriCallOut(
       output, self, ::musa::dnn::TriangularMat::Mode::TRIU, diagonal, "Triu");
   return output;
@@ -208,13 +203,8 @@ Tensor& TriuOut(const Tensor& self, int64_t diagonal, Tensor& output) {
 
 Tensor Tril(const Tensor& self, int64_t diagonal = 0) {
   c10::musa::MUSAGuard device_guard(self.device());
-  Tensor output = empty_musa(
-      self.sizes(),
-      self.scalar_type(),
-      c10::nullopt,
-      kMUSA,
-      c10::nullopt,
-      at::MemoryFormat::Contiguous);
+  Tensor output = at::empty_like(
+      self, self.options().memory_format(at::MemoryFormat::Contiguous));
   TriCallOut(
       output, self, ::musa::dnn::TriangularMat::Mode::TRIL, diagonal, "Tril");
   return output;

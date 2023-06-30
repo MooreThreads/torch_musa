@@ -45,9 +45,9 @@ Note: advise to use `at::empty_like` with options that include device info to cr
   ```
   at::empty_like(input, input.options())
   ```
-Don't advise to use `empty_mtgpu` like this,
+Don't advise to use `empty_musa` like this,
   ```
-  Tensor result = empty_mtgpu(
+  Tensor result = empty_musa(
     {mat1.size(0), mat2.size(1)},
     self.scalar_type(),
     c10::nullopt,

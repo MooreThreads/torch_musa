@@ -57,13 +57,11 @@ Tensor UnaryBool(
     const Scalar& value,
     UNARY_MODE mode) {
   // as le/lt/ne/eq/gt/ge... ops return bool type
-  Tensor output = empty_musa(
-      input.sizes().vec(),
-      ScalarType::Bool,
-      c10::nullopt,
-      input.device(),
-      c10::nullopt,
-      at::MemoryFormat::Contiguous);
+  Tensor output = at::empty_like(
+      input,
+      input.options()
+          .dtype(ScalarType::Bool)
+          .memory_format(at::MemoryFormat::Contiguous));
   UnaryBoolOut(op_name, output, input, value, mode);
   return output;
 }
@@ -144,13 +142,11 @@ DEFINE_ACTIVATE_OP(Floor, ::musa::dnn::Unary::Mode::FLOOR)
   }                                                              \
                                                                  \
   Tensor op_name(const Tensor& self, const Scalar& value) {      \
-    Tensor output = empty_musa(                                  \
-        self.sizes().vec(),                                      \
-        ScalarType::Bool,                                        \
-        c10::nullopt,                                            \
-        self.device(),                                           \
-        c10::nullopt,                                            \
-        at::MemoryFormat::Contiguous);                           \
+    Tensor output = at::empty_like(                              \
+        self,                                                    \
+        self.options()                                           \
+            .dtype(ScalarType::Bool)                             \
+            .memory_format(at::MemoryFormat::Contiguous));       \
     op_name##Out(self, value, output);                           \
     return output;                                               \
   }                                                              \

@@ -104,13 +104,9 @@ at::Tensor AddMm(
     const at::Tensor& mat2,
     const at::Scalar& beta,
     const at::Scalar& alpha) {
-  Tensor result = empty_musa(
+  Tensor result = at::empty(
       {mat1.size(0), mat2.size(1)},
-      self.scalar_type(),
-      c10::nullopt,
-      self.device(),
-      c10::nullopt,
-      at::MemoryFormat::Contiguous);
+      self.options().memory_format(at::MemoryFormat::Contiguous));
   AddMmOut(self, mat1, mat2, beta, alpha, result);
   return result;
 }
@@ -125,13 +121,9 @@ Tensor& MmOut(const Tensor& self, const Tensor& mat2, Tensor& out) {
 }
 
 Tensor Mm(const Tensor& self, const Tensor& mat2) {
-  Tensor result = empty_musa(
+  Tensor result = at::empty(
       {self.size(0), mat2.size(1)},
-      self.scalar_type(),
-      c10::nullopt,
-      self.device(),
-      c10::nullopt,
-      at::MemoryFormat::Contiguous);
+      self.options().memory_format(at::MemoryFormat::Contiguous));
   MmOut(self, mat2, result);
   return result;
 }
@@ -147,13 +139,9 @@ Tensor& BmmOut(const Tensor& self, const Tensor& mat2, Tensor& out) {
 }
 
 Tensor Bmm(const Tensor& self, const Tensor& mat2) {
-  Tensor result = empty_musa(
+  Tensor result = at::empty(
       {self.size(0), self.size(1), mat2.size(2)},
-      self.scalar_type(),
-      c10::nullopt,
-      self.device(),
-      c10::nullopt,
-      at::MemoryFormat::Contiguous);
+      self.options().memory_format(at::MemoryFormat::Contiguous));
   BmmOut(self, mat2, result);
   return result;
 }

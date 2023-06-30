@@ -31,13 +31,8 @@ Tensor Embedding(
   for (auto d : weight.sizes().slice(1)) {
     size.push_back(d);
   }
-  auto output = empty_musa(
-      size,
-      weight.scalar_type(),
-      c10::nullopt,
-      kMUSA,
-      c10::nullopt,
-      at::MemoryFormat::Contiguous);
+  auto output = at::empty(
+      size, weight.options().memory_format(at::MemoryFormat::Contiguous));
 
   Tensor weight_ = Contiguous(weight);
   Tensor indices_ = Contiguous(indices);
@@ -77,13 +72,9 @@ Tensor EmbeddingDenseBwd(
   UNUSED(scale_grad_by_freq);
   c10::musa::MUSAGuard device_guard(grad_output.device());
 
-  Tensor grad_input = empty_musa(
+  Tensor grad_input = at::empty(
       {num_weights, grad_output.size(-1)},
-      grad_output.scalar_type(),
-      c10::nullopt,
-      kMUSA,
-      c10::nullopt,
-      at::MemoryFormat::Contiguous);
+      grad_output.options().memory_format(at::MemoryFormat::Contiguous));
   auto contiguous_grad_output = Contiguous(grad_output);
   auto contiguous_indices = Contiguous(indices);
 

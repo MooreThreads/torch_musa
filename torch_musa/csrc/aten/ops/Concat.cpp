@@ -100,13 +100,9 @@ Tensor Cat(const at::ITensorListRef& tensors, int64_t dim = 0) {
   Device device_opt = valid_tensor.device();
   c10::musa::MUSAGuard device_guard(device_opt);
 
-  Tensor output = empty_musa(
+  Tensor output = at::empty(
       output_sizes,
-      valid_tensor.scalar_type(),
-      c10::nullopt,
-      device_opt,
-      c10::nullopt,
-      at::MemoryFormat::Contiguous);
+      valid_tensor.options().memory_format(at::MemoryFormat::Contiguous));
   ConcatImpl(output, dim, valid_tensors);
   return output;
 }

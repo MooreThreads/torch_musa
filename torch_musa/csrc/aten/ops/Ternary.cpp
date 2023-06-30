@@ -140,17 +140,8 @@ Tensor& WhereSelfOut(
     }
   }
 
-  // TODO(caizhi): using "out.resize_()" to replace "empty_musa" would be
-  // better, but now memcpyD2D(*dst, *src) function is not supported in muDNN
-  // invoking "out.resize_()", which may be supported in muDNN.
   if (!out.sizes().equals(output_shape)) {
-    out = empty_musa(
-        output_shape,
-        result_type,
-        c10::nullopt,
-        self.device(),
-        c10::nullopt,
-        at::MemoryFormat::Contiguous);
+    out.resize_(output_shape);
   }
   if (!out.numel()) {
     return out;
@@ -164,13 +155,11 @@ Tensor WhereSelf(
     const Tensor& other) {
   c10::musa::MUSAGuard device_guard(self.device());
   auto result_type = at::native::result_type(self, other);
-  Tensor output = empty_musa(
+  Tensor output = at::empty(
       other.sizes(),
-      result_type,
-      c10::nullopt,
-      self.device(),
-      c10::nullopt,
-      at::MemoryFormat::Contiguous);
+      self.options()
+          .dtype(result_type)
+          .memory_format(at::MemoryFormat::Contiguous));
   WhereSelfOut(condition, self, other, output);
   return output;
 }

@@ -255,13 +255,11 @@ Tensor IndexSelect(const Tensor& self, int64_t dim, const Tensor& index) {
       "dim is invalid.");
   dim = (dim + contiguous_self.dim()) % contiguous_self.dim();
   out_shape[dim] = index_len;
-  Tensor out = empty_musa(
+  Tensor out = at::empty(
       out_shape,
-      contiguous_self.scalar_type(),
-      c10::nullopt,
-      self.device(),
-      c10::nullopt,
-      at::MemoryFormat::Contiguous);
+      self.options()
+          .dtype(contiguous_self.scalar_type())
+          .memory_format(at::MemoryFormat::Contiguous));
   IndexSelectCall(contiguous_self, dim, contiguous_index, out);
   return out;
 }
@@ -320,24 +318,14 @@ Tensor IndexTensor(
   auto out_shape = compute_shapes(self, indices);
   if (!(dims.size())) {
     // when dim.size() == 0, out_shape = in_shape expected out_shape[dim] = 0
-    return empty_musa(
-        out_shape,
-        self.scalar_type(),
-        c10::nullopt,
-        self.device(),
-        c10::nullopt,
-        at::MemoryFormat::Contiguous);
+    return at::empty(
+        out_shape, self.options().memory_format(at::MemoryFormat::Contiguous));
   }
   if (dims.size() == 1 && indices[dims[0]].dim() == 1) {
     return at::index_select(self, dims[0], indices[dims[0]]);
   }
-  out = empty_musa(
-      out_shape,
-      self.scalar_type(),
-      c10::nullopt,
-      self.device(),
-      c10::nullopt,
-      at::MemoryFormat::Contiguous);
+  out = at::empty(
+      out_shape, self.options().memory_format(at::MemoryFormat::Contiguous));
   Tensor contiguous_self = Contiguous(self);
   Tensor contiguous_out = Contiguous(out);
   IndexCall(contiguous_self, tensors, contiguous_out);
