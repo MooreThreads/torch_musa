@@ -1,0 +1,52 @@
+{
+    "replacepackage": {
+        "comment": "该章节内容是为了替换现有tex里面包的配置，左边为tex文件现有内容，右边是替换内容。",
+        "\\\\usepackage{hyperref}": "\\\\usepackage[bookmarksnumbered=true]{hyperref}",
+        "\\\\sphinxtableofcontents": "\\\\ThisURCornerWallPaper{1}{chapterlogo.pdf}\n\\\\sphinxtableofcontents",
+        "\\\\chapter{([\\s\\S].*)}": "\\\\chapter{\\1}\n\\\\ThisURCornerWallPaper{1}{chapterlogo.pdf}",
+        "\\\\listoffigures": "\\\\ThisURCornerWallPaper{1}{chapterlogo.pdf}\n\\\\listoffigures",
+        "\\\\listoftables": "\\\\newpage\n\\\\ThisURCornerWallPaper{1}{chapterlogo.pdf}\n\\\\listoftables",
+        "\\\\footnotesize\\\\raggedright\\\\printindex": "% \\\\footnotesize\\\\raggedright\\\\printindex",
+        "\\\\begin{itemize}": "\\\\begin{itemize}[leftmargin=*]",
+        "\\\\begin{enumerate}": "\\\\begin{enumerate}[leftmargin=*]",
+        "\\\\setmainfont{FreeSerif}\\[[\\s\\S]*?\\]": "",
+        "\\\\setsansfont{FreeSans}\\[[\\s\\S]*?\\]": "",
+        "\\\\setmonofont{FreeMono}\\[[\\s\\S]*?\\]": "",
+        "\\\\begin{sphinxalltt}":"\\\\begin{sphinxVerbatim}[commandchars=\\\\\\\\\\\\{\\}]",
+        "\\\\end{sphinxalltt}":"\\\\end{sphinxVerbatim}",
+        "\\\\begin{sphinxadmonition}{note}{注解:}":"\\\\begin{tcolorbox}[colframe={noteframecolor},colback={notebackcolor},coltitle=white,fonttitle=\\\\bfseries,title=注解：]",
+        "\\\\begin{sphinxadmonition}{warning}{警告:}":"\\\\begin{tcolorbox}[colframe={warningframecolor},colback={warningbackcolor},coltitle=white,fonttitle=\\\\bfseries,title=警告：]",
+        "\\\\begin{sphinxadmonition}{tip}{小技巧:}":"\\\\begin{tcolorbox}[colframe={noteframecolor},colback={notebackcolor},coltitle=white,fonttitle=\\\\bfseries,title=小技巧：]",
+        "\\\\begin{sphinxadmonition}{attention}{注意:}":"\\\\begin{tcolorbox}[colframe={warningframecolor},colback={warningbackcolor},coltitle=white,fonttitle=\\\\bfseries,title=注意：]",
+        "\\\\begin{sphinxadmonition}{hint}{提示:}":"\\\\begin{tcolorbox}[colframe={hintframecolor},colback={hintbackcolor},coltitle=white,fonttitle=\\\\bfseries,title=提示：]",
+        "\\\\end{sphinxadmonition}":"\\\\end{tcolorbox}",
+        "\\\\begin{sphinxadmonition}{note}{Note:}":"\\\\begin{tcolorbox}[colframe={noteframecolor},colback={notebackcolor},coltitle=white,fonttitle=\\\\bfseries,title=Note:]",
+        "\\\\begin{sphinxadmonition}{warning}{Warning:}":"\\\\begin{tcolorbox}[colframe={warningframecolor},colback={warningbackcolor},coltitle=white,fonttitle=\\\\bfseries,title=Warning:]",
+        "\\\\begin{sphinxadmonition}{tip}{Tip:}":"\\\\begin{tcolorbox}[colframe={noteframecolor},colback={notebackcolor},coltitle=white,fonttitle=\\\\bfseries,title=Tip:]",
+        "\\\\begin{sphinxadmonition}{attention}{Attention:}":"\\\\begin{tcolorbox}[colframe={warningframecolor},colback={warningbackcolor},coltitle=white,fonttitle=\\\\bfseries,title=Attention:]",
+        "\\\\begin{sphinxadmonition}{hint}{Hint:}":"\\\\begin{tcolorbox}[colframe={hintframecolor},colback={hintbackcolor},coltitle=white,fonttitle=\\\\bfseries,title=Hint:]"
+    },
+    "tables": {
+        "comment": "isname:true-根据表格的name属性查找表格，false-根据表格的标题查找表格。isLongTable:true-强制设置为长表格，false-不设置长表格。isVertical:true-对第一列进行渲染，false-不对第一列进行渲染。isCusHead：true-对第一行进行渲染，false-不对第一行进行渲染。",
+        "isname": false,
+        "rowtype": "",
+        "headtype": "{mtorange!100}",
+        "headfontcolor": "\\textbf{\\textcolor{white}{}}",
+        "styles": [{
+            "align": "centering",
+            "caption": "自定义算子列表",
+            "captionalign": "left",
+            "isLongTable": true,
+            "isVertical": false,
+            "isCusHead": false
+        },
+        {
+            "align": "centering",
+            "caption": "版本记录",
+            "captionalign": "left",
+            "isLongTable": true,
+            "isVertical": true,
+            "isCusHead": false
+        }]
+    }
+}

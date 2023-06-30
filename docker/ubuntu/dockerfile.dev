@@ -1,0 +1,141 @@
+#syntax=docker/dockerfile:1.0-experimental
+ARG UBUNTU_VERSION
+
+FROM ubuntu:${UBUNTU_VERSION}
+
+ARG UBUNTU_VERSION
+ARG MUSA_TOOLKITS_URL
+ARG MUDNN_URL
+ARG PYTHON_VERSION
+
+SHELL ["/bin/bash", "-c"]
+
+# setup time for system
+ENV LANG=C.UTF-8
+ENV DEBIAN_FRONTEND=noninteractive
+
+# using ubuntu official sources often fails to connect
+COPY ./common/change_ubuntu_mirror.sh change_ubuntu_mirror.sh
+RUN bash change_ubuntu_mirror.sh && \
+    rm -f change_ubuntu_mirror.sh
+
+# install basic packages
+COPY ./common/install_base.sh install_base.sh
+RUN bash install_base.sh && \
+    rm -f install_base.sh
+
+# install gcc
+# TODO(mingyuan-wang)
+# placeholder parameter, no gcc update or installation will be performed,
+# cuz the torch_musa environment was successfully configured only on ubuntu20.04 
+# using default gcc9 currently.
+ARG GCC_VERSION
+COPY ./common/install_gcc.sh install_gcc.sh 
+RUN bash install_gcc.sh && \
+    rm -f install_gcc.sh
+
+# install musa_toolkit, which includes musa_runtime and mcc
+RUN wget --no-check-certificate ${MUSA_TOOLKITS_URL} -O /home/musa_toolkits_install.tar.gz
+RUN cd /home && \
+    tar -zxf ./musa_toolkits_install.tar.gz && \
+    cd ./musa_toolkits_install && \
+    bash ./install.sh && \
+    rm -f ../musa_toolkits_install.tar.gz
+
+# install muDNN
+RUN wget --no-check-certificate ${MUDNN_URL} -O /home/mudnn.tar && \
+    tar -xvf /home/mudnn.tar -C /home && \
+    pushd /home/mudnn && \
+    bash install_mudnn.sh && \
+    rm -f /home/mudnn.tar && \
+    popd
+
+# install math libs
+COPY ./common/install_math.sh install_math.sh
+RUN bash install_math.sh && \
+    rm -f install_math.sh
+
+# install mccl
+COPY ./common/install_mccl.sh install_mccl.sh
+RUN bash install_mccl.sh && \
+    rm -f install_mccl.sh
+
+# install static libraries of mkl
+COPY ./common/install_mkl.sh install_mkl.sh
+RUN bash install_mkl.sh && \
+    rm -f install_mkl.sh
+
+# config git
+RUN git config --global http.sslverify false && \
+    git config --global https.sslverify false
+
+# clone torch_musa
+COPY ./common/clone_torch_musa.sh /home/clone_torch_musa.sh
+RUN --mount=type=secret,id=gitCredential,dst=/.gitCredential \
+    USER=$(sed -n '1p' /.gitCredential) \
+    PASSWORD=$(sed -n '2p' /.gitCredential) && \
+    pushd /home && \
+    /usr/bin/expect clone_torch_musa.sh $USER $PASSWORD && \
+    rm -f ./clone_torch_musa.sh && \
+    popd
+
+# install conda
+COPY ./common/install_conda.sh install_conda.sh
+RUN bash install_conda.sh && \
+    rm -f install_conda.sh
+
+# setup conda virtual environment for torch_musa 
+ENV PATH=/opt/conda/bin:$PATH
+RUN pushd /home/torch_musa && \
+    ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
+    conda create -n ${ENV_NAME} python=${PYTHON_VERSION} --yes && \
+    source activate ${ENV_NAME} && \
+    pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
+    pip install -r requirements.txt && \
+    pip install numpy==1.23.1 pytest==7.2.2 protobuf==3.19.0 \
+    googleapis-common-protos==1.56.4 importlib-metadata==4.11.3 \
+    pillow==9.2.0 pylint==2.17.3 requests black && \
+    pip install --no-deps torchvision==0.15.0 && \
+    popd && \
+    source deactivate
+
+# create softlink for mkl libraries if needed
+COPY ./common/create_softlink4mkl.sh create_softlink4mkl.sh
+RUN ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
+    bash create_softlink4mkl.sh /opt/conda/envs/${ENV_NAME}/lib && \
+    rm -f create_softlink4mkl.sh
+
+# prepare some envs & build original pytorch and torch_musa from scratch
+ENV MUSA_HOME=/usr/local/musa
+ENV LD_LIBRARY_PATH=$MUSA_HOME/lib:$LD_LIBRARY_PATH
+ENV PATH=/usr/local/musa/bin:/opt/conda/bin:$PATH
+RUN ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
+    source activate && \
+    source deactivate && \
+    conda activate ${ENV_NAME} && \
+    export CMAKE_PREFIX_PATH=${CONDA_PREFIX:-"$(dirname $(which conda))/../"} && \
+    pushd /home/torch_musa && \
+    bash build.sh -t && \
+    popd && \
+    conda deactivate
+
+# add variables to the beginning of ~/.bashrc
+# cause shell maybe termintated by this command [ -z "$PS1" ] && return
+RUN ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
+    sudo sed -i '1s|^|\. /opt/conda/etc/profile\.d/conda\.sh\n|' ~/.bashrc && \
+    sudo sed -i '2s|^|export MUSA_HOME=/usr/local/musa\n|' ~/.bashrc && \
+    LD_LIBRARY_PATH_STR=$(echo -e "export LD_LIBRARY_PATH=$LD_LIBRARY_PATH") && \
+    sudo sed -i "3s|^|${LD_LIBRARY_PATH_STR}\n|" ~/.bashrc && \
+    PATH_STR=$(echo -e "export PATH=$PATH\n") && \
+    sudo sed -i "4s|^|${PATH_STR}\n|" ~/.bashrc && \
+    PYTHON_ENV=$(echo -e "conda activate ${ENV_NAME}") && \
+    sudo sed -i "5s|^|${PYTHON_ENV}\n|" ~/.bashrc && \
+    CMAKE_PREFIX_PATH=$(echo -e "export CMAKE_PREFIX_PATH=\${CONDA_PREFIX:-\"\$(dirname \$(which conda))/../\"}""") && \
+    sudo sed -i "6s|^|${CMAKE_PREFIX_PATH}\n|" ~/.bashrc && \
+    sudo echo $PYTHON_ENV >> ~/.bashrc
+
+# a workaround for ImportError: /usr/local/lib/libdrm.so.2: file too short
+RUN size=$(stat -Lc %s "/usr/local/lib/libdrm.so.2") && \
+    if [ "$size" -eq 0 ]; then \
+      rm $(readlink -f /usr/local/lib/libdrm.so.2); \
+    fi

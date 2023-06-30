@@ -1,0 +1,62 @@
+BSD 2-Clause License
+
+Copyright (c) 2022, Cambricon Technologies
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+-------------------------------------------------------------------------------------
+This product bundles various third-party components under other open source licenses.
+This section summarizes those components and their licenses. See licenses/
+for text of these licenses.
+
+BSD License
+-----------
+
+pytorch_patches/add_max_pool_with_indices_warnings.diff
+pytorch_patches/determin_pytorch_abi_version.diff
+pytorch_patches/fallback_to_cpu.diff
+pytorch_patches/fix_max_pool3d_with_ceil_mode_bug_46558.diff
+pytorch_patches/fix_no_access_permission_for_pth.diff
+pytorch_patches/fix_setup_clean.diff
+pytorch_patches/improve_performance_changes.diff
+pytorch_patches/random.diff
+pytorch_patches/support_empty_pinned_tensor.diff
+pytorch_patches/support_isfinite_dispatch.diff
+pytorch_patches/support_jit_module_to_mlu.diff
+pytorch_patches/support_mlu_dataloader.diff
+pytorch_patches/support_mlu_deepcopy.diff
+pytorch_patches/support_mlu_dispatchstub.diff
+pytorch_patches/support_mlu_distributed.diff
+pytorch_patches/support_mlu_module_save.diff
+pytorch_patches/support_mlu_patch.diff
+pytorch_patches/support_mlu_serialization.diff
+pytorch_patches/support_orig_test.diff
+pytorch_patches/support_profiler_mlu.diff
+pytorch_patches/support_shallow_copy_between_cpu_and_mlu.diff
+pytorch_patches/support_tensor_iterator.diff
+pytorch_patches/torch_version_pin.diff
+
+BSD-3-Clause License
+-----------
+
+third_party/googletest - For details, see third_party/googletest/LICENSE

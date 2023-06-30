@@ -1,0 +1,67 @@
+From 3c492b8e34470dcbd26eb2ac3ab450f1506d4a5d Mon Sep 17 00:00:00 2001
+From: CaiZhi <zhi.cai@mthreads.com>
+Date: Tue, 23 May 2023 06:14:43 +0000
+Subject: [PATCH] feat: enable is_privateuseone() method
+
+---
+ aten/src/ATen/core/TensorBase.h | 6 ++++++
+ c10/core/Device.h               | 5 +++++
+ c10/core/TensorImpl.h           | 9 +++++++++
+ 3 files changed, 20 insertions(+)
+
+diff --git a/aten/src/ATen/core/TensorBase.h b/aten/src/ATen/core/TensorBase.h
+index d60f21d..22ab4a8 100644
+--- a/aten/src/ATen/core/TensorBase.h
++++ b/aten/src/ATen/core/TensorBase.h
+@@ -406,6 +406,12 @@ class TORCH_API TensorBase {
+     return impl_->is_cuda();
+   }
+ 
++  /// Returns if a `Tensor` has PrivateUse1 backend.
++  bool is_privateuseone() const {
++    // NB: this is not a native function to avoid dispatching overhead.
++    return impl_->is_privateuseone();
++  }
++
+   /// Returns if a `Tensor` has IPU backend.
+   bool is_ipu() const {
+     // NB: this is not a native function to avoid dispatching overhead.
+diff --git a/c10/core/Device.h b/c10/core/Device.h
+index d53ab38..0d46a11 100644
+--- a/c10/core/Device.h
++++ b/c10/core/Device.h
+@@ -146,6 +146,11 @@ struct C10_API Device final {
+     return type_ == DeviceType::CPU;
+   }
+ 
++  /// Return true if the device is of PrivateUse1 type.
++  bool is_privateuseone() const noexcept {
++    return type_ == DeviceType::PrivateUse1;
++  }
++
+   /// Return true if the device supports arbirtary strides.
+   bool supports_as_strided() const noexcept {
+     return type_ != DeviceType::IPU && type_ != DeviceType::XLA &&
+diff --git a/c10/core/TensorImpl.h b/c10/core/TensorImpl.h
+index 0b35b2a..46f7769 100644
+--- a/c10/core/TensorImpl.h
++++ b/c10/core/TensorImpl.h
+@@ -1111,6 +1111,15 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
+     return device_opt_.has_value() && device_opt_->type() == kCUDA;
+   }
+ 
++  bool is_privateuseone() const {
++    // NB: This method is not virtual and avoid dispatches for performance
++    // reasons.
++    if (C10_UNLIKELY(device_policy_)) {
++      return device_custom().is_privateuseone();
++    }
++    return device_opt_.has_value() && device_opt_->type() == kPrivateUse1;
++  }
++
+   bool is_xpu() const {
+     // NB: This method is not virtual and avoid dispatches for performance
+     // reasons.
+-- 
+2.30.2
+
