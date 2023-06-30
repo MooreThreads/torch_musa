@@ -134,8 +134,11 @@ def memory_snapshot():
     return torch_musa._MUSAC._musa_memorySnapshot()["segments"]
 
 
-def memory_summary(device: Union[Device, int] = None, abbreviated: bool = False, all_device: bool
-                   = False) -> str:
+def memory_summary(
+    device: Union[Device, int] = None,
+    abbreviated: bool = False,
+    all_device: bool = False,
+) -> str:
     """Returns a human-readable printout of the current memory allocator statistics for a given
     device.
 
@@ -271,7 +274,9 @@ def memory_summary(device: Union[Device, int] = None, abbreviated: bool = False,
     return "|" + "|\n|".join(lines).format(**fmt_dict) + "|\n"
 
 
-def memory_allocated(device: Union[Device, int] = None, all_device: bool = False) -> int:
+def memory_allocated(
+    device: Union[Device, int] = None, all_device: bool = False
+) -> int:
     """Returns the current GPU memory occupied by tensors in bytes for a given device.
 
     Args:
@@ -294,7 +299,9 @@ def memory_allocated(device: Union[Device, int] = None, all_device: bool = False
     return memory_stats(device=device).get("allocated_bytes.all.current", 0)
 
 
-def max_memory_allocated(device: Union[Device, int] = None, all_device: bool = False) -> int:
+def max_memory_allocated(
+    device: Union[Device, int] = None, all_device: bool = False
+) -> int:
     """Returns the maximum GPU memory occupied by tensors in bytes for a given device.
     By default, this returns the peak allocated memory since the beginning of this program.
     :func:`~torch_musa.reset_peak_memory_stats` can be used to reset the starting point in tracking
@@ -338,7 +345,9 @@ def memory_reserved(device: Union[Device, int] = None, all_device: bool = False)
     return memory_stats(device=device).get("reserved_bytes.all.current", 0)
 
 
-def max_memory_reserved(device: Union[Device, int] = None, all_device: bool = False) -> int:
+def max_memory_reserved(
+    device: Union[Device, int] = None, all_device: bool = False
+) -> int:
     """Returns the maximum GPU memory managed by the caching allocator in bytes for a given device.
     By default, this returns the peak cached memory since the beginning of this program.
     :func:`~torch_musa.reset_peak_memory_stats` can be used to reset the starting point in tracking

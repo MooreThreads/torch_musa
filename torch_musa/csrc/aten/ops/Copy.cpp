@@ -397,5 +397,9 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("_copy_from", &mtgpu_copy_from);
 }
 
+TORCH_LIBRARY_IMPL(aten, QuantizedPrivateUse1, m) {
+  m.impl(TORCH_SELECTIVE_NAME("aten::_copy_from"), TORCH_FN(mtgpu_copy_from));
+}
+
 } // namespace musa
 } // namespace at

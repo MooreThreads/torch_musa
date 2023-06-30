@@ -1,0 +1,172 @@
+From 24456656ab93a07ea1b1467169391a4ea138faf7 Mon Sep 17 00:00:00 2001
+From: "fan.mo" <fan.mo@mthreads.com>
+Date: Sun, 25 Jun 2023 14:50:15 +0800
+Subject: [PATCH] quantization patch
+
+---
+ aten/src/ATen/core/Tensor.cpp                      | 11 ++++++++++-
+ aten/src/ATen/native/quantized/AffineQuantizer.cpp |  4 ++--
+ aten/src/ATen/native/quantized/AffineQuantizer.h   | 12 ++++++------
+ c10/core/DispatchKey.cpp                           |  2 ++
+ torch/_C/__init__.pyi.in                           |  1 +
+ torch/csrc/Module.cpp                              | 13 +++++++++++++
+ 6 files changed, 34 insertions(+), 9 deletions(-)
+
+diff --git a/aten/src/ATen/core/Tensor.cpp b/aten/src/ATen/core/Tensor.cpp
+index fa175165d2..29c16dacd7 100644
+--- a/aten/src/ATen/core/Tensor.cpp
++++ b/aten/src/ATen/core/Tensor.cpp
+@@ -83,7 +83,16 @@ std::string TensorBase::toString() const {
+   if (scalar_type() == ScalarType::Undefined) {
+     base_str = "UndefinedType";
+   } else {
+-    base_str = std::string(at::toString(options().computeDispatchKey())) + at::toString(scalar_type()) + "Type";
++    auto dispatchkey = options().computeDispatchKey();
++    std::string dispatchkey_str;
++    if (dispatchkey == c10::DispatchKey::PrivateUse1) {
++      dispatchkey_str = c10::get_privateuse1_backend();
++    } else if (dispatchkey == c10::DispatchKey::QuantizedPrivateUse1) {
++      dispatchkey_str = "Quantized" + c10::get_privateuse1_backend();
++    } else {
++      dispatchkey_str = at::toString(dispatchkey);
++    }
++    base_str = dispatchkey_str + at::toString(scalar_type()) + "Type";
+   }
+   return base_str;
+ }
+diff --git a/aten/src/ATen/native/quantized/AffineQuantizer.cpp b/aten/src/ATen/native/quantized/AffineQuantizer.cpp
+index dbda6ebd5f..2ee427427d 100644
+--- a/aten/src/ATen/native/quantized/AffineQuantizer.cpp
++++ b/aten/src/ATen/native/quantized/AffineQuantizer.cpp
+@@ -159,7 +159,7 @@ Tensor& quantize_tensor_per_channel_affine(
+ 
+   AT_DISPATCH_QINT_TYPES(qtensor.scalar_type(), fn_name, [&]() {
+     checkQuantizedTensor<scalar_t>(fn_name, qtensor);
+-    if(qtensor.device().type() != c10::DeviceType::CUDA){
++    if(qtensor.device().type() != c10::DeviceType::CUDA && qtensor.device().type() != c10::DeviceType::PrivateUse1){
+       checkZeroPoints<underlying_t>(fn_name, zero_points);
+     }  // for cuda, this check will occur in the actual cuda function
+   });
+@@ -251,7 +251,7 @@ Tensor& dequantize_tensor_per_channel_affine(
+ 
+   AT_DISPATCH_QINT_TYPES(qtensor.scalar_type(), fn_name, [&]() {
+     checkQuantizedTensor<scalar_t>(fn_name, qtensor);
+-    if(qtensor.device().type() != c10::DeviceType::CUDA){
++    if(qtensor.device().type() != c10::DeviceType::CUDA && qtensor.device().type() != c10::DeviceType::PrivateUse1){
+       checkZeroPoints<underlying_t>(fn_name, zero_points);
+     }  // for cuda, this check will occur in the actual cuda function
+   });
+diff --git a/aten/src/ATen/native/quantized/AffineQuantizer.h b/aten/src/ATen/native/quantized/AffineQuantizer.h
+index 1ff342a643..f4b99667df 100644
+--- a/aten/src/ATen/native/quantized/AffineQuantizer.h
++++ b/aten/src/ATen/native/quantized/AffineQuantizer.h
+@@ -8,37 +8,37 @@
+ namespace at {
+ namespace native {
+ 
+-Tensor& quantize_tensor_per_tensor_affine(
++TORCH_API Tensor& quantize_tensor_per_tensor_affine(
+     const Tensor& rtensor,
+     Tensor& qtensor,
+     double scale,
+     int64_t zero_point);
+-Tensor& quantize_tensor_per_channel_affine(
++TORCH_API Tensor& quantize_tensor_per_channel_affine(
+     const Tensor& rtensor,
+     Tensor& qtensor,
+     Tensor scales,
+     Tensor zero_points,
+     int64_t axis);
+ 
+-Tensor& quantize_tensor_per_channel_float_qparams(
++TORCH_API Tensor& quantize_tensor_per_channel_float_qparams(
+     const Tensor& rtensor,
+     Tensor& qtensor,
+     Tensor scales,
+     Tensor zero_points,
+     int64_t axis);
+ 
+-Tensor& dequantize_tensor_per_tensor_affine(
++TORCH_API Tensor& dequantize_tensor_per_tensor_affine(
+     const Tensor& qtensor,
+     Tensor& rtensor,
+     double scale,
+     int64_t zero_point);
+-Tensor& dequantize_tensor_per_channel_affine(
++TORCH_API Tensor& dequantize_tensor_per_channel_affine(
+     const Tensor& qtensor,
+     Tensor& rtensor,
+     Tensor scales,
+     Tensor zero_points,
+     int64_t axis);
+-Tensor& dequantize_tensor_per_channel_float_qparams(
++TORCH_API Tensor& dequantize_tensor_per_channel_float_qparams(
+     const Tensor& qtensor,
+     Tensor& rtensor,
+     Tensor scales,
+diff --git a/c10/core/DispatchKey.cpp b/c10/core/DispatchKey.cpp
+index 91a606b07a..ae9e193ce6 100644
+--- a/c10/core/DispatchKey.cpp
++++ b/c10/core/DispatchKey.cpp
+@@ -84,6 +84,8 @@ const char* toString(DispatchKey t) {
+ 
+     case DispatchKey::Quantized:
+       return "Quantized";
++    case DispatchKey::QuantizedPrivateUse1:
++      return "QuantizedPrivateUse1";
+     case DispatchKey::CustomRNGKeyId:
+       return "CustomRNGKeyId";
+     case DispatchKey::MkldnnCPU:
+diff --git a/torch/_C/__init__.pyi.in b/torch/_C/__init__.pyi.in
+index 1bd547cc3c..ad9f504e7f 100644
+--- a/torch/_C/__init__.pyi.in
++++ b/torch/_C/__init__.pyi.in
+@@ -1045,6 +1045,7 @@ def _get_custom_class_python_wrapper(name: str, attr: str) -> Any: ...
+ 
+ # Defined in torch/csrc/Module.cpp
+ def _rename_privateuse1_backend(backend: str) -> None: ...
++def _get_privateuse1_backend_name() -> str: ...
+ 
+ # Defined in torch/csrc/Generator.cpp
+ class Generator:
+diff --git a/torch/csrc/Module.cpp b/torch/csrc/Module.cpp
+index a5ef894e41..00b6891c65 100644
+--- a/torch/csrc/Module.cpp
++++ b/torch/csrc/Module.cpp
+@@ -464,6 +464,7 @@ PyObject* THModule_getCppBacktrace(PyObject* _unused, PyObject* args) {
+       c10::get_backtrace(frames_to_skip, maximum_number_of_frames, true));
+   END_HANDLE_TH_ERRORS
+ }
++
+ static PyObject* THModule_rename_privateuse1_backend(
+     PyObject* _unused,
+     PyObject* arg) {
+@@ -479,6 +480,14 @@ static PyObject* THModule_rename_privateuse1_backend(
+   END_HANDLE_TH_ERRORS
+ }
+ 
++static PyObject* THModule_get_privateuse1_backend_name(
++    PyObject* _unused,
++    PyObject* arg) {
++  HANDLE_TH_ERRORS
++  return THPUtils_packString(c10::get_privateuse1_backend());
++  END_HANDLE_TH_ERRORS
++}
++
+ PyObject* THPModule_setAllowTF32CuDNN(PyObject* _unused, PyObject* arg) {
+   THPUtils_assert(
+       PyBool_Check(arg),
+@@ -1134,6 +1143,10 @@ static PyMethodDef TorchMethods[] = {
+      THModule_rename_privateuse1_backend,
+      METH_O,
+      nullptr},
++    {"_get_privateuse1_backend_name",
++     THModule_get_privateuse1_backend_name,
++     METH_NOARGS,
++     nullptr},
+     {"set_flush_denormal", THPModule_setFlushDenormal, METH_O, nullptr},
+     {"get_default_dtype", THPModule_getDefaultDtype, METH_NOARGS, nullptr},
+     {"_get_default_device", THPModule_getDefaultDevice, METH_NOARGS, nullptr},
+-- 
+2.25.1
+

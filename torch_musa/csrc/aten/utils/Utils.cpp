@@ -84,6 +84,12 @@ inline void SetTensorTypeAndAddr(const Tensor& t, muTensor& m_t) {
     case ScalarType::Byte:
       m_t.SetType(muTensor::Type::UINT8);
       break;
+    case ScalarType::QInt32:
+      m_t.SetType(muTensor::Type::INT32);
+      break;
+    case ScalarType::QUInt8:
+      m_t.SetType(muTensor::Type::UINT8);
+      break;
     default:
       TORCH_CHECK(false, "Unsupported tensor dtype: ", t.dtype());
       throw;

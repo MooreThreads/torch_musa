@@ -9,6 +9,7 @@ FILE(GLOB _CSRCS
     core/*.cpp
     utils/*.cpp
     distributed/*.cpp
+    aten/quantized/*.cpp
     )
 
 LIST(APPEND MUSA_CSRCS ${_CSRCS})
@@ -72,8 +73,11 @@ FILE(GLOB MU_SRCS
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Indexing.mu
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationGluKernel.mu
     ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/GridSampler.mu
+    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/IntReprQuant.mu
+    ${CMAKE_BINARY_DIR}/${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/MakePerTensorQuantizedTensor.mu
     aten/ops/musa/Embedding.mu
     core/*.mu
+    aten/quantized/musa/*.mu
     )
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/utils.cmake)

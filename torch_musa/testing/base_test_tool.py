@@ -25,10 +25,12 @@ skip_if_not_multiple_musa_device = pytest.mark.skipif(
     not MULTIGPU_AVAILABLE, reason="Expect multiple MUSA devices"
 )
 
+
 def test_on_nonzero_card_if_multiple_musa_device(musa_device: int):
     """
     Decorator for conducting operators' test on nonzero card.
     """
+
     def wrapper(test_func):
         @wraps(test_func)
         def infunc(*args, **kwargs):
@@ -37,8 +39,11 @@ def test_on_nonzero_card_if_multiple_musa_device(musa_device: int):
                     print(f"testing on card {musa_device}...")
                     test_func(*args, **kwargs)
             test_func(*args, **kwargs)
+
         return infunc
+
     return wrapper
+
 
 def get_raw_data():
     return [
@@ -53,29 +58,40 @@ def get_raw_data():
         torch.randn(10, 10, 2, 2, 1, 3, 2, 2),
     ]
 
+
 def gen_ip_port():
-    '''
+    """
     returns a random (IP, Port) pair [(str, str)] to avoid conflict of multi-test at same time.
-    '''
+    """
     t = int(time.time())
-    x = time.time()-t
+    x = time.time() - t
     ip0 = "127"
-    ip1 = t%256
-    ip2 = int(x*256%256)
-    ip3 = int(x*256*256%256)
+    ip1 = t % 256
+    ip2 = int(x * 256 % 256)
+    ip3 = int(x * 256 * 256 % 256)
     # Port 32768-60999 are used by Linux system
     # Port 0-10000 are used by local system or custom apps
-    port = t//256%(32768-10000)+10000
+    port = t // 256 % (32768 - 10000) + 10000
     return f"{ip0}.{ip1}.{ip2}.{ip3}", f"{port}"
+
 
 def get_all_support_types():
     return [torch.float32, torch.int32, torch.int64]
 
+
 def get_all_support_types_withfp16():
     return [torch.float16, torch.float32, torch.int32, torch.int64]
 
+
 def get_all_types():
-    return [torch.bool, torch.uint8, torch.float32, torch.int32, torch.float64, torch.int64]
+    return [
+        torch.bool,
+        torch.uint8,
+        torch.float32,
+        torch.int32,
+        torch.float64,
+        torch.int64,
+    ]
 
 
 class Comparator:
@@ -124,7 +140,9 @@ class AbsDiffComparator(Comparator):
         Use absolute tolerance to compare the result and golden.
         """
         super().__init__()
-        self._comparator = lambda result, golden: torch.abs(golden - result).max() < abs_diff
+        self._comparator = (
+            lambda result, golden: torch.abs(golden - result).max() < abs_diff
+        )
 
 
 class RelDiffComparator(Comparator):
@@ -136,7 +154,8 @@ class RelDiffComparator(Comparator):
         """
         super().__init__()
         self._comparator = (
-            lambda result, golden: torch.abs((golden - result) / golden).max() < rel_diff
+            lambda result, golden: torch.abs((golden - result) / golden).max()
+            < rel_diff
         )
 
 
@@ -170,8 +189,14 @@ class OpTest:
         np.random.seed(self._seed)
         torch.manual_seed(self._seed)
 
-    def _call_func(self, inputs, device, train: bool = False,
-                   test_out: bool = False, fp16: bool = False):
+    def _call_func(
+        self,
+        inputs,
+        device,
+        train: bool = False,
+        test_out: bool = False,
+        fp16: bool = False,
+    ):
         """Run op on specific device.
         Args:
             inputs (dict): Inputs arguments for op.
@@ -196,7 +221,6 @@ class OpTest:
                 else:
                     input_args[k] = self._input_args[k]
 
-
                 if (
                     train
                     and isinstance(input_args[k], torch.Tensor)
@@ -217,9 +241,11 @@ class OpTest:
                 for _, value in enumerate(inputs):
                     if isinstance(value, torch.Tensor):
                         inputs_list.append(value.to(device))
-                    if isinstance(value, np.ndarray):
+                    elif isinstance(value, np.ndarray):
                         tensor = torch.from_numpy(value).to(device)
                         inputs_list.append(tensor)
+                    else:
+                        inputs_list.append(value)
                 reduce = self._func(*inputs_list)
             elif isinstance(inputs, dict):
                 for k in inputs:
@@ -301,4 +327,3 @@ class OpTest:
         cpu_res = self._call_func(inputs, "cpu", train, test_out)
         mtgpu_res = self._call_func(inputs, "musa", train, test_out)
         self.compare_res(cpu_res, mtgpu_res)
-        
