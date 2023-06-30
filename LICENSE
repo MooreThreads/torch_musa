@@ -28,3 +28,25 @@ LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
 ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+------------------------------------------------------------------------------------
+This product bundles various third-party components under other open source licenses.
+This section summarizes those components and their licenses. See licenses/
+for text of these licenses.
+
+
+License in PyToch(https://github.com/pytorch/pytorch/blob/main/LICENSE)
+-----------------
+tools/setup_helper
+torch_musa/csrc/
+torch_musa/core
+
+
+Apache Software Foundation License 2.0
+--------------------------------------
+tools/lint
+
+
+BSD 2-clause License
+--------------------
+docs
