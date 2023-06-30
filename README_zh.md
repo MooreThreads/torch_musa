@@ -1,41 +1,41 @@
 ![Torch MUSA_Logo](https://github.com/MooreThreads/torch_musa/blob/main/docs/source/img/torch_musa.png)
 
-[中文]()    [English]()
+[中文](https://github.com/MooreThreads/torch_musa/blob/main/README_zh.md)    [English](https://github.com/MooreThreads/torch_musa/blob/main/README.md)
 
 --------------------------------------------------------------------------------
 
-**torch_musa** is an extended Python package based on PyTorch. Developing **torch_musa** in a plug-in way allows **torch_musa** to be decoupled from PyTorch, which is convenient for code maintenance. Combined with PyTorch, users can take advantage of the strong power of Moore Threads graphics cards through **torch_musa**. In addition, **torch_musa** has two significant advantages:
+**torch_musa** 是一个基于PyTorch的扩展。 以插件形式开发 **torch_musa** 可以将 **torch_musa** 与 PyTorch 解耦, 便于代码维护。 结合 PyTorch, 用户可以通过 **torch_musa** 使用摩尔线程显卡的强大功能。 此外, **torch_musa** 还具有两个优势:
 
-* CUDA compatibility could be achieved in **torch_musa**, which greatly reduces the workload of adapting new operators.
-* **torch_musa** API is consistent with PyTorch in format, which allows users accustomed to PyTorch to migrate smoothly to **torch_musa**.
+* **torch_musa** 兼容 CUDA, 这将极大减少适配的工作量。
+* **torch_musa** API 在格式上 与 PyTorch 保持一致, 可以让用户平滑的从 PyTorch 迁移到 **torch_musa**.
 --------------------------------------------------------------------------------
 
 <!-- toc -->
 
-- [Installation](#installation)
-  - [From Python Package](#from-python-package)
-  - [From Source](#from-source)
-  - [Prerequisites](#prerequisites)
-  - [Install Dependencies](#install-dependencies)
-  - [Set Important Environment Variables](#set-important-environment-variables)
-  - [Building With Script](#building-with-script-recommended)
-  - [Building Step by Step From Source](#building-step-by-step-from-source)
-  - [Docker Image](#docker-image)
-    - [Docker Image for Developer](#docker-image-for-developer)
-    - [Docker Image for User](#docker-image-for-user)
-- [Getting Started](#getting-started)
-  - [Key Changes](#key-changes)
-  - [Example of Frequently Used APIs](#example-of-frequently-used-apis)
-  - [Example of Inference Demo](#example-of-inference-demo)
-  - [Example of Training Demo](#example-of-training-demo)
-- [Documentation](#documentation)
+- [安装](#安装)
+  - [从 Python Package](#从-Python-Package)
+  - [从源码安装](#从源码安装)
+  - [前置环境](#前置环境)
+  - [安装依赖](#安装依赖)
+  - [设置关键环境变量](#设置关键环境变量)
+  - [从脚本构建](#从脚本构建-推荐)
+  - [从源代码逐步构建](#从源代码逐步构建)
+  - [Docker 镜像](#Docker-镜像)
+    - [开发者镜像](#开发者镜像)
+    - [用户镜像](#用户镜像)
+- [入门](#入门)
+  - [关键变更](#关键变更)
+  - [常用API示例](#常用API示例)
+  - [推理演示示例](#推理演示示例)
+  - [训练演示示例](#训练演示示例)
+- [文档](#文档)
 - [FAQ](#faq)
 
 <!-- tocstop -->
 
-## Installation
+## 安装
 
-### From Python Package
+### 从 Python Package
 
 ```bash
 # for python3.8
@@ -47,85 +47,85 @@ pip install torch-2.0.0a0+gitc263bd4-cp39-cp39-linux_x86_64.whl
 pip install torch_musa-2.0.0-cp39-cp39-linux_x86_64.whl
 ```
 
-### From Source
+### 从源码安装
 
-#### Prerequisites
+#### 前置环境
 - MUSA ToolKit
 - MUDNN
-- Other Libs (including muThrust, muSparse, muAlg, muRand)
-- [PyTorch Source Code](https://github.com/pytorch/pytorch/tree/v2.0.0)
+- 其他库 (including muThrust, muSparse, muAlg, muRand)
+- [PyTorch 源码](https://github.com/pytorch/pytorch/tree/v2.0.0)
 
-**NOTE:** Since some of the dependent libraries are in beta and have not yet been officially released, we recommend using the [development docker](#docker-image-for-developer) provided below to compile **torch_musa**. If you really want to compile **torch_musa** in your own environment, then please contact us for additional dependencies.
+**注:** 由于一些库处于 beta 状态尚未正式发布，我们建议使用下面提供的 [开发者镜像](#开发者镜像) 来编译 **torch_musa**。 如果你确实想要在自己的环境中编译 **torch_musa** 请联系我们获取附加的依赖。
 
-#### Install Dependencies
+#### 安装依赖
 
 ```bash
 apt-get install ccache
 pip install -r requirements.txt
 ```
 
-#### Set Important Environment Variables
+#### 设置关键环境变量
 ```bash
-export MUSA_HOME=path/to/musa_libraries(including mudnn and musa_toolkits) # defalut value is /usr/local/musa/
+export MUSA_HOME=path/to/musa_libraries(including mudnn and musa_toolkits) # 默认值是 /usr/local/musa/
 export LD_LIBRARY_PATH=$MUSA_HOME/lib:$LD_LIBRARY_PATH
-# if PYTORCH_REPO_PATH is not set, PyTorch-v2.0.0 will be downloaded outside this directory when building with build.sh
+# 如果 PYTORCH_REPO_PATH 没有设置, 在使用 build.sh 构建时，PyTorch-v2.0.0 会被下载到该目录外。
 export PYTORCH_REPO_PATH=path/to/PyTorch source code
 ```
 
-#### Building With Script (Recommended)
+#### 从脚本构建 (推荐)
 ```bash
-bash build.sh   # build original PyTorch and torch_musa from scratch
+bash build.sh   # 从头开始构建 PyTorch 和 torch_musa
 
-# Some important parameters are as follows:
-bash build.sh --torch  # build original PyTorch only
-bash build.sh --musa   # build torch_musa only
+# 下面是一些重要的参数:
+bash build.sh --torch  # 只构建原版 PyTorch
+bash build.sh --musa   # 只构建 torch_musa
 bash build.sh --fp64   # compile fp64 in kernels using mcc in torch_musa
-bash build.sh --debug  # build in debug mode
-bash build.sh --asan   # build in asan mode
-bash build.sh --clean  # clean everything built
+bash build.sh --debug  # debug 模式在构建
+bash build.sh --asan   # asan 模式下构建
+bash build.sh --clean  # 清理所有构建
 ```
 
-#### Building Step by Step From Source
-0. Apply PyTorch patches
+#### 从源代码逐步构建
+0. 应用 PyTorch patches
 ```bash
 bash build.sh --only-patch
 ```
 
-1. Building PyTorch
+1. 构建 PyTorch
 ```bash
 cd pytorch
 pip install -r requirements.txt
 python setup.py install
-# debug mode: DEBUG=1 python setup.py install
-# asan mode:  USE_ASAN=1 python setup.py install
+# debug 模式: DEBUG=1 python setup.py install
+# asan 模式:  USE_ASAN=1 python setup.py install
 ```
 
-2. Building torch_musa
+2. 构建 torch_musa
 ```bash
 cd torch_musa
 pip install -r requirements.txt
 python setup.py install
-# debug mode: DEBUG=1 python setup.py install
-# asan mode:  USE_ASAN=1 python setup.py install
+# debug 模式: DEBUG=1 python setup.py install
+# asan 模式:  USE_ASAN=1 python setup.py install
 ```
 
-### Docker Image
-#### Docker Image for Developer
-This part will be supported soon.
+### Docker 镜像
+#### 开发者镜像
+该部分很快支持。
 
-#### Docker Image for User
-This part will be supported soon.
+#### 用户镜像
+该部分很快支持。
 
-## Getting Started
-### Key Changes
-The following two key changes are required when using **torch_musa**:
- - Import **torch_musa** package
+## 入门
+### 关键变更
+使用 **torch_musa** 时需要进行以下两项关键更改:
+ - 导入 **torch_musa** 包
    ```python
    import torch
    import torch_musa
    ```
 
- - Change the device to **musa**
+ - 将 device 改为 **musa**
    ```python
    import torch
    import torch_musa
@@ -134,10 +134,10 @@ The following two key changes are required when using **torch_musa**:
    b = torch.tensor([1.2, 2.3], dtype=torch.float32, device='cpu').to('musa')
    ```
 
-### Example of Frequently Used APIs
+### 常用API示例
 
 <details>
-<summary>code</summary>
+<summary>Code</summary>
 
 ```python
 import torch
@@ -161,10 +161,10 @@ c = a + b
 ```
 </details>
 
-### Example of Inference Demo
+### 推理演示示例
 
 <details>
-<summary>code</summary>
+<summary>Code</summary>
 
 ```python
 import torch
@@ -174,15 +174,15 @@ import torchvision.models as models
 model = models.resnet50().eval()
 x = torch.rand((1, 3, 224, 224), device="musa")
 model = model.to("musa")
-# Perform the inference
+# 进行推理
 y = model(x)
 ```
 </details>
 
-### Example of Training Demo
+### 训练演示示例
 
 <details>
-<summary>code</summary>
+<summary>Code</summary>
 
 ```python
 import torch
@@ -193,7 +193,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
-# 1. prepare dataset
+# 1. 准备数据集
 transform = transforms.Compose([transforms.ToTensor(),
                                 transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 batch_size = 4
@@ -216,7 +216,7 @@ test_loader = torch.utils.data.DataLoader(test_set,
 classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
 device = torch.device("musa")
 
-# 2. build network
+# 2. 构建网络
 class Net(nn.Module):
     def __init__(self):
         super().__init__()
@@ -236,11 +236,11 @@ class Net(nn.Module):
         return x
 net = Net().to(device)
 
-# 3. define loss and optimizer
+# 3. 定义 loss 值和优化器
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 
-# 4. train
+# 4. 训练
 for epoch in range(2):
     running_loss = 0.0
     for i, data in enumerate(train_loader, 0):
@@ -260,7 +260,7 @@ PATH = './cifar_net.pth'
 torch.save(net.state_dict(), PATH)
 net.load_state_dict(torch.load(PATH))
 
-# 5. test
+# 5. 测试
 correct = 0
 total = 0
 with torch.no_grad():
@@ -274,8 +274,8 @@ print(f'Accuracy of the network on the 10000 test images: {100 * correct // tota
 ```
 </details>
 
-## Documentation
-- [Developer Guide](https://github.com/MooreThreads/torch_musa/blob/main/docs/MooreThreads-Torch_MUSA-Developer-Guide-CN-v1.0.0.pdf)
+## 文档
+- [开发指南](https://github.com/MooreThreads/torch_musa/blob/main/docs/MooreThreads-Torch_MUSA-Developer-Guide-CN-v1.0.0.pdf)
 
 ## FAQ
-For more detailed information, please refer to the files in the [docs folder](https://github.com/MooreThreads/torch_musa/tree/main/docs).
+更多信息请参考 [docs folder](https://github.com/MooreThreads/torch_musa/tree/main/docs) 目录下的文件。
