@@ -1,14 +1,5 @@
-From dffc6a2ec7e60d3eaba3ae282ecc3a284577d049 Mon Sep 17 00:00:00 2001
-From: CaiZhi <zhi.cai@mthreads.com>
-Date: Thu, 25 May 2023 08:00:42 +0000
-Subject: [PATCH] replace atomicAdd with gpuAtomicAddNoReturn
-
----
- aten/src/ATen/native/cuda/KernelUtils.cuh | 8 ++------
- 1 file changed, 2 insertions(+), 6 deletions(-)
-
 diff --git a/aten/src/ATen/native/cuda/KernelUtils.cuh b/aten/src/ATen/native/cuda/KernelUtils.cuh
-index e1b9f38..211aca3 100644
+index e1b9f38072..211aca3e20 100644
 --- a/aten/src/ATen/native/cuda/KernelUtils.cuh
 +++ b/aten/src/ATen/native/cuda/KernelUtils.cuh
 @@ -36,9 +36,7 @@ __device__ __forceinline__ void fastSpecializedAtomicAdd(
@@ -33,6 +24,3 @@ index e1b9f38..211aca3 100644
    gpuAtomicAddNoReturn(
        reinterpret_cast<at::BFloat16*>(tensor) + index,
        static_cast<at::BFloat16>(value));
--- 
-2.30.2
-

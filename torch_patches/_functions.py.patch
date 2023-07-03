@@ -1,0 +1,17 @@
+diff --git a/torch/nn/parallel/_functions.py b/torch/nn/parallel/_functions.py
+index 834d444ec8..4d2ee3e727 100644
+--- a/torch/nn/parallel/_functions.py
++++ b/torch/nn/parallel/_functions.py
+@@ -117,6 +117,12 @@ def _get_stream(device: int):
+     global _streams
+     if device == -1:
+         return None
++    if hasattr(torch, 'musa') and torch.musa.is_available():
++        if _streams is None:
++            _streams = [None] * torch.musa.device_count()
++        if _streams[device] is None:
++            _streams[device] = torch.musa.Stream(device)
++        return _streams[device]
+     if _streams is None:
+         _streams = [None] * torch.cuda.device_count()
+     if _streams[device] is None:

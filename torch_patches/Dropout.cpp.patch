@@ -1,14 +1,5 @@
-From 8774e2e10874e92dfcab0ec68301c50ed1f27ada Mon Sep 17 00:00:00 2001
-From: "zhi.cai@mthreads.com" <zhi.cai@mthreads.com>
-Date: Mon, 12 Jun 2023 10:09:02 +0800
-Subject: [PATCH] feat(op): support PrivateUse1 in is_fused_kernel_accaptable
-
----
- aten/src/ATen/native/Dropout.cpp | 7 ++++++-
- 1 file changed, 6 insertions(+), 1 deletion(-)
-
 diff --git a/aten/src/ATen/native/Dropout.cpp b/aten/src/ATen/native/Dropout.cpp
-index 2903fac..1561949 100644
+index 2903fac4f5..1561949bd6 100644
 --- a/aten/src/ATen/native/Dropout.cpp
 +++ b/aten/src/ATen/native/Dropout.cpp
 @@ -42,8 +42,13 @@ Tensor make_feature_noise(const Tensor& input) {
@@ -26,6 +17,3 @@ index 2903fac..1561949 100644
  }
  
  // NB: sure, we could have used different overloads here, but I would feel insecure
--- 
-2.25.1
-

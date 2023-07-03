@@ -1,0 +1,13 @@
+diff --git a/c10/core/DispatchKey.cpp b/c10/core/DispatchKey.cpp
+index 91a606b07a..ae9e193ce6 100644
+--- a/c10/core/DispatchKey.cpp
++++ b/c10/core/DispatchKey.cpp
+@@ -84,6 +84,8 @@ const char* toString(DispatchKey t) {
+ 
+     case DispatchKey::Quantized:
+       return "Quantized";
++    case DispatchKey::QuantizedPrivateUse1:
++      return "QuantizedPrivateUse1";
+     case DispatchKey::CustomRNGKeyId:
+       return "CustomRNGKeyId";
+     case DispatchKey::MkldnnCPU:
