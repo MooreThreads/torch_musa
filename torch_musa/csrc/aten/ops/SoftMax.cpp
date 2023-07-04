@@ -225,7 +225,7 @@ Tensor SoftmaxBwd(
     const Tensor& output,
     int64_t dim,
     ScalarType input_dtype) {
-  auto grad_input = at::empty_like(grad_output);
+  auto grad_input = at::empty_like(grad_output, at::MemoryFormat::Contiguous);
   SoftmaxOutBwd(grad_output, output, dim, input_dtype, grad_input);
   return grad_input;
 }

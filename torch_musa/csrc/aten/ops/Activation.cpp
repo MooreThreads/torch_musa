@@ -245,7 +245,7 @@ Tensor Clamp(
   TORCH_CHECK(
       has_min || has_max,
       "torch.clamp: either min, max or both scalars must be defined")
-  Tensor output = at::empty_like(self);
+  Tensor output = at::empty_like(self, at::MemoryFormat::Contiguous);
   MUSA_TENSOR_TYPE_CHECK(self);
 
   ClampCall(__func__, output, self, has_min, min, has_max, max);
@@ -535,7 +535,7 @@ void NegCall(
 }
 
 Tensor Neg(const Tensor& self) {
-  Tensor output = at::empty_like(self);
+  Tensor output = at::empty_like(self, at::MemoryFormat::Contiguous);
   MUSA_TENSOR_TYPE_CHECK(self);
   Scalar val = -1;
   NegCall(__func__, output, self, val);

@@ -316,7 +316,7 @@ Tensor KLDiv(
     output = at::empty({0}, input.options());
   } else {
     kldiv.SetReductionMode(::musa::dnn::KLDivLoss::Mode::NONE);
-    output = at::empty_like(input);
+    output = at::empty_like(input, at::MemoryFormat::Contiguous);
   }
   kldiv.SetLogTarget(log_target);
   Tensor contiguous_input = Contiguous(input);

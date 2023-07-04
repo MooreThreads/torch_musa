@@ -81,7 +81,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNorm(
   }
 
   auto options = input.options().dtype(input.scalar_type());
-  auto output = at::empty_like(input);
+  auto output = at::empty_like(input, at::MemoryFormat::Contiguous);
   auto out = CreateMUTensor(output);
   auto in = CreateMUTensor(input);
   muTensor s;
@@ -192,11 +192,14 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
 
   auto num_features = input.size(1);
   auto options = input.options().dtype(input.scalar_type());
-  grad_input = at::empty_like(input, options);
-  auto grad_mean = at::empty_like(save_mean, options);
-  auto grad_var = at::empty_like(save_invstd, options);
-  grad_weight = at::empty({num_features}, options);
-  grad_bias = at::empty({num_features}, options);
+  grad_input = at::empty_like(input, options, at::MemoryFormat::Contiguous);
+  auto grad_mean =
+      at::empty_like(save_mean, options, at::MemoryFormat::Contiguous);
+  auto grad_var =
+      at::empty_like(save_invstd, options, at::MemoryFormat::Contiguous);
+  grad_weight =
+      at::empty({num_features}, options, at::MemoryFormat::Contiguous);
+  grad_bias = at::empty({num_features}, options, at::MemoryFormat::Contiguous);
 
   auto dx = CreateMUTensor(grad_input);
   auto dm = CreateMUTensor(grad_mean);

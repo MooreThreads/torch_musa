@@ -63,9 +63,9 @@ std::tuple<Tensor&, Tensor&> TopkOut(
   muTensor mt_indices;
   muTensor mt_values_sorted;
   muTensor mt_indices_sorted;
-  auto values_not_use = at::empty_like(values);
-  auto indices_not_use = at::empty_like(indices);
-  auto indices_tmp = at::empty_like(indices);
+  auto values_not_use = at::empty_like(values, at::MemoryFormat::Contiguous);
+  auto indices_not_use = at::empty_like(indices, at::MemoryFormat::Contiguous);
+  auto indices_tmp = at::empty_like(indices, at::MemoryFormat::Contiguous);
   auto mt_indices_tmp = CreateMUTensor(indices_tmp);
   if (sorted && k > 1) {
     // when sorted=True, the results value/indices of topk are carried by

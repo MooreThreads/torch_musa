@@ -48,9 +48,13 @@ def test_on_nonzero_card_if_multiple_musa_device(musa_device: int):
 def get_raw_data():
     return [
         torch.randn(10),
-        torch.randn(10)[2:8],  # to test non_contiguous tensor(storage_offset != 0)
+        # to test non_contiguous tensor(storage_offset != 0),
+        torch.randn(10)[2:8],
+        torch.randn(10)[2:8:2],
         torch.randn(10, 10),
+        torch.randn(10, 10).t(),
         torch.randn(10, 10, 2),
+        torch.randn(10, 10, 2).transpose(0, 1),
         torch.randn(10, 10, 2, 2),
         torch.randn(10, 10, 2, 2, 1),
         torch.randn(10, 10, 2, 2, 1, 3),
@@ -111,7 +115,8 @@ class Comparator:
             A bool value indicating whether computing result is right.
         """
         if self._comparator is None:
-            raise NotImplementedError("Comparator is not implemented by a subclass")
+            raise NotImplementedError(
+                "Comparator is not implemented by a subclass")
 
         if not isinstance(self._comparator, (Callable, types.LambdaType)):
             raise TypeError("self._comparator must be a callable type")
@@ -140,9 +145,8 @@ class AbsDiffComparator(Comparator):
         Use absolute tolerance to compare the result and golden.
         """
         super().__init__()
-        self._comparator = (
-            lambda result, golden: torch.abs(golden - result).max() < abs_diff
-        )
+        self._comparator = lambda result, golden: torch.abs(
+            golden - result).max() < abs_diff
 
 
 class RelDiffComparator(Comparator):
@@ -154,8 +158,8 @@ class RelDiffComparator(Comparator):
         """
         super().__init__()
         self._comparator = (
-            lambda result, golden: torch.abs((golden - result) / golden).max()
-            < rel_diff
+            lambda result, golden: torch.abs(
+                (golden - result) / golden).max() < rel_diff
         )
 
 

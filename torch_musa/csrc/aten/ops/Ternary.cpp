@@ -35,14 +35,29 @@ void TernaryCall(
     }
   }
 
-  auto input1_mt = CreateMUTensor(input1);
-  auto input2_mt = CreateMUTensor(input2);
-  auto self_mt = CreateMUTensor(self);
+  auto contiguous_input1 = at::musa::Contiguous(input1);
+  auto contiguous_input2 = at::musa::Contiguous(input2);
+  auto contiguous_self = at::musa::Contiguous(self);
+  auto input1_mt = CreateMUTensor(contiguous_input1);
+  auto input2_mt = CreateMUTensor(contiguous_input2);
+  auto self_mt = CreateMUTensor(contiguous_self);
+  // output should be contiguous, caller should be responsible for this
   auto om_mt = CreateMUTensor(output);
   CHECK_MUDNN_STATUS(top.SetMode(m), "SetMode");
   CHECK_MUDNN_STATUS(top.Run(h, om_mt, self_mt, input1_mt, input2_mt), "Run");
 }
 
+/**
+ * @brief Ternary operations convention. All of the function params that are
+ * tensors could be non-contiguous, be careful.
+ *
+ * @param self input tensor
+ * @param input1 first of the two operands
+ * @param input2 second of the two operands
+ * @param alpha_scalar scaling factor
+ * @param output output tensor to write result
+ * @param m Ternary Mode Type.
+ */
 void TernarycommonDtypeCall(
     const Tensor& self,
     const Tensor& input1,
@@ -52,6 +67,8 @@ void TernarycommonDtypeCall(
     TERNARY_MODE m) {
   auto common_dtype = at::result_type(input1, input2);
   at::native::alpha_check(common_dtype, alpha_scalar);
+  // WARN: output created by torch, which could be non-contiguous.
+  output = at::musa::Contiguous(output);
   Tensor contiguous_self = Contiguous(self.to(common_dtype));
   Tensor contiguous_input1 = Contiguous(input1.to(common_dtype));
   Tensor contiguous_input2 = Contiguous(input2.to(common_dtype));

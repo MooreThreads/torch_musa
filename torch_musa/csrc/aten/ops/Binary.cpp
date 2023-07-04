@@ -15,6 +15,17 @@ namespace musa {
 using BINARY_MODE = ::musa::dnn::Binary::Mode;
 using UNARY_MODE = ::musa::dnn::Unary::Mode;
 
+/**
+ * @brief Binary ops calling convention.
+ *
+ * @param op_name Binary OP's name
+ * @param output output tensor to write result， this tensor could be
+ * non-contiguous.
+ * @param self first operand, must be contiguous passed by caller
+ * @param other second operand, must be contiguous passed by caller
+ * @param m Binary Mode Type.
+ * @param alpha_scalar scaling factor.
+ */
 void BinaryCall(
     const std::string& op_name,
     Tensor& output,
@@ -24,8 +35,11 @@ void BinaryCall(
     const Scalar alpha_scalar = 1) {
   c10::musa::MUSAGuard device_guard(self.device());
   muHandle& h = GetMudnnHandle();
-  Tensor other_tmp = alpha_scalar.equal(1) ? other : at::empty_like(other);
-  auto other_mt = CreateMUTensor(other_tmp);
+  Tensor other_tmp = alpha_scalar.equal(1)
+      ? other
+      : at::empty_like(other, at::MemoryFormat::Contiguous);
+  auto contiguous_other = at::musa::Contiguous(other_tmp);
+  auto other_mt = CreateMUTensor(contiguous_other);
 
   if (!alpha_scalar.equal(1)) {
     ::musa::dnn::Unary uop;
@@ -45,11 +59,11 @@ void BinaryCall(
   output.resize_(output_sizes);
 
   ::musa::dnn::Binary bop;
-  auto contiguous_self = CreateMUTensor(self);
+  auto musa_self = CreateMUTensor(self);
+  // output should be contiguous, caller should be responsible for this
   auto om = CreateMUTensor(output);
   CHECK_MUDNN_STATUS(bop.SetMode(m), "SetMode");
-  CHECK_MUDNN_STATUS(
-      bop.Run(h, om, contiguous_self, other_mt), "Run " + op_name);
+  CHECK_MUDNN_STATUS(bop.Run(h, om, musa_self, other_mt), "Run " + op_name);
 }
 
 inline bool IsComparisonOp(const BINARY_MODE m) {
@@ -240,7 +254,6 @@ Tensor BinarycommonDtype(
     const Tensor& other,
     Scalar const& alpha_scalar,
     BINARY_MODE m) {
-  // TODO(@caizhi): use musa porting to instead putting to cpu.
   Device device = is_musa(self) ? self.device() : other.device();
   c10::musa::MUSAGuard device_guard(device);
   if ((self.scalar_type() == ScalarType::Bool &&
@@ -295,6 +308,8 @@ void BinarycommonDtypeCall(
     BINARY_MODE m) {
   ScalarType common_dtype = at::result_type(self, other);
   at::native::alpha_check(common_dtype, alpha_scalar);
+  // WARN: output created by torch, which could be non-contiguous.
+  output = at::musa::Contiguous(output);
   Tensor contiguous_self = Contiguous(self.to(common_dtype));
   Tensor contiguous_other = Contiguous(other.to(common_dtype));
   BinaryCall(
@@ -1215,7 +1230,12 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("mul.out", &Mul_out);
 
   m.impl("minimum.out", &Minimum_out);
+  m.impl("minimum.Tensor", &MinimumTensor);
+  m.impl("minimum_.Tensor", &Minimum_Tensor);
+
   m.impl("maximum.out", &Maximum_out);
+  m.impl("maximum.Tensor", &MaximumTensor);
+  m.impl("maximum._Tensor", &Maximum_Tensor);
 
   m.impl("bitwise_and.Tensor", &BitWise_AndTensor);
   m.impl("bitwise_and_.Tensor", &BitWise_And_Tensor);
