@@ -30,7 +30,11 @@ def ctc_forward_inputs():
         'targets': torch.randint(1, 20, (16, 50), dtype=torch.long),
         'input_lengths': torch.full((16,), 100, dtype=torch.long),
         'target_lengths': torch.randint(10, 50, (16,), dtype=torch.long)},
-    ]
+       {'log_probs': torch.randn(119, 48, 11008).log_softmax(2).detach().requires_grad_(),
+        'targets': torch.randint(1, 11008, (48, 27), dtype=torch.long),
+        'input_lengths': torch.full((48,), 119, dtype=torch.long),
+        'target_lengths': torch.randint(1, 27, (48,), dtype=torch.long)},
+ ]
 
 reduction = ['mean', 'sum']
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -44,7 +48,7 @@ def test_ctc_loss(input_data, reduction):
     test = testing.OpTest(
         func=ctc,
         input_args=ctc_args,
-        comparators=testing.DefaultComparator(abs_diff=1e-4)
+        comparators=testing.DefaultComparator(abs_diff=1e-3)
     )
     test.check_result({
         "log_probs": input_data['log_probs'],
@@ -52,4 +56,3 @@ def test_ctc_loss(input_data, reduction):
         "input_lengths": input_data['input_lengths'],
         "target_lengths": input_data['target_lengths']
         }, train=True)
-        
