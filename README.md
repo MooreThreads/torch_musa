@@ -34,7 +34,8 @@
 
 ## Installation
 
-### [From Python Package](https://oss.mthreads.com:9001/buckets/ai-product/browse/ZGFpbHkvZnJhbWV3b3JrL3RvcmNoX211c2EvMjAyMzA2MTVfdG9yY2hfbXVzYS8=)
+### From Python Package
+- [Package Download Link](https://oss.mthreads.com:9001/buckets/ai-product/browse/ZGFpbHkvZnJhbWV3b3JrL3RvcmNoX211c2E=)
 
 ```bash
 # for python3.8
