@@ -115,6 +115,7 @@ build_pytorch() {
   pip install -r ${TORCH_MUSA_HOME}/requirements.txt  # extra requirements
   if [ $BUILD_WHEEL -eq 1 ]; then
     rm -rf dist
+    pip uninstall torch -y
     DEBUG=${DEBUG_MODE} USE_ASAN=${ASAN_MODE} USE_STATIC_MKL=${USE_STATIC_MKL} USE_MKL=1 USE_MKLDNN=1 USE_MKLDNN_CBLAS=1 python setup.py bdist_wheel
     rm -rf torch.egg-info
     pip install dist/*.whl
@@ -143,7 +144,8 @@ build_torch_musa() {
   echo -e "\033[34mBuilding torch_musa...\033[0m"
   pushd ${TORCH_MUSA_HOME}
   if [ $BUILD_WHEEL -eq 1 ]; then
-    rm -rf dist
+    rm -rf dist build
+    pip uninstall torch_musa -y
     PYTORCH_REPO_PATH=${PYTORCH_PATH} DEBUG=${DEBUG_MODE} USE_ASAN=${ASAN_MODE} ENABLE_COMPILE_FP64=${COMPILE_FP64} MUSA_ARCH=${MUSA_ARCH} python setup.py bdist_wheel
     rm -rf torch_musa.egg-info
     pip install dist/*.whl
