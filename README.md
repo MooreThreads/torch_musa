@@ -88,7 +88,7 @@ bash build.sh --clean  # clean everything built
 #### Building Step by Step From Source
 0. Apply PyTorch patches
 ```bash
-bash build.sh --only-patch
+bash build.sh --patch
 ```
 
 1. Building PyTorch
