@@ -298,6 +298,70 @@ at::Tensor NllLossBwd(
   return grad_input;
 }
 
+std::tuple<at::Tensor&, at::Tensor&> NllLoss2dOut(
+    const at::Tensor& self,
+    const at::Tensor& target,
+    const c10::optional<at::Tensor>& weight,
+    int64_t reduction,
+    int64_t ignore_index,
+    at::Tensor& output,
+    at::Tensor& total_weight) {
+  c10::musa::MUSAGuard device_guard(self.device());
+  TORCH_CHECK(
+      self.sizes()[1] > target.max().item().to<int>(),
+      "Target is out of bounds.");
+  return at::native::nll_loss2d_forward_out_cuda(
+      self, target, weight, reduction, ignore_index, output, total_weight);
+}
+
+std::tuple<at::Tensor, at::Tensor> NllLoss2d(
+    const at::Tensor& self,
+    const at::Tensor& target,
+    const c10::optional<at::Tensor>& weight,
+    int64_t reduction,
+    int64_t ignore_index) {
+  c10::musa::MUSAGuard device_guard(self.device());
+  TORCH_CHECK(
+      self.sizes()[1] > target.max().item().to<int>(),
+      "Target is out of bounds.");
+  return at::native::nll_loss2d_forward_cuda(
+      self, target, weight, reduction, ignore_index);
+}
+
+at::Tensor& NllLoss2dBwdGradInput(
+    const at::Tensor& grad_output,
+    const at::Tensor& self,
+    const at::Tensor& target,
+    const c10::optional<at::Tensor>& weight,
+    int64_t reduction,
+    int64_t ignore_index,
+    const at::Tensor& total_weight,
+    at::Tensor& grad_input) {
+  c10::musa::MUSAGuard device_guard(self.device());
+  return at::native::nll_loss2d_backward_out_cuda(
+      grad_output,
+      self,
+      target,
+      weight,
+      reduction,
+      ignore_index,
+      total_weight,
+      grad_input);
+}
+
+at::Tensor NllLoss2dBwd(
+    const at::Tensor& grad_output,
+    const at::Tensor& self,
+    const at::Tensor& target,
+    const c10::optional<at::Tensor>& weight,
+    int64_t reduction,
+    int64_t ignore_index,
+    const at::Tensor& total_weight) {
+  c10::musa::MUSAGuard device_guard(self.device());
+  return at::native::nll_loss2d_backward_cuda(
+      grad_output, self, target, weight, reduction, ignore_index, total_weight);
+}
+
 Tensor KLDiv(
     const Tensor& input,
     const Tensor& target,
@@ -540,6 +604,11 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("nll_loss_forward", &NllLoss);
   m.impl("nll_loss_backward.grad_input", &NllLossBwdGradInput);
   m.impl("nll_loss_backward", &NllLossBwd);
+
+  m.impl("nll_loss2d_forward.output", &NllLoss2dOut);
+  m.impl("nll_loss2d_forward", &NllLoss2d);
+  m.impl("nll_loss2d_backward.grad_input", &NllLoss2dBwdGradInput);
+  m.impl("nll_loss2d_backward", &NllLoss2dBwd);
 }
 
 } // namespace musa
