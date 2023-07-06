@@ -21,7 +21,8 @@ then
 fi
 
 pushd $PYTORCH_PATH
-diff_files=$(git diff --name-only)
+git add .  # New files support
+diff_files=$(git diff HEAD --name-only)
 for diff_file in ${diff_files[@]}
 do
   patch_file_name="${PATCHES_DIR}/$(echo $diff_file | rev | cut -f1 -d'/' | rev).patch"
@@ -31,8 +32,9 @@ do
   else
     echo "Generating patch ${patch_file_name}"
   fi
-  git diff $diff_file > ${patch_file_name}
+  git diff HEAD $diff_file > ${patch_file_name}
 done
+git reset HEAD # Ready for next apply-patches
 
 echo "pytorch patches generated"
 exit 0
