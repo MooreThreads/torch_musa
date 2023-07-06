@@ -36,7 +36,7 @@ RUN cd /home && \
     cd ./musa_toolkits_install && \
     bash ./install.sh && \
     rm -f ../musa_toolkits_install.tar.gz && \
-    rm -rf ../musa_toolkit*
+    rm -rf ../*musa_toolkit*
 
 # install muDNN
 RUN wget --no-check-certificate ${MUDNN_URL} -O /home/mudnn.tar && \
@@ -44,7 +44,7 @@ RUN wget --no-check-certificate ${MUDNN_URL} -O /home/mudnn.tar && \
     pushd /home/mudnn && \
     bash install_mudnn.sh && \
     rm -f /home/mudnn.tar && \
-    rm -rf /home/mudnn && \
+    rm -rf /home/*muDNN* /home/*mudnn* && \
     popd
 
 # install math libs
@@ -101,8 +101,7 @@ RUN ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
     sudo rm -rf /home/whls && \
     conda deactivate
 
-# a workaround for ImportError: /usr/local/lib/libdrm.so.2: file too short
-RUN size=$(stat -Lc %s "/usr/local/lib/libdrm.so.2") && \
-    if [ "$size" -eq 0 ]; then \
-      rm $(readlink -f /usr/local/lib/libdrm.so.2); \
-    fi
+RUN line_number=$(grep -rn '[ -z "$PS1" ] && return'  ~/.bashrc | awk -F: '{print $1}') && \
+    sed -i "${line_number}s/.*/#[ -z \"\$PS1\" ] \&\& return/" ~/.bashrc
+
+WORKDIR /home

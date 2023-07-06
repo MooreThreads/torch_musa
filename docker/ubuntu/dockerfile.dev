@@ -1,4 +1,3 @@
-#syntax=docker/dockerfile:1.0-experimental
 ARG UBUNTU_VERSION
 
 FROM ubuntu:${UBUNTU_VERSION}
@@ -40,7 +39,8 @@ RUN cd /home && \
     tar -zxf ./musa_toolkits_install.tar.gz && \
     cd ./musa_toolkits_install && \
     bash ./install.sh && \
-    rm -f ../musa_toolkits_install.tar.gz
+    rm -f ../musa_toolkits_install.tar.gz && \
+    rm -rf ../musa_toolkit*
 
 # install muDNN
 RUN wget --no-check-certificate ${MUDNN_URL} -O /home/mudnn.tar && \
@@ -48,6 +48,7 @@ RUN wget --no-check-certificate ${MUDNN_URL} -O /home/mudnn.tar && \
     pushd /home/mudnn && \
     bash install_mudnn.sh && \
     rm -f /home/mudnn.tar && \
+    rm -rf /home/*mudnn* && \
     popd
 
 # install math libs
@@ -69,15 +70,8 @@ RUN bash install_mkl.sh && \
 RUN git config --global http.sslverify false && \
     git config --global https.sslverify false
 
-# clone torch_musa
-COPY ./common/clone_torch_musa.sh /home/clone_torch_musa.sh
-RUN --mount=type=secret,id=gitCredential,dst=/.gitCredential \
-    USER=$(sed -n '1p' /.gitCredential) \
-    PASSWORD=$(sed -n '2p' /.gitCredential) && \
-    pushd /home && \
-    /usr/bin/expect clone_torch_musa.sh $USER $PASSWORD && \
-    rm -f ./clone_torch_musa.sh && \
-    popd
+COPY ./pytorch /home/pytorch
+COPY ./torch_musa /home/torch_musa
 
 # install conda
 COPY ./common/install_conda.sh install_conda.sh
@@ -134,8 +128,4 @@ RUN ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
     sudo sed -i "6s|^|${CMAKE_PREFIX_PATH}\n|" ~/.bashrc && \
     sudo echo $PYTHON_ENV >> ~/.bashrc
 
-# a workaround for ImportError: /usr/local/lib/libdrm.so.2: file too short
-RUN size=$(stat -Lc %s "/usr/local/lib/libdrm.so.2") && \
-    if [ "$size" -eq 0 ]; then \
-      rm $(readlink -f /usr/local/lib/libdrm.so.2); \
-    fi
+WORKDIR /home

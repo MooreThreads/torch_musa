@@ -18,6 +18,7 @@ install_ubuntu() {
     gdb \
     ssh \
     $ccache_deps \
+    ccache \
     make \
     cmake \
     autoconf \
@@ -37,7 +38,10 @@ install_ubuntu() {
     gawk \
     bison \
     expect \
-    libnuma-dev
+    libnuma-dev \
+    libgoogle-glog-dev \
+    libgflags-dev \
+    libomp-11-dev
 
   # Cleanup package manager
   apt-get autoclean && apt-get clean
