@@ -33,24 +33,26 @@
 ## Installation
 
 ### From Python Package
+- [Package Download Link](https://github.com/MooreThreads/torch_musa/releases)
 
 ```bash
 # for python3.8
-pip install torch-2.0.0a0+gitc263bd4-cp38-cp38-linux_x86_64.whl
-pip install torch_musa-2.0.0-cp38-cp38-linux_x86_64.whl
+pip install torch-2.0.0_xxxxxx-cp38-cp38-linux_x86_64.whl
+pip install torch_musa_xxxxxx-cp38-cp38-linux_x86_64.whl
 
 # for python3.9
-pip install torch-2.0.0a0+gitc263bd4-cp39-cp39-linux_x86_64.whl
-pip install torch_musa-2.0.0-cp39-cp39-linux_x86_64.whl
+pip install torch-2.0.0_xxxxxx-cp39-cp39-linux_x86_64.whl
+pip install torch_musa_xxxxxx-cp39-cp39-linux_x86_64.whl
 ```
 
 ### From Source
 
 #### Prerequisites
-- MUSA ToolKit
-- MUDNN
+- [MUSA ToolKit](https://new-developer.mthreads.com/sdk/download/musa?equipment=&os=&driverVersion=&version=)
+- [MUDNN](https://new-developer.mthreads.com/sdk/download/musa?equipment=&os=&driverVersion=&version=)
 - Other Libs (including muThrust, muSparse, muAlg, muRand)
 - [PyTorch Source Code](https://github.com/pytorch/pytorch/tree/v2.0.0)
+- Docker Container Toolkits
 
 **NOTE:** Since some of the dependent libraries are in beta and have not yet been officially released, we recommend using the [development docker](#docker-image-for-developer) provided below to compile **torch_musa**. If you really want to compile **torch_musa** in your own environment, then please contact us for additional dependencies.
 
@@ -85,7 +87,7 @@ bash build.sh --clean  # clean everything built
 #### Building Step by Step From Source
 0. Apply PyTorch patches
 ```bash
-bash build.sh --only-patch
+bash build.sh --patch
 ```
 
 1. Building PyTorch
@@ -107,11 +109,36 @@ python setup.py install
 ```
 
 ### Docker Image
+- [Development Docker Image Download Link](https://mcconline.mthreads.com/repo/musa-pytorch-dev-public?repoName=musa-pytorch-dev-public&repoNamespace=mcconline&displayName=MUSA%20Pytorch%20Dev%20Public)
+- [Release Docker Image Download Link](https://mcconline.mthreads.com/repo/musa-pytorch-release-public?repoName=musa-pytorch-release-public&repoNamespace=mcconline&displayName=MUSA%20Pytorch%20Release%20Public)
 #### Docker Image for Developer
-This part will be supported soon.
+
+```bash
+docker run -it --privileged --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g torch_musa_develop_image /bin/bash
+```
+<details>
+<summary>Docker Image List</summary>
+
+| Docker Tag | Description |
+| ---- | --- |
+| [**latest/v1.0.0**](https://mcconline.mthreads.com/repo/musa-pytorch-dev-public?repoName=musa-pytorch-dev-public&repoNamespace=mcconline&displayName=MUSA%20Pytorch%20Dev%20Public) | musatoolkits rc1.4.0 (requires musa driver musa_2.1.1)<br> mudnn rtm_2.1.1; mccl 20230627 <br> libomp-11-dev <br> muAlg _dev-0.1.1 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.1.1 |
+
+</details>  
+
 
 #### Docker Image for User
-This part will be supported soon.
+```bash
+docker run -it --privileged --name=torch_musa_release --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g torch_musa_release_image /bin/bash
+```
+<details>
+<summary>Docker Image List</summary>
+
+| Docker Tag | Description |
+| ---- | --- |
+| [**latest/v1.0.0**](https://mcconline.mthreads.com/repo/musa-pytorch-release-public?repoName=musa-pytorch-release-public&repoNamespace=mcconline&displayName=MUSA%20Pytorch%20Release%20Public) | musatoolkits rc1.4.0 (requires musa driver musa_2.1.1)<br> mudnn rtm_2.1.1; mccl 20230627 <br> libomp-11-dev <br> muAlg _dev-0.1.1 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.1.1 |
+
+</details>  
+
 
 ## Getting Started
 ### Key Changes
@@ -275,4 +302,4 @@ print(f'Accuracy of the network on the 10000 test images: {100 * correct // tota
 - [Developer Guide](https://github.com/MooreThreads/torch_musa/blob/main/docs/MooreThreads-Torch_MUSA-Developer-Guide-CN-v1.0.0.pdf)
 
 ## FAQ
-For more detailed information, please refer to the files in the [docs folder](https://github.com/MooreThreads/torch_musa/tree/main/docs).
+For more detailed information, please refer to the files in the [docs folder](https://github.com/MooreThreads/torch_musa/tree/main/docs). Please let us know by email **developers@mthreads.com** if you have any questions.
