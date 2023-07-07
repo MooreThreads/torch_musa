@@ -15,6 +15,16 @@ namespace musa {
 using BINARY_MODE = ::musa::dnn::Binary::Mode;
 using UNARY_MODE = ::musa::dnn::Unary::Mode;
 
+// TODO(MT AI) maybe we don't need this condition function when mudnn supports
+bool NeedContiguous(const Tensor& self, const Tensor& other) {
+  if (self.strides().equals(other.strides()) &&
+      self.storage_offset() == other.storage_offset() &&
+      self.sizes().equals(other.sizes())) {
+    return false;
+  }
+  return true;
+}
+
 /**
  * @brief Binary ops calling convention.
  *
@@ -35,35 +45,30 @@ void BinaryCall(
     const Scalar alpha_scalar = 1) {
   c10::musa::MUSAGuard device_guard(self.device());
   muHandle& h = GetMudnnHandle();
-  Tensor other_tmp = alpha_scalar.equal(1)
-      ? other
-      : at::empty_like(other, at::MemoryFormat::Contiguous);
-  auto contiguous_other = at::musa::Contiguous(other_tmp);
-  auto other_mt = CreateMUTensor(contiguous_other);
-
-  if (!alpha_scalar.equal(1)) {
-    ::musa::dnn::Unary uop;
-    if (alpha_scalar.isFloatingPoint()) {
-      CHECK_MUDNN_STATUS(uop.SetAlpha(alpha_scalar.toDouble()), "SetAlpha");
-    } else {
-      CHECK_MUDNN_STATUS(uop.SetAlpha(alpha_scalar.toLong()), "SetAlpha");
-    }
-    // TODO(zaixing.wang) it's strange there is UNARY_MODE::MUL in BinaryCall
-    // func, maybe refactor later
-    CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::MUL), "SetMode");
-    auto other_in = CreateMUTensor(other);
-    CHECK_MUDNN_STATUS(uop.Run(h, other_mt, other_in), "Run " + op_name);
-  }
-
+  Tensor other_tmp =
+      alpha_scalar.equal(1) ? other : at::mul(other, alpha_scalar);
   auto output_sizes = infer_size_dimvector(self.sizes(), other.sizes());
   output.resize_(output_sizes);
+  muTensor musa_self;
+  muTensor musa_other;
+  muTensor musa_out;
+  Tensor contiguous_self;
+  Tensor contiguous_other;
+  Tensor contiguous_out;
+  if (NeedContiguous(self, other)) {
+    musa_self = CreateMUTensor(Contiguous(self, contiguous_self));
+    musa_other = CreateMUTensor(Contiguous(other_tmp, contiguous_other));
+    musa_out = CreateMUTensor(Contiguous(output, contiguous_out));
+  } else {
+    musa_self = CreateMUTensor(self, true);
+    musa_other = CreateMUTensor(other_tmp, true);
+    musa_out = CreateMUTensor(output, true);
+  }
 
   ::musa::dnn::Binary bop;
-  auto musa_self = CreateMUTensor(self);
-  // output should be contiguous, caller should be responsible for this
-  auto om = CreateMUTensor(output);
   CHECK_MUDNN_STATUS(bop.SetMode(m), "SetMode");
-  CHECK_MUDNN_STATUS(bop.Run(h, om, musa_self, other_mt), "Run " + op_name);
+  CHECK_MUDNN_STATUS(
+      bop.Run(h, musa_out, musa_self, musa_other), "Run " + op_name);
 }
 
 inline bool IsComparisonOp(const BINARY_MODE m) {
@@ -117,9 +122,6 @@ Tensor Binary(
   Device device = is_musa(self) ? self.device() : other.device();
   c10::musa::MUSAGuard guard(device);
 
-  Tensor contiguous_self = Contiguous(self);
-  Tensor contiguous_other = Contiguous(other);
-
   // In some special case that 'other' is scalar and on cpu, UnaryOp could take
   // the place of BinaryOp to optimize performance. such as:
   // torch.tensor([1.2, 2.4]) * 2.0
@@ -142,14 +144,16 @@ Tensor Binary(
       };
   const bool optimize_scalar_unary =
       SupportOptimizeScalarToUnary(m, self, other);
+  Tensor other_tmp = other;
+  Tensor self_tmp = self;
   if (!optimize_scalar_unary) {
     // 1. deal with other or self tensor on cpu
     // 2. deal with other and self tensor shape isn't same
     if (other.dim() == 0) {
-      contiguous_other = at::full_like(contiguous_self, other.item(), kMUSA);
+      other_tmp = at::full_like(self, other.item(), kMUSA);
     }
     if (self.dim() == 0) {
-      contiguous_self = at::full_like(contiguous_other, self.item(), kMUSA);
+      self_tmp = at::full_like(other, self.item(), kMUSA);
     }
   }
 
@@ -162,11 +166,7 @@ Tensor Binary(
         "} is not expandable to size {",
         other.sizes(),
         "}.");
-    if (self.dim() == 0) {
-      output = Contiguous(self);
-    } else {
-      output = contiguous_self;
-    }
+    output = self_tmp;
   } else {
     auto output_sizes = infer_size_dimvector(self.sizes(), other.sizes());
     TORCH_CHECK(
@@ -183,31 +183,29 @@ Tensor Binary(
         "} is not expandable to size {",
         output_sizes,
         "}.");
-    // Allocate output with bool dtype about some modes
+    auto output_dtype = self.scalar_type();
     if (m == BINARY_MODE::EQ || m == BINARY_MODE::NE || m == BINARY_MODE::GE ||
         m == BINARY_MODE::GT || m == BINARY_MODE::LE || m == BINARY_MODE::LT ||
         m == BINARY_MODE::LOGICAL_AND || m == BINARY_MODE::LOGICAL_OR ||
         m == BINARY_MODE::LOGICAL_XOR) {
+      output_dtype = ScalarType::Bool;
+    }
+    if (NeedContiguous(self, other)) {
       output = at::empty(
           output_sizes,
           self.options()
-              .dtype(ScalarType::Bool)
+              .dtype(output_dtype)
               .device(device)
               .memory_format(at::MemoryFormat::Contiguous));
     } else {
-      output = at::empty(
-          output_sizes,
-          self.options()
-              .dtype(contiguous_self.scalar_type())
-              .device(device)
-              .memory_format(at::MemoryFormat::Contiguous));
+      output = empty_like(self, self.options().dtype(output_dtype));
     }
   }
 
   if (optimize_scalar_unary) {
     muHandle& h = GetMudnnHandle();
     ::musa::dnn::Unary uop;
-    auto other_scalar = contiguous_other.item();
+    auto other_scalar = other_tmp.item();
     auto ConvertBinaryModeToString = [](BINARY_MODE mode) -> std::string {
       switch (mode) {
         case BINARY_MODE::ADD:
@@ -238,12 +236,11 @@ Tensor Binary(
     } else if (m == BINARY_MODE::TRUEDIV) {
       CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::DIV), "SetMode");
     }
-    auto mt_output = CreateMUTensor(output);
-    auto mt_input = CreateMUTensor(contiguous_self);
+    auto mt_output = CreateMUTensor(output, true);
+    auto mt_input = CreateMUTensor(self_tmp, true);
     CHECK_MUDNN_STATUS(uop.Run(h, mt_output, mt_input), "Run " + op_name);
   } else {
-    BinaryCall(
-        op_name, output, contiguous_self, contiguous_other, m, alpha_scalar);
+    BinaryCall(op_name, output, self_tmp, other_tmp, m, alpha_scalar);
   }
   return inplace ? self.copy_(output) : output;
 }
@@ -310,10 +307,9 @@ void BinarycommonDtypeCall(
   at::native::alpha_check(common_dtype, alpha_scalar);
   // WARN: output created by torch, which could be non-contiguous.
   output = at::musa::Contiguous(output);
-  Tensor contiguous_self = Contiguous(self.to(common_dtype));
-  Tensor contiguous_other = Contiguous(other.to(common_dtype));
-  BinaryCall(
-      op_name, output, contiguous_self, contiguous_other, m, alpha_scalar);
+  Tensor common_self = self.to(common_dtype);
+  Tensor common_other = other.to(common_dtype);
+  BinaryCall(op_name, output, common_self, common_other, m, alpha_scalar);
 }
 
 // TODO(mt-ai): All the binary operations should be moved to the musa

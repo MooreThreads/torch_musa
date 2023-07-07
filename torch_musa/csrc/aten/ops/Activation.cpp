@@ -21,26 +21,23 @@ void UnaryCall(
     std::function<void(::musa::dnn::Unary&)> func) {
   c10::musa::MUSAGuard device_guard(i.device());
   muHandle& h = GetMudnnHandle();
-  auto in = CreateMUTensor(i);
-  auto out = CreateMUTensor(o);
+  auto in = CreateMUTensor(i, true);
+  auto out = CreateMUTensor(o, true);
 
   ::musa::dnn::Unary op;
   func(op);
   CHECK_MUDNN_STATUS(op.Run(h, out, in), "Run " + op_name);
 }
 
-// TODO (zaixing.wang): we should modify this function if muDNN supports other
-// dytpe
 void UnaryBoolOut(
     const std::string& op_name,
     Tensor& output,
     const Tensor& input,
     const Scalar& value,
     UNARY_MODE mode) {
-  Tensor contiguous_input = Contiguous(input);
-  UnaryCall(op_name, output, contiguous_input, [&](::musa::dnn::Unary& op) {
-    if (contiguous_input.scalar_type() == ScalarType::Long ||
-        contiguous_input.scalar_type() == ScalarType::Byte) {
+  UnaryCall(op_name, output, input, [&](::musa::dnn::Unary& op) {
+    if (input.scalar_type() == ScalarType::Long ||
+        input.scalar_type() == ScalarType::Byte) {
       CHECK_MUDNN_STATUS(op.SetAlpha(value.to<int64_t>()), "SetAlpha");
     } else {
       CHECK_MUDNN_STATUS(op.SetAlpha(value.to<double>()), "SetAlpha");
@@ -71,10 +68,9 @@ Tensor Unary(
     const Tensor& input,
     std::function<void(::musa::dnn::Unary&)> func) {
   c10::musa::MUSAGuard device_guard(input.device());
-  Tensor contiguous_input = Contiguous(input);
-  Tensor output = at::empty_like(contiguous_input);
-  MUSA_TENSOR_TYPE_CHECK(contiguous_input);
-  UnaryCall(op_name, output, contiguous_input, func);
+  Tensor output = at::empty_like(input);
+  MUSA_TENSOR_TYPE_CHECK(input);
+  UnaryCall(op_name, output, input, func);
   return output;
 }
 
@@ -196,7 +192,6 @@ void ClampCall(
     bool has_max,
     const c10::optional<Scalar>& max) {
   auto t_type = self.scalar_type();
-  auto self_ = Contiguous(self);
 
   switch (t_type) {
     case ScalarType::Float: {
@@ -207,7 +202,7 @@ void ClampCall(
 
       const double max_val = has_max ? max.value().to<double>()
                                      : std::numeric_limits<double>::max();
-      UnaryCall(op_name, out, self_, [&](::musa::dnn::Unary& op) {
+      UnaryCall(op_name, out, self, [&](::musa::dnn::Unary& op) {
         CHECK_MUDNN_STATUS(op.SetAlpha(min_val), "SetAlpha");
         CHECK_MUDNN_STATUS(op.SetBeta(max_val), "SetBeta");
         CHECK_MUDNN_STATUS(
@@ -221,7 +216,7 @@ void ClampCall(
                                       : std::numeric_limits<int64_t>::min();
       const int64_t max_val = has_max ? max.value().to<int64_t>()
                                       : std::numeric_limits<int64_t>::max();
-      UnaryCall(op_name, out, self_, [&](::musa::dnn::Unary& op) {
+      UnaryCall(op_name, out, self, [&](::musa::dnn::Unary& op) {
         CHECK_MUDNN_STATUS(op.SetAlpha(min_val), "SetAlpha");
         CHECK_MUDNN_STATUS(op.SetBeta(max_val), "SetBeta");
         CHECK_MUDNN_STATUS(
@@ -490,11 +485,10 @@ void NegCall(
     const Tensor& self,
     const c10::optional<Scalar>& val) {
   auto t_type = self.scalar_type();
-  auto self_ = Contiguous(self);
   switch (t_type) {
     case ScalarType::Float: {
       const double alpha = val.value().to<double>();
-      UnaryCall(op_name, out, self_, [&](::musa::dnn::Unary& op) {
+      UnaryCall(op_name, out, self, [&](::musa::dnn::Unary& op) {
         CHECK_MUDNN_STATUS(op.SetAlpha(alpha), "SetAlpha");
         CHECK_MUDNN_STATUS(
             op.SetMode(::musa::dnn::Unary::Mode::MUL), "SetMode");
@@ -503,7 +497,7 @@ void NegCall(
     }
     case ScalarType::Half: {
       const double alpha = val.value().to<double>();
-      UnaryCall(op_name, out, self_, [&](::musa::dnn::Unary& op) {
+      UnaryCall(op_name, out, self, [&](::musa::dnn::Unary& op) {
         CHECK_MUDNN_STATUS(op.SetAlpha(alpha), "SetAlpha");
         CHECK_MUDNN_STATUS(
             op.SetMode(::musa::dnn::Unary::Mode::MUL), "SetMode");
@@ -512,7 +506,7 @@ void NegCall(
     }
     case ScalarType::Int: {
       const int64_t alpha = val.value().to<int64_t>();
-      UnaryCall(op_name, out, self_, [&](::musa::dnn::Unary& op) {
+      UnaryCall(op_name, out, self, [&](::musa::dnn::Unary& op) {
         CHECK_MUDNN_STATUS(op.SetAlpha(alpha), "SetAlpha");
         CHECK_MUDNN_STATUS(
             op.SetMode(::musa::dnn::Unary::Mode::MUL), "SetMode");
@@ -521,7 +515,7 @@ void NegCall(
     }
     case ScalarType::Long: {
       const int64_t alpha = val.value().to<int64_t>();
-      UnaryCall(op_name, out, self_, [&](::musa::dnn::Unary& op) {
+      UnaryCall(op_name, out, self, [&](::musa::dnn::Unary& op) {
         CHECK_MUDNN_STATUS(op.SetAlpha(alpha), "SetAlpha");
         CHECK_MUDNN_STATUS(
             op.SetMode(::musa::dnn::Unary::Mode::MUL), "SetMode");

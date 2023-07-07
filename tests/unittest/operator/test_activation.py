@@ -33,6 +33,24 @@ all_basic_funcs = [
     torch.floor
 ]
 
+all_inplace_funcs = [
+    torch.abs_,
+    torch.sqrt_,
+    torch.rsqrt_,
+    torch.tanh_,
+    torch.reciprocal_,
+    torch.sigmoid_,
+    torch.exp_,
+    torch.cos_,
+    torch.sin_,
+    # torch.log, there maybe has a bug in new daily mudnn, comment temply
+    torch.atan_,
+    torch.round_,
+    torch.log10_,
+    torch.floor_
+]
+
+
 all_nn_funcs = [
     torch.nn.ReLU(),
     # torch.nn.GELU(approximate="none"),
@@ -59,7 +77,7 @@ def function(input_data, dtype, func):
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_datas)
 @pytest.mark.parametrize("dtype", [torch.float32])
-@pytest.mark.parametrize("func", all_basic_funcs)
+@pytest.mark.parametrize("func", all_basic_funcs + all_inplace_funcs)
 def test_all_basic_funcs(input_data, dtype, func):
     function(input_data, dtype, func)
 
