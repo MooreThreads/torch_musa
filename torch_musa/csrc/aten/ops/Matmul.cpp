@@ -25,6 +25,23 @@ bool IsTranspose(const Tensor& mat, bool is_batch) {
   }
 }
 
+at::Tensor Dot(const at::Tensor& l, const at::Tensor& r) {
+  c10::musa::MUSAGuard device_guard(l.device());
+  muHandle& h = GetMudnnHandle();
+  Tensor out =
+      at::empty({1}, l.options().memory_format(at::MemoryFormat::Contiguous));
+  auto rst = CreateMUTensor(out);
+  Tensor contiguous_l;
+  Tensor contiguous_r;
+  auto lmt = CreateMUTensor(Contiguous(l, contiguous_l));
+  auto rmt = CreateMUTensor(Contiguous(r, contiguous_r));
+
+  ::musa::dnn::Dot op;
+
+  CHECK_MUDNN_STATUS(op.Run(h, rst, lmt, rmt, InternalMemAlloc), "Run")
+  return out.squeeze();
+}
+
 void MmCall(
     const Tensor& l,
     const Tensor& r,
@@ -98,6 +115,26 @@ at::Tensor& AddMmOut(
   return out;
 }
 
+at::Tensor& AddMvOut(
+    const at::Tensor& self,
+    const at::Tensor& mat1,
+    const at::Tensor& mat2,
+    const at::Scalar& beta,
+    const at::Scalar& alpha,
+    at::Tensor& out) {
+  TORCH_CHECK(
+      mat1.dim() == 2 && mat2.dim() == 1 && mat1.size(1) == mat2.size(0),
+      "mat1 and mat2 must be a matrix and mat1_shape[1] must equal to "
+      "mat2_shape[0]");
+  std::vector<int64_t> sz;
+  sz.push_back(mat2.size(0));
+  sz.push_back(1);
+  const at::Tensor& vec = mat2.view(sz);
+  AddMmOut(self, mat1, vec, beta, alpha, out);
+  out = out.view(mat1.size(0));
+  return out;
+}
+
 at::Tensor AddMm(
     const at::Tensor& self,
     const at::Tensor& mat1,
@@ -147,6 +184,8 @@ Tensor Bmm(const Tensor& self, const Tensor& mat2) {
 }
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
+  m.impl("dot", &Dot);
+  m.impl("addmv.out", &AddMvOut);
   m.impl("addmm.out", &AddMmOut);
   m.impl("addmm", &AddMm);
   m.impl("mm", &Mm);
