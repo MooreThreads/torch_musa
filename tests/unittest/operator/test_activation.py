@@ -30,6 +30,7 @@ all_basic_funcs = [
     torch.round,
     torch.sgn,
     torch.log10,
+    torch.log2,
     torch.floor
 ]
 

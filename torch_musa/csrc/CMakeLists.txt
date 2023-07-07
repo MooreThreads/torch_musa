@@ -27,6 +27,7 @@ FILE(GLOB PORTING_CPP_CSRCS
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Activation.cpp)
 
 FILE(GLOB MU_SRCS
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleBicubic2d.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Repeat.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleBilinear2d.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ReflectionPad.mu

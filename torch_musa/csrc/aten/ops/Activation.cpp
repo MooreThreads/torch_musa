@@ -1,4 +1,8 @@
 #include <ATen/Config.h>
+// clang-format off
+// Some classes in NativeFunctions.h require the corrosponding definition in Exception.h
+#include <c10/util/Exception.h>
+// clang-format on
 #include <ATen/NativeFunctions.h>
 #include <ATen/core/op_registration/adaption.h>
 #include <ATen/native/Activation.h>
@@ -128,6 +132,7 @@ DEFINE_ACTIVATE_OP(Atan, ::musa::dnn::Unary::Mode::ATAN)
 DEFINE_ACTIVATE_OP(Ceil, ::musa::dnn::Unary::Mode::CEIL)
 DEFINE_ACTIVATE_OP(Log, ::musa::dnn::Unary::Mode::LOG)
 DEFINE_ACTIVATE_OP(Log10, ::musa::dnn::Unary::Mode::LOG10)
+DEFINE_ACTIVATE_OP(Log2, ::musa::dnn::Unary::Mode::LOG2)
 DEFINE_ACTIVATE_OP(Floor, ::musa::dnn::Unary::Mode::FLOOR)
 
 #define SCALAR_COMPARISON(op_name, mode)                         \
@@ -247,11 +252,103 @@ Tensor Clamp(
   return output;
 }
 
-Tensor& Clamp_(
+Tensor& MudnnClamp_(
     Tensor& self,
     const c10::optional<Scalar>& min,
     const c10::optional<Scalar>& max) {
   self = Clamp(self, min, max);
+  return self;
+}
+
+struct structured_clamp_out_inplace final
+    : public at::native::structured_clamp_out {
+  structured_clamp_out_inplace(Tensor& self) : outputs_{std::ref(self)} {}
+
+  void set_output_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+    const auto& out = outputs_[output_idx].get();
+    check_inplace(out, sizes, options);
+    auto maybe_proxy = maybe_create_proxy(out, sizes, strides, options);
+    if (C10_UNLIKELY(maybe_proxy.has_value())) {
+      proxy_outputs_[output_idx] =
+          c10::ExclusivelyOwned<Tensor>(std::move(maybe_proxy).value());
+    }
+    if (!names.empty()) {
+      namedinference::propagate_names(outputs_[output_idx], names);
+    }
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_clamp_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+
+  void set_output_raw_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+    const auto& out = outputs_[output_idx].get();
+    check_inplace(out, sizes, options);
+    if (!names.empty()) {
+      namedinference::propagate_names(outputs_[output_idx], names);
+    }
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_clamp_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+
+  const Tensor& maybe_get_output(int64_t output_idx) override {
+    return proxy_outputs_[output_idx].has_value() ? **proxy_outputs_[output_idx]
+                                                  : outputs_[output_idx].get();
+  }
+
+  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
+  std::array<c10::optional<c10::ExclusivelyOwned<Tensor>>, 1> proxy_outputs_;
+  c10::musa::OptionalMUSAGuard guard_;
+};
+at::Tensor& Clamp_(
+    at::Tensor& self,
+    const c10::optional<at::Scalar>& min,
+    const c10::optional<at::Scalar>& max) {
+  // No device check
+  structured_clamp_out_inplace op(self);
+  op.meta(
+      self,
+      (min.has_value() ? at::OptionalScalarRef(&(min.value()))
+                       : at::OptionalScalarRef()),
+      (max.has_value() ? at::OptionalScalarRef(&(max.value()))
+                       : at::OptionalScalarRef()));
+  op.impl(
+      self,
+      (min.has_value() ? at::OptionalScalarRef(&(min.value()))
+                       : at::OptionalScalarRef()),
+      (max.has_value() ? at::OptionalScalarRef(&(max.value()))
+                       : at::OptionalScalarRef()),
+      op.outputs_[0]);
+  if (op.proxy_outputs_[0].has_value())
+    op.outputs_[0].get().copy_(**op.proxy_outputs_[0]);
   return self;
 }
 
@@ -360,6 +457,7 @@ struct structured_softplus_out_functional final
     at::native::structured_softplus_out::set_output_raw_strided(
         output_idx, sizes, strides, options, names);
   }
+
   void set_output_raw_strided(
       int64_t output_idx,
       IntArrayRef sizes,
@@ -383,9 +481,11 @@ struct structured_softplus_out_functional final
     at::native::structured_softplus_out::set_output_raw_strided(
         output_idx, sizes, strides, options, names);
   }
+
   const Tensor& maybe_get_output(int64_t output_idx) override {
     return *outputs_[output_idx];
   }
+
   std::array<c10::ExclusivelyOwned<Tensor>, 1> outputs_;
   c10::musa::OptionalMUSAGuard guard_;
 };
@@ -393,6 +493,7 @@ struct structured_softplus_out_functional final
 struct structured_softplus_out_out final
     : public at::native::structured_softplus_out {
   structured_softplus_out_out(Tensor& out0) : outputs_{std::ref(out0)} {}
+
   void set_output_strided(
       int64_t output_idx,
       IntArrayRef sizes,
@@ -422,6 +523,7 @@ struct structured_softplus_out_out final
     at::native::structured_softplus_out::set_output_raw_strided(
         output_idx, sizes, strides, options, names);
   }
+
   void set_output_raw_strided(
       int64_t output_idx,
       IntArrayRef sizes,
@@ -446,10 +548,12 @@ struct structured_softplus_out_out final
     at::native::structured_softplus_out::set_output_raw_strided(
         output_idx, sizes, strides, options, names);
   }
+
   const Tensor& maybe_get_output(int64_t output_idx) override {
     return proxy_outputs_[output_idx].has_value() ? **proxy_outputs_[output_idx]
                                                   : outputs_[output_idx].get();
   }
+
   std::array<std::reference_wrapper<Tensor>, 1> outputs_;
   std::array<c10::optional<c10::ExclusivelyOwned<Tensor>>, 1> proxy_outputs_;
   c10::musa::OptionalMUSAGuard guard_;
@@ -646,6 +750,7 @@ struct structured_clamp_min_out_out final
   const Tensor& maybe_get_output(int64_t output_idx) override {
     return outputs_[output_idx].get();
   }
+
   std::array<std::reference_wrapper<Tensor>, 1> outputs_;
   c10::musa::OptionalMUSAGuard guard_;
 };
@@ -706,6 +811,7 @@ struct structured_bitwise_not_out_out final
   const Tensor& maybe_get_output(int64_t output_idx) override {
     return outputs_[output_idx].get();
   }
+
   std::array<std::reference_wrapper<Tensor>, 1> outputs_;
   c10::musa::OptionalMUSAGuard guard_;
 };
@@ -780,6 +886,7 @@ struct structured_sgn_out_out final : public at::native::structured_sgn_out {
   const Tensor& maybe_get_output(int64_t output_idx) override {
     return outputs_[output_idx].get();
   }
+
   std::array<std::reference_wrapper<Tensor>, 1> outputs_;
   c10::musa::OptionalMUSAGuard guard_;
 };
@@ -845,6 +952,7 @@ struct structured_bitwise_not_out_functional final
   const Tensor& maybe_get_output(int64_t output_idx) override {
     return *outputs_[output_idx];
   }
+
   std::array<c10::ExclusivelyOwned<Tensor>, 1> outputs_;
   c10::musa::OptionalMUSAGuard guard_;
 };
@@ -911,6 +1019,7 @@ struct structured_bitwise_not_out_inplace final
   const Tensor& maybe_get_output(int64_t output_idx) override {
     return outputs_[output_idx].get();
   }
+
   std::array<std::reference_wrapper<Tensor>, 1> outputs_;
   c10::musa::OptionalMUSAGuard guard_;
 };
@@ -973,6 +1082,7 @@ struct structured_sgn_out_functional final
   const Tensor& maybe_get_output(int64_t output_idx) override {
     return *outputs_[output_idx];
   }
+
   std::array<c10::ExclusivelyOwned<Tensor>, 1> outputs_;
   c10::musa::OptionalMUSAGuard guard_;
 };
@@ -1039,6 +1149,7 @@ struct structured_sgn_out_inplace final
   const Tensor& maybe_get_output(int64_t output_idx) override {
     return outputs_[output_idx].get();
   }
+
   std::array<std::reference_wrapper<Tensor>, 1> outputs_;
   c10::musa::OptionalMUSAGuard guard_;
 };
@@ -1077,6 +1188,7 @@ struct structured_hardsigmoid_out_functional final
     at::native::structured_hardsigmoid_out::set_output_raw_strided(
         output_idx, sizes, strides, options, names);
   }
+
   void set_output_raw_strided(
       int64_t output_idx,
       IntArrayRef sizes,
@@ -1097,9 +1209,11 @@ struct structured_hardsigmoid_out_functional final
     at::native::structured_hardsigmoid_out::set_output_raw_strided(
         output_idx, sizes, strides, options, names);
   }
+
   const Tensor& maybe_get_output(int64_t output_idx) override {
     return *outputs_[output_idx];
   }
+
   std::array<c10::ExclusivelyOwned<Tensor>, 1> outputs_;
   c10::musa::OptionalMUSAGuard guard_;
 };
@@ -1107,6 +1221,7 @@ struct structured_hardsigmoid_out_functional final
 struct structured_hardsigmoid_out_inplace final
     : public at::native::structured_hardsigmoid_out {
   structured_hardsigmoid_out_inplace(Tensor& self) : outputs_{std::ref(self)} {}
+
   void set_output_strided(
       int64_t output_idx,
       IntArrayRef sizes,
@@ -1128,6 +1243,7 @@ struct structured_hardsigmoid_out_inplace final
     at::native::structured_hardsigmoid_out::set_output_raw_strided(
         output_idx, sizes, strides, options, names);
   }
+
   void set_output_raw_strided(
       int64_t output_idx,
       IntArrayRef sizes,
@@ -1149,10 +1265,12 @@ struct structured_hardsigmoid_out_inplace final
     at::native::structured_hardsigmoid_out::set_output_raw_strided(
         output_idx, sizes, strides, options, names);
   }
+
   const Tensor& maybe_get_output(int64_t output_idx) override {
     return proxy_outputs_[output_idx].has_value() ? **proxy_outputs_[output_idx]
                                                   : outputs_[output_idx].get();
   }
+
   std::array<std::reference_wrapper<Tensor>, 1> outputs_;
   std::array<c10::optional<c10::ExclusivelyOwned<Tensor>>, 1> proxy_outputs_;
   c10::musa::OptionalMUSAGuard guard_;
@@ -1161,6 +1279,7 @@ struct structured_hardsigmoid_out_inplace final
 struct structured_hardsigmoid_out_out final
     : public at::native::structured_hardsigmoid_out {
   structured_hardsigmoid_out_out(Tensor& out0) : outputs_{std::ref(out0)} {}
+
   void set_output_strided(
       int64_t output_idx,
       IntArrayRef sizes,
@@ -1182,6 +1301,7 @@ struct structured_hardsigmoid_out_out final
     at::native::structured_hardsigmoid_out::set_output_raw_strided(
         output_idx, sizes, strides, options, names);
   }
+
   void set_output_raw_strided(
       int64_t output_idx,
       IntArrayRef sizes,
@@ -1203,10 +1323,12 @@ struct structured_hardsigmoid_out_out final
     at::native::structured_hardsigmoid_out::set_output_raw_strided(
         output_idx, sizes, strides, options, names);
   }
+
   const Tensor& maybe_get_output(int64_t output_idx) override {
     return proxy_outputs_[output_idx].has_value() ? **proxy_outputs_[output_idx]
                                                   : outputs_[output_idx].get();
   }
+
   std::array<std::reference_wrapper<Tensor>, 1> outputs_;
   std::array<c10::optional<c10::ExclusivelyOwned<Tensor>>, 1> proxy_outputs_;
   c10::musa::OptionalMUSAGuard guard_;
@@ -1296,6 +1418,7 @@ at::Tensor PRelu(const at::Tensor& self, const at::Tensor& weight) {
   const OptionalDeviceGuard device_guard(device_of(self));
   return at::native::_prelu_kernel(self, weight);
 }
+
 ::std::tuple<at::Tensor, at::Tensor> PReluBackward(
     const at::Tensor& grad_output,
     const at::Tensor& self,
@@ -1321,9 +1444,9 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("abs_", &Abs_);
   m.impl("abs.out", &AbsOut);
 
-  m.impl("sgn.out", &SgnOut);
   m.impl("sgn", &Sgn);
   m.impl("sgn_", &Sgn_);
+  m.impl("sgn.out", &SgnOut);
 
   m.impl("bitwise_not", &BitwiseNot);
   m.impl("bitwise_not_", &BitwiseNot_);
@@ -1382,7 +1505,13 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("atan_", &Atan_);
   m.impl("atan.out", &AtanOut);
 
+  m.impl("log", &Log);
+  m.impl("log_", &Log_);
   m.impl("log.out", &LogOut);
+
+  m.impl("log2", &Log2);
+  m.impl("log2_", &Log2_);
+  m.impl("log2.out", &Log2Out);
 
   m.impl("gelu", &GELU);
   m.impl("gelu.out", &GELUOut);

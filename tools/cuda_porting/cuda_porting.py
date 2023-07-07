@@ -30,6 +30,7 @@ PORT_FILES = [
     PortingFile("aten/src/ATen/native/sparse", True, True),
     PortingFile("aten/src/ATen/native/transformers", True, True),
     PortingFile("aten/src/ATen/cuda", True, False),
+    PortingFile("aten/src/THC", True, True),
     PortingFile("c10/cuda", True, False),
     PortingFile("include", True, True),
 ]

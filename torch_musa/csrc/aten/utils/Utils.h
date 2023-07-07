@@ -8,6 +8,7 @@
 #include "torch_musa/csrc/core/MUSAException.h"
 
 namespace at {
+
 namespace musa {
 
 #define UNUSED(x) (void)(x)
@@ -100,6 +101,9 @@ c10::optional<Tensor> maybe_create_proxy(
     const TensorOptions& options);
 
 } // namespace musa
+
+using musa::kMUSA;
+
 } // namespace at
 
 #endif // ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUUTILS_H_
