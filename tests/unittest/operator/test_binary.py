@@ -232,7 +232,7 @@ def test_bitwise(input_data, dtype, func):
 @pytest.mark.parametrize("dtype", [torch.float32, torch.int32, torch.int64])
 @pytest.mark.parametrize(
     "func",
-    [torch.xlogy],
+    [torch.xlogy, torch.atan2],
 )
 def test_xlogy(input_data, dtype, func):
     function(input_data, dtype, dtype, func)
@@ -302,3 +302,18 @@ pow_input_datas = [
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_pow_tensor(input_data, dtype):
     function(input_data, dtype, dtype, torch.pow)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_atan2_and_inplace_(dtype):
+    x = torch.tensor([1,2,3,4,5], dtype=dtype)
+    y = torch.tensor([1,2,3,4,5], dtype=dtype)
+    res = torch.atan2(y, x)
+
+    x_musa = x.to('musa')
+    y_musa = y.to('musa')
+    res_musa = torch.atan2(y_musa, x_musa)
+    res_musa_ = y_musa.atan2_(x_musa)
+    assert testing.DefaultComparator(abs_diff=1e-7)(res, res_musa.cpu())
+    assert testing.DefaultComparator(abs_diff=1e-7)(res, res_musa_.cpu())
