@@ -97,7 +97,7 @@ class TORCH_API ProcessGroupMCCL : public Backend {
     void synchronizeStreams();
 
     // Helper function used in MUSA Stream callbacks to complete WorkMCCL
-    // objects and throw exceptions when neeeded.
+    // objects and throw exceptions when needed.
     void handleMCCLGuard(ErrorHandlingMode asyncErrorHandling);
 
     // Helper function that checks if the MCCL kernels have finished

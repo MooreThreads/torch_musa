@@ -40,9 +40,9 @@ mcclDataType_t getMcclDataType(at::ScalarType type) {
 
 // TODO(yueran-tang): Not finished since we only support a few Ops.
 mcclRedOp_t getMcclReduceOp(
-    const ReduceOp& reduceOp,
+    const ReduceOp& reduce_op,
     at::Tensor& input,
-    const mcclDataType_t& dataType,
+    const mcclDataType_t& data_type,
     const mcclComm_t& comm,
     int dev_in_group) {
   try {
@@ -50,16 +50,16 @@ mcclRedOp_t getMcclReduceOp(
       // SUM of kBool is the same as "OR" or "MAX" of Boolean.
       // TODO(yueran-tang): Bool Max is nccl style reduceOp, and we need to
       // check it on mccl.
-      if (reduceOp == ReduceOp::SUM) {
+      if (reduce_op == ReduceOp::SUM) {
         return mcclMax;
       }
-      if (reduceOp == ReduceOp::AVG) {
+      if (reduce_op == ReduceOp::AVG) {
         TORCH_CHECK(false, "Cannot use ReduceOp.AVG with Boolean inputs");
       }
     }
-    return mcclOp.at(reduceOp);
+    return mcclOp.at(reduce_op);
   } catch (const std::out_of_range& e) {
-    TORCH_CHECK(false, "Unexpected ReduceOp: ", reduceOp);
+    TORCH_CHECK(false, "Unexpected ReduceOp: ", reduce_op);
   }
 }
 
