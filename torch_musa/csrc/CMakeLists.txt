@@ -78,6 +78,7 @@ FILE(GLOB MU_SRCS
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/MakePerTensorQuantizedTensor.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/AmpKernels.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/NLLLoss2d.mu
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/Activation.mu
     aten/quantized/musa/*.mu
     aten/ops/musa/Embedding.mu
     core/*.mu

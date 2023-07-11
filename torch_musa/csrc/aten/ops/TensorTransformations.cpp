@@ -29,5 +29,9 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("roll", &Roll);
 }
 
+TORCH_LIBRARY_IMPL(aten, QuantizedPrivateUse1, m) {
+  m.impl("flip", &Flip);
+}
+
 } // namespace musa
 } // namespace at

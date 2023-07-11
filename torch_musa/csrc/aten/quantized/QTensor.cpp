@@ -1,9 +1,11 @@
 #include <ATen/ATen.h>
 #include <ATen/NativeFunctions.h>
+#include <ATen/native/quantized/AffineQuantizer.h>
 #include <ATen/native/quantized/cpu/QuantUtils.h>
 #include <ATen/quantized/QTensorImpl.h>
 #include <torch/library.h>
 
+#include <ATen/core/op_registration/adaption.h>
 #include "torch_musa/csrc/aten/quantized/Quantizer.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
@@ -26,6 +28,11 @@ Tensor QuantizePerTensor(
     double scale,
     int64_t zero_point,
     ScalarType dtype) {
+  c10::optional<Device> common_device = nullopt;
+  (void)common_device; // Suppress unused variable warning
+  c10::impl::check_and_update_common_device(
+      common_device, self, "QuantizePerTensor", "self");
+  const OptionalDeviceGuard device_guard(device_of(self));
   auto quantizer = at::MakePerTensorAffineQuantizer(scale, zero_point, dtype);
   return quantizer->quantize(self);
 }
@@ -35,6 +42,18 @@ Tensor QuantizePerTensorTensorQParams(
     const Tensor& scale,
     const Tensor& zero_point,
     ScalarType dtype) {
+  c10::optional<Device> common_device = nullopt;
+  (void)common_device; // Suppress unused variable warning
+  c10::impl::check_and_update_common_device(
+      common_device, self, "QuantizePerTensorTensorQParams", "self");
+  c10::impl::check_and_update_common_device(
+      common_device, scale, "QuantizePerTensorTensorQParams", "scale");
+  c10::impl::check_and_update_common_device(
+      common_device,
+      zero_point,
+      "QuantizePerTensorTensorQParams",
+      "zero_point");
+  const OptionalDeviceGuard device_guard(device_of(self));
   auto quantizer = at::MakePerTensorAffineQuantizer(
       scale.item().toDouble(), zero_point.item().toLong(), dtype);
   return quantizer->quantize(self);
@@ -46,6 +65,15 @@ Tensor QuantizePerChannel(
     const Tensor& zero_points,
     int64_t axis,
     ScalarType dtype) {
+  c10::optional<Device> common_device = nullopt;
+  (void)common_device; // Suppress unused variable warning
+  c10::impl::check_and_update_common_device(
+      common_device, self, "QuantizePerChannel", "self");
+  c10::impl::check_and_update_common_device(
+      common_device, scales, "QuantizePerChannel", "scales");
+  c10::impl::check_and_update_common_device(
+      common_device, zero_points, "QuantizePerChannel", "zero_points");
+  const OptionalDeviceGuard device_guard(device_of(self));
   auto quantizer =
       at::MakePerChannelAffineQuantizer(scales, zero_points, axis, dtype);
   return quantizer->quantize(self);
@@ -55,6 +83,11 @@ Tensor QuantizePerTensorDynamic(
     const Tensor& self,
     ScalarType dtype,
     bool reduce_range) {
+  c10::optional<Device> common_device = nullopt;
+  (void)common_device; // Suppress unused variable warning
+  c10::impl::check_and_update_common_device(
+      common_device, self, "QuantizePerTensorDynamic", "self");
+  const OptionalDeviceGuard device_guard(device_of(self));
   TORCH_CHECK(
       (dtype == ScalarType::QInt8 || dtype == ScalarType::QUInt8 ||
        dtype == ScalarType::Half),
@@ -89,18 +122,33 @@ Tensor QuantizePerTensorDynamic(
 }
 
 double QScaleQuant(const Tensor& self) {
+  c10::optional<Device> common_device = nullopt;
+  (void)common_device; // Suppress unused variable warning
+  c10::impl::check_and_update_common_device(
+      common_device, self, "QScaleQuant", "self");
+  const OptionalDeviceGuard device_guard(device_of(self));
   auto quantizer = get_qtensorimpl(self)->quantizer();
   TORCH_CHECK(quantizer->qscheme() == kPerTensorAffine);
   return static_cast<PerTensorAffineQuantizer*>(quantizer.get())->scale();
 }
 
 int64_t QZeroPointQuant(const Tensor& self) {
+  c10::optional<Device> common_device = nullopt;
+  (void)common_device; // Suppress unused variable warning
+  c10::impl::check_and_update_common_device(
+      common_device, self, "QZeroPointQuant", "self");
+  const OptionalDeviceGuard device_guard(device_of(self));
   auto quantizer = get_qtensorimpl(self)->quantizer();
   TORCH_CHECK(quantizer->qscheme() == kPerTensorAffine);
   return static_cast<PerTensorAffineQuantizer*>(quantizer.get())->zero_point();
 }
 
 Tensor QPerChannelScales(const Tensor& self) {
+  c10::optional<Device> common_device = nullopt;
+  (void)common_device; // Suppress unused variable warning
+  c10::impl::check_and_update_common_device(
+      common_device, self, "QPerChannelScales", "self");
+  const OptionalDeviceGuard device_guard(device_of(self));
   auto quantizer = get_qtensorimpl(self)->quantizer();
   TORCH_CHECK(
       quantizer->qscheme() == kPerChannelAffine ||
@@ -109,6 +157,11 @@ Tensor QPerChannelScales(const Tensor& self) {
 }
 
 Tensor QPerChannelZeroPoints(const Tensor& self) {
+  c10::optional<Device> common_device = nullopt;
+  (void)common_device; // Suppress unused variable warning
+  c10::impl::check_and_update_common_device(
+      common_device, self, "QPerChannelZeroPoints", "self");
+  const OptionalDeviceGuard device_guard(device_of(self));
   auto quantizer = get_qtensorimpl(self)->quantizer();
   TORCH_CHECK(
       quantizer->qscheme() == kPerChannelAffine ||
@@ -118,6 +171,11 @@ Tensor QPerChannelZeroPoints(const Tensor& self) {
 }
 
 int64_t QPerChannelAxis(const Tensor& self) {
+  c10::optional<Device> common_device = nullopt;
+  (void)common_device; // Suppress unused variable warning
+  c10::impl::check_and_update_common_device(
+      common_device, self, "QPerChannelAxis", "self");
+  const OptionalDeviceGuard device_guard(device_of(self));
   auto quantizer = get_qtensorimpl(self)->quantizer();
   TORCH_CHECK(
       quantizer->qscheme() == kPerChannelAffine ||
@@ -126,17 +184,32 @@ int64_t QPerChannelAxis(const Tensor& self) {
 }
 
 QScheme QSchemeQuant(const Tensor& self) {
+  c10::optional<Device> common_device = nullopt;
+  (void)common_device; // Suppress unused variable warning
+  c10::impl::check_and_update_common_device(
+      common_device, self, "QSchemeQuant", "self");
+  const OptionalDeviceGuard device_guard(device_of(self));
   auto quantizer = get_qtensorimpl(self)->quantizer();
   return quantizer->qscheme();
 }
 
 Tensor DequantizeQuantized(const Tensor& self) {
+  c10::optional<Device> common_device = nullopt;
+  (void)common_device; // Suppress unused variable warning
+  c10::impl::check_and_update_common_device(
+      common_device, self, "DequantizeQuantized", "self");
+  const OptionalDeviceGuard device_guard(device_of(self));
   return get_qtensorimpl(self)->quantizer()->dequantize(self);
 }
 
 Tensor QuantizedClone(
     const Tensor& self,
     c10::optional<c10::MemoryFormat> optional_memory_format) {
+  c10::optional<Device> common_device = nullopt;
+  (void)common_device; // Suppress unused variable warning
+  c10::impl::check_and_update_common_device(
+      common_device, self, "QuantizedClone", "self");
+  const OptionalDeviceGuard device_guard(device_of(self));
   auto memory_format =
       optional_memory_format.value_or(MemoryFormat::Contiguous);
 
@@ -175,6 +248,36 @@ Tensor QuantizedClone(
   at::native::copy_(dst, self, false);
 
   return dst;
+}
+
+Tensor& QTensorCopy(Tensor& self, const Tensor& src) {
+  TORCH_CHECK(
+      src.scalar_type() == at::kFloat,
+      "Quantized copy only works with kFloat as source Tensor");
+  TORCH_CHECK(
+      (self.is_contiguous() && src.is_contiguous()) ||
+          (self.is_contiguous(at::MemoryFormat::ChannelsLast) &&
+           src.is_contiguous(at::MemoryFormat::ChannelsLast)),
+      "Quantized copy only works with contiguous and NHWC Tensors");
+  TORCH_CHECK(
+      self.sizes().equals(src.sizes()),
+      "Quantized copy only works with Tensor with the same shape");
+  AT_DISPATCH_QINT_TYPES(self.scalar_type(), "Copy", [&]() {
+    if (self.qscheme() == kPerChannelAffine ||
+        self.qscheme() == kPerChannelAffineFloatQParams ||
+        self.qscheme() == kPerChannelSymmetric) {
+      quantize_tensor_per_channel_affine(
+          src,
+          self,
+          self.q_per_channel_scales(),
+          self.q_per_channel_zero_points(),
+          self.q_per_channel_axis());
+    } else {
+      quantize_tensor_per_tensor_affine(
+          src, self, self.q_scale(), self.q_zero_point());
+    }
+  });
+  return self;
 }
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {

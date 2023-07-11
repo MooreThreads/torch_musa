@@ -53,6 +53,8 @@ QScheme QSchemeQuant(const Tensor& self);
 
 Tensor DequantizeQuantized(const Tensor& self);
 
+Tensor& QTensorCopy(Tensor& self, const Tensor& src);
+
 } // namespace native
 } // namespace at
 

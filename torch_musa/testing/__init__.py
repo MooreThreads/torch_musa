@@ -4,6 +4,7 @@ from .base_test_tool import (
     DefaultComparator,
     AbsDiffComparator,
     RelDiffComparator,
+    QuantizedComparator,
     OpTest,
     get_raw_data,
     get_all_support_types,

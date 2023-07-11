@@ -97,7 +97,15 @@ inline Tensor NewQTensor(
     QuantizerPtr quantizer) {
   auto memory_format =
       options.memory_format_opt().value_or(MemoryFormat::Contiguous);
-  at::Allocator* allocator = c10::musa::MUSACachingAllocator::get();
+  auto device = options.device();
+  at::Allocator* allocator = nullptr;
+  if (device.is_privateuseone()) {
+    allocator = c10::musa::MUSACachingAllocator::get();
+  } else if (device.is_cpu()) {
+    allocator = at::getCPUAllocator();
+  } else {
+    TORCH_INTERNAL_ASSERT(0, "unrecognized device for new_qtensor: ", device);
+  }
 
   at::DispatchKey tensorDispatchKey = options.computeDispatchKey();
   native::check_size_nonnegative(sizes);

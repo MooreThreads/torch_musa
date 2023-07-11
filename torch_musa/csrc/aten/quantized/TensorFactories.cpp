@@ -1,5 +1,6 @@
 #include <ATen/ATen.h>
 #include <ATen/NativeFunctions.h>
+#include <ATen/core/op_registration/adaption.h>
 #include <ATen/native/Resize.h>
 #include <ATen/native/TensorFactories.h>
 #include <ATen/ops/_make_per_tensor_quantized_tensor.h>
@@ -20,6 +21,7 @@ Tensor MakePerTensorQuantizedTensor(
     const Tensor& self,
     double scale,
     int64_t zero_point) {
+  const OptionalDeviceGuard device_guard(device_of(self));
   return native::make_per_tensor_quantized_tensor_cuda(self, scale, zero_point);
 }
 
@@ -28,6 +30,18 @@ Tensor MakePerChannelQuantizedTensor(
     const Tensor& scales,
     const Tensor& zero_points,
     int64_t axis) {
+  c10::optional<Device> common_device = nullopt;
+  (void)common_device; // Suppress unused variable warning
+  c10::impl::check_and_update_common_device(
+      common_device, self, "MakePerChannelQuantizedTensor", "self");
+  c10::impl::check_and_update_common_device(
+      common_device, scales, "MakePerChannelQuantizedTensor", "scale");
+  c10::impl::check_and_update_common_device(
+      common_device,
+      zero_points,
+      "MakePerChannelQuantizedTensor",
+      "zero_point");
+  const OptionalDeviceGuard device_guard(device_of(self));
   return native::make_per_channel_quantized_tensor_cuda(
       self, scales, zero_points, axis);
 }
@@ -54,6 +68,7 @@ Tensor EmptyAffineQuantized(
     double scale,
     int64_t zero_point,
     c10::optional<c10::MemoryFormat> optional_memory_format) {
+  const DeviceGuard device_guard(device_or_default(device));
   // See [Note: hacky wrapper removal for TensorOptions]
   TensorOptions options_ =
       TensorOptions().dtype(dtype).layout(layout).device(device).pinned_memory(
@@ -84,6 +99,7 @@ Tensor EmptyPerChannelAffineQuantized(
     c10::optional<Device> device,
     c10::optional<bool> pin_memory,
     c10::optional<c10::MemoryFormat> optional_memory_format) {
+  const DeviceGuard device_guard(device_or_default(device));
   // See [Note: hacky wrapper removal for TensorOptions]
   TensorOptions options_ =
       TensorOptions().dtype(dtype).layout(layout).device(device).pinned_memory(
@@ -140,6 +156,11 @@ Tensor EmptyQuantized(
     c10::optional<Device> device,
     c10::optional<bool> pin_memory,
     c10::optional<c10::MemoryFormat> memory_format) {
+  c10::optional<Device> common_device = nullopt;
+  (void)common_device; // Suppress unused variable warning
+  c10::impl::check_and_update_common_device(
+      common_device, qtensor, "EmptyQuantized", "qtensor");
+  const DeviceGuard device_guard(device_or_default(device));
   TensorOptions specified_options =
       TensorOptions().dtype(dtype).layout(layout).device(device).pinned_memory(
           pin_memory);
@@ -183,6 +204,7 @@ Tensor EmptyLikeQuantized(
     c10::optional<Device> device,
     c10::optional<bool> pin_memory,
     c10::optional<c10::MemoryFormat> optional_memory_format) {
+  // DeviceGuard omitted
   return at::native::empty_like_quantized(
       self, dtype, layout, device, pin_memory, optional_memory_format);
 }
@@ -195,6 +217,7 @@ Tensor EmptyStridedUnknownQuantized(
     c10::optional<Layout> layout,
     c10::optional<Device> device,
     c10::optional<bool> pin_memory) {
+  const DeviceGuard device_guard(device_or_default(device));
   return at::native::empty_strided_unknown_quantized(
       size, strided, dtype, layout, device, pin_memory);
 }
@@ -204,6 +227,7 @@ Tensor AsStridedQTensorImpl(
     IntArrayRef size,
     IntArrayRef stride,
     optional<int64_t> storage_offset_) {
+  // DeviceGuard omitted
   auto storage_offset = storage_offset_.value_or(self.storage_offset());
   auto quantizer = get_qtensorimpl(self)->quantizer();
   TORCH_CHECK(
@@ -234,7 +258,11 @@ TORCH_LIBRARY_IMPL(aten, QuantizedPrivateUse1, m) {
   m.impl("view", TORCH_FN(at::native::view));
 
   m.impl("_reshape_alias", TORCH_FN(at::native::_reshape_alias));
+  m.impl("unfold", TORCH_FN(at::native::unfold));
 }
 
+TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
+  m.impl("_empty_affine_quantized", TORCH_FN(EmptyAffineQuantized));
+}
 } // namespace native
 } // namespace at

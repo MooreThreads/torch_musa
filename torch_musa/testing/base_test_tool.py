@@ -148,6 +148,61 @@ class AbsDiffComparator(Comparator):
         self._comparator = lambda result, golden: torch.abs(
             golden - result).max() < abs_diff
 
+class QuantizedComparator(Comparator):
+    """The quantized comparator"""
+    def __init__(
+        self, abs_diff=1e-8, rel_diff=1e-5, equal_nan=False, is_per_tensor=True
+    ):
+        """
+        Use both relative and absolute tolerance to compare the dequantized value and 
+        quantized value of result and golden.
+        """
+        super().__init__()
+        if is_per_tensor:
+            self._comparator = lambda result, golden: (
+                torch.allclose(
+                    result.dequantize(),
+                    golden.dequantize(),
+                    rtol=rel_diff,
+                    atol=abs_diff,
+                    equal_nan=equal_nan,
+                )
+                and torch.allclose(
+                    result.int_repr(),
+                    golden.int_repr(),
+                    rtol=rel_diff,
+                    atol=abs_diff,
+                    equal_nan=equal_nan,
+                )
+                and abs(result.q_scale() - golden.q_scale())
+                <= abs_diff + rel_diff * golden.q_scale()
+                and result.q_zero_point() == golden.q_zero_point()
+            )
+        else:
+            self._comparator = lambda result, golden: (
+                torch.allclose(
+                    result.dequantize(),
+                    golden.dequantize(),
+                    rtol=rel_diff,
+                    atol=abs_diff,
+                    equal_nan=equal_nan,
+                )
+                and torch.allclose(
+                    result.int_repr(),
+                    golden.int_repr(),
+                    rtol=rel_diff,
+                    atol=abs_diff,
+                    equal_nan=equal_nan,
+                )
+                and torch.allclose(
+                    result.q_per_channel_scales(), golden.q_per_channel_scales()
+                )
+                and torch.allclose(
+                    result.q_per_channel_zero_points(),
+                    golden.q_per_channel_zero_points(),
+                )
+                and result.q_per_channel_axis() == golden.q_per_channel_axis()
+            )
 
 class RelDiffComparator(Comparator):
     """The relative difference comparator."""
