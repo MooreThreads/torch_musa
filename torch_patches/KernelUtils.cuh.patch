@@ -1,5 +1,5 @@
 diff --git a/aten/src/ATen/native/cuda/KernelUtils.cuh b/aten/src/ATen/native/cuda/KernelUtils.cuh
-index e1b9f38072..211aca3e20 100644
+index e1b9f38..211aca3 100644
 --- a/aten/src/ATen/native/cuda/KernelUtils.cuh
 +++ b/aten/src/ATen/native/cuda/KernelUtils.cuh
 @@ -36,9 +36,7 @@ __device__ __forceinline__ void fastSpecializedAtomicAdd(

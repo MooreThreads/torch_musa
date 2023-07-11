@@ -1,4 +1,5 @@
 #include <ATen/ExpandUtils.h>
+#include <ATen/NamedTensorUtils.h>
 #include <ATen/native/BinaryOps.h>
 #include <torch/library.h>
 
@@ -10,6 +11,171 @@
 namespace at {
 namespace musa {
 using TERNARY_MODE = ::musa::dnn::Ternary::Mode;
+
+Tensor& WhereSelfOut_Float16(
+    const Tensor& condition,
+    const Tensor& self,
+    const Tensor& other,
+    Tensor& out) {
+  c10::musa::MUSAGuard device_guard(self.device());
+  return at::native::where_self_out(condition, self, other, out);
+}
+
+Tensor WhereSelf_Float16(
+    const Tensor& condition,
+    const Tensor& self,
+    const Tensor& other) {
+  c10::musa::MUSAGuard device_guard(self.device());
+  return at::native::where(condition, self, other);
+}
+
+namespace {
+struct structured_addcdiv_out_out final
+    : public at::native::structured_addcdiv_out {
+  structured_addcdiv_out_out(Tensor& out0) : outputs_{std::ref(out0)} {}
+  void set_output_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+    at::native::structured_addcdiv_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+  void set_output_raw_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+    const auto& out = outputs_[output_idx].get();
+    resize_out(out, sizes, strides, options);
+    if (!names.empty()) {
+      namedinference::propagate_names(outputs_[output_idx], names);
+    }
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_addcdiv_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+  const Tensor& maybe_get_output(int64_t output_idx) override {
+    return proxy_outputs_[output_idx].has_value() ? **proxy_outputs_[output_idx]
+                                                  : outputs_[output_idx].get();
+  }
+  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
+  std::array<c10::optional<c10::ExclusivelyOwned<Tensor>>, 1> proxy_outputs_;
+  c10::musa::OptionalMUSAGuard guard_;
+};
+
+struct structured_addcmul_out_out final
+    : public at::native::structured_addcmul_out {
+  structured_addcmul_out_out(Tensor& out0) : outputs_{std::ref(out0)} {}
+  void set_output_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+    const auto& out = outputs_[output_idx].get();
+    resize_out(out, sizes, strides, options);
+    auto maybe_proxy = maybe_create_proxy(out, sizes, strides, options);
+    if (C10_UNLIKELY(maybe_proxy.has_value())) {
+      proxy_outputs_[output_idx] =
+          c10::ExclusivelyOwned<Tensor>(std::move(maybe_proxy).value());
+    }
+    if (!names.empty()) {
+      namedinference::propagate_names(outputs_[output_idx], names);
+    }
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_addcmul_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+  void set_output_raw_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+    const auto& out = outputs_[output_idx].get();
+    resize_out(out, sizes, strides, options);
+    if (!names.empty()) {
+      namedinference::propagate_names(outputs_[output_idx], names);
+    }
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_addcmul_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+  const Tensor& maybe_get_output(int64_t output_idx) override {
+    return proxy_outputs_[output_idx].has_value() ? **proxy_outputs_[output_idx]
+                                                  : outputs_[output_idx].get();
+  }
+  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
+  std::array<c10::optional<c10::ExclusivelyOwned<Tensor>>, 1> proxy_outputs_;
+  c10::musa::OptionalMUSAGuard guard_;
+};
+
+} // namespace
+
+Tensor& AddcDivOut_Float16(
+    const Tensor& self,
+    const Tensor& tensor1,
+    const Tensor& tensor2,
+    const Scalar& value,
+    Tensor& out) {
+  structured_addcdiv_out_out op(out);
+  op.meta(self, tensor1, tensor2, value);
+  op.impl(self, tensor1, tensor2, value, op.maybe_get_output(0));
+  if (op.proxy_outputs_[0].has_value())
+    op.outputs_[0].get().copy_(**op.proxy_outputs_[0]);
+  return out;
+}
+Tensor& AddcMulOut_Float16(
+    const Tensor& self,
+    const Tensor& tensor1,
+    const Tensor& tensor2,
+    const Scalar& value,
+    Tensor& out) {
+  structured_addcmul_out_out op(out);
+  op.meta(self, tensor1, tensor2, value);
+  op.impl(self, tensor1, tensor2, value, op.maybe_get_output(0));
+  if (op.proxy_outputs_[0].has_value())
+    op.outputs_[0].get().copy_(**op.proxy_outputs_[0]);
+  return out;
+}
 
 void TernaryCall(
     Tensor& output,
@@ -120,6 +286,11 @@ Tensor& WhereSelfOut(
     const Tensor& other,
     Tensor& out) {
   c10::musa::MUSAGuard device_guard(self.device());
+  if (self.scalar_type() == at::ScalarType::Half ||
+      other.scalar_type() == at::ScalarType::Half ||
+      out.scalar_type() == at::ScalarType::Half) {
+    return WhereSelfOut_Float16(condition, self, other, out);
+  }
   Tensor contiguous_self, contiguous_other;
   auto result_type = at::native::result_type(self, other);
   if (self.dtype() != other.dtype()) {
@@ -171,6 +342,10 @@ Tensor WhereSelf(
     const Tensor& self,
     const Tensor& other) {
   c10::musa::MUSAGuard device_guard(self.device());
+  if (self.scalar_type() == at::ScalarType::Half ||
+      other.scalar_type() == at::ScalarType::Half) {
+    return WhereSelf_Float16(condition, self, other);
+  }
   auto result_type = at::native::result_type(self, other);
   Tensor output = at::empty(
       other.sizes(),
@@ -187,6 +362,12 @@ Tensor& AddcMulOut(
     const Tensor& input2,
     const Scalar& alpha_scalar,
     Tensor& output) {
+  c10::musa::MUSAGuard device_guard(self.device());
+  if (self.scalar_type() == at::ScalarType::Half &&
+      input1.scalar_type() == at::ScalarType::Half &&
+      input2.scalar_type() == at::ScalarType::Half) {
+    return AddcMulOut_Float16(self, input1, input2, alpha_scalar, output);
+  }
   TORCH_CHECK(
       self.device().type() == kMUSA,
       "Device of input tensor of addcmul must be MUSA, but now it is ",
@@ -203,7 +384,6 @@ Tensor& AddcMulOut(
       output.device().type() == kMUSA,
       "Device of output tensor of addcmul must be MUSA, but now it is ",
       output.device());
-  c10::musa::MUSAGuard device_guard(self.device());
   TernarycommonDtypeCall(
       self, input1, input2, alpha_scalar, output, TERNARY_MODE::ADDCMUL);
   return output;
@@ -231,6 +411,12 @@ Tensor& AddcDivOut(
       output.device().type() == kMUSA,
       "Device of output tensor of addcdiv must be MUSA, but now it is ",
       output.device());
+  c10::musa::MUSAGuard device_guard(self.device());
+  if (self.scalar_type() == at::ScalarType::Half &&
+      input1.scalar_type() == at::ScalarType::Half &&
+      input2.scalar_type() == at::ScalarType::Half) {
+    return AddcDivOut_Float16(self, input1, input2, alpha_scalar, output);
+  }
   TORCH_CHECK(
       self.scalar_type() == at::ScalarType::Float,
       "Dtype of input tensor of addcdiv only support Float32, but now it is ",
@@ -247,7 +433,6 @@ Tensor& AddcDivOut(
       output.dtype() == at::ScalarType::Float,
       "Dtype of output tensor of addcdiv only support Float32, but now it is ",
       output.dtype());
-  c10::musa::MUSAGuard device_guard(self.device());
   TernarycommonDtypeCall(
       self, input1, input2, alpha_scalar, output, TERNARY_MODE::ADDCDIV);
   return output;

@@ -1,5 +1,5 @@
 diff --git a/torch/distributed/utils.py b/torch/distributed/utils.py
-index f827de143b..c2528591da 100644
+index f827de1..c252859 100644
 --- a/torch/distributed/utils.py
 +++ b/torch/distributed/utils.py
 @@ -55,6 +55,23 @@ def _recursive_to(inputs, target_gpu, use_side_stream_for_tensor_copies):

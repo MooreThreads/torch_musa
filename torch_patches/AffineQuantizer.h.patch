@@ -1,5 +1,5 @@
 diff --git a/aten/src/ATen/native/quantized/AffineQuantizer.h b/aten/src/ATen/native/quantized/AffineQuantizer.h
-index 1ff342a643..f4b99667df 100644
+index 1ff342a..f4b9966 100644
 --- a/aten/src/ATen/native/quantized/AffineQuantizer.h
 +++ b/aten/src/ATen/native/quantized/AffineQuantizer.h
 @@ -8,37 +8,37 @@

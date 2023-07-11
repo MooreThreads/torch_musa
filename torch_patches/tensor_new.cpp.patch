@@ -1,5 +1,5 @@
 diff --git a/torch/csrc/utils/tensor_new.cpp b/torch/csrc/utils/tensor_new.cpp
-index b193bb7922..18f1fb5476 100644
+index b193bb7..18f1fb5 100644
 --- a/torch/csrc/utils/tensor_new.cpp
 +++ b/torch/csrc/utils/tensor_new.cpp
 @@ -487,6 +487,7 @@ void check_base_legacy_new(

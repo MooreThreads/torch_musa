@@ -1,5 +1,5 @@
 diff --git a/torch/csrc/jit/serialization/unpickler.cpp b/torch/csrc/jit/serialization/unpickler.cpp
-index 056865ba5e..ac8eb34e23 100644
+index 056865b..ac8eb34 100644
 --- a/torch/csrc/jit/serialization/unpickler.cpp
 +++ b/torch/csrc/jit/serialization/unpickler.cpp
 @@ -538,11 +538,13 @@ PickleOpCode Unpickler::readInstruction() {

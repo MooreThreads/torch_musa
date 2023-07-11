@@ -1,5 +1,5 @@
 diff --git a/torch/csrc/Generator.cpp b/torch/csrc/Generator.cpp
-index 44a0d0242b..3e3b2819fc 100644
+index 44a0d02..3e3b281 100644
 --- a/torch/csrc/Generator.cpp
 +++ b/torch/csrc/Generator.cpp
 @@ -4,6 +4,7 @@

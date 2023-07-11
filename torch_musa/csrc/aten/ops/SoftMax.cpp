@@ -143,7 +143,8 @@ Tensor& SoftmaxBwdInternal(
     SOFTMAX_MODE mode,
     Tensor& grad_input) {
   TORCH_CHECK(
-      input_dtype == ScalarType::Float, "input_dtype only support float32");
+      input_dtype == ScalarType::Float || input_dtype == ScalarType::Half,
+      "input_dtype only support float32/float16");
   TORCH_CHECK(
       grad_output.device().type() == kMUSA,
       "Device of grad_output tensor of ",
@@ -163,16 +164,18 @@ Tensor& SoftmaxBwdInternal(
       " must be MUSA, but now is ",
       grad_input.device());
   TORCH_CHECK(
-      grad_output.scalar_type() == at::ScalarType::Float,
+      grad_output.scalar_type() == at::ScalarType::Float ||
+          grad_output.scalar_type() == at::ScalarType::Half,
       "Dtype of grad_output tensor of ",
       std::string(op_name),
-      " only support Float32, but now it is ",
+      " only support Float32/Float16, but now it is ",
       grad_output.scalar_type());
   TORCH_CHECK(
-      output.scalar_type() == at::ScalarType::Float,
+      output.scalar_type() == at::ScalarType::Float ||
+          output.scalar_type() == at::ScalarType::Half,
       "Dtype of output tensor of ",
       std::string(op_name),
-      " only support Float32, but now it is ",
+      " only support Float32/Float16, but now it is ",
       output.scalar_type());
 
   grad_input.resize_(grad_output.sizes());

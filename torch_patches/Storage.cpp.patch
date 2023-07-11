@@ -1,5 +1,5 @@
 diff --git a/torch/csrc/Storage.cpp b/torch/csrc/Storage.cpp
-index e998198cdf..22f04890f6 100644
+index e998198..22f0489 100644
 --- a/torch/csrc/Storage.cpp
 +++ b/torch/csrc/Storage.cpp
 @@ -112,6 +112,8 @@ static PyObject* THPStorage_pynew(

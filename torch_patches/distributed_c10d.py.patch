@@ -1,5 +1,5 @@
 diff --git a/torch/distributed/distributed_c10d.py b/torch/distributed/distributed_c10d.py
-index be0006d9ce..f1b111d965 100644
+index be0006d..f1b111d 100644
 --- a/torch/distributed/distributed_c10d.py
 +++ b/torch/distributed/distributed_c10d.py
 @@ -241,6 +241,7 @@ class BackendConfig:

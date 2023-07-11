@@ -2,6 +2,8 @@
 #include <ATen/Utils.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <torch/csrc/Device.h>
+#include <torch/csrc/Dtype.h>
 #include <torch/csrc/Exceptions.h>
 #include <torch/csrc/Generator.h>
 #include <torch/csrc/utils/invalid_arguments.h>
@@ -9,6 +11,7 @@
 #include <torch/csrc/utils/python_numbers.h>
 #include <vector>
 
+#include "torch_musa/csrc/amp/autocast_mode.h"
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/aten/musa/MUSAGeneratorImpl.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
@@ -271,6 +274,57 @@ void AddMusaMemoryMethods(PyObject* module) {
       "_musa_memorySnapshot", []() { return PyMusa_MemorySnapshot(); });
 }
 
+static py::object PyMusa_GetAutocastMusaDtype() {
+  at::ScalarType current_dtype = at::musa::autocast::get_autocast_musa_dtype();
+  auto dtype = (PyObject*)torch::getTHPDtype(current_dtype);
+  py::object obj = py::reinterpret_borrow<py::object>(dtype);
+  return obj;
+}
+
+void PyMusa_SetAutocastMusaDtype(py::object dtype) {
+  at::ScalarType targetType =
+      reinterpret_cast<THPDtype*>(dtype.ptr())->scalar_type;
+  at::musa::autocast::set_autocast_musa_dtype(targetType);
+}
+
+void AddMusaAmpMethods(PyObject* module) {
+  auto py_module = py::reinterpret_borrow<py::module>(module);
+
+  py_module.def("_set_autocast_musa_dtype", [](py::object dtype) {
+    return PyMusa_SetAutocastMusaDtype(dtype);
+  });
+
+  py_module.def("_get_autocast_musa_dtype", []() {
+    return PyMusa_GetAutocastMusaDtype();
+  });
+
+  py_module.def("_set_autocast_musa_enabled", [](bool enabled) {
+    return at::musa::autocast::set_autocast_musa_enabled(enabled);
+  });
+
+  py_module.def("_is_autocast_musa_enabled", []() {
+    return at::musa::autocast::is_autocast_musa_enabled();
+  });
+  py_module.def("_set_autocast_cache_enabled", [](bool enabled) {
+    return at::musa::autocast::set_autocast_cache_enabled(enabled);
+  });
+
+  py_module.def("_is_autocast_cache_enabled", []() {
+    return at::musa::autocast::is_autocast_cache_enabled();
+  });
+
+  py_module.def(
+      "_clear_cache", []() { return at::musa::autocast::clear_cache(); });
+
+  py_module.def("_increment_nesting", []() {
+    return at::musa::autocast::increment_nesting();
+  });
+
+  py_module.def("_decrement_nesting", []() {
+    return at::musa::autocast::decrement_nesting();
+  });
+}
+
 void InitMusaModule(PyObject* module) {
   // TODO(mt-ai) Let's lazily init musa devices first.
   THMPStream_init(module);
@@ -280,6 +334,8 @@ void InitMusaModule(PyObject* module) {
   AddMusaDeviceMethods(module);
   AddMusaStreamMethods(module);
   AddMusaMemoryMethods(module);
+  AddMusaAmpMethods(module);
+
   AddMusaProcessGroupMethods(module);
   // Register MUSA device properties
   at::musa::registerMusaDeviceProperties(module);

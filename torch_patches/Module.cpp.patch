@@ -1,5 +1,5 @@
 diff --git a/torch/csrc/Module.cpp b/torch/csrc/Module.cpp
-index a5ef894e41..00b6891c65 100644
+index a5ef894..00b6891 100644
 --- a/torch/csrc/Module.cpp
 +++ b/torch/csrc/Module.cpp
 @@ -464,6 +464,7 @@ PyObject* THModule_getCppBacktrace(PyObject* _unused, PyObject* args) {

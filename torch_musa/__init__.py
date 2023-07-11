@@ -56,6 +56,20 @@ from .core.stream import (
     Stream,
     Event,
 )
+from .core import amp
+from .core.amp.common import (
+    amp_definitely_not_available,
+    get_amp_supported_dtype,
+    is_autocast_musa_enabled,
+    is_autocast_cache_enabled,
+    set_autocast_musa_enabled,
+    set_autocast_musa_dtype,
+    get_autocast_musa_dtype,
+    set_autocast_cache_enabled,
+    clear_autocast_cache,
+    autocast_increment_nesting,
+    autocast_decrement_nesting,
+)
 
 from .core.serialization import register_deserialization
 

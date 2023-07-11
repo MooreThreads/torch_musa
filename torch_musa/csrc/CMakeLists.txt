@@ -7,6 +7,7 @@ FILE(GLOB _CSRCS
     aten/utils/*.cpp
     aten/mudnn/*.cpp
     core/*.cpp
+    amp/*.cpp
     utils/*.cpp
     distributed/*.cpp
     aten/quantized/*.cpp
@@ -75,6 +76,7 @@ FILE(GLOB MU_SRCS
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/GridSampler.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/IntReprQuant.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/MakePerTensorQuantizedTensor.mu
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/AmpKernels.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/NLLLoss2d.mu
     aten/quantized/musa/*.mu
     aten/ops/musa/Embedding.mu

@@ -1,5 +1,5 @@
 diff --git a/c10/core/Device.h b/c10/core/Device.h
-index d53ab38ff9..0d46a11ab8 100644
+index d53ab38..0d46a11 100644
 --- a/c10/core/Device.h
 +++ b/c10/core/Device.h
 @@ -146,6 +146,11 @@ struct C10_API Device final {
