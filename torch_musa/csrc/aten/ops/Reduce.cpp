@@ -590,6 +590,50 @@ Tensor MinAll(const Tensor& self) {
   return MinAllCall(self, ::musa::dnn::Reduce::Mode::MIN);
 }
 
+std::tuple<Tensor, Tensor> MinDim(
+    const Tensor& self,
+    int64_t dim,
+    bool keepdim) {
+  return ReductionIndices(self, dim, keepdim, ::musa::dnn::Reduce::Mode::MIN);
+}
+
+std::tuple<Tensor&, Tensor&> MinDimMin(
+    const Tensor& self,
+    int64_t dim,
+    bool keepdim,
+    Tensor& output,
+    Tensor& indices) {
+  UNUSED(keepdim);
+  ReduceIndicesCall(output, indices, self, dim, ::musa::dnn::Reduce::Mode::MIN);
+  return std::tuple<Tensor&, Tensor&>(output, indices);
+}
+
+std::tuple<Tensor, Tensor> MinNamesDim(
+    const Tensor& self,
+    Dimname dim,
+    bool keepdim) {
+  return ReductionIndices(
+      self,
+      dimname_to_position(self, dim),
+      keepdim,
+      ::musa::dnn::Reduce::Mode::MIN);
+}
+
+std::tuple<Tensor&, Tensor&> MinNamesDimMin(
+    const Tensor& self,
+    Dimname dim,
+    bool keepdim,
+    Tensor& output,
+    Tensor& indices) {
+  ReduceIndicesCall(
+      output,
+      indices,
+      self,
+      dimname_to_position(self, dim),
+      ::musa::dnn::Reduce::Mode::MIN);
+  return std::tuple<Tensor&, Tensor&>(output, indices);
+}
+
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("mean", &Mean);
   m.impl("mean.dim", &MeanDim);
@@ -624,6 +668,10 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("max.names_dim_max", &MaxNamesDimMax);
 
   m.impl("min", &MinAll);
+  m.impl("min.dim", &MinDim);
+  m.impl("min.dim_min", &MinDimMin);
+  m.impl("min.names_dim", &MinNamesDim);
+  m.impl("min.names_dim_min", &MinNamesDimMin);
 
   m.impl("all", &All);
   m.impl("all.dim", &AllDim);

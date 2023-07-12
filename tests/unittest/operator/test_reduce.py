@@ -72,6 +72,12 @@ def test_max(input_data, dtype):
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_min(input_data, dtype):
+    function(input_data, dtype, torch.min)
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("dtype", [torch.bool])
 def test_all(input_data, dtype):
     function(input_data, dtype, torch.all)
