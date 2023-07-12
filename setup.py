@@ -142,6 +142,7 @@ def configure_extension_build():
     )
     return cpp_extension
 
+install_requires = ["packaging"]
 
 # Setup
 setup(
@@ -169,6 +170,7 @@ setup(
             "share/cmake/*.cmake",
         ],
     },
+    install_requires=install_requires,
     extras_require={},
     cmdclass={"build_ext": Build, "clean": Clean, "install": Install},
 )

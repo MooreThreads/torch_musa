@@ -96,6 +96,3 @@ register_deserialization()
 
 def _sleep(cycles):
     torch_musa._MUSAC._musa_sleep(cycles)
-
-
-from . import testing
