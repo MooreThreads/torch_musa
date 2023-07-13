@@ -26,6 +26,7 @@ all_basic_funcs = [
     torch.cos,
     torch.sin,
     # torch.log, there maybe has a bug in new daily mudnn, comment temply
+    torch.acos,
     torch.atan,
     torch.round,
     torch.sgn,
@@ -45,6 +46,7 @@ all_inplace_funcs = [
     torch.cos_,
     torch.sin_,
     # torch.log, there maybe has a bug in new daily mudnn, comment temply
+    torch.acos_,
     torch.atan_,
     torch.round_,
     torch.log10_,

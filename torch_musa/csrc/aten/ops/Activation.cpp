@@ -128,6 +128,7 @@ DEFINE_ACTIVATE_OP(Exp, ::musa::dnn::Unary::Mode::EXP)
 DEFINE_ACTIVATE_OP(Sin, ::musa::dnn::Unary::Mode::SIN)
 DEFINE_ACTIVATE_OP(Cos, ::musa::dnn::Unary::Mode::COS)
 DEFINE_ACTIVATE_OP(Abs, ::musa::dnn::Unary::Mode::ABS)
+DEFINE_ACTIVATE_OP(Acos, ::musa::dnn::Unary::Mode::ACOS)
 DEFINE_ACTIVATE_OP(Atan, ::musa::dnn::Unary::Mode::ATAN)
 DEFINE_ACTIVATE_OP(Ceil, ::musa::dnn::Unary::Mode::CEIL)
 DEFINE_ACTIVATE_OP(Log, ::musa::dnn::Unary::Mode::LOG)
@@ -1496,6 +1497,10 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("hardsigmoid", &HardSigmoid);
   m.impl("hardsigmoid_", &HardSigmoid_);
   m.impl("hardsigmoid.out", &HardSigmoidOut);
+
+  m.impl("acos", &Acos);
+  m.impl("acos_", &Acos_);
+  m.impl("acos.out", &AcosOut);
 
   m.impl("tanh", &Tanh);
   m.impl("tanh_", &Tanh_);
