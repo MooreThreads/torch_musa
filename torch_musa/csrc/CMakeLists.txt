@@ -48,9 +48,7 @@ FILE(GLOB MU_SRCS
     ${GENERATED_PORTING_DIR}/aten/src/ATen/musa/detail/IndexUtils.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/EmbeddingBackwardKernel.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TriangularOps.mu
-
-    # Compiling following files takes too long, disable them temporarily
-    # ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Embedding.mu
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Embedding.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/musa/cub-RadixSortPairs.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ReduceNormKernel.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ReduceMaxValuesKernel.mu

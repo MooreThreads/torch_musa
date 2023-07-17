@@ -97,7 +97,7 @@ def port_cuda(
         "C10_CUDA_CHECK_WARN(": "TORCH_MUSA_WARN(",
         "C10_CUDA_API ": "",
         "kCUDA": "kMUSA",
-        "<ATen/CUDAFunctions.h>" : "\"torch_musa/csrc/core/MUSAFunctions.h\"",
+        "<ATen/CUDAFunctions.h>" : "<ATen/MUSA_PORT_Functions.h>",
         "<c10/musa/CUDADeviceAssertionHost.h>": "\"torch_musa/csrc/core/MUSADeviceAssertionHost.h\"",
         "<c10/musa/CUDAFunctions.h>": "\"torch_musa/csrc/core/MUSAFunctions.h\"",
         "<c10/musa/MUSAStream.h>": "\"torch_musa/csrc/core/MUSAStream.h\"",
