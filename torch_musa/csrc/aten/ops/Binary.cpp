@@ -17,12 +17,89 @@ using UNARY_MODE = ::musa::dnn::Unary::Mode;
 
 // TODO(MT AI) maybe we don't need this condition function when mudnn supports
 bool NeedContiguous(const Tensor& self, const Tensor& other) {
-  if (self.strides().equals(other.strides()) &&
-      self.storage_offset() == other.storage_offset() &&
-      self.sizes().equals(other.sizes())) {
+  if (self.strides().equals(other.strides())) {
     return false;
   }
   return true;
+}
+
+inline bool IsComparisonOp(const BINARY_MODE m) {
+  return m == BINARY_MODE::EQ || m == BINARY_MODE::NE || m == BINARY_MODE::GE ||
+      m == BINARY_MODE::GT || m == BINARY_MODE::LE || m == BINARY_MODE::LT;
+}
+
+inline bool SupportOptimizeScalarToUnary(
+    BINARY_MODE m,
+    const Tensor& input,
+    const Tensor& other) {
+  const bool support_mode_type = (m == BINARY_MODE::ADD &&
+                                  (input.scalar_type() == ScalarType::Float ||
+                                   input.scalar_type() == ScalarType::Half)) ||
+      (m == BINARY_MODE::TRUEDIV &&
+       (input.scalar_type() == ScalarType::Float ||
+        input.scalar_type() == ScalarType::Half)) ||
+      (m == BINARY_MODE::MUL &&
+       (input.scalar_type() == ScalarType::Float ||
+        input.scalar_type() == ScalarType::Long ||
+        input.scalar_type() == ScalarType::Half));
+  const bool support_dim_device =
+      other.dim() == 0 && other.device() == DeviceType::CPU;
+  return support_mode_type && support_dim_device;
+};
+
+inline bool IsBoolMode(BINARY_MODE m) {
+  if (m == BINARY_MODE::EQ || m == BINARY_MODE::NE || m == BINARY_MODE::GE ||
+      m == BINARY_MODE::GT || m == BINARY_MODE::LE || m == BINARY_MODE::LT ||
+      m == BINARY_MODE::LOGICAL_AND || m == BINARY_MODE::LOGICAL_OR ||
+      m == BINARY_MODE::LOGICAL_XOR) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
+void UnaryCall(
+    const Tensor& self,
+    const Tensor& other,
+    Tensor& output,
+    BINARY_MODE m,
+    const std::string op_name) {
+  muHandle& h = GetMudnnHandle();
+  ::musa::dnn::Unary uop;
+  auto other_scalar = other.item();
+  auto ConvertBinaryModeToString = [](BINARY_MODE mode) -> std::string {
+    switch (mode) {
+      case BINARY_MODE::ADD:
+        return "Binary ADD";
+      case BINARY_MODE::MUL:
+        return "Binary MUL";
+      case BINARY_MODE::TRUEDIV:
+        return "Binary TRUEDIV";
+      default:
+        return "";
+    }
+  };
+  if (other_scalar.isFloatingPoint()) {
+    CHECK_MUDNN_STATUS(uop.SetAlpha(other_scalar.toDouble()), "SetAlpha");
+  } else if (other_scalar.isIntegral(false)) {
+    CHECK_MUDNN_STATUS(uop.SetAlpha(other_scalar.toLong()), "SetAlpha");
+  } else {
+    AT_ERROR(
+        other_scalar.type(),
+        " is not implemented for '",
+        ConvertBinaryModeToString(m),
+        "'!");
+  }
+  if (m == BINARY_MODE::MUL) {
+    CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::MUL), "SetMode");
+  } else if (m == BINARY_MODE::ADD) {
+    CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::ADD), "SetMode");
+  } else if (m == BINARY_MODE::TRUEDIV) {
+    CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::DIV), "SetMode");
+  }
+  auto mt_output = CreateMUTensor(output, true);
+  auto mt_input = CreateMUTensor(self, true);
+  CHECK_MUDNN_STATUS(uop.Run(h, mt_output, mt_input), "Run " + op_name);
 }
 
 /**
@@ -42,25 +119,50 @@ void BinaryCall(
     const Tensor& self,
     const Tensor& other,
     BINARY_MODE m = BINARY_MODE::ADD,
-    const Scalar alpha_scalar = 1) {
-  c10::musa::MUSAGuard device_guard(self.device());
+    Scalar const& alpha_scalar = 1) {
+  Device device = is_musa(self) ? self.device() : other.device();
+  c10::musa::MUSAGuard guard(device);
   muHandle& h = GetMudnnHandle();
-  Tensor other_tmp =
-      alpha_scalar.equal(1) ? other : at::mul(other, alpha_scalar);
-  auto output_sizes = infer_size_dimvector(self.sizes(), other.sizes());
-  output.resize_(output_sizes);
+  if (self.numel() == 0 && other.numel() == 0) {
+    if (IsComparisonOp(m)) {
+      output =
+          at::empty(output.sizes(), self.options().dtype(ScalarType::Bool));
+    } else {
+      output = at::empty(output.sizes(), self.options());
+    }
+    return;
+  }
+  if (SupportOptimizeScalarToUnary(m, self, other)) {
+    UnaryCall(self, other, output, m, op_name);
+    return;
+  }
+  if (SupportOptimizeScalarToUnary(m, other, self)) {
+    UnaryCall(other, self, output, m, op_name);
+    return;
+  }
+  Tensor self_tmp = self;
+  Tensor other_tmp = other;
+
+  if (other_tmp.dim() == 0) {
+    other_tmp = at::full_like(self, other_tmp.item(), kMUSA);
+  }
+  if (self_tmp.dim() == 0) {
+    self_tmp = at::full_like(other, self_tmp.item(), kMUSA);
+  }
+  other_tmp =
+      alpha_scalar.equal(1) ? other_tmp : at::mul(other_tmp, alpha_scalar);
   muTensor musa_self;
   muTensor musa_other;
   muTensor musa_out;
   Tensor contiguous_self;
   Tensor contiguous_other;
   Tensor contiguous_out;
-  if (NeedContiguous(self, other)) {
-    musa_self = CreateMUTensor(Contiguous(self, contiguous_self));
+  if (NeedContiguous(self_tmp, other_tmp)) {
+    musa_self = CreateMUTensor(Contiguous(self_tmp, contiguous_self));
     musa_other = CreateMUTensor(Contiguous(other_tmp, contiguous_other));
     musa_out = CreateMUTensor(Contiguous(output, contiguous_out));
   } else {
-    musa_self = CreateMUTensor(self, true);
+    musa_self = CreateMUTensor(self_tmp, true);
     musa_other = CreateMUTensor(other_tmp, true);
     musa_out = CreateMUTensor(output, true);
   }
@@ -69,11 +171,6 @@ void BinaryCall(
   CHECK_MUDNN_STATUS(bop.SetMode(m), "SetMode");
   CHECK_MUDNN_STATUS(
       bop.Run(h, musa_out, musa_self, musa_other), "Run " + op_name);
-}
-
-inline bool IsComparisonOp(const BINARY_MODE m) {
-  return m == BINARY_MODE::EQ || m == BINARY_MODE::NE || m == BINARY_MODE::GE ||
-      m == BINARY_MODE::GT || m == BINARY_MODE::LE || m == BINARY_MODE::LT;
 }
 
 extern Tensor create_out(
@@ -91,29 +188,10 @@ Tensor Binary(
     const Tensor& self,
     const Tensor& other,
     BINARY_MODE m = BINARY_MODE::ADD,
-    Scalar const& alpha_scalar = 1,
-    bool inplace = false) {
+    Scalar const& alpha_scalar = 1) {
   TORCH_CHECK(
       self.scalar_type() == other.scalar_type(),
       "input scalar type must the same");
-  if (inplace) {
-    TORCH_CHECK(
-        is_expandable_to(other.sizes(), self.sizes()),
-        "size {",
-        self.sizes(),
-        "} is not expandable to size {",
-        other.sizes(),
-        "}.");
-  }
-
-  if (self.numel() == 0 && other.numel() == 0) {
-    if (IsComparisonOp(m)) {
-      auto output_sizes = infer_size_dimvector(self.sizes(), other.sizes());
-      return at::empty(output_sizes, self.options().dtype(ScalarType::Bool));
-    } else {
-      return at::empty({0}, self.options());
-    }
-  }
 
   // One of the both tensors might be cpu device. e.g.
   // 1. self will be in cpu if '1 + Tensor'.
@@ -121,128 +199,34 @@ Tensor Binary(
   // We use get musa devcie info to set context, so we need this check.
   Device device = is_musa(self) ? self.device() : other.device();
   c10::musa::MUSAGuard guard(device);
-
-  // In some special case that 'other' is scalar and on cpu, UnaryOp could take
-  // the place of BinaryOp to optimize performance. such as:
-  // torch.tensor([1.2, 2.4]) * 2.0
-  auto SupportOptimizeScalarToUnary =
-      [](BINARY_MODE m, const Tensor& input, const Tensor& other) {
-        const bool support_mode_type =
-            (m == BINARY_MODE::ADD &&
-             (input.scalar_type() == ScalarType::Float ||
-              input.scalar_type() == ScalarType::Half)) ||
-            (m == BINARY_MODE::TRUEDIV &&
-             (input.scalar_type() == ScalarType::Float ||
-              input.scalar_type() == ScalarType::Half)) ||
-            (m == BINARY_MODE::MUL &&
-             (input.scalar_type() == ScalarType::Float ||
-              input.scalar_type() == ScalarType::Long ||
-              input.scalar_type() == ScalarType::Half));
-        const bool support_dim_device =
-            other.dim() == 0 && other.device() == DeviceType::CPU;
-        return support_mode_type && support_dim_device;
-      };
-  const bool optimize_scalar_unary =
-      SupportOptimizeScalarToUnary(m, self, other);
-  Tensor other_tmp = other;
-  Tensor self_tmp = self;
-  if (!optimize_scalar_unary) {
-    // 1. deal with other or self tensor on cpu
-    // 2. deal with other and self tensor shape isn't same
-    if (other.dim() == 0) {
-      other_tmp = at::full_like(self, other.item(), kMUSA);
-    }
-    if (self.dim() == 0) {
-      self_tmp = at::full_like(other, self.item(), kMUSA);
-    }
-  }
-
   Tensor output;
-  if (inplace) {
-    TORCH_CHECK(
-        is_expandable_to(other.sizes(), self.sizes()),
-        "size {",
-        self.sizes(),
-        "} is not expandable to size {",
-        other.sizes(),
-        "}.");
-    output = self_tmp;
-  } else {
-    auto output_sizes = infer_size_dimvector(self.sizes(), other.sizes());
-    TORCH_CHECK(
-        is_expandable_to(other.sizes(), output_sizes),
-        "size {",
-        self.sizes(),
-        "} is not expandable to size {",
-        output_sizes,
-        "}.");
-    TORCH_CHECK(
-        is_expandable_to(self.sizes(), output_sizes),
-        "size {",
-        self.sizes(),
-        "} is not expandable to size {",
-        output_sizes,
-        "}.");
-    auto output_dtype = self.scalar_type();
-    if (m == BINARY_MODE::EQ || m == BINARY_MODE::NE || m == BINARY_MODE::GE ||
-        m == BINARY_MODE::GT || m == BINARY_MODE::LE || m == BINARY_MODE::LT ||
-        m == BINARY_MODE::LOGICAL_AND || m == BINARY_MODE::LOGICAL_OR ||
-        m == BINARY_MODE::LOGICAL_XOR) {
-      output_dtype = ScalarType::Bool;
-    }
-    if (NeedContiguous(self, other)) {
-      output = at::empty(
-          output_sizes,
-          self.options()
-              .dtype(output_dtype)
-              .device(device)
-              .memory_format(at::MemoryFormat::Contiguous));
-    } else {
-      output = empty_like(self, self.options().dtype(output_dtype));
-    }
+  auto output_sizes = infer_size_dimvector(self.sizes(), other.sizes());
+  TORCH_CHECK(
+      is_expandable_to(other.sizes(), output_sizes),
+      "size {",
+      self.sizes(),
+      "} is not expandable to size {",
+      output_sizes,
+      "}.");
+  TORCH_CHECK(
+      is_expandable_to(self.sizes(), output_sizes),
+      "size {",
+      self.sizes(),
+      "} is not expandable to size {",
+      output_sizes,
+      "}.");
+  auto output_dtype = self.scalar_type();
+  if (IsBoolMode(m)) {
+    output_dtype = ScalarType::Bool;
   }
-
-  if (optimize_scalar_unary) {
-    muHandle& h = GetMudnnHandle();
-    ::musa::dnn::Unary uop;
-    auto other_scalar = other_tmp.item();
-    auto ConvertBinaryModeToString = [](BINARY_MODE mode) -> std::string {
-      switch (mode) {
-        case BINARY_MODE::ADD:
-          return "Binary ADD";
-        case BINARY_MODE::MUL:
-          return "Binary MUL";
-        case BINARY_MODE::TRUEDIV:
-          return "Binary TRUEDIV";
-        default:
-          return "";
-      }
-    };
-    if (other_scalar.isFloatingPoint()) {
-      CHECK_MUDNN_STATUS(uop.SetAlpha(other_scalar.toDouble()), "SetAlpha");
-    } else if (other_scalar.isIntegral(false)) {
-      CHECK_MUDNN_STATUS(uop.SetAlpha(other_scalar.toLong()), "SetAlpha");
-    } else {
-      AT_ERROR(
-          other_scalar.type(),
-          " is not implemented for '",
-          ConvertBinaryModeToString(m),
-          "'!");
-    }
-    if (m == BINARY_MODE::MUL) {
-      CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::MUL), "SetMode");
-    } else if (m == BINARY_MODE::ADD) {
-      CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::ADD), "SetMode");
-    } else if (m == BINARY_MODE::TRUEDIV) {
-      CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::DIV), "SetMode");
-    }
-    auto mt_output = CreateMUTensor(output, true);
-    auto mt_input = CreateMUTensor(self_tmp, true);
-    CHECK_MUDNN_STATUS(uop.Run(h, mt_output, mt_input), "Run " + op_name);
-  } else {
-    BinaryCall(op_name, output, self_tmp, other_tmp, m, alpha_scalar);
-  }
-  return inplace ? self.copy_(output) : output;
+  output = at::empty(
+      output_sizes,
+      self.options()
+          .dtype(output_dtype)
+          .device(device)
+          .memory_format(at::MemoryFormat::Contiguous));
+  BinaryCall(op_name, output, self, other, m, alpha_scalar);
+  return output;
 }
 
 Tensor BinarycommonDtype(
@@ -270,32 +254,6 @@ Tensor BinarycommonDtype(
   return Binary(op_name, contiguous_self, contiguous_other, m, alpha_scalar);
 }
 
-void BinarycommonDtype_(
-    const std::string& op_name,
-    const Tensor& self,
-    const Tensor& other,
-    Scalar const& alpha_scalar,
-    BINARY_MODE m) {
-  ScalarType commonDtype = at::result_type(self, other);
-  at::native::alpha_check(commonDtype, alpha_scalar);
-  Tensor other_ = other.to(commonDtype);
-  Binary(op_name, self, other_, m, alpha_scalar, true);
-  return;
-}
-
-void BinarycommonDtypeInternal(
-    const std::string& op_name,
-    const Tensor& self,
-    const Tensor& other,
-    Scalar const& alpha_scalar,
-    BINARY_MODE m) {
-  ScalarType common_dtype = at::result_type(self, other);
-  at::native::alpha_check(common_dtype, alpha_scalar);
-  Tensor contiguous_other = other.to(common_dtype);
-  Binary(op_name, self, contiguous_other, m, alpha_scalar, true);
-  return;
-}
-
 void BinarycommonDtypeCall(
     const std::string& op_name,
     const Tensor& self,
@@ -305,8 +263,6 @@ void BinarycommonDtypeCall(
     BINARY_MODE m) {
   ScalarType common_dtype = at::result_type(self, other);
   at::native::alpha_check(common_dtype, alpha_scalar);
-  // WARN: output created by torch, which could be non-contiguous.
-  output = at::musa::Contiguous(output);
   Tensor common_self = self.to(common_dtype);
   Tensor common_other = other.to(common_dtype);
   BinaryCall(op_name, output, common_self, common_other, m, alpha_scalar);
@@ -322,7 +278,7 @@ void BinarycommonDtypeCall(
                                                                               \
   Tensor& op_name##_Tensor(                                                   \
       Tensor& self, const Tensor& other, Scalar const& alpha_scalar) {        \
-    BinarycommonDtypeInternal(__func__, self, other, alpha_scalar, mode);     \
+    BinarycommonDtypeCall(__func__, self, other, alpha_scalar, self, mode);   \
     return self;                                                              \
   }                                                                           \
                                                                               \
@@ -338,14 +294,13 @@ void BinarycommonDtypeCall(
 DEFINE_BINARY_SCALAR_OP(Add, BINARY_MODE::ADD)
 DEFINE_BINARY_SCALAR_OP(Sub, BINARY_MODE::SUB)
 
-// TODO(zaixing.wang): add check type, check device
 #define DEFINE_BINARY_OP(op_name, mode)                             \
   Tensor op_name##Tensor(const Tensor& self, const Tensor& other) { \
     return BinarycommonDtype(__func__, self, other, 1, mode);       \
   }                                                                 \
                                                                     \
   Tensor& op_name##_Tensor(Tensor& self, const Tensor& other) {     \
-    BinarycommonDtypeInternal(__func__, self, other, 1, mode);      \
+    BinarycommonDtypeCall(__func__, self, other, 1, self, mode);    \
     return self;                                                    \
   }                                                                 \
                                                                     \
@@ -409,16 +364,18 @@ Tensor& Div_Tensor_mode(
     const Tensor& other,
     c10::optional<c10::string_view> rounding_mode) {
   if (!rounding_mode.has_value()) {
-    BinarycommonDtypeInternal(__func__, self, other, 1, BINARY_MODE::TRUEDIV);
+    BinarycommonDtypeCall(__func__, self, other, 1, self, BINARY_MODE::TRUEDIV);
   } else if (*rounding_mode == "trunc") {
-    BinarycommonDtypeInternal(
-        __func__, self, other, 1, BINARY_MODE::TRUNCATEDIV);
+    BinarycommonDtypeCall(
+        __func__, self, other, 1, self, BINARY_MODE::TRUNCATEDIV);
   } else if (*rounding_mode == "floor") {
-    BinarycommonDtypeInternal(__func__, self, other, 1, BINARY_MODE::FLOORDIV);
+    BinarycommonDtypeCall(
+        __func__, self, other, 1, self, BINARY_MODE::FLOORDIV);
   }
   return self;
 }
 
+// TODO(MT AI) use musa instead of cpu
 Tensor RemainderScalarTensor(const Scalar& self, const Tensor& other) {
   Tensor other_cpu = other.cpu();
   Tensor out = at::remainder(self, other_cpu);
