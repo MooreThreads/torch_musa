@@ -238,6 +238,7 @@ include_directories(${DEPENDENT_INCLUDE_DIRS})
 
 # Set PyTorch headers dir
 include_directories(${GENERATED_PORTING_DIR}/include)
+include_directories(${GENERATED_PORTING_DIR}/aten/src)
 include_directories(${GENERATED_PORTING_DIR}/include/torch/csrc/api/include)
 
 # Set Python include dir, python version shoud be ge than 3.8
