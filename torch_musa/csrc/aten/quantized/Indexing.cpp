@@ -1,7 +1,21 @@
 #define TORCH_ASSERT_ONLY_METHOD_OPERATORS
-#include <ATen/ATen.h>
+
+#ifndef AT_PER_OPERATOR_HEADERS
+#include <ATen/Functions.h>
 #include <ATen/NativeFunctions.h>
+#else
+#include <ATen/ops/_sparse_coo_tensor_with_dims_and_tensors.h>
+#include <ATen/ops/arange.h>
+#include <ATen/ops/empty.h>
+#include <ATen/ops/empty_quantized.h>
+#include <ATen/ops/index_add_native.h>
+#include <ATen/ops/index_reduce_native.h>
 #include <ATen/ops/index_select_native.h>
+#include <ATen/ops/masked_fill_native.h>
+#include <ATen/ops/ones_like.h>
+#include <ATen/ops/zeros_like.h>
+#endif
+
 #include <torch/library.h>
 
 #include "torch_musa/csrc/aten/utils/Utils.h"

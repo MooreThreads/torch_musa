@@ -1,6 +1,20 @@
 #include <ATen/Config.h>
-#include <ATen/NativeFunctions.h>
 #include <torch/library.h>
+
+#ifndef AT_PER_OPERATOR_HEADERS
+#include <ATen/NativeFunctions.h>
+#else
+#include <ATen/ops/_sparse_coo_tensor_unsafe.h>
+#include <ATen/ops/embedding_backward_native.h>
+#include <ATen/ops/embedding_dense_backward.h>
+#include <ATen/ops/embedding_dense_backward_native.h>
+#include <ATen/ops/embedding_native.h>
+#include <ATen/ops/embedding_renorm_native.h>
+#include <ATen/ops/embedding_sparse_backward.h>
+#include <ATen/ops/embedding_sparse_backward_native.h>
+#include <ATen/ops/empty.h>
+#include <ATen/ops/zeros.h>
+#endif
 
 #include "torch_musa/csrc/aten/ops/Embedding.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"

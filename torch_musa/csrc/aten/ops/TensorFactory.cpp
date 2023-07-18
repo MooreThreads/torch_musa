@@ -50,6 +50,16 @@ Tensor empty_musa(
   return empty_generic(size, allocator, musa_ks, dtype, memory_format_opt);
 }
 
+TensorBase empty_musa(IntArrayRef size, const TensorOptions& options) {
+  return at::detail::empty_musa(
+      size,
+      optTypeMetaToScalarType(options.dtype_opt()),
+      options.layout_opt(),
+      options.device_opt(),
+      options.pinned_memory_opt(),
+      options.memory_format_opt());
+}
+
 } // namespace detail
 
 namespace musa {

@@ -1,12 +1,19 @@
 // Functions that fill Tensors with constants.
-#define TORCH_ASSERT_ONLY_METHOD_OPERATORS
 #include <ATen/Config.h>
-#include <ATen/NativeFunctions.h>
 #include <ATen/ScalarOps.h>
 #include <ATen/TensorIterator.h>
 #include <ATen/TensorOperators.h>
 #include <ATen/core/Tensor.h>
 #include <ATen/native/Fill.h>
+
+#ifndef AT_PER_OPERATOR_HEADERS
+#include <ATen/Functions.h>
+#include <ATen/NativeFunctions.h>
+#else
+#include <ATen/ops/masked_fill_native.h>
+#include <ATen/ops/ones.h>
+
+#endif
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/quantized/QTensor.h"

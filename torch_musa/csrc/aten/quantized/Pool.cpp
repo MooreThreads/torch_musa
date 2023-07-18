@@ -1,7 +1,16 @@
 #include <ATen/Config.h>
 #include <ATen/NamedTensorUtils.h>
-#include <ATen/NativeFunctions.h>
 #include <ATen/native/Pool.h>
+
+#ifndef AT_PER_OPERATOR_HEADERS
+#include <ATen/Functions.h>
+#include <ATen/NativeFunctions.h>
+#else
+#include <ATen/ops/adaptive_avg_pool2d.h>
+#include <ATen/ops/dequantize.h>
+#include <ATen/ops/max_pool2d_with_indices.h>
+#include <ATen/ops/quantize_per_tensor.h>
+#endif
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/quantized/QTensor.h"

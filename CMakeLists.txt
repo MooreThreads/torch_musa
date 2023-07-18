@@ -10,6 +10,21 @@ endif()
 
 set(CMAKE_INSTALL_MESSAGE NEVER)
 
+if(NOT DEFINED BUILD_PYTORCH_REPO_PATH)
+  message(FATAL_ERROR "torch_musa needs BUILD_PYTORCH_REPO_PATH set to find some modules in PyTorch repo.")
+endif()
+
+set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/modules)
+
+# We should include PyTorch customized cmake modules into our search path.
+list(APPEND CMAKE_MODULE_PATH ${BUILD_PYTORCH_REPO_PATH}/cmake/Modules)
+
+# CMake Build Options according to PyTorch. This cmake block are dedicated for these options.
+include(cmake/cpu_flags.cmake)
+option(USE_PER_OPERATOR_HEADERS "Whether ATen should generate separate headers for each operator" ON)
+
+# Build Options above shoud keep consistent with PyTorch
+
 # check and set CMAKE_CXX_STANDARD
 string(FIND "${CMAKE_CXX_FLAGS}" "-std=c++" env_cxx_standard)
 
@@ -184,7 +199,6 @@ set(PLUGIN_NAME "musa_python")
 set(MUSA_CSRCS)
 set(MUSA_KERNELS_LIB "musa_kernels")
 
-set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/modules)
 set(DEPENDENT_LIBRARIES "")
 set(DEPENDENT_INCLUDE_DIRS "")
 find_package(MUDNN)
@@ -254,6 +268,12 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/torch_musa/csrc)
 set(CPP_SRCS ${MUSA_CSRCS})
 add_library(${PLUGIN_NAME} SHARED ${CPP_SRCS})
 
+# keep consistent with PyTorch's ATen generating library, according to Codegen.cmake
+if(USE_PER_OPERATOR_HEADERS)
+  target_compile_definitions(${MUSA_KERNELS_LIB} PUBLIC AT_PER_OPERATOR_HEADERS)
+  target_compile_definitions(${PLUGIN_NAME} PUBLIC AT_PER_OPERATOR_HEADERS)
+endif()
+
 target_link_libraries(${PLUGIN_NAME} PUBLIC ${DEPENDENT_LIBRARIES})
 target_link_libraries(${PLUGIN_NAME} PUBLIC ${MUSA_KERNELS_LIB})
 
@@ -286,6 +306,6 @@ configure_file(
   ${PROJECT_SOURCE_DIR}/cmake/TorchMusaConfig.cmake.in
   ${PROJECT_BINARY_DIR}/TorchMusaConfig.cmake
   @ONLY)
-install(FILES 
+install(FILES
   ${PROJECT_BINARY_DIR}/TorchMusaConfig.cmake
   DESTINATION share/cmake/)

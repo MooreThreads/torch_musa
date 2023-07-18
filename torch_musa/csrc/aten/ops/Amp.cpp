@@ -1,6 +1,6 @@
 #include <ATen/core/op_registration/adaption.h>
 #include <ATen/ops/_amp_foreach_non_finite_check_and_unscale_native.h>
-
+#include <ATen/ops/_amp_update_scale_native.h>
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 
 namespace at {

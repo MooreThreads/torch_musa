@@ -1,9 +1,56 @@
 #include <ATen/Config.h>
-#include <ATen/NativeFunctions.h>
 #include <ATen/native/ConvUtils.h>
 #include <ATen/native/Resize.h>
 #include <torch/library.h>
 
+#ifndef AT_PER_OPERATOR_HEADERS
+#include <ATen/Functions.h>
+#include <ATen/NativeFunctions.h>
+#else
+#include <ATen/ops/_conv_depthwise2d.h>
+#include <ATen/ops/_convolution.h>
+#include <ATen/ops/_convolution_double_backward_native.h>
+#include <ATen/ops/_convolution_mode.h>
+#include <ATen/ops/_convolution_mode_native.h>
+#include <ATen/ops/_convolution_native.h>
+#include <ATen/ops/_slow_conv2d_backward.h>
+#include <ATen/ops/_unsafe_view.h>
+#include <ATen/ops/cat.h>
+#include <ATen/ops/constant_pad_nd.h>
+#include <ATen/ops/conv1d_native.h>
+#include <ATen/ops/conv2d_native.h>
+#include <ATen/ops/conv3d_native.h>
+#include <ATen/ops/conv_depthwise3d.h>
+#include <ATen/ops/conv_transpose1d_native.h>
+#include <ATen/ops/conv_transpose2d_native.h>
+#include <ATen/ops/conv_transpose3d_native.h>
+#include <ATen/ops/convolution.h>
+#include <ATen/ops/convolution_backward_native.h>
+#include <ATen/ops/convolution_backward_overrideable.h>
+#include <ATen/ops/convolution_backward_overrideable_native.h>
+#include <ATen/ops/convolution_native.h>
+#include <ATen/ops/convolution_overrideable.h>
+#include <ATen/ops/convolution_overrideable_native.h>
+#include <ATen/ops/empty.h>
+#include <ATen/ops/empty_like.h>
+#include <ATen/ops/empty_native.h>
+#include <ATen/ops/miopen_convolution.h>
+#include <ATen/ops/miopen_convolution_transpose.h>
+#include <ATen/ops/miopen_depthwise_convolution.h>
+#include <ATen/ops/mkldnn_convolution.h>
+#include <ATen/ops/mps_convolution_backward.h>
+#include <ATen/ops/mps_convolution_transpose_backward.h>
+#include <ATen/ops/slow_conv3d.h>
+#include <ATen/ops/slow_conv_dilated2d.h>
+#include <ATen/ops/slow_conv_dilated3d.h>
+#include <ATen/ops/slow_conv_transpose2d.h>
+#include <ATen/ops/slow_conv_transpose3d.h>
+#include <ATen/ops/sum.h>
+#include <ATen/ops/thnn_conv2d.h>
+#include <ATen/ops/view_as_real.h>
+#include <ATen/ops/zeros.h>
+#include <ATen/ops/zeros_like.h>
+#endif
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 

@@ -1,8 +1,14 @@
 #include <ATen/Config.h>
 #include <ATen/ExpandUtils.h>
-#include <ATen/NativeFunctions.h>
 #include <torch/library.h>
 
+#ifndef AT_PER_OPERATOR_HEADERS
+#include <ATen/Functions.h>
+#include <ATen/NativeFunctions.h>
+#else
+#include <ATen/ops/ones_like.h>
+#include <ATen/ops/zeros_like.h>
+#endif
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 

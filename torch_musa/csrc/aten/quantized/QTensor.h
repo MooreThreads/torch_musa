@@ -1,5 +1,6 @@
 #ifndef ATEN_SRC_ATEN_NATIVE_MUSA_QTENSOR_H_
 #define ATEN_SRC_ATEN_NATIVE_MUSA_QTENSOR_H_
+
 #include <ATen/ATen.h>
 #include <ATen/NativeFunctions.h>
 #include <ATen/native/quantized/cpu/QuantUtils.h>

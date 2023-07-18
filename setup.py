@@ -85,6 +85,8 @@ def build_musa_lib():
     cmake = CMakeManager(build_dir)
     env = os.environ.copy()
     env["GENERATED_PORTING_DIR"] = cuda_compatiable_path
+    # add `BUILD` prefix to avoid env being filtered.
+    env["BUILD_PYTORCH_REPO_PATH"] = env["PYTORCH_REPO_PATH"]
     build_test = not check_negative_env_flag("BUILD_TEST")
     cmake_python_library = "{}/{}".format(
         sysconfig.get_config_var("LIBDIR"), sysconfig.get_config_var("INSTSONAME")

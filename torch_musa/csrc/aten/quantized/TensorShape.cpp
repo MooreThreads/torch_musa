@@ -1,13 +1,13 @@
-#define TORCH_ASSERT_ONLY_METHOD_OPERATORS
-#include <ATen/Functions.h>
 #include <ATen/NamedTensorUtils.h>
-#include <ATen/NativeFunctions.h>
 #include <ATen/WrapDimUtils.h>
 #include <ATen/core/DimVector.h>
 #include <ATen/core/Tensor.h>
 #include <ATen/native/Resize.h>
 #include <ATen/quantized/QTensorImpl.h>
 #include <c10/util/irange.h>
+
+#include <ATen/Functions.h>
+#include <ATen/NativeFunctions.h>
 
 #include <torch/library.h>
 #include "torch_musa/csrc/aten/quantized/Quantizer.h"

@@ -1,9 +1,107 @@
 #include <ATen/Config.h>
 #include <ATen/NamedTensorUtils.h>
-#include <ATen/NativeFunctions.h>
 #include <ATen/WrapDimUtilsMulti.h>
 #include <ATen/native/ReduceOpsUtils.h>
 #include <torch/library.h>
+
+#ifndef AT_PER_OPERATOR_HEADERS
+#include <ATen/Functions.h>
+#include <ATen/NativeFunctions.h>
+#else
+#include <ATen/ops/_cummax_helper.h>
+#include <ATen/ops/_cummax_helper_native.h>
+#include <ATen/ops/_cummin_helper.h>
+#include <ATen/ops/_cummin_helper_native.h>
+#include <ATen/ops/_logcumsumexp.h>
+#include <ATen/ops/_logcumsumexp_native.h>
+#include <ATen/ops/_sparse_sum.h>
+#include <ATen/ops/_sparse_sum_native.h>
+#include <ATen/ops/add.h>
+#include <ATen/ops/all_meta.h>
+#include <ATen/ops/all_native.h>
+#include <ATen/ops/amax.h>
+#include <ATen/ops/amax_meta.h>
+#include <ATen/ops/amax_native.h>
+#include <ATen/ops/amin_meta.h>
+#include <ATen/ops/amin_native.h>
+#include <ATen/ops/aminmax_meta.h>
+#include <ATen/ops/aminmax_native.h>
+#include <ATen/ops/any_meta.h>
+#include <ATen/ops/any_native.h>
+#include <ATen/ops/argmax_meta.h>
+#include <ATen/ops/argmax_native.h>
+#include <ATen/ops/argmin_meta.h>
+#include <ATen/ops/argmin_native.h>
+#include <ATen/ops/cat.h>
+#include <ATen/ops/complex.h>
+#include <ATen/ops/cummax.h>
+#include <ATen/ops/cummax_native.h>
+#include <ATen/ops/cummaxmin_backward_native.h>
+#include <ATen/ops/cummin.h>
+#include <ATen/ops/cummin_native.h>
+#include <ATen/ops/cumprod.h>
+#include <ATen/ops/cumprod_backward_native.h>
+#include <ATen/ops/cumprod_meta.h>
+#include <ATen/ops/cumprod_native.h>
+#include <ATen/ops/cumsum.h>
+#include <ATen/ops/cumsum_meta.h>
+#include <ATen/ops/cumsum_musa_dispatch.h>
+#include <ATen/ops/cumsum_native.h>
+#include <ATen/ops/diff_native.h>
+#include <ATen/ops/dist_native.h>
+#include <ATen/ops/empty.h>
+#include <ATen/ops/empty_like.h>
+#include <ATen/ops/equal_native.h>
+#include <ATen/ops/exp.h>
+#include <ATen/ops/gather.h>
+#include <ATen/ops/gradient_native.h>
+#include <ATen/ops/imag.h>
+#include <ATen/ops/isnan_native.h>
+#include <ATen/ops/linalg_vector_norm.h>
+#include <ATen/ops/logcumsumexp.h>
+#include <ATen/ops/logcumsumexp_native.h>
+#include <ATen/ops/logical_xor.h>
+#include <ATen/ops/logsumexp.h>
+#include <ATen/ops/logsumexp_native.h>
+#include <ATen/ops/mean.h>
+#include <ATen/ops/mean_meta.h>
+#include <ATen/ops/mean_native.h>
+#include <ATen/ops/min.h>
+#include <ATen/ops/nanmean_native.h>
+#include <ATen/ops/nansum.h>
+#include <ATen/ops/nansum_native.h>
+#include <ATen/ops/narrow.h>
+#include <ATen/ops/native_norm.h>
+#include <ATen/ops/norm.h>
+#include <ATen/ops/norm_meta.h>
+#include <ATen/ops/norm_native.h>
+#include <ATen/ops/ones.h>
+#include <ATen/ops/prod.h>
+#include <ATen/ops/prod_meta.h>
+#include <ATen/ops/prod_native.h>
+#include <ATen/ops/real.h>
+#include <ATen/ops/slice.h>
+#include <ATen/ops/special_logsumexp_native.h>
+#include <ATen/ops/sqrt.h>
+#include <ATen/ops/squeeze.h>
+#include <ATen/ops/stack.h>
+#include <ATen/ops/std.h>
+#include <ATen/ops/std_mean.h>
+#include <ATen/ops/std_mean_native.h>
+#include <ATen/ops/std_native.h>
+#include <ATen/ops/sub.h>
+#include <ATen/ops/sum.h>
+#include <ATen/ops/sum_meta.h>
+#include <ATen/ops/sum_native.h>
+#include <ATen/ops/trace_native.h>
+#include <ATen/ops/value_selecting_reduction_backward_native.h>
+#include <ATen/ops/var.h>
+#include <ATen/ops/var_mean.h>
+#include <ATen/ops/var_mean_native.h>
+#include <ATen/ops/var_native.h>
+#include <ATen/ops/zeros.h>
+#include <ATen/ops/zeros_like.h>
+#endif
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
@@ -325,6 +423,15 @@ Tensor& Cumsum_Out(
   Tensor self_ = Contiguous(self);
   CumsumCall(self_, dim, dtype_opt, out);
   return out;
+}
+
+// same like at::cuda::cumsum_out
+TORCH_API at::Tensor& cumsum_out(
+    at::Tensor& out,
+    const at::Tensor& self,
+    int64_t dim,
+    c10::optional<at::ScalarType> dtype) {
+  return at::musa::Cumsum_Out(self, dim, dtype, out);
 }
 
 Tensor Any(const Tensor& self) {

@@ -1,5 +1,14 @@
 #include <ATen/Config.h>
+
+#ifndef AT_PER_OPERATOR_HEADERS
+#include <ATen/Functions.h>
 #include <ATen/NativeFunctions.h>
+#else
+#include <ATen/ops/randint.h>
+#include <ATen/ops/randint_native.h>
+#include <ATen/ops/random_native.h>
+#endif
+
 #include <torch/library.h>
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"

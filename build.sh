@@ -156,7 +156,7 @@ build_torch_musa() {
 }
 
 main() {
-  if [ ${CLEAN} -eq 1 ]; then
+  if [[ ${CLEAN} -eq 1 ]] && [[ ${BUILD_TORCH} -ne 1 ]] && [[ ${BUILD_TORCH_MUSA} -ne 1 ]] ; then
     clean_pytorch
     clean_torch_musa
     exit 0
@@ -167,11 +167,16 @@ main() {
   fi
   if [ ${BUILD_TORCH} -eq 1 ]; then
     clone_pytorch
-    clean_pytorch
+    if [ ${CLEAN} -eq 1 ]; then
+      clean_pytorch
+    fi
     apply_patches
     build_pytorch
   fi
-  if [ ${BUILD_TORCH_MUSA} -eq 1 ]; then
+  if [ ${BUILD_TORCH_MUSA} -eq 1 ]; then  
+    if [ ${CLEAN} -eq 1 ]; then
+      clean_torch_musa
+    fi
     build_torch_musa
   fi
 }

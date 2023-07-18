@@ -3,6 +3,18 @@
 #include <ATen/native/BinaryOps.h>
 #include <torch/library.h>
 
+#ifndef AT_PER_OPERATOR_HEADERS
+#include <ATen/Functions.h>
+#include <ATen/NativeFunctions.h>
+#else
+#include <ATen/ops/addcdiv_native.h>
+#include <ATen/ops/addcmul_native.h>
+#include <ATen/ops/full_like.h>
+#include <ATen/ops/result_type.h>
+#include <ATen/ops/result_type_native.h>
+#include <ATen/ops/where_native.h>
+#endif
+
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 

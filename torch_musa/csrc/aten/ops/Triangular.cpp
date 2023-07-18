@@ -3,6 +3,13 @@
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
+#ifndef AT_PER_OPERATOR_HEADERS
+#include <ATen/Functions.h>
+#include <ATen/NativeFunctions.h>
+#else
+#include <ATen/ops/tril_native.h>
+#include <ATen/ops/triu_native.h>
+#endif
 #include <mudnn.h>
 #include <string>
 

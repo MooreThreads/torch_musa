@@ -72,6 +72,7 @@ FILE(GLOB MU_SRCS
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/RangeFactories.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Indexing.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationGluKernel.mu
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/MultinomialKernel.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/GridSampler.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/IntReprQuant.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/MakePerTensorQuantizedTensor.mu
@@ -82,7 +83,6 @@ FILE(GLOB MU_SRCS
     aten/ops/musa/Embedding.mu
     core/*.mu
 )
-
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/utils.cmake)
 append_cxx_flag_if_supported("-Wno-unused-parameter" CMAKE_CXX_FLAGS)

@@ -15,6 +15,7 @@
 #include <ATen/Functions.h>
 #include <ATen/NativeFunctions.h>
 #else
+#include <ATen/ops/amax_native.h>
 #include <ATen/ops/full.h>
 #include <ATen/ops/imag.h>
 #include <ATen/ops/kthvalue_native.h>
@@ -23,7 +24,6 @@
 #include <ATen/ops/where.h>
 #endif
 
-#include <ATen/ATen.h>
 #include <ATen/TensorUtils.h>
 #include <ATen/core/Tensor.h>
 #include <ATen/native/ReduceOps.h>
