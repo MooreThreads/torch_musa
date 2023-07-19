@@ -16,7 +16,7 @@ def function(input_data, func, dtype=None):
     test.check_result()
 
 
-dtype = [torch.quint8, torch.qint32]
+dtype = [torch.quint8, torch.qint32, torch.qint8]
 reduce_range = [True, False]
 input_data_per_tensor = [
     {"input": torch.randn(2, 3, 4), "scale": 0.1, "zero_point": 1},
@@ -91,7 +91,7 @@ input_data_int_per_tensor = [
         "zero_point": 127,
     },
 ]
-int_dtype = [torch.uint8, torch.int32]
+int_dtype = [torch.uint8, torch.int32, torch.int8]
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -169,6 +169,7 @@ def test_fill_(input_data):
     function(input_data, torch.fill_)
 
 
+# mudnn doesn't support qint8 activation kernels
 input_activation = [
     {"input": torch.quantize_per_tensor(torch.randn(3, 4), 0.1, 127, torch.quint8)},
     {"input": torch.quantize_per_tensor(torch.randn(3, 4, 6), 0.1, 1, torch.qint32)},
@@ -198,6 +199,10 @@ input_tensor_shape = [
         "input": torch.quantize_per_tensor(
             torch.randn(3, 1, 4), 0.1, 127, torch.quint8
         ),
+        "dim": 1,
+    },
+    {
+        "input": torch.quantize_per_tensor(torch.randn(3, 1, 4), 0.1, 0, torch.qint8),
         "dim": 1,
     },
     {
@@ -236,6 +241,11 @@ input_index_select = [
         "index": torch.tensor([0, 2], dtype=torch.int32),
     },
     {
+        "input": torch.quantize_per_tensor(torch.randn(3, 4, 6), 0.1, 0, torch.qint8),
+        "dim": 0,
+        "index": torch.tensor([0, 2], dtype=torch.int32),
+    },
+    {
         "input": torch.quantize_per_tensor(torch.randn(3, 4, 6), 0.1, 1, torch.qint32),
         "dim": 2,
         "index": torch.tensor([1, 3], dtype=torch.int32),
@@ -258,7 +268,7 @@ input_masked_fill = [
         "value": 0,
     },
     {
-        "input": torch.quantize_per_tensor(torch.randn(3, 4, 6), 0.1, 1, torch.qint32),
+        "input": torch.quantize_per_tensor(torch.randn(3, 4, 6), 0.1, 0, torch.qint8),
         "mask": torch.randint(0, 2, size=(3, 4, 6), dtype=torch.bool),
         "value": 1.1,
     },
@@ -286,6 +296,12 @@ input_unfold = [
         "input": torch.quantize_per_tensor(
             torch.randn(2, 4, 6), 0.1, 127, torch.quint8
         ),
+        "dimension": 0,
+        "size": 2,
+        "step": 1,
+    },
+    {
+        "input": torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.1, 0, torch.qint8),
         "dimension": 0,
         "size": 2,
         "step": 1,
@@ -323,6 +339,7 @@ input_pool = [
             torch.randn(1, 3, 8, 8), 0.01, 127, torch.quint8
         )
     },
+    {"input": torch.quantize_per_tensor(torch.randn(1, 3, 8, 8), 0.01, 0, torch.qint8)},
     {
         "input": torch.quantize_per_tensor(
             torch.randn(1, 3, 8, 8), 0.01, 1, torch.qint32

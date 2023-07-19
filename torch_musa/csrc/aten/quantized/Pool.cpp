@@ -20,7 +20,8 @@
 
 namespace at {
 namespace musa {
-// TODO: replace avg_pool2d and max_pool2d with a int8 musa implementation
+// TODO(@songlin.li): replace avg_pool2d and max_pool2d with a int8 musa
+// implementation
 Tensor AdaptiveAvgPool2dQuantized(
     const at::Tensor& input,
     IntArrayRef output_size) {
@@ -28,9 +29,9 @@ Tensor AdaptiveAvgPool2dQuantized(
   TORCH_CHECK(
       input.qscheme() == at::kPerTensorAffine,
       "AdaptiveAvgPool2dQuantized only supports per tensor quantized tensors");
-  auto input_fp32 = at::dequantize(input);
+  auto input_fp32 = input.dequantize();
   auto result_fp32 = at::adaptive_avg_pool2d(input_fp32, output_size);
-  return at::quantize_per_tensor(
+  return at::musa::QuantizePerTensor(
       result_fp32, input.q_scale(), input.q_zero_point(), input.scalar_type());
 }
 
@@ -72,11 +73,11 @@ Tensor MaxPool2dQuantized(
       "MaxPool2dQuantized(): Expected padding to be 2-dimensional: got ",
       padding.size());
 
-  auto input_fp32 = at::dequantize(input);
+  auto input_fp32 = input.dequantize();
 
   auto [result_fp32, result_indice] = at::max_pool2d_with_indices(
       input_fp32, kernel_size, stride, padding, dilation, ceil_mode);
-  return at::quantize_per_tensor(
+  return at::musa::QuantizePerTensor(
       result_fp32, input.q_scale(), input.q_zero_point(), input.scalar_type());
 }
 

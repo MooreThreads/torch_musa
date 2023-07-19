@@ -1,5 +1,5 @@
 diff --git a/c10/core/DispatchKey.cpp b/c10/core/DispatchKey.cpp
-index 91a606b..7571444 100644
+index 91a606b..b2f54ac 100644
 --- a/c10/core/DispatchKey.cpp
 +++ b/c10/core/DispatchKey.cpp
 @@ -84,6 +84,8 @@ const char* toString(DispatchKey t) {
@@ -28,3 +28,11 @@ index 91a606b..7571444 100644
        {"FuncTorchBatched", c10::DispatchKey::FuncTorchBatched},
        {"FuncTorchVmapMode", c10::DispatchKey::FuncTorchVmapMode},
        {"Batched", c10::DispatchKey::Batched},
+@@ -319,6 +324,7 @@ c10::DispatchKey parseDispatchKey(const std::string& k) {
+       {"QuantizedCPU", c10::DispatchKey::QuantizedCPU},
+       {"QuantizedCUDA", c10::DispatchKey::QuantizedCUDA},
+       {"QuantizedXPU", c10::DispatchKey::QuantizedXPU},
++      {"QuantizedPrivateUse1", c10::DispatchKey::QuantizedPrivateUse1},
+ 
+       {"SparseCPU", c10::DispatchKey::SparseCPU},
+       {"SparseCUDA", c10::DispatchKey::SparseCUDA},

@@ -21,7 +21,7 @@ inline std::tuple<int, int> QValueRangeHelper(c10::ScalarType dtype) {
 }
 
 namespace at {
-namespace native {
+namespace musa {
 
 Tensor QuantizePerTensor(
     const Tensor& self,
@@ -127,7 +127,7 @@ double QScaleQuant(const Tensor& self) {
   c10::impl::check_and_update_common_device(
       common_device, self, "QScaleQuant", "self");
   const OptionalDeviceGuard device_guard(device_of(self));
-  auto quantizer = get_qtensorimpl(self)->quantizer();
+  auto quantizer = at::GetQTensorImpl(self)->quantizer();
   TORCH_CHECK(quantizer->qscheme() == kPerTensorAffine);
   return static_cast<PerTensorAffineQuantizer*>(quantizer.get())->scale();
 }
@@ -138,7 +138,7 @@ int64_t QZeroPointQuant(const Tensor& self) {
   c10::impl::check_and_update_common_device(
       common_device, self, "QZeroPointQuant", "self");
   const OptionalDeviceGuard device_guard(device_of(self));
-  auto quantizer = get_qtensorimpl(self)->quantizer();
+  auto quantizer = at::GetQTensorImpl(self)->quantizer();
   TORCH_CHECK(quantizer->qscheme() == kPerTensorAffine);
   return static_cast<PerTensorAffineQuantizer*>(quantizer.get())->zero_point();
 }
@@ -149,7 +149,7 @@ Tensor QPerChannelScales(const Tensor& self) {
   c10::impl::check_and_update_common_device(
       common_device, self, "QPerChannelScales", "self");
   const OptionalDeviceGuard device_guard(device_of(self));
-  auto quantizer = get_qtensorimpl(self)->quantizer();
+  auto quantizer = at::GetQTensorImpl(self)->quantizer();
   TORCH_CHECK(
       quantizer->qscheme() == kPerChannelAffine ||
       quantizer->qscheme() == kPerChannelAffineFloatQParams);
@@ -162,7 +162,7 @@ Tensor QPerChannelZeroPoints(const Tensor& self) {
   c10::impl::check_and_update_common_device(
       common_device, self, "QPerChannelZeroPoints", "self");
   const OptionalDeviceGuard device_guard(device_of(self));
-  auto quantizer = get_qtensorimpl(self)->quantizer();
+  auto quantizer = at::GetQTensorImpl(self)->quantizer();
   TORCH_CHECK(
       quantizer->qscheme() == kPerChannelAffine ||
       quantizer->qscheme() == kPerChannelAffineFloatQParams);
@@ -176,11 +176,24 @@ int64_t QPerChannelAxis(const Tensor& self) {
   c10::impl::check_and_update_common_device(
       common_device, self, "QPerChannelAxis", "self");
   const OptionalDeviceGuard device_guard(device_of(self));
-  auto quantizer = get_qtensorimpl(self)->quantizer();
+  auto quantizer = at::GetQTensorImpl(self)->quantizer();
   TORCH_CHECK(
       quantizer->qscheme() == kPerChannelAffine ||
       quantizer->qscheme() == kPerChannelAffineFloatQParams);
   return static_cast<PerChannelAffineQuantizer*>(quantizer.get())->axis();
+}
+
+Tensor& SetStorageQuantized(
+    Tensor& self,
+    Storage storage,
+    int64_t storage_offset,
+    IntArrayRef sizes,
+    IntArrayRef strides) {
+  auto* self_ = self.unsafeGetTensorImpl();
+  self_->set_storage_keep_dtype(std::move(storage));
+  self_->set_storage_offset(storage_offset);
+  self_->set_sizes_and_strides(sizes, strides);
+  return self;
 }
 
 QScheme QSchemeQuant(const Tensor& self) {
@@ -189,7 +202,7 @@ QScheme QSchemeQuant(const Tensor& self) {
   c10::impl::check_and_update_common_device(
       common_device, self, "QSchemeQuant", "self");
   const OptionalDeviceGuard device_guard(device_of(self));
-  auto quantizer = get_qtensorimpl(self)->quantizer();
+  auto quantizer = at::GetQTensorImpl(self)->quantizer();
   return quantizer->qscheme();
 }
 
@@ -199,7 +212,7 @@ Tensor DequantizeQuantized(const Tensor& self) {
   c10::impl::check_and_update_common_device(
       common_device, self, "DequantizeQuantized", "self");
   const OptionalDeviceGuard device_guard(device_of(self));
-  return get_qtensorimpl(self)->quantizer()->dequantize(self);
+  return at::GetQTensorImpl(self)->quantizer()->dequantize(self);
 }
 
 Tensor QuantizedClone(
@@ -266,14 +279,14 @@ Tensor& QTensorCopy(Tensor& self, const Tensor& src) {
     if (self.qscheme() == kPerChannelAffine ||
         self.qscheme() == kPerChannelAffineFloatQParams ||
         self.qscheme() == kPerChannelSymmetric) {
-      quantize_tensor_per_channel_affine(
+      at::native::quantize_tensor_per_channel_affine(
           src,
           self,
           self.q_per_channel_scales(),
           self.q_per_channel_zero_points(),
           self.q_per_channel_axis());
     } else {
-      quantize_tensor_per_tensor_affine(
+      at::native::quantize_tensor_per_tensor_affine(
           src, self, self.q_scale(), self.q_zero_point());
     }
   });
@@ -296,7 +309,8 @@ TORCH_LIBRARY_IMPL(aten, QuantizedPrivateUse1, m) {
   m.impl("q_per_channel_axis", TORCH_FN(QPerChannelAxis));
   m.impl("qscheme", TORCH_FN(QSchemeQuant));
   m.impl("dequantize.self", TORCH_FN(DequantizeQuantized));
+  m.impl("set_.source_Storage_storage_offset", TORCH_FN(SetStorageQuantized));
 }
 
-} // namespace native
+} // namespace musa
 } // namespace at

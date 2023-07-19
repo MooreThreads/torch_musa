@@ -11,6 +11,7 @@ FILE(GLOB _CSRCS
     utils/*.cpp
     distributed/*.cpp
     aten/quantized/*.cpp
+    aten/quantized/mudnn/*.cpp
 )
 
 LIST(APPEND MUSA_CSRCS ${_CSRCS})
@@ -74,13 +75,14 @@ FILE(GLOB MU_SRCS
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationGluKernel.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/MultinomialKernel.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/GridSampler.mu
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ReduceAMinMaxKernel.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/IntReprQuant.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/MakePerTensorQuantizedTensor.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/AmpKernels.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/NLLLoss2d.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/Activation.mu
     aten/quantized/musa/*.mu
-    aten/ops/musa/Embedding.mu
+    aten/ops/musa/*.mu
     core/*.mu
 )
 

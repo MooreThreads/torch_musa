@@ -9,20 +9,20 @@
 #include <c10/core/TensorOptions.h>
 #include <torch/library.h>
 
-#include <utility>
-
 #include "torch_musa/csrc/aten/quantized/Quantizer.h"
+#include "torch_musa/csrc/aten/quantized/TensorFactories.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 namespace at {
-namespace {
+namespace musa {
 
 Tensor MakePerTensorQuantizedTensor(
     const Tensor& self,
     double scale,
     int64_t zero_point) {
   const OptionalDeviceGuard device_guard(device_of(self));
-  return native::make_per_tensor_quantized_tensor_cuda(self, scale, zero_point);
+  return at::native::make_per_tensor_quantized_tensor_cuda(
+      self, scale, zero_point);
 }
 
 Tensor MakePerChannelQuantizedTensor(
@@ -42,18 +42,9 @@ Tensor MakePerChannelQuantizedTensor(
       "MakePerChannelQuantizedTensor",
       "zero_point");
   const OptionalDeviceGuard device_guard(device_of(self));
-  return native::make_per_channel_quantized_tensor_cuda(
+  return at::native::make_per_channel_quantized_tensor_cuda(
       self, scales, zero_points, axis);
 }
-
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("_make_per_tensor_quantized_tensor", &MakePerTensorQuantizedTensor);
-  m.impl("_make_per_channel_quantized_tensor", &MakePerChannelQuantizedTensor);
-}
-
-} // namespace
-
-namespace native {
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ empty ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // We explicitly pass in scale and zero_point because we don't have the infra
@@ -229,7 +220,7 @@ Tensor AsStridedQTensorImpl(
     optional<int64_t> storage_offset_) {
   // DeviceGuard omitted
   auto storage_offset = storage_offset_.value_or(self.storage_offset());
-  auto quantizer = get_qtensorimpl(self)->quantizer();
+  auto quantizer = at::GetQTensorImpl(self)->quantizer();
   TORCH_CHECK(
       quantizer->qscheme() == QScheme::PER_TENSOR_AFFINE,
       "Setting strides is possible only on uniformly quantized tensor");
@@ -262,7 +253,9 @@ TORCH_LIBRARY_IMPL(aten, QuantizedPrivateUse1, m) {
 }
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
+  m.impl("_make_per_tensor_quantized_tensor", &MakePerTensorQuantizedTensor);
+  m.impl("_make_per_channel_quantized_tensor", &MakePerChannelQuantizedTensor);
   m.impl("_empty_affine_quantized", TORCH_FN(EmptyAffineQuantized));
 }
-} // namespace native
+} // namespace musa
 } // namespace at

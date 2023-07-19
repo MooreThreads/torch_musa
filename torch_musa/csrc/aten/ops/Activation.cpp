@@ -230,6 +230,26 @@ void ClampCall(
       });
       break;
     }
+    case ScalarType::Int: {
+      // TODO(@fan.mo): mudnn currently doesn't support INT32 CLIP
+      // INT_MIN = - 2**32, INT_MAX = 2**32 - 1
+      const int32_t min_val = has_min ? min.value().to<int32_t>()
+                                      : std::numeric_limits<int32_t>::min();
+      const int32_t max_val = has_max ? max.value().to<int32_t>()
+                                      : std::numeric_limits<int32_t>::max();
+      int64_t min_val_ = (int64_t)min_val;
+      int64_t max_val_ = (int64_t)max_val;
+      const Tensor self_ = self.to(ScalarType::Long);
+      Tensor out_ = out.to(ScalarType::Long);
+      UnaryCall(op_name, out_, self_, [&](::musa::dnn::Unary& op) {
+        CHECK_MUDNN_STATUS(op.SetAlpha(min_val_), "SetAlpha");
+        CHECK_MUDNN_STATUS(op.SetBeta(max_val_), "SetBeta");
+        CHECK_MUDNN_STATUS(
+            op.SetMode(::musa::dnn::Unary::Mode::CLIP), "SetMode");
+      });
+      out = out_.to(ScalarType::Int);
+      break;
+    }
 
     default:
       TORCH_CHECK(false, "Unsupported tensor dtype: ", t_type);

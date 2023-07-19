@@ -17,7 +17,7 @@ void CheckPerChannelParamDims(const Tensor& scales, const Tensor& zero_points) {
   TORCH_CHECK(scales.dim() == 1, "scale tensor must have dimension 1");
   TORCH_CHECK(
       zero_points.dim() == 1, "zero_points tensor must have dimension 1");
-  TORCH_CHECK( // TODO(@fan.mo): show their numel()
+  TORCH_CHECK(
       scales.numel() == zero_points.numel(),
       "number of elements in scales and zero_points must match, while getting ",
       scales.numel(),
@@ -29,7 +29,7 @@ void CheckPerChannelParamDims(const Tensor& scales, const Tensor& zero_points) {
 
 // Note: this is not a native function as Quantizer is not exposed to python yet
 QuantizerPtr TensorBase::quantizer() const {
-  return get_qtensorimpl(*this)->quantizer();
+  return GetQTensorImpl(*this)->quantizer();
 }
 
 QuantizerPtr MakePerTensorAffineQuantizer(
@@ -127,8 +127,8 @@ inline Tensor NewQTensor(
       /*resizable=*/true);
   auto tensor = detail::make_tensor<QTensorImpl>(
       storage, at::DispatchKeySet(tensorDispatchKey), dtype, quantizer);
-  get_qtensorimpl(tensor)->set_sizes_contiguous(sizes);
-  get_qtensorimpl(tensor)->empty_tensor_restride(memory_format);
+  GetQTensorImpl(tensor)->set_sizes_contiguous(sizes);
+  GetQTensorImpl(tensor)->empty_tensor_restride(memory_format);
   return tensor;
 }
 
@@ -320,6 +320,14 @@ bool MusaUnknownQuantizer::equalTo(QuantizerPtr other) const {
 
 QuantizerPtr MakeUnknownQuantizer(ScalarType scalar_type) {
   return c10::make_intrusive<MusaUnknownQuantizer>(scalar_type);
+}
+
+QTensorImpl* GetQTensorImpl(const TensorBase& self) {
+  TORCH_CHECK(
+      !self.requires_grad(), "quantized tensors do not support autograd");
+  TORCH_INTERNAL_ASSERT(
+      self.is_quantized(), "get_qtensorimpl: not a quantized tensor");
+  return static_cast<QTensorImpl*>(self.unsafeGetTensorImpl());
 }
 
 } // namespace at

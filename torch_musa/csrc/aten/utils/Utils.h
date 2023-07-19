@@ -66,7 +66,9 @@ constexpr ::c10::DispatchKey kMUSAKey = ::c10::DispatchKey::PrivateUse1;
 
 muTensor CreateMUTensor(const Tensor& t, bool use_stride = true);
 
-muTensor CreateEmptyMUTensor();
+inline muTensor CreateEmptyMUTensor() {
+  return muTensor();
+}
 
 // May need to contiguous the input pytorch tensor according the needed
 // tensor format, so need to pass tensor as reference

@@ -21,9 +21,9 @@
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 namespace at {
-namespace native {
+namespace musa {
 
-Tensor& IndexSelectOut(
+Tensor& QIndexSelectOut(
     const Tensor& self,
     int64_t dim,
     const Tensor& index,
@@ -32,15 +32,15 @@ Tensor& IndexSelectOut(
   return at::native::index_select_out_cuda(self, dim, index, out);
 }
 
-Tensor IndexSelect(const Tensor& self, int64_t dim, const Tensor& index) {
+Tensor QIndexSelect(const Tensor& self, int64_t dim, const Tensor& index) {
   const OptionalDeviceGuard device_guard(device_of(self));
   return at::native::index_select_quantized_cuda(self, dim, index);
 }
 
 TORCH_LIBRARY_IMPL(aten, QuantizedPrivateUse1, m) {
-  m.impl("index_select.out", &IndexSelectOut);
-  m.impl("index_select", &IndexSelect);
+  m.impl("index_select.out", &QIndexSelectOut);
+  m.impl("index_select", &QIndexSelect);
 }
 
-} // namespace native
+} // namespace musa
 } // namespace at

@@ -10,9 +10,12 @@
 #include <ATen/NativeFunctions.h>
 
 #include <torch/library.h>
+
 #include "torch_musa/csrc/aten/quantized/Quantizer.h"
+#include "torch_musa/csrc/core/MUSAGuard.h"
+
 namespace at {
-namespace native {
+namespace musa {
 namespace {
 Tensor MakeQtensor(
     const Tensor& self,
@@ -25,7 +28,7 @@ Tensor MakeQtensor(
       self.key_set(),
       self.dtype(),
       quantizer);
-  setStrided(result, size, stride, self.storage_offset());
+  at::native::setStrided(result, size, stride, self.storage_offset());
   return result;
 }
 
@@ -74,7 +77,7 @@ InferUnsqueezeGeometryResult InferUnsqueezeGeometry(
 // dim is present if squeezing a single dimension and absent if squeezing all
 // dimensions
 Tensor SqueezeQtensor(const Tensor& self, c10::OptionalIntArrayRef dims) {
-  auto quantizer = get_qtensorimpl(self)->quantizer();
+  auto quantizer = at::GetQTensorImpl(self)->quantizer();
   SymDimVector sizes;
   SymDimVector strides;
   const auto ndim = self.dim();
@@ -135,7 +138,7 @@ Tensor UnsqueezeQuantized(const Tensor& self, int64_t dim) {
   // DeviceGuard omitted
   dim = maybe_wrap_dim(dim, self.dim() + 1);
   auto geometry = InferUnsqueezeGeometry(self, dim);
-  auto quantizer = get_qtensorimpl(self)->quantizer();
+  auto quantizer = at::GetQTensorImpl(self)->quantizer();
   if (quantizer->qscheme() == QScheme::PER_CHANNEL_AFFINE) {
     const auto* per_channel_quantizer =
         static_cast<at::MusaPerChannelAffineQuantizer*>(quantizer.get());
@@ -159,5 +162,5 @@ TORCH_LIBRARY_IMPL(aten, QuantizedPrivateUse1, m) {
   m.impl("squeeze.dims", TORCH_FN(SqueezeQuantizedDims));
   m.impl("unsqueeze", TORCH_FN(UnsqueezeQuantized));
 }
-} // namespace native
+} // namespace musa
 } // namespace at

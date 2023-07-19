@@ -5,6 +5,7 @@
 #include <ATen/TensorOperators.h>
 #include <ATen/core/Tensor.h>
 #include <ATen/native/Fill.h>
+#include <torch/library.h>
 
 #ifndef AT_PER_OPERATOR_HEADERS
 #include <ATen/Functions.h>
@@ -19,9 +20,8 @@
 #include "torch_musa/csrc/aten/quantized/QTensor.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
-#include <torch/library.h>
 namespace at {
-namespace native {
+namespace musa {
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ fill ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 static Tensor& FillOutQuantized(Tensor& self, const Scalar& value) {
@@ -70,5 +70,5 @@ TORCH_LIBRARY_IMPL(aten, QuantizedPrivateUse1, m) {
   m.impl("masked_fill_.Tensor", TORCH_FN(MaskedFillQuantizeTensor));
 }
 
-} // namespace native
+} // namespace musa
 } // namespace at

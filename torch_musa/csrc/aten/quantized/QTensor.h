@@ -11,7 +11,7 @@
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 namespace at {
-namespace native {
+namespace musa {
 
 // quantization functions, which take musa tensors in and quantize them
 Tensor QuantizePerTensor(
@@ -50,13 +50,20 @@ Tensor QPerChannelZeroPoints(const Tensor& self);
 
 int64_t QPerChannelAxis(const Tensor& self);
 
+Tensor& SetStorageQuantized(
+    Tensor& self,
+    Storage storage,
+    int64_t storage_offset,
+    IntArrayRef sizes,
+    IntArrayRef strides);
+
 QScheme QSchemeQuant(const Tensor& self);
 
 Tensor DequantizeQuantized(const Tensor& self);
 
 Tensor& QTensorCopy(Tensor& self, const Tensor& src);
 
-} // namespace native
+} // namespace musa
 } // namespace at
 
 #endif // ATEN_SRC_ATEN_NATIVE_MUSA_QTENSOR_H_

@@ -115,8 +115,7 @@ class Comparator:
             A bool value indicating whether computing result is right.
         """
         if self._comparator is None:
-            raise NotImplementedError(
-                "Comparator is not implemented by a subclass")
+            raise NotImplementedError("Comparator is not implemented by a subclass")
 
         if not isinstance(self._comparator, (Callable, types.LambdaType)):
             raise TypeError("self._comparator must be a callable type")
@@ -145,18 +144,22 @@ class AbsDiffComparator(Comparator):
         Use absolute tolerance to compare the result and golden.
         """
         super().__init__()
-        self._comparator = lambda result, golden: torch.abs(
-            golden - result).max() < abs_diff
+        self._comparator = (
+            lambda result, golden: torch.abs(golden - result).max() < abs_diff
+        )
+
 
 class QuantizedComparator(Comparator):
-    """The quantized comparator"""
+    """
+    The quantized comparator
+
+    Use both relative and absolute tolerance to compare the dequantized value and
+    quantized value of result and golden.
+    """
+
     def __init__(
         self, abs_diff=1e-8, rel_diff=1e-5, equal_nan=False, is_per_tensor=True
     ):
-        """
-        Use both relative and absolute tolerance to compare the dequantized value and 
-        quantized value of result and golden.
-        """
         super().__init__()
         if is_per_tensor:
             self._comparator = lambda result, golden: (
@@ -204,6 +207,7 @@ class QuantizedComparator(Comparator):
                 and result.q_per_channel_axis() == golden.q_per_channel_axis()
             )
 
+
 class RelDiffComparator(Comparator):
     """The relative difference comparator."""
 
@@ -213,8 +217,8 @@ class RelDiffComparator(Comparator):
         """
         super().__init__()
         self._comparator = (
-            lambda result, golden: torch.abs(
-                (golden - result) / golden).max() < rel_diff
+            lambda result, golden: torch.abs((golden - result) / golden).max()
+            < rel_diff
         )
 
 

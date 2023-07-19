@@ -10,6 +10,7 @@
 
 #include <ATen/Tensor.h>
 #include <ATen/TensorUtils.h>
+#include <ATen/quantized/QTensorImpl.h>
 
 #include <ATen/core/QuantizerBase.h>
 
@@ -184,6 +185,13 @@ struct TORCH_API MusaPerChannelAffineFloatQParamsQuantizer
         axis() == other_per_channel_float_qparams->axis();
   }
 };
+
+// This is an internal utility function for getting at the QTensorImpl,
+// You should only use this for writing low level
+// setters/getters for QTensorImpl fields; otherwise, you should use
+// the low level setters/getters that were implemented using this.
+// This may be called repeatedly, so make sure it's pretty cheap.
+TORCH_API QTensorImpl* GetQTensorImpl(const TensorBase& self);
 
 // double and int64_t are because of the native function API, we only have these
 // argument types right now in native functions
