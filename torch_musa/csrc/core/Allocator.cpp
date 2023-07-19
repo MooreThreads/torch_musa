@@ -136,6 +136,7 @@ struct Block {
   bool allocated; // in-use flag
   Block* prev; // prev block if split from a larger allocation
   Block* next; // next block if split from a larger allocation
+  int event_count{0}; // number of outstanding MUSA events
   int gc_count; // counter for prioritizing older / less useful blocks for
                 // garbage collection
 
@@ -174,6 +175,9 @@ struct Block {
 };
 
 static bool BlockComparator(const Block* a, const Block* b) {
+  if (a->stream != b->stream) {
+    return (uintptr_t)a->stream < (uintptr_t)b->stream;
+  }
   if (a->size != b->size) {
     return a->size < b->size;
   }
@@ -211,6 +215,53 @@ struct AllocParams {
   Block* block;
   StatTypes stat_types = {false};
   musaError_t err;
+};
+
+class EventPool {
+ public:
+  using Event = std::unique_ptr<musaEvent_t, std::function<void(musaEvent_t*)>>;
+  EventPool() : pools_(at::musa::device_count()) {}
+
+  Event get(int device) {
+    TORCH_INTERNAL_ASSERT(0 <= device);
+    TORCH_INTERNAL_ASSERT(device < static_cast<int>(pools_.size()));
+    auto& pool = pools_[device];
+    auto destructor = [&pool](musaEvent_t* event) {
+      std::lock_guard<std::mutex> g(pool.mutex_);
+      pool.event_pool_.push_back(std::unique_ptr<musaEvent_t>(event));
+    };
+
+    // Try to acquire an event from the per-device pool.
+    {
+      std::lock_guard<std::mutex> g(pool.mutex_);
+      if (!pool.event_pool_.empty()) {
+        auto* event = pool.event_pool_.back().release();
+        pool.event_pool_.pop_back();
+        return Event(event, destructor);
+      }
+    }
+    // otherwise, allocate a new event that will be returned to the pool on
+    // destruction.
+    auto new_ptr = std::make_unique<musaEvent_t>();
+    TORCH_MUSA_CHECK(
+        musaEventCreateWithFlags(new_ptr.get(), musaEventDisableTiming));
+
+    return Event(new_ptr.release(), destructor);
+  }
+
+  void empty_cache() {
+    for (auto& pool : pools_) {
+      std::lock_guard<std::mutex> g(pool.mutex_);
+      pool.event_pool_.clear();
+    }
+  }
+
+ private:
+  struct PerDevicePool {
+    alignas(64) std::mutex mutex_;
+    std::vector<std::unique_ptr<musaEvent_t>> event_pool_;
+  };
+  std::vector<PerDevicePool> pools_;
 };
 
 } // namespace
@@ -339,6 +390,11 @@ class MTGPUCachingAllocator {
   // whether they came from graph_pools or one of the BlockPools above.
   ska::flat_hash_set<Block*> active_blocks_;
 
+  ska::flat_hash_map<
+      musa::MUSAStream,
+      std::deque<std::pair<EventPool::Event, Block*>>>
+      musa_events;
+
   // record used memory.
   size_t total_allocated_memory_ = 0;
 
@@ -362,6 +418,7 @@ class MTGPUCachingAllocator {
 
   Block* malloc(int device, size_t size, musaStream_t stream) {
     std::unique_lock<std::recursive_mutex> lock(mutex_);
+    process_events();
 
     self_device_ = device;
     size = round_size(size);
@@ -533,7 +590,11 @@ class MTGPUCachingAllocator {
     if (block->size >= CachingAllocatorConfig::max_split_size())
       update_stat(stats_.oversize_allocations, -1);
 
-    free_block(block);
+    if (!block->stream_uses.empty()) {
+      insert_events(block);
+    } else {
+      free_block(block);
+    }
   }
 
   // This function is used to return the base ptr and the offset
@@ -565,6 +626,93 @@ class MTGPUCachingAllocator {
         "MUSA get memory info fails!");
     allowed_memory_maximum_ = static_cast<size_t>(fraction * device_total);
     set_fraction_ = true;
+  }
+
+  EventPool::Event create_event_internal(int idx) {
+    // Leak the event pool to avoid shutdown issues.
+    static auto* event_pool = new EventPool();
+    return event_pool->get(idx);
+  }
+
+  void process_events() {
+    // Process outstanding musaEvents. Events that are completed are
+    // removed from the queue, and the 'event_count' for the
+    // corresponding allocation is decremented. We maintain a separate
+    // list of events per stream to avoid head-of-line delays if one
+    // or more streams has long-running operations.
+
+    // Iterate over different streams.
+    for (auto it = musa_events.begin(); it != musa_events.end();) {
+      // Iterate over this stream's (event, block) pairs.
+      while (!it->second.empty()) {
+        auto& e = it->second.front();
+        EventPool::Event event = std::move(e.first);
+        Block* block = e.second;
+
+        musaError_t err = musaEventQuery(*event);
+        if (err == musaErrorNotReady) {
+          // ignore and clear the error if not ready
+          musaGetLastError();
+          // Return the ownership of the Event (unique ptr)
+          e.first = std::move(event);
+          break;
+        } else if (err != musaSuccess) {
+          TORCH_MUSA_CHECK(err);
+        }
+
+        block->event_count--;
+        if (block->event_count == 0) {
+          free_block(block);
+        }
+        it->second.pop_front();
+      }
+
+      if (it->second.empty()) {
+        it = musa_events.erase(it);
+      } else {
+        it++;
+      }
+    }
+  }
+
+  void synchronize_and_free_events() {
+    // Synchronize on outstanding events and then free associated blocks.
+
+    for (auto& st : musa_events) {
+      for (auto& e : st.second) {
+        EventPool::Event event = std::move(e.first);
+        Block* block = e.second;
+
+        TORCH_MUSA_CHECK(musaEventSynchronize(*event));
+
+        block->event_count--;
+        if (block->event_count == 0) {
+          free_block(block);
+        }
+      }
+    }
+
+    musa_events.clear();
+  }
+
+  void insert_events(Block* block) {
+    int prev_device;
+    TORCH_MUSA_CHECK(musaGetDevice(&prev_device));
+
+    stream_set streams(std::move(block->stream_uses));
+    AT_ASSERT(block->stream_uses.empty());
+    for (auto& stream : streams) {
+      TORCH_MUSA_CHECK(musaSetDevice(stream.device_index()));
+
+      EventPool::Event event =
+          create_event_internal(static_cast<int>(stream.device_index()));
+      TORCH_MUSA_CHECK(musaEventRecord(*event, stream.stream()));
+
+      block->event_count++;
+      musa_events[stream].emplace_back(std::move(event), block);
+    }
+
+    TORCH_MUSA_CHECK(musaSetDevice(prev_device));
   }
 
   void record_stream(Block* block, MUSAStream stream) {
@@ -670,7 +818,8 @@ class MTGPUCachingAllocator {
 
         block_info.size = block->size;
         block_info.allocated = block->allocated;
-        block_info.active = block->allocated;
+        block_info.active = block->allocated || (block->event_count > 0) ||
+            !block->stream_uses.empty();
 
         segment_info.total_size += block_info.size;
         if (block_info.allocated) {
@@ -749,7 +898,9 @@ class MTGPUCachingAllocator {
 
   /** moves a block into a pool of cached free blocks */
   void free_block(Block* block) {
-    TORCH_INTERNAL_ASSERT(!block->allocated);
+    TORCH_INTERNAL_ASSERT(
+        !block->allocated && block->event_count == 0 &&
+        block->stream_uses.empty());
 
     size_t original_block_size = block->size;
 
@@ -795,7 +946,8 @@ class MTGPUCachingAllocator {
   /** combine previously split blocks. returns the size of the subsumed block,
    * or 0 on failure. */
   size_t try_merge_blocks(Block* dst, Block* src, BlockPool& pool) {
-    if (!src || src->allocated) {
+    if (!src || src->allocated || src->event_count > 0 ||
+        !src->stream_uses.empty()) {
       return 0;
     }
 
@@ -1050,6 +1202,7 @@ class MTGPUCachingAllocator {
 
   bool release_cached_blocks() {
     // Free all non-split cached blocks to system allocator
+    synchronize_and_free_events();
     release_blocks(large_blocks_);
     release_blocks(small_blocks_);
 
