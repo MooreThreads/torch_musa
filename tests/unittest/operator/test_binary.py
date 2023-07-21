@@ -157,7 +157,7 @@ def test_binary_with_input_scalar(input_data, dtype, func):
     function(input_data, dtype, dtype, func)
 
 
-# torch.bitwise_and/or not support torch.float32
+# torch.bitwise_and/or/xor not support torch.float32
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize(
     "input_data",
@@ -194,7 +194,7 @@ def test_binary_with_input_scalar(input_data, dtype, func):
 @pytest.mark.parametrize("dtype", [torch.int32])
 @pytest.mark.parametrize(
     "func",
-    [torch.bitwise_and, torch.bitwise_or],
+    [torch.bitwise_and, torch.bitwise_or, torch.bitwise_xor],
 )
 def test_bitwise(input_data, dtype, func):
     function(input_data, dtype, dtype, func)
