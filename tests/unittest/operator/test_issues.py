@@ -24,3 +24,19 @@ def test_uncontiguous_viewd_sin_():
     viewd_m.sin_()
     testing.DefaultComparator(viewd_c, viewd_m)
     testing.DefaultComparator(c, m)
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_uncontiguous_viewd_mul_():
+    x = torch.tensor([[1,2,3], [4,5,6]]).to("musa")
+    y = torch.tensor([[1,2,3], [4,5,6]])
+    x[:,2:] *= torch.tensor((2,))
+    y[:,2:] *= torch.tensor((2,))
+    testing.DefaultComparator(x, y)
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_uncontiguous_viewd_mul_2():
+    x = torch.tensor([[1,2,3], [4,5,6]]).to("musa")
+    y = torch.tensor([[1,2,3], [4,5,6]])
+    x[:,2:] *= torch.tensor((2,)).to("musa")
+    y[:,2:] *= torch.tensor((2,))
+    testing.DefaultComparator(x, y)

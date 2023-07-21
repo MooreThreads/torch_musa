@@ -197,12 +197,14 @@ void BinaryCall(
   c10::musa::MUSAGuard guard(device);
   muHandle& h = GetMudnnHandle();
   if (self.numel() == 0 && other.numel() == 0) {
+    Tensor out_tmp;
     if (IsComparisonOp(m)) {
-      output =
+      out_tmp =
           at::empty(output.sizes(), self.options().dtype(ScalarType::Bool));
     } else {
-      output = at::empty(output.sizes(), self.options());
+      out_tmp = at::empty(output.sizes(), self.options());
     }
+    output.copy_(out_tmp);
     return;
   }
   if (SupportOptimizeScalarToUnary(m, self, other)) {
@@ -214,7 +216,13 @@ void BinaryCall(
     return;
   }
   Tensor self_tmp = self;
+  if (!is_musa(self_tmp)) {
+    self_tmp = self.to(device);
+  }
   Tensor other_tmp = other;
+  if (!is_musa(other_tmp)) {
+    other_tmp = other.to(device);
+  }
 
   if (other_tmp.dim() == 0) {
     other_tmp = at::full_like(self, other_tmp.item(), kMUSA);
@@ -224,21 +232,13 @@ void BinaryCall(
   }
   other_tmp =
       alpha_scalar.equal(1) ? other_tmp : at::mul(other_tmp, alpha_scalar);
-  muTensor musa_self;
-  muTensor musa_other;
-  muTensor musa_out;
-  Tensor contiguous_self;
-  Tensor contiguous_other;
-  Tensor contiguous_out;
   if (NeedContiguous(self_tmp, other_tmp)) {
-    musa_self = CreateMUTensor(Contiguous(self_tmp, contiguous_self));
-    musa_other = CreateMUTensor(Contiguous(other_tmp, contiguous_other));
-    musa_out = CreateMUTensor(Contiguous(output, contiguous_out));
-  } else {
-    musa_self = CreateMUTensor(self_tmp, true);
-    musa_other = CreateMUTensor(other_tmp, true);
-    musa_out = CreateMUTensor(output, true);
+    self_tmp = Contiguous(self_tmp);
+    other_tmp = Contiguous(other_tmp);
   }
+  muTensor musa_self = CreateMUTensor(self_tmp);
+  muTensor musa_other = CreateMUTensor(other_tmp);
+  muTensor musa_out = CreateMUTensor(output);
 
   ::musa::dnn::Binary bop;
   CHECK_MUDNN_STATUS(bop.SetMode(m), "SetMode");
