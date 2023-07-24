@@ -42,3 +42,22 @@ def test_upsample_bilinear(input_data, dtype, scale_factor, align_corners):
                    mode="nearest",
                    scale_factor=scale_factor)
     function(input_data, dtype, nearest)
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data",
+[
+    {"input": torch.randn([2, 10, 10])},
+    {"input": torch.randn([10, 256, 300])},
+    {"input": torch.randn([4, 228, 304])},
+    {"input": torch.randn([4, 32, 32])}
+]
+)
+@pytest.mark.parametrize("dtype", all_support_types)
+@pytest.mark.parametrize("scale_factor", scale_factor)
+@pytest.mark.parametrize("align_corners", [False, True])
+def test_upsample_linear(input_data, dtype, scale_factor, align_corners):
+    linear = partial(torch.nn.functional.interpolate,
+                   mode="linear",
+                   scale_factor=scale_factor,
+                   align_corners=align_corners)
+    function(input_data, dtype, linear)
