@@ -52,6 +52,12 @@ TORCH_LIBRARY_IMPL(quantized, AutogradPrivateUse1, m) {
       TORCH_FN(QLinearPackWeightInt8Mudnn::run));
 }
 
+TORCH_LIBRARY_IMPL(quantized, QuantizedPrivateUse1, m) {
+  m.impl(
+      TORCH_SELECTIVE_NAME("quantized::linear_prepack"),
+      TORCH_FN(QLinearPackWeightInt8Mudnn::run));
+}
+
 } // namespace
 } // namespace native
 } // namespace at

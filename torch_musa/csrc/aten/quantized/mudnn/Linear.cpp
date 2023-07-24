@@ -156,9 +156,21 @@ class QLinearInt8 final {
 };
 
 TORCH_LIBRARY_IMPL(quantized, AutogradPrivateUse1, m) {
-  m.impl(TORCH_SELECTIVE_NAME("quantized::linear"), QLinearInt8<false>::run);
   m.impl(
-      TORCH_SELECTIVE_NAME("quantized::linear_relu"), QLinearInt8<true>::run);
+      TORCH_SELECTIVE_NAME("quantized::linear"),
+      TORCH_FN(QLinearInt8<false>::run));
+  m.impl(
+      TORCH_SELECTIVE_NAME("quantized::linear_relu"),
+      TORCH_FN(QLinearInt8<true>::run));
+}
+
+TORCH_LIBRARY_IMPL(quantized, QuantizedPrivateUse1, m) {
+  m.impl(
+      TORCH_SELECTIVE_NAME("quantized::linear"),
+      TORCH_FN(QLinearInt8<false>::run));
+  m.impl(
+      TORCH_SELECTIVE_NAME("quantized::linear_relu"),
+      TORCH_FN(QLinearInt8<true>::run));
 }
 
 } // namespace

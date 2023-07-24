@@ -332,6 +332,15 @@ TORCH_LIBRARY_IMPL(quantized, AutogradPrivateUse1, m) {
       TORCH_FN(QConvInt8<true>::run));
 }
 
+TORCH_LIBRARY_IMPL(quantized, QuantizedPrivateUse1, m) {
+  m.impl(
+      TORCH_SELECTIVE_NAME("quantized::conv2d.new"),
+      TORCH_FN(QConvInt8<false>::run));
+  m.impl(
+      TORCH_SELECTIVE_NAME("quantized::conv2d_relu.new"),
+      TORCH_FN(QConvInt8<true>::run));
+}
+
 } // namespace
 } // namespace musa
 } // namespace at

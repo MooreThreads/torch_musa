@@ -75,6 +75,11 @@ TORCH_LIBRARY_IMPL(quantized, AutogradPrivateUse1, m) {
   m.impl(TORCH_SELECTIVE_NAME("quantized::add_relu"), TORCH_FN(QAdd<true>));
 }
 
+TORCH_LIBRARY_IMPL(quantized, QuantizedPrivateUse1, m) {
+  m.impl(TORCH_SELECTIVE_NAME("quantized::add"), TORCH_FN(QAdd<false>));
+  m.impl(TORCH_SELECTIVE_NAME("quantized::add_relu"), TORCH_FN(QAdd<true>));
+}
+
 } // namespace
 } // namespace musa
 } // namespace at

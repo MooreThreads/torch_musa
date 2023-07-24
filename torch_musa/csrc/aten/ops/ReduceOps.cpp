@@ -16,6 +16,8 @@
 #include <ATen/NativeFunctions.h>
 #else
 #include <ATen/ops/amax_native.h>
+#include <ATen/ops/aminmax.h>
+#include <ATen/ops/aminmax_native.h>
 #include <ATen/ops/full.h>
 #include <ATen/ops/imag.h>
 #include <ATen/ops/kthvalue_native.h>
