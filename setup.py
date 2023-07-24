@@ -10,7 +10,7 @@ from setuptools.command.install import install as Install
 from torch.utils.cpp_extension import CppExtension  # pylint: disable=C0411
 from torch.utils.cpp_extension import BuildExtension as Build  # pylint: disable=C0411
 from tools.cuda_porting.cuda_porting import port_cuda
-
+import subprocess
 import multiprocessing
 
 if os.getenv("MAX_JOBS") is None:
@@ -144,7 +144,10 @@ def configure_extension_build():
     )
     return cpp_extension
 
+
 install_requires = ["packaging"]
+
+version=version.strip()+ "+git" + subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("ascii").strip()[:7]
 
 # Setup
 setup(

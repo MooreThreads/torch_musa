@@ -3,9 +3,12 @@
 
 import warnings
 import sys
+import os
+import pkg_resources
 from packaging.version import Version
 import torch
 
+__version__ = pkg_resources.get_distribution("torch_musa").version
 TORCH_MIN_VERSION = Version("2.0.0")
 TORCH_VERSION = Version(torch.__version__).base_version
 if Version(TORCH_VERSION) < TORCH_MIN_VERSION:
