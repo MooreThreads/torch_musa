@@ -32,7 +32,8 @@ all_basic_funcs = [
     torch.sgn,
     torch.log10,
     torch.log2,
-    torch.floor
+    torch.floor,
+    torch.logical_not
 ]
 
 all_inplace_funcs = [

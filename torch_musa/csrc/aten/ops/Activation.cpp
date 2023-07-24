@@ -671,6 +671,19 @@ Tensor& NegOut(const Tensor& self, Tensor& out) {
   return out;
 }
 
+Tensor LogicalNot(const Tensor& self) {
+  return at::eq(self, 0).to(ScalarType::Bool);
+}
+
+Tensor& LogicalNot_(Tensor& self) {
+  self = LogicalNot(self);
+  return self;
+}
+
+Tensor& LogicalNotOut(const Tensor& self, Tensor& out) {
+  out = LogicalNot(self).to(out.scalar_type());
+  return out;
+}
 Tensor PowScalar(const Tensor& self, const Scalar& value) {
   return Unary(__func__, self, [&](::musa::dnn::Unary& op) {
     CHECK_MUDNN_STATUS(op.SetAlpha(value.to<double>()), "SetAlpha");
@@ -1472,6 +1485,10 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("bitwise_not", &BitwiseNot);
   m.impl("bitwise_not_", &BitwiseNot_);
   m.impl("bitwise_not.out", &BitwiseNotOut);
+
+  m.impl("logical_not", &LogicalNot);
+  m.impl("logical_not_", &LogicalNot_);
+  m.impl("logical_not.out", &LogicalNotOut);
 
   m.impl("eq.Scalar", &EqScalar);
   m.impl("eq_.Scalar", &EqScalar_);

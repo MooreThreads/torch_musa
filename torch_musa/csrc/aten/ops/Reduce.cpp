@@ -193,6 +193,7 @@ Tensor Reduction(
     ::musa::dnn::Reduce::Mode m,
     const c10::optional<at::Scalar>& p = c10::nullopt,
     const bool is_norm = false) {
+  c10::musa::MUSAGuard device_guard(self.device());
   out_dtype = musa_infer_dtype_from_optional(self, out_dtype, Tensor());
   DimVector dims_(dim);
   maybe_wrap_dims(dims_, self.dim());
@@ -272,7 +273,10 @@ Tensor& SumIntListOut(
     bool keepdim,
     optional<ScalarType> opt_dtype,
     Tensor& output) {
-  ReduceCall(output, self, dim.value(), ::musa::dnn::Reduce::Mode::ADD);
+  Tensor output_tmp = Reduction(
+      self, dim.value(), keepdim, opt_dtype, ::musa::dnn::Reduce::Mode::ADD);
+  output.resize_as_(output_tmp);
+  output.copy_(output_tmp);
   return output;
 }
 
@@ -597,14 +601,15 @@ Tensor All(const Tensor& self) {
       "Now only support bool/uint8 type");
   // mtdnn now only support bool, so we need to cast when input_dype=Byte
   if (self.scalar_type() == ScalarType::Byte) {
-    Tensor self_;
-    self_ = self.to(ScalarType::Bool);
-    return Reduction(
+    Tensor self_ = self.to(ScalarType::Bool);
+    auto out = Reduction(
         self_,
         IntArrayRef{},
         false,
-        self.scalar_type(),
+        ScalarType::Bool,
         ::musa::dnn::Reduce::Mode::AND);
+    out = out.to(ScalarType::Byte);
+    return out;
   } else {
     return Reduction(
         self,
