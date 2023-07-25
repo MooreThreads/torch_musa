@@ -2,6 +2,7 @@
 #include <ATen/MemoryOverlap.h>
 #include <ATen/NativeFunctions.h>
 #include <ATen/core/List.h>
+#include <ATen/core/op_registration/adaption.h>
 #include <ATen/native/IndexingUtils.h>
 #include <ATen/ops/_reshape_alias_native.h>
 #include <ATen/ops/as_strided_native.h>
@@ -407,11 +408,46 @@ void IndexPutCall(
       op.Run(h, out_mt, indexes.size(), indexes.data(), v), "IndexPut Run");
 }
 
+Tensor& IndexSelectOutPorting(
+    const Tensor& self,
+    int64_t dim,
+    const Tensor& index,
+    Tensor& out) {
+  c10::optional<Device> common_device = nullopt;
+  (void)common_device; // Suppress unused variable warning
+  c10::impl::check_and_update_common_device(
+      common_device, out, "wrapper_CUDA_out_index_select_out", "out");
+  c10::impl::check_and_update_common_device(
+      common_device, self, "wrapper_CUDA_out_index_select_out", "self");
+  c10::impl::check_and_update_common_device(
+      common_device, index, "wrapper_CUDA_out_index_select_out", "index");
+  const OptionalDeviceGuard device_guard(device_of(self));
+  return at::native::index_select_out_cuda(self, dim, index, out);
+}
+
+Tensor IndexSelectPorting(
+    const Tensor& self,
+    int64_t dim,
+    const Tensor& index) {
+  c10::optional<Device> common_device = nullopt;
+  (void)common_device; // Suppress unused variable warning
+  c10::impl::check_and_update_common_device(
+      common_device, self, "wrapper_CUDA__index_select", "self");
+  c10::impl::check_and_update_common_device(
+      common_device, index, "wrapper_CUDA__index_select", "index");
+  const OptionalDeviceGuard device_guard(device_of(self));
+  return at::native::index_select_cuda(self, dim, index);
+}
+
 Tensor& IndexSelectOut(
     const Tensor& self,
     int64_t dim,
     const Tensor& index,
     Tensor& out) {
+  if (self.scalar_type() != at::ScalarType::Float ||
+      index.scalar_type() != at::ScalarType::Long) {
+    return IndexSelectOutPorting(self, dim, index, out);
+  }
   Tensor contiguous_self = Contiguous(self);
   Tensor contiguous_other = Contiguous(index);
   TORCH_CHECK(
@@ -423,6 +459,10 @@ Tensor& IndexSelectOut(
 }
 
 Tensor IndexSelect(const Tensor& self, int64_t dim, const Tensor& index) {
+  if (self.scalar_type() != at::ScalarType::Float ||
+      index.scalar_type() != at::ScalarType::Long) {
+    return IndexSelectPorting(self, dim, index);
+  }
   Tensor contiguous_self = Contiguous(self);
   Tensor contiguous_index = Contiguous(index);
   auto out_shape = std::vector<int64_t>(contiguous_self.sizes().vec());

@@ -127,7 +127,7 @@ input_datas = [
     },
 ]
 dtypes = testing.get_all_support_types()
-
+dtypes.extend([torch.uint8, torch.int16, torch.float16])
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_datas)
