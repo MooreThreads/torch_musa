@@ -17,4 +17,10 @@ from .base_test_tool import (
     gen_ip_port,
 )
 
-from .common_utils import get_cycles_per_ms, freeze_rng_state
+from .common_utils import (
+    get_cycles_per_ms,
+    freeze_rng_state,
+    cpu_and_musa,
+    needs_musa,
+    assert_equal,
+)

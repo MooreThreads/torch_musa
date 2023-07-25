@@ -22,13 +22,18 @@ set(MUSA_CSRCS ${MUSA_CSRCS} PARENT_SCOPE)
 list(APPEND CMAKE_MODULE_PATH $ENV{MUSA_HOME}/cmake)
 find_package(MUSA REQUIRED)
 
-FILE(GLOB ATEN_MUSA_CSRCS aten/musa/*.cpp)
+FILE(GLOB ATEN_MUSA_CSRCS 
+    aten/musa/*.cpp
+    )
 
 FILE(GLOB PORTING_CPP_CSRCS
     aten/ops/musa/*.cpp
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Activation.cpp)
 
 FILE(GLOB MU_SRCS
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/musa/cub-RadixSortKeys.mu
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UniqueCub.mu
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Unique.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleLinear1d.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleBicubic2d.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Repeat.mu
@@ -84,6 +89,7 @@ FILE(GLOB MU_SRCS
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/Activation.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Randperm.mu
     aten/quantized/musa/*.mu
+    aten/ops/torchvision/*.mu
     aten/ops/musa/*.mu
     core/*.mu
 )
@@ -100,7 +106,7 @@ if(NOT ENABLE_COMPILE_FP64)
 endif()
 
 # TODO(@caizhi): Use FindOpenMP.cmake to replace absolute paths
-musa_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/aten/ops/musa /usr/lib/llvm-11/include/openmp/)
+musa_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/aten/ops/musa aten/ops/torchvision /usr/lib/llvm-11/include/openmp/)
 musa_add_library(${MUSA_KERNELS_LIB} SHARED ${MU_SRCS} ${PORTING_CPP_CSRCS} ${ATEN_MUSA_CSRCS})
 
 set(CUBLAS_LIB $ENV{MUSA_HOME}/lib/libmublas.so)
