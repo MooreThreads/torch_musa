@@ -120,6 +120,14 @@ def test_musa_get_device_name():
     device_name_no_argument = torch.musa.get_device_name()
     assert current_device_name == device_name_no_argument
 
+@testing.skip_if_musa_unavailable
+def test_is_musa():
+    """Testing the behaviour tensor.is_musa"""
+    tensor_musa = torch.rand(2,3,device='musa')
+    tensor_cpu = torch.rand(2,3)
+    assert tensor_cpu.is_musa == False
+    assert tensor_musa.is_musa == True
+
 
 @testing.skip_if_musa_unavailable
 def test_musa_get_device_capability():
