@@ -7,13 +7,14 @@
 - Python == 3.8 或者 Python == 3.9。
 - 摩尔线程MUSA软件包，推荐版本如下：
 
-  * 驱动musa_2023.05.22-Ubuntu_amd64.deb，或者更新版本
-  * MUSAToolkits Release1.3.0, 或者更新版本
-  * MUDNN 20230525, 或者更新版本
+  * MUSA驱动rc1.4.1
+  * MUSAToolkits Release1.4.1
+  * MUDNN rc1.4.1 
   * muAlg_dev-0.1.1-Linux.deb
   * muRAND_dev1.0.0.tar.gz
   * muSPARSE_dev0.1.0.tar.gz
   * muThrust_dev-0.1.1-Linux.deb
+  * Docker Container Toolkits(https://mcconline.mthreads.com/software)
 
 
 
@@ -36,6 +37,9 @@ torch_musa是在PyTorch v2.0.0基础上以插件的方式来支持摩尔线程�
 
   docker run -it --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev:latest /bin/bash
 
+.. attention::
+   | 使用docker时，请务必提前安装mt-container-toolkit(https://mcconline.mthreads.com/software/1?id=1)，并且在启动docker container时添加选项“--env MTHREADS_VISIBLE_DEVICES=all”，否则在docker container内部无法使用torch_musa。
+
 编译步骤
 ---------
 
@@ -56,12 +60,12 @@ torch_musa是在PyTorch v2.0.0基础上以插件的方式来支持摩尔线程�
 
   cd torch_musa
   bash scripts/update_daily_mudnn.sh # update daily mudnn lib if needed
-  bash build.sh   # build original PyTorch and Torch_MUSA from scratch
+  bash build.sh   # build original PyTorch and torch_musa from scratch
   
   # Some important parameters are as follows:
   bash build.sh --torch  # build original PyTorch only
-  bash build.sh --musa   # build Torch_MUSA only
-  bash build.sh --fp64   # compile fp64 in kernels using mcc in Torch_MUSA
+  bash build.sh --musa   # build torch_musa only
+  bash build.sh --fp64   # compile fp64 in kernels using mcc in torch_musa
   bash build.sh --debug  # build in debug mode
   bash build.sh --asan   # build in asan mode
   bash build.sh --clean  # clean everything built
