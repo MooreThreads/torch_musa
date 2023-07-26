@@ -52,7 +52,7 @@ pip install torch_musa_xxxxxx-cp39-cp39-linux_x86_64.whl
 - [MUDNN](https://new-developer.mthreads.com/sdk/download/musa?equipment=&os=&driverVersion=&version=)
 - Other Libs (including muThrust, muSparse, muAlg, muRand)
 - [PyTorch Source Code](https://github.com/pytorch/pytorch/tree/v2.0.0)
-- Docker Container Toolkits
+- [Docker Container Toolkits](https://mcconline.mthreads.com/software)
 
 **NOTE:** Since some of the dependent libraries are in beta and have not yet been officially released, we recommend using the [development docker](#docker-image-for-developer) provided below to compile **torch_musa**. If you really want to compile **torch_musa** in your own environment, then please contact us for additional dependencies.
 
@@ -111,6 +111,9 @@ python setup.py install
 ### Docker Image
 - [Development Docker Image Download Link](https://mcconline.mthreads.com/repo/musa-pytorch-dev-public?repoName=musa-pytorch-dev-public&repoNamespace=mcconline&displayName=MUSA%20Pytorch%20Dev%20Public)
 - [Release Docker Image Download Link](https://mcconline.mthreads.com/repo/musa-pytorch-release-public?repoName=musa-pytorch-release-public&repoNamespace=mcconline&displayName=MUSA%20Pytorch%20Release%20Public)
+
+**NOTE:** If you want to use **torch_musa** in docker container, please install [mt-container-toolkit](https://mcconline.mthreads.com/software/1?id=1) first and use '--env MTHREADS_VISIBLE_DEVICES=all' when starting a container.
+
 #### Docker Image for Developer
 
 ```bash

@@ -17,6 +17,15 @@ Q：如果在更新过torch_musa最新代码后，编译报错？
 如果还报错，可能是因为需要更新MUSA软件栈中某个底层软件包。
 
 
+Docker容器
+-----------
+
+Q：如果在docker container内部使用torch_musa时，报错 ``ImportError: libsrv_um_MUSA.so: cannot open shared object file: No such file or directory`` ？
+
+#. 请确保成功安装mt-container-toolkit(https://mcconline.mthreads.com/software/1?id=1);
+#. 在启动docker container时请添加 ``--env MTHREADS_VISIBLE_DEVICES=all`` 。
+
+
 适配算子
 ----------
 Q：如果在CUDA-Porting适配新算子时，编译可以通过，在 ``import torch;import torch_musa`` 时报错找不到符号?
