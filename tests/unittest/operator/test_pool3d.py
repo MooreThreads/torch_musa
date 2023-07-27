@@ -21,7 +21,7 @@ ceil_mode = [False, True]
 @pytest.mark.parametrize("dilation", dilation)
 @pytest.mark.parametrize("return_indice", return_indice)
 @pytest.mark.parametrize("ceil_mode", ceil_mode)
-def test_maxpool3d(
+def test_pool3d(
     input_data,
     kernel_size,
     stride,
@@ -40,3 +40,9 @@ def test_maxpool3d(
     }
     test = testing.OpTest(func=torch.nn.MaxPool3d, input_args=input_params)
     test.check_result({"input": input_data["input"]}, train=True)
+
+    del input_params["dilation"]
+    del input_params["return_indices"]
+    del input_params["ceil_mode"]
+    test = testing.OpTest(func=torch.nn.AvgPool3d, input_args=input_params)
+    test.check_result({"input": input_data["input"]}, train=False)

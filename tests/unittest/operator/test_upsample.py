@@ -61,3 +61,21 @@ def test_upsample_linear(input_data, dtype, scale_factor, align_corners):
                    scale_factor=scale_factor,
                    align_corners=align_corners)
     function(input_data, dtype, linear)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data",
+[
+    {"input": torch.randn([2, 1, 1, 10, 10])},
+    {"input": torch.randn([10, 8, 6, 256, 300])},
+    {"input": torch.randn([4, 9, 3, 228, 304])},
+    {"input": torch.randn([4, 25, 16, 32, 32])}
+]
+)
+@pytest.mark.parametrize("dtype", all_support_types)
+@pytest.mark.parametrize("scale_factor", scale_factor)
+def test_upsample_nearest3d(input_data, dtype, scale_factor):
+    linear = partial(torch.nn.functional.interpolate,
+                   mode="nearest",
+                   scale_factor=scale_factor)
+    function(input_data, dtype, linear)

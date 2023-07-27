@@ -31,6 +31,8 @@ FILE(GLOB PORTING_CPP_CSRCS
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Activation.cpp)
 
 FILE(GLOB MU_SRCS
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/AveragePool3d.mu
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleNearest3d.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/musa/cub-RadixSortKeys.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UniqueCub.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Unique.mu
