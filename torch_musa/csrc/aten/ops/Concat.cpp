@@ -2,6 +2,11 @@
 #include <ATen/NativeFunctions.h>
 #include <torch/library.h>
 
+#include <ATen/NamedTensorUtils.h>
+#include <ATen/core/op_registration/adaption.h>
+#include <ATen/ops/cat.h>
+#include <ATen/ops/cat_meta.h>
+#include <ATen/ops/cat_native.h>
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
@@ -10,128 +15,160 @@
 namespace at {
 namespace musa {
 
-inline bool cat_should_skip_tensor(const Tensor& t) {
-  return t.numel() == 0 && t.dim() == 1;
-}
-
-// Check to see if the shape of tensors is compatible
-// for being concatenated along a given dimension.
-inline void check_cat_shape_except_dim(
-    const Tensor& first,
-    const Tensor& second,
-    int64_t dimension) {
-  int64_t first_dims = first.dim();
-  int64_t second_dims = second.dim();
-  TORCH_CHECK(
-      first_dims == second_dims,
-      "Tensors must have same number of dimensions: got ",
-      first_dims,
-      " and ",
-      second_dims);
-  for (const auto dim : c10::irange(first_dims)) {
-    if (dim == dimension) {
-      continue;
+struct structured_cat_out_cuda_functional final
+    : public at::native::structured_cat_out_cuda {
+  void set_output_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
     }
-    int64_t first_dim_size = first.sizes()[dim];
-    int64_t second_dim_size = second.sizes()[dim];
-    TORCH_CHECK(
-        first_dim_size == second_dim_size,
-        "Sizes of tensors must match except in dimension ",
-        dimension,
-        ". Expected size ",
-        first_dim_size,
-        " but got size ",
-        second_dim_size,
-        " in the list.");
-  }
-}
-
-void ConcatImpl(Tensor& output, int dim, TensorList tensors) {
-  int64_t num_inputs = tensors.size();
-  std::vector<muTensor> musa_tensors;
-  musa_tensors.reserve(num_inputs);
-  for (int i = 0; i < num_inputs; i++) {
-    // Skip the tensor[i] when cat_dim is empty,
-    if (tensors[i].size(dim) == 0) {
-      continue;
+    outputs_[output_idx] = create_out(sizes, strides, options);
+    if (!names.empty()) {
+      namedinference::propagate_names(*outputs_[output_idx], names);
     }
-    muTensor mt_tensor = CreateMUTensor(tensors[i]);
-    musa_tensors.emplace_back(mt_tensor);
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
   }
-  if (musa_tensors.size() == 0) {
-    return;
+  void set_output_raw_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+    outputs_[output_idx] = create_out(sizes, strides, options);
+    if (!names.empty()) {
+      namedinference::propagate_names(*outputs_[output_idx], names);
+    }
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
   }
-  auto om = CreateMUTensor(output);
-  muHandle& handle = GetMudnnHandle();
-  ::musa::dnn::Concat op;
-  CHECK_MUDNN_STATUS(op.SetAxis(dim), "SetAxis");
-  CHECK_MUDNN_STATUS(
-      op.Run(handle, om, musa_tensors.size(), musa_tensors.data()), "Run");
-}
+  const Tensor& maybe_get_output(int64_t output_idx) override {
+    return *outputs_[output_idx];
+  }
+  std::array<c10::ExclusivelyOwned<Tensor>, 1> outputs_;
+  c10::musa::OptionalMUSAGuard guard_;
+};
+
+struct structured_cat_out_cuda_out final
+    : public at::native::structured_cat_out_cuda {
+  structured_cat_out_cuda_out(Tensor& out0) : outputs_{std::ref(out0)} {}
+  void set_output_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+    const auto& out = outputs_[output_idx].get();
+    resize_out(out, sizes, strides, options);
+    auto maybe_proxy = maybe_create_proxy(out, sizes, strides, options);
+    if (C10_UNLIKELY(maybe_proxy.has_value())) {
+      proxy_outputs_[output_idx] =
+          c10::ExclusivelyOwned<Tensor>(std::move(maybe_proxy).value());
+    }
+    if (!names.empty()) {
+      namedinference::propagate_names(outputs_[output_idx], names);
+    }
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+  }
+  void set_output_raw_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+    const auto& out = outputs_[output_idx].get();
+    resize_out(out, sizes, strides, options);
+    if (!names.empty()) {
+      namedinference::propagate_names(outputs_[output_idx], names);
+    }
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+  }
+  const Tensor& maybe_get_output(int64_t output_idx) override {
+    return proxy_outputs_[output_idx].has_value() ? **proxy_outputs_[output_idx]
+                                                  : outputs_[output_idx].get();
+  }
+  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
+  std::array<c10::optional<c10::ExclusivelyOwned<Tensor>>, 1> proxy_outputs_;
+  c10::musa::OptionalMUSAGuard guard_;
+};
 
 Tensor Cat(const at::ITensorListRef& tensors, int64_t dim = 0) {
-  Tensor valid_tensor;
-  auto num_inputs = tensors.size();
-  for (const auto& t : tensors) {
-    if (!cat_should_skip_tensor(t)) {
-      valid_tensor = t;
-      break;
-    }
-  }
-
-  // cal output_sizes must use valid_id !!!
-  auto ndim = valid_tensor.dim();
-  dim = ((dim % ndim) + ndim) % ndim;
-  int64_t dim_out_size = 0;
-  std::vector<Tensor> valid_tensors;
-  valid_tensors.reserve(num_inputs);
-
-  for (const auto& t : tensors) {
-    if (!cat_should_skip_tensor(t)) {
-      check_cat_shape_except_dim(valid_tensor, t, dim);
-      dim_out_size = dim_out_size + t.size(dim);
-      Tensor one = Contiguous(t);
-      valid_tensors.emplace_back(one);
-    }
-  }
-
-  auto output_sizes = valid_tensor.sizes().vec();
-  output_sizes[dim] = dim_out_size;
-  Device device_opt = valid_tensor.device();
-  c10::musa::MUSAGuard device_guard(device_opt);
-
-  Tensor output = at::empty(
-      output_sizes,
-      valid_tensor.options().memory_format(at::MemoryFormat::Contiguous));
-  ConcatImpl(output, dim, valid_tensors);
-  return output;
+  c10::optional<Device> common_device = nullopt;
+  (void)common_device; // Suppress unused variable warning
+  c10::impl::check_and_update_common_device(
+      common_device, tensors, "wrapper_CUDA_cat", "tensors");
+  structured_cat_out_cuda_functional op;
+  auto precompute = op.meta(tensors, dim);
+  (void)precompute;
+  op.impl(
+      tensors,
+      precompute.dim,
+      precompute.valid,
+      precompute.all_contiguous,
+      precompute.all_same_dtype,
+      precompute.all_same_sizes_and_stride,
+      precompute.memory_format,
+      *op.outputs_[0]);
+  return std::move(op.outputs_[0]).take();
 }
 
-Tensor& CatOut(const at::ITensorListRef& tensors, int64_t dim, Tensor& output) {
-  auto num_inputs = tensors.size();
-  Tensor valid_tensor;
-  for (const auto& t : tensors) {
-    if (!cat_should_skip_tensor(t)) {
-      valid_tensor = t;
-      break;
-    }
-  }
-  auto ndim = valid_tensor.dim();
-  dim = ((dim % ndim) + ndim) % ndim;
-
-  std::vector<Tensor> valid_tensors;
-  valid_tensors.reserve(num_inputs);
-  c10::musa::MUSAGuard device_guard(valid_tensor.device());
-
-  for (const auto& t : tensors) {
-    if (!cat_should_skip_tensor(t)) {
-      check_cat_shape_except_dim(valid_tensor, t, dim);
-      Tensor one = Contiguous(t);
-      valid_tensors.emplace_back(one);
-    }
-  }
-  ConcatImpl(output, dim, valid_tensors);
-  return output;
+Tensor& CatOut(const at::ITensorListRef& tensors, int64_t dim, Tensor& out) {
+  c10::optional<Device> common_device = nullopt;
+  (void)common_device; // Suppress unused variable warning
+  c10::impl::check_and_update_common_device(
+      common_device, out, "wrapper_CUDA_cat_out_out", "out");
+  c10::impl::check_and_update_common_device(
+      common_device, tensors, "wrapper_CUDA_cat_out_out", "tensors");
+  structured_cat_out_cuda_out op(out);
+  auto precompute = op.meta(tensors, dim);
+  (void)precompute;
+  op.impl(
+      tensors,
+      precompute.dim,
+      precompute.valid,
+      precompute.all_contiguous,
+      precompute.all_same_dtype,
+      precompute.all_same_sizes_and_stride,
+      precompute.memory_format,
+      op.maybe_get_output(0));
+  if (op.proxy_outputs_[0].has_value())
+    op.outputs_[0].get().copy_(**op.proxy_outputs_[0]);
+  return out;
 }
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {

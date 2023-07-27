@@ -108,6 +108,7 @@ string(APPEND CMAKE_CXX_FLAGS " -Werror")
 string(APPEND CMAKE_CXX_FLAGS " -Wno-unused-parameter")
 string(APPEND CMAKE_CXX_FLAGS " -Wno-unused-variable")
 string(APPEND CMAKE_CXX_FLAGS " -Wno-unused-function")
+string(APPEND CMAKE_CXX_FLAGS " -Wno-unknown-pragmas")
 string(APPEND CMAKE_CXX_FLAGS " -Wno-sign-compare")
 string(APPEND CMAKE_CXX_FLAGS " -Wno-missing-field-initializers")
 string(APPEND CMAKE_CXX_FLAGS " -Wno-non-template-friend") # TODO(MT-AI): remove this CXX_FLAG after https://jira.mthreads.com/browse/SW-22268 resolved.

@@ -78,6 +78,7 @@ FILE(GLOB MU_SRCS
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TriangularOps.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/RangeFactories.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Indexing.mu
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Shape.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationGluKernel.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/MultinomialKernel.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/GridSampler.mu

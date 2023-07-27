@@ -40,3 +40,27 @@ def test_uncontiguous_viewd_mul_2():
     x[:,2:] *= torch.tensor((2,)).to("musa")
     y[:,2:] *= torch.tensor((2,))
     testing.DefaultComparator(x, y)
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_index_put():
+    x = torch.tensor([[1,2,3], [4,5,6]]).to("musa")
+    y = torch.tensor([[1,2,3], [4,5,6]])
+    x[...,[0,2]] = 16
+    y[...,[0,2]] = 16
+    testing.DefaultComparator(x, y)
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_index_tesor():
+    i_m = torch.tensor([0] * 12).to("musa")
+    a_m = torch.tensor([[1,2,3,4,5], [6,7,8,9,0]]).to("musa")
+    i = torch.tensor([0] * 12)
+    a = torch.tensor([[1,2,3,4,5], [6,7,8,9,0]])
+    testing.DefaultComparator(a_m[:,5:][i_m], a[:,5:][i])
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_empty_cat():
+    a = torch.empty((0))
+    b = torch.empty((0))
+    c = torch.cat((a,b), 0)
+    c_m = torch.cat((a.to("musa"),b.to("musa")), 0)
+    testing.DefaultComparator(c, c_m)

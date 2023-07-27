@@ -1,9 +1,13 @@
 #include <ATen/Config.h>
 #include <ATen/MemoryOverlap.h>
+#include <ATen/NamedTensorUtils.h>
 #include <ATen/NativeFunctions.h>
 #include <ATen/core/List.h>
 #include <ATen/core/op_registration/adaption.h>
+#include <ATen/native/IndexKernel.h>
 #include <ATen/native/IndexingUtils.h>
+#include <ATen/native/TensorAdvancedIndexing.h>
+#include <ATen/native/TensorAdvancedIndexingUtils.h>
 #include <ATen/ops/_reshape_alias_native.h>
 #include <ATen/ops/as_strided_native.h>
 #include <ATen/ops/unfold_native.h>
@@ -210,6 +214,138 @@ static std::string shapes_as_str(TensorList tensors) {
   return os.str();
 }
 
+namespace native {
+static bool all_strides_match(TensorList tensors) {
+  TORCH_CHECK(!tensors.empty());
+  auto strides = tensors[0].strides();
+  for (auto& tensor : tensors.slice(1)) {
+    if (!strides.equals(tensor.strides())) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// Add dimensions of size 1 to an index tensor so that it can be broadcast to
+// the result shape and iterated over element-wise like the result tensor and
+// the restrided src.
+static Tensor reshape_indexer(
+    const Tensor& index,
+    int64_t dims_before,
+    int64_t dims_after) {
+  auto orig_shape = index.sizes();
+  auto shape = DimVector();
+  shape.append(dims_before, 1);
+  shape.append(orig_shape.begin(), orig_shape.end());
+  shape.append(dims_after, 1);
+  return index.reshape(shape);
+}
+
+static Tensor restride_src(
+    const Tensor& src,
+    int64_t dims_before,
+    int64_t dims_indexed,
+    IntArrayRef replacement_shape) {
+  auto shape = DimVector(src.sizes());
+  auto strides = DimVector(src.strides());
+  int64_t end = dims_before + dims_indexed;
+  shape.erase(shape.begin() + dims_before, shape.begin() + end);
+  strides.erase(strides.begin() + dims_before, strides.begin() + end);
+  shape.insert(
+      shape.begin() + dims_before,
+      replacement_shape.begin(),
+      replacement_shape.end());
+  strides.insert(strides.begin() + dims_before, replacement_shape.size(), 0);
+  return src.as_strided(shape, strides);
+}
+
+AdvancedIndex::AdvancedIndex(const Tensor& src, TensorList indices_list) {
+  int64_t element_size_bytes = src.element_size();
+  int64_t dims_before = 0, dims_after = 0, dims_indexed = 0;
+  IntArrayRef replacement_shape;
+  for (const auto dim : c10::irange(indices_list.size())) {
+    if (!indices_list[dim].defined()) {
+      if (dims_indexed == 0) {
+        dims_before++;
+      } else {
+        dims_after++;
+      }
+    } else {
+      dims_indexed++;
+      replacement_shape = indices_list[dim].sizes();
+      indexed_sizes.push_back(src.size(dim));
+      indexed_strides.push_back(src.stride(dim) * element_size_bytes);
+    }
+  }
+
+  // Check if the indexed subspace contains a dim of size 0, but the replacement
+  // shape does not. This implies that an index is out of bounds, because there
+  // is no number that's a valid index for an empty tensor. Normally, out of
+  // bounds is handled in the indexing kernel, but this case fails earlier in
+  // restride_src with an unhelpful error message.
+  if (std::find(indexed_sizes.begin(), indexed_sizes.end(), 0) !=
+          indexed_sizes.end() &&
+      std::find(replacement_shape.begin(), replacement_shape.end(), 0) ==
+          replacement_shape.end()) {
+    TORCH_CHECK_INDEX(
+        false, "index is out of bounds for dimension with size 0");
+  }
+
+  this->dims_before = dims_before;
+  this->dims_after = dims_after;
+  this->src = restride_src(src, dims_before, dims_indexed, replacement_shape);
+
+  for (auto& index : indices_list) {
+    if (index.defined()) {
+      indices.push_back(reshape_indexer(index, dims_before, dims_after));
+    }
+  }
+
+  // For CUDA/MPS tensors, force all index tensors to have the same striding to
+  // simplify the CUDA/MPS kernel.
+  if (indices.size() >= 2 &&
+      (this->src.device().type() == kMUSA ||
+       this->src.device().type() == kMPS)) {
+    if (!all_strides_match(indices)) {
+      for (auto& indice : indices) {
+        indice = indice.contiguous();
+      }
+    }
+  }
+}
+
+static TensorIterator make_index_put_iterator(
+    const AdvancedIndex& info,
+    const Tensor& value) {
+  TORCH_CHECK(
+      is_expandable_to(value.sizes(), info.src.sizes()),
+      "shape mismatch: value tensor of shape ",
+      value.sizes(),
+      " cannot be broadcast to indexing result of shape ",
+      info.src.sizes());
+  TORCH_CHECK(
+      value.scalar_type() == info.src.scalar_type(),
+      "Index put requires the source and destination dtypes match, "
+      "got ",
+      info.src.scalar_type(),
+      " for the destination "
+      "and ",
+      value.scalar_type(),
+      " for the source.");
+  TensorIteratorConfig config;
+  // info.src is restrided by restride_src with 0 strided dimensions
+  config.set_check_mem_overlap(false);
+  config.resize_outputs(false);
+  config.check_all_same_dtype(false);
+  config.add_output(info.src);
+  config.add_input(value);
+  for (auto& index : info.indices) {
+    config.add_input(index);
+  }
+  return config.build();
+}
+} // namespace native
+
 static std::tuple<bool, Tensor> canDispatchToMaskedFill(
     const Tensor& self,
     const torch::List<c10::optional<at::Tensor>>& indices,
@@ -370,44 +506,6 @@ void IndexSelectCall(
   CHECK_MUDNN_STATUS(op.Run(h, out_mt, idx_mt, in), "Run");
 }
 
-void IndexCall(
-    const Tensor& self,
-    const std::vector<muTensor>& indexes,
-    Tensor& out) {
-  c10::musa::MUSAGuard device_guard(self.device());
-  auto in = CreateMUTensor(self);
-  auto out_mt = CreateMUTensor(out);
-  muHandle& h = GetMudnnHandle();
-  ::musa::dnn::Index op;
-  CHECK_MUDNN_STATUS(
-      op.Run(h, out_mt, indexes.size(), indexes.data(), in), "Index Run");
-}
-
-void IndexPutCall(
-    Tensor& out,
-    const std::vector<muTensor>& indexes,
-    const Tensor& value,
-    bool accumulate) {
-  auto out_mt = CreateMUTensor(out, false);
-  auto v = CreateMUTensor(value);
-  TORCH_CHECK(
-      value.scalar_type() != at::ScalarType::Long || accumulate == false,
-      "index_put_ not support int64 when accumulate = true.but they are type: ",
-      value.scalar_type(),
-      ", accumulate:",
-      accumulate);
-  c10::musa::MUSAGuard device_guard(value.device());
-  muHandle& h = GetMudnnHandle();
-  ::musa::dnn::IndexPut op;
-  CHECK_MUDNN_STATUS(op.SetAccumulate(accumulate), "Set Accumulate");
-  // TODO(kang.chen): muDNN not provides SetOffset interface now,comment out
-  // temporarily，
-  // when migrate all ops to see if there's any impact.
-  // CHECK_MUDNN_STATUS(op.SetOffset(out.storage_offset()), "Set Offset");
-  CHECK_MUDNN_STATUS(
-      op.Run(h, out_mt, indexes.size(), indexes.data(), v), "IndexPut Run");
-}
-
 Tensor& IndexSelectOutPorting(
     const Tensor& self,
     int64_t dim,
@@ -448,6 +546,7 @@ Tensor& IndexSelectOut(
       index.scalar_type() != at::ScalarType::Long) {
     return IndexSelectOutPorting(self, dim, index, out);
   }
+  c10::musa::MUSAGuard device_guard(self.device());
   Tensor contiguous_self = Contiguous(self);
   Tensor contiguous_other = Contiguous(index);
   TORCH_CHECK(
@@ -463,6 +562,7 @@ Tensor IndexSelect(const Tensor& self, int64_t dim, const Tensor& index) {
       index.scalar_type() != at::ScalarType::Long) {
     return IndexSelectPorting(self, dim, index);
   }
+  c10::musa::MUSAGuard device_guard(self.device());
   Tensor contiguous_self = Contiguous(self);
   Tensor contiguous_index = Contiguous(index);
   auto out_shape = std::vector<int64_t>(contiguous_self.sizes().vec());
@@ -481,72 +581,80 @@ Tensor IndexSelect(const Tensor& self, int64_t dim, const Tensor& index) {
   return out;
 }
 
+struct structured_index_out_functional final
+    : public at::native::structured_index_out {
+  void set_output_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+    outputs_[output_idx] = create_out(sizes, strides, options);
+    if (!names.empty()) {
+      namedinference::propagate_names(*outputs_[output_idx], names);
+    }
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_index_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+  void set_output_raw_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+    outputs_[output_idx] = create_out(sizes, strides, options);
+    if (!names.empty()) {
+      namedinference::propagate_names(*outputs_[output_idx], names);
+    }
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_index_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+  const Tensor& maybe_get_output(int64_t output_idx) override {
+    return *outputs_[output_idx];
+  }
+  std::array<c10::ExclusivelyOwned<Tensor>, 1> outputs_;
+  c10::musa::OptionalMUSAGuard guard_;
+};
+
 Tensor IndexTensor(
     const Tensor& self,
-    const c10::List<c10::optional<at::Tensor>>& orig) {
-  TORCH_CHECK_INDEX(
-      orig.size() <= (size_t)self.dim(),
-      "too many indices for tensor of dimension ",
-      self.dim(),
-      " (got ",
-      orig.size(),
-      ")");
-  bool is_mask = false;
-  if (self.numel() == 0) {
-    return self;
-  }
-  auto indices = make_indices(self, orig, is_mask);
-
-  std::vector<muTensor> tensors;
-  std::vector<int> dims;
-  bool is_one_element = false;
-  Tensor out;
-
-  for (size_t i = 0; i < indices.size(); i++) {
-    muTensor indice;
-    if (indices[i].numel() > 0) {
-      // TODO(songtao.liu): where the index is a mask with only one true
-      // element, mudnn doesn't work. I cannot figure where is the bug and use
-      // select here instead.
-      if ((indices[i].numel() == 1 || is_one_element) && is_mask) {
-        if (!is_one_element) {
-          out = self.clone();
-          is_one_element = true;
-        }
-        TORCH_CHECK(
-            indices[i].numel() == 1,
-            "deprecated implementation for only one element indexing");
-        out = out.select(0, indices[i].item().toLong());
-      } else {
-        dims.push_back(i);
-        indices[i] = Contiguous(indices[i]);
-        indice = CreateMUTensor(indices[i]);
-      }
-    } else {
-      indice = muTensor();
-    }
-    tensors.emplace_back(indice);
+    const c10::List<c10::optional<at::Tensor>>& indices) {
+  // musa only supports contiguous indices in some case, which cuda doesn't need
+  c10::musa::MUSAGuard device_guard(self.device());
+  c10::List<c10::optional<at::Tensor>> indices_;
+  for (c10::optional<at::Tensor> indice : indices) {
+    Tensor indice_tmp = indice.value_or(Tensor());
+    Tensor indice_ = indice_tmp.contiguous();
+    indices_.push_back(c10::optional<Tensor>(indice_));
   }
 
-  if (is_one_element) {
-    return tensors.empty() ? out : out.unsqueeze(0);
-  }
-
-  auto out_shape = compute_shapes(self, indices);
-  if (!(dims.size())) {
-    // when dim.size() == 0, out_shape = in_shape expected out_shape[dim] = 0
-    return at::empty(
-        out_shape, self.options().memory_format(at::MemoryFormat::Contiguous));
-  }
-  if (dims.size() == 1 && indices[dims[0]].dim() == 1) {
-    return at::index_select(self, dims[0], indices[dims[0]]);
-  }
-  out = at::empty(
-      out_shape, self.options().memory_format(at::MemoryFormat::Contiguous));
-  Tensor contiguous_self = Contiguous(self);
-  Tensor contiguous_out = Contiguous(out);
-  IndexCall(contiguous_self, tensors, contiguous_out);
-  return contiguous_out;
+  // porting code
+  // No device check
+  structured_index_out_functional op;
+  auto precompute = op.meta(self, at::IOptTensorListRef(indices_));
+  (void)precompute;
+  op.impl(self, precompute.sizes, precompute.strides, *op.outputs_[0]);
+  return std::move(op.outputs_[0]).take();
 }
 
 Tensor& IndexPut(
@@ -555,40 +663,6 @@ Tensor& IndexPut(
     const Tensor& value,
     const bool accumulate,
     const bool unsafe) {
-  // Note: Tensors in "indices" are not on the same device, which is allowed.
-  // such as: self-cpu, indices0-cpu, indices1-musa, value-cpu
-  if (self.device() == DeviceType::CPU) {
-    torch::List<c10::optional<Tensor>> indices_cpu;
-    // Ensure indices are on the same device as self
-    for (const c10::optional<Tensor>& index : indices) {
-      auto index_cpu = c10::optional<Tensor>(index.value().to("cpu"));
-      indices_cpu.push_back(index_cpu);
-    }
-    at::_index_put_impl_(self, indices_cpu, value, accumulate, unsafe);
-    return self;
-  }
-  if (self.numel() == 0) {
-    return self;
-  }
-  c10::musa::MUSAGuard device_guard(self.device());
-
-  if (indices[0].has_value()) {
-    if (indices[0]->scalar_type() == ScalarType::Bool) {
-      auto contiguous_self = self.to("cpu");
-      torch::List<c10::optional<Tensor>> indices_;
-      for (const c10::optional<Tensor>& index : indices) {
-        auto contiguous_index = c10::optional<Tensor>(index.value().to("cpu"));
-        indices_.push_back(contiguous_index);
-      }
-      auto contiguous_value = value.to("cpu");
-      at::_index_put_impl_(
-          contiguous_self, indices_, contiguous_value, accumulate, unsafe);
-      self.copy_(contiguous_self.to(value.device()));
-      return self;
-    }
-  }
-
-  // borrowed from TensorAdvacedIndexing.cpp
   TORCH_CHECK_INDEX(
       indices.size() <= (size_t)self.dim(),
       "too many indices for tensor of dimension ",
@@ -608,31 +682,40 @@ Tensor& IndexPut(
       return self.masked_fill_(std::get<1>(masked_fill_dispatch), value.item());
     }
   }
-  at::assert_no_overlap(self, value);
-  Tensor contiguous_value = Contiguous(value);
+  auto value_tmp = value;
   if (value.device() != self.device() && value.numel() == 1 &&
       value.dim() == 0) {
-    contiguous_value = value.to(self.device());
+    value_tmp = value.to(self.device());
   }
-  std::vector<muTensor> tensors;
-  std::vector<Tensor> cgs_tensors(indices.size());
-  int idx = 0;
+  at::assert_no_overlap(self, value);
+  // NOLINTNEXTLINE(performance-implicit-conversion-in-loop)
   for (const c10::optional<Tensor>& index : indices) {
-    muTensor indice;
     if (index.has_value()) {
       at::assert_no_overlap(self, *index);
-      cgs_tensors[idx] = index->to(value.device());
-      auto contiguous_index = Contiguous(cgs_tensors[idx]);
-      indice = CreateMUTensor(contiguous_index);
-      tensors.emplace_back(indice);
-      idx++;
-    } else {
-      TORCH_CHECK(false, "Only support continue index tensors now in mtPytorch")
     }
   }
-  auto contiguosu_self = Contiguous(self);
-  IndexPutCall(contiguosu_self, tensors, contiguous_value, accumulate);
-  self.copy_(contiguosu_self);
+  if (self.device().type() == kMUSA &&
+      (accumulate || globalContext().deterministicAlgorithms())) {
+    TORCH_CHECK(
+        value_tmp.device() == self.device(),
+        "expected device ",
+        self.device(),
+        " but got device ",
+        value_tmp.device(),
+        " for value tensor");
+    ::at::native::index_put_with_sort_stub(
+        self.device().type(), self, indices, value_tmp, accumulate, unsafe);
+    return self;
+  }
+
+  auto info = at::native::make_info(self, indices);
+  auto iter = at::native::make_index_put_iterator(info, value_tmp);
+  ::at::native::index_put_stub(
+      iter.device_type(),
+      iter,
+      info.indexed_sizes,
+      info.indexed_strides,
+      accumulate);
   return self;
 }
 
