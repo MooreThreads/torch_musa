@@ -50,13 +50,6 @@ Tensor QAdd(
 
   CheckInputs(qa, qb);
 
-  auto output_shape = qa.sizes();
-  Tensor quantized_output = at::_empty_affine_quantized(
-      output_shape,
-      at::device(at::kPrivateUse1).dtype(qa.scalar_type()),
-      output_scale,
-      output_zero_point);
-
   // TODO(fan.mo): these dequantize would increase overhead
   at::Tensor fa = qa.dequantize();
   fa.add_(qb.dequantize());
@@ -65,7 +58,7 @@ Tensor QAdd(
     fa.relu_();
   }
 
-  quantized_output = at::musa::QuantizePerTensor(
+  Tensor quantized_output = at::musa::QuantizePerTensor(
       fa, output_scale, output_zero_point, qa.scalar_type());
   return quantized_output;
 }

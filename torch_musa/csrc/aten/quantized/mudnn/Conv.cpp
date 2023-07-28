@@ -9,8 +9,6 @@
 
 #include "torch_musa/csrc/aten/mudnn/Handle.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
-#include "torch_musa/csrc/aten/quantized/QTensor.h"
-#include "torch_musa/csrc/aten/quantized/Quantizer.h"
 #include "torch_musa/csrc/aten/quantized/mudnn/Conv.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
@@ -103,34 +101,17 @@ void PackedConvWeightMudnn<kSpatialDim>::apply_impl_helper(
       input.qscheme() == c10::kPerTensorAffine ||
           input.qscheme() == c10::kPerTensorSymmetric,
       "Conv2d only supports per-tensor quantized activation");
-  TORCH_CHECK(
-      maybe_padded_weight_.qscheme() == c10::kPerTensorAffine ||
-          maybe_padded_weight_.qscheme() == c10::kPerTensorSymmetric,
-      "Conv2d only supports per-tensor quantized weight");
 
   auto act_scale = input.q_scale();
   auto act_zero_point = input.q_zero_point();
   auto weight_scale = maybe_padded_weight_.q_scale();
   auto weight_zero_point = maybe_padded_weight_.q_zero_point();
 
-  if (maybe_padded_weight_.scalar_type() == c10::kQInt8) {
-    TORCH_WARN(
-        "Conv weight is QInt8, which is not supported by mudnn currently, convert to QUInt8 instead.");
-    TORCH_CHECK(
-        weight_zero_point < 128, "QInt8 weight zp should less then 128");
-    maybe_padded_weight_ =
-        maybe_padded_weight_.to(c10::kQUInt8); // unsafe, should check that
-    weight_zero_point += 128;
-    at::QuantizerPtr quantizer = at::MakePerTensorAffineQuantizer(
-        weight_scale, weight_zero_point, c10::kQUInt8);
-    at::GetQTensorImpl(maybe_padded_weight_)->set_quantizer_(quantizer);
-  }
-
   // permute to NHWC format
   at::Tensor input_ = input.permute({0, 2, 3, 1});
-  at::musa::muTensor in = at::musa::CreateMUTensor(input_, true);
-  at::musa::muTensor ke = at::musa::CreateMUTensor(maybe_padded_weight_, true);
-  at::musa::muTensor out = at::musa::CreateMUTensor(quantized_output, true);
+  at::musa::muTensor in = at::musa::CreateMUTensor(input_);
+  at::musa::muTensor ke = at::musa::CreateMUTensor(maybe_padded_weight_);
+  at::musa::muTensor out = at::musa::CreateMUTensor(quantized_output);
   // set quantization info (scale and zero_point) to muTensors
   // and set their format
   SetMudnnFormat(in);
@@ -165,8 +146,6 @@ void PackedConvWeightMudnn<kSpatialDim>::apply_impl_helper(
     act.SetMode(
         static_cast<::musa::dnn::Convolution::FusedActivationDesc::Mode>(0));
   }
-  act.SetCoef(1.5, 1.5, 1.5); // TODO(@fan.mo): this coef is used for activation
-                              // like prelu, elu, won't be used now
 
   ::musa::dnn::Convolution::Algorithm algorithm =
       static_cast<::musa::dnn::Convolution::Algorithm>(0);

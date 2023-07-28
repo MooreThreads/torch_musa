@@ -104,7 +104,7 @@ def test_qconv2d(input_data, dtype):
     qmodule.zero_point = out_zero_point
 
     qoutput = qmodule(qdata)
-    assert (qoutput.dequantize().cpu() - foutput).mean() < 5e-3
+    assert (qoutput.dequantize().cpu() - foutput).mean() < 1e-3
 
 
 linear_input_data = [

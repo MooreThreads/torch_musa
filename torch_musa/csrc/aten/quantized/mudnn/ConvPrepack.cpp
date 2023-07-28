@@ -1,8 +1,10 @@
 #include <ATen/ATen.h>
+#include <ATen/TensorUtils.h>
 #include <ATen/native/quantized/PackedParams.h>
 #include <ATen/native/quantized/cpu/QuantUtils.h>
 #include <torch/library.h>
 
+#include "torch_musa/csrc/aten/quantized/QTensor.h"
 #include "torch_musa/csrc/aten/quantized/mudnn/Conv.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
@@ -25,7 +27,8 @@ c10::intrusive_ptr<ConvPackedParamsBase<kSpatialDim>> PackedConvWeightMudnn<
       "Quantized mudnn conv2d is currently limited to groups = 1; received groups =",
       groups);
   TORCH_CHECK(
-      weight.qscheme() == c10::kPerTensorAffine,
+      weight.qscheme() == c10::kPerTensorAffine ||
+          weight.qscheme() == c10::kPerTensorSymmetric,
       "Unsupported qscheme: ",
       toString(weight.qscheme()));
   TORCH_CHECK(
@@ -60,6 +63,23 @@ c10::intrusive_ptr<ConvPackedParamsBase<kSpatialDim>> PackedConvWeightMudnn<
       "D convolution.");
   TORCH_CHECK(
       !transpose, "mudnn quantized conv prepack expects transpose = false")
+
+  // convert int8 weight to uint8, TODO(@fan.mo) will remove this type cast in
+  // QY2
+  if (weight.scalar_type() == c10::kQInt8) {
+    auto weight_scale = weight.q_scale();
+    auto weight_zero_point = weight.q_zero_point();
+    TORCH_WARN(
+        "Conv weight is QInt8, which is not supported by mudnn currently, convert to QUInt8 instead.");
+    TORCH_CHECK(
+        weight_zero_point < 128, "QInt8 weight zp should less then 128");
+
+    at::Tensor float_weight = weight.dequantize();
+    weight_zero_point += 128;
+    weight = at::musa::QuantizePerTensor(
+        float_weight, weight_scale, weight_zero_point, c10::kQUInt8);
+  }
+
   const int num_unpadded_output_channels = weight.size(0);
   const auto qtype = weight.qscheme();
   if (bias.has_value()) {
@@ -90,7 +110,9 @@ c10::intrusive_ptr<ConvPackedParamsBase<kSpatialDim>> PackedConvWeightMudnn<
           at::pad(bias.value(), {0, num_output_slices2pad}, "constant", 0);
     }
   }
-  weight = weight.permute({2, 3, 1, 0}).contiguous();
+  weight = weight.to(c10::MemoryFormat::ChannelsLast)
+               .permute({2, 3, 1, 0})
+               .contiguous();
 
   auto ret_ptr = c10::make_intrusive<PackedConvWeightMudnn<kSpatialDim>>(
       weight,
