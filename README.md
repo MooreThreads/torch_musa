@@ -123,11 +123,11 @@ docker run -it --privileged --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES
 
 | Docker Tag | Description |
 | ---- | --- |
-| [**latest/v0.1.15**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | musatoolkits rc1.4.0 (ddk musa_2.1.1)<br> mudnn rtm_2.1.1; mccl 20230627 <br> libomp-11-dev <br> muAlg _dev-0.1.1 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.1.1 |
+| [**latest/v0.1.16**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | build and install torchvision from source code [a6dea86] <br> other components are the same with v0.1.15 |
+| [**v0.1.15**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | musatoolkits rc1.4.0 (ddk musa_2.1.1)<br> mudnn rtm_2.1.1; mccl 20230627 <br> libomp-11-dev <br> muAlg _dev-0.1.1 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.1.1 |
 | [**v0.1.14**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | musatoolkits rc1.4.0-rc1 (ddk rc1.4.0-rc1)<br> mudnn rc1.4.0-rc1; mccl_rc1.1.0 <br> libomp-11-dev <br> muAlg _dev-0.1.1 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.1.1 |
 | [**v0.1.13**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | musatoolkits-20230605 (ddk_20230604 develop or newer)<br> mudnn 20230605; mccl_rc1.1.0 <br> libomp-11-dev <br> muAlg _dev-0.1.1 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.1.1 |
 | [**v0.1.12**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | musatoolkits-20230605 (ddk_20230604 develop or newer)<br> mudnn 20230605; mccl_rc1.1.0 <br> muAlg _dev-0.1.1 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.1.1 |
-| [**v0.1.11**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | musatoolkits-20230605 (ddk_20230604 develop or newer)<br> mudnn 20230605 <br> muAlg _dev-0.1.1 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.1.1 |
 
 </details>  
 

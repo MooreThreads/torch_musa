@@ -89,9 +89,17 @@ pipeline {
       }
       steps {
         container('main') {
+          sh 'git config --global --add safe.directory \"*\"'
           sh '/bin/bash --login scripts/update_daily_mudnn.sh'
+          // Add some description
+          sh 'echo "commit id: "$(git rev-parse HEAD) > /artifacts/README.txt'
+          sh 'echo "dependencies: " >> /artifacts/README.txt && \
+              DAILY_MUDNN_ABS_DIR=$(find $PWD -name daily_mudnn*) && \
+              echo "daily_mudnn:"$(find $DAILY_MUDNN_ABS_DIR -name "*.txt" | awk -F/ \'{print $NF}\' | awk -F_ \'{print $1}\') >> /artifacts/README.txt && \
+              cat .musa_dependencies >> /artifacts/README.txt'
+
           // Build wheel packages under python3.8, using the existing conda environment
-          sh '/bin/bash --login -c "/opt/conda/condabin/conda run -n py38 --no-capture-output USE_STATIC_MKL=1 /bin/bash scripts/build_wheel.sh"'
+          sh '/bin/bash --login -c "/opt/conda/condabin/conda run -n py38 --no-capture-output USE_STATIC_MKL=1 /bin/bash build.sh -c -w"'
           // Copy built wheel packages to shared directory "/artifacts"
           sh 'cp dist/*.whl /artifacts/ && cp ${PYTORCH_REPO_PATH}/dist/*.whl /artifacts/'
 
@@ -99,15 +107,9 @@ pipeline {
           sh '/bin/bash --login -c "/opt/conda/condabin/conda env create -f docker/common/conda-env-torch_musa-py39.yaml" && \
               /opt/conda/condabin/conda run -n py39 --no-capture-output pip install -r docker/common/requirements-py39.txt -i \
               https://pypi.tuna.tsinghua.edu.cn/simple'
-          sh '/bin/bash --login -c "/opt/conda/condabin/conda run -n py39 --no-capture-output USE_STATIC_MKL=1 /bin/bash scripts/build_wheel.sh"'
+          // The py38 build cache needs to be cleaned
+          sh '/bin/bash --login -c "/opt/conda/condabin/conda run -n py39 --no-capture-output USE_STATIC_MKL=1 /bin/bash build.sh -c -w"'
           sh 'cp dist/*.whl /artifacts/ && cp ${PYTORCH_REPO_PATH}/dist/*.whl /artifacts/'
-          
-          // Add some description
-          sh 'echo "commit id: "$(git rev-parse HEAD) > /artifacts/README.txt'
-          sh 'echo "dependencies: " >> /artifacts/README.txt && \
-              DAILY_MUDNN_REL_DIR=$(find ./ -name "daily_mudnn*" | awk -F/ \'NR==1{print $NF}\') && \
-              echo "daily_mudnn:"$(find ${DAILY_MUDNN_REL_DIR} -name "*.txt" | awk -F/ \'{print $NF}\' | awk -F_ \'{print $1}\') >> /artifacts/README.txt && \
-              cat .musa_dependencies >> /artifacts/README.txt'
         }
         container('release') {
           // Publish new release to oss (minio)
