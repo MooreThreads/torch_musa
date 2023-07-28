@@ -291,7 +291,7 @@ inline void mtgpu_impl_copy(
       // Note: when D2H copy, tensor_src and tensor_self have different
       // dtypes, type conversions are performed on the CPU for CPU->GPU copies.
       Tensor cpu_tensor = at::empty_like(tensor_self, tensor_src.dtype());
-      cpu_tensor = at::musa::Contiguous(cpu_tensor);
+      cpu_tensor = cpu_tensor.contiguous();
       cpu_tensor.copy_(tensor_src);
       tensor_self.copy_(cpu_tensor);
     } else {

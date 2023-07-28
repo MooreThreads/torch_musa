@@ -98,9 +98,9 @@ Tensor& ScatterAddOut(
   if (dim < 0) {
     dim += self.dim();
   }
-  Tensor self_ = Contiguous(self);
-  Tensor src_ = Contiguous(src);
-  Tensor contiguous_index = Contiguous(index);
+  Tensor self_ = self.contiguous();
+  Tensor src_ = src.contiguous();
+  Tensor contiguous_index = index.contiguous();
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Scatter op;
   CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Scatter::Mode::ADD), "SetMode");
@@ -150,9 +150,9 @@ Tensor& ScatterAddU(
   if (dim < 0) {
     dim += self.dim();
   }
-  Tensor self_ = Contiguous(self);
-  Tensor src_ = Contiguous(src);
-  Tensor contiguous_index = Contiguous(index);
+  Tensor self_ = self.contiguous();
+  Tensor src_ = src.contiguous();
+  Tensor contiguous_index = index.contiguous();
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Scatter op;
   CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Scatter::Mode::ADD), "SetMode");

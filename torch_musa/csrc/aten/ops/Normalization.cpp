@@ -259,7 +259,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
   auto M_N = at::native::_check_layer_norm_inputs(
       input, normalized_shape, weight, bias);
   auto M = M_N.first;
-  Tensor input_contiguous = Contiguous(input);
+  Tensor input_contiguous = input.contiguous();
   auto output = at::empty_like(input_contiguous);
 
   muHandle& h = GetMudnnHandle();
@@ -270,7 +270,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
   muTensor mt_beta;
   Tensor gamma;
   if (weight.defined()) {
-    gamma = Contiguous(weight);
+    gamma = weight.contiguous();
     mt_gamma = CreateMUTensor(gamma);
     TORCH_CHECK(
         weight.device().type() == kMUSA,
@@ -284,7 +284,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
         weight.scalar_type());
   }
   if (bias.defined()) {
-    auto beta = Contiguous(bias);
+    auto beta = bias.contiguous();
     mt_beta = CreateMUTensor(beta);
     TORCH_CHECK(
         bias.device().type() == kMUSA,
@@ -390,9 +390,9 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
   auto M_N = at::native::_check_layer_norm_inputs(
       input, normalized_shape, weight, bias);
   auto M = M_N.first;
-  auto X = Contiguous(input);
-  auto gamma = weight.defined() ? Contiguous(weight) : weight;
-  auto beta = bias.defined() ? Contiguous(bias) : bias;
+  auto X = input.contiguous();
+  auto gamma = weight.defined() ? weight.contiguous() : weight;
+  auto beta = bias.defined() ? bias.contiguous() : bias;
 
   Tensor dX;
   Tensor dgamma;
@@ -445,9 +445,9 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
     mt_dbeta = CreateMUTensor(dbeta);
   }
   if (M > 0) {
-    auto contiguous_grad_out = Contiguous(grad_out);
-    auto contiguous_mean = Contiguous(mean);
-    auto contiguous_rstd = Contiguous(rstd);
+    auto contiguous_grad_out = grad_out.contiguous();
+    auto contiguous_mean = mean.contiguous();
+    auto contiguous_rstd = rstd.contiguous();
     auto mt_grad_out = CreateMUTensor(contiguous_grad_out);
     auto mt_X = CreateMUTensor(X);
     auto mt_mean = CreateMUTensor(contiguous_mean);
@@ -541,13 +541,14 @@ std::tuple<Tensor, Tensor, Tensor> NativeGroupNorm(
   c10::musa::MUSAGuard device_guard(X.device());
   c10::MaybeOwned<Tensor> gamma_maybe_owned =
       at::borrow_from_optional_tensor(gamma_opt);
-  const Tensor& contiguous_gamma = Contiguous(*gamma_maybe_owned);
+  const Tensor& contiguous_gamma = (*gamma_maybe_owned).contiguous();
+  auto beta_tmp = (*beta_opt).contiguous();
   const Tensor& contiguous_beta =
-      Contiguous(c10::value_or_else(beta_opt, [] { return Tensor(); }));
+      c10::value_or_else(beta_opt, [] { return Tensor(); }).contiguous();
 
   check_group_norm_inputs(X, contiguous_gamma, contiguous_beta, C, group);
 
-  Tensor contiguous_X = Contiguous(X);
+  Tensor contiguous_X = X.contiguous();
   Tensor contiguous_Y = at::native::empty_like(contiguous_X);
   Tensor contiguous_mean = at::empty({N, group}, contiguous_X.options());
   Tensor contiguous_rstd = at::empty({N, group}, contiguous_X.options());

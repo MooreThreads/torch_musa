@@ -41,7 +41,7 @@ Tensor& UpSampleNearest2dOut(
   if (self.sizes() == result.sizes()) {
     result.copy_(self);
   } else if (self.numel() > 0) { // else result should be empty to return
-    Tensor contiguous_input = Contiguous(self);
+    Tensor contiguous_input = self.contiguous();
 
     muHandle& h = GetMudnnHandle();
     auto in = CreateMUTensor(contiguous_input);
@@ -102,7 +102,7 @@ Tensor& UpSampleNearest2dBwdOut(
   const float h_scale = 1. / height_scale;
   const float w_scale = 1. / width_scale;
 
-  Tensor contiguous_input = Contiguous(grad_output);
+  Tensor contiguous_input = grad_output.contiguous();
 
   muHandle& h = GetMudnnHandle();
   auto in = CreateMUTensor(contiguous_input);
@@ -328,7 +328,7 @@ Tensor& UpSampleBilinear2dOut(
   if (self.sizes() == result.sizes()) {
     result.copy_(self);
   } else if (self.numel() > 0) { // else result should be empty to return
-    Tensor contiguous_input = Contiguous(self);
+    Tensor contiguous_input = self.contiguous();
 
     muHandle& h = GetMudnnHandle();
     auto in = CreateMUTensor(contiguous_input);
@@ -405,7 +405,7 @@ Tensor& UpSampleBilinear2dBwdOut(
   const float h_scale = 1. / height_scale;
   const float w_scale = 1. / width_scale;
 
-  Tensor contiguous_input = Contiguous(grad_output);
+  Tensor contiguous_input = grad_output.contiguous();
 
   muHandle& h = GetMudnnHandle();
   auto in = CreateMUTensor(contiguous_input);

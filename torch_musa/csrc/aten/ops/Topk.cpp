@@ -57,7 +57,7 @@ std::tuple<Tensor&, Tensor&> TopkOut(
   values.resize_(topk_size);
   indices.resize_(topk_size);
 
-  auto self_contiguous = Contiguous(self);
+  auto self_contiguous = self.contiguous();
   auto mt_input = CreateMUTensor(self_contiguous);
   muTensor mt_values;
   muTensor mt_indices;

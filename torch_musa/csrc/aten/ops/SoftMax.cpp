@@ -44,7 +44,7 @@ inline void CheckDimParams(const Tensor& input, const int64_t dim) {
 }
 
 Tensor OpInternal(const Tensor& input, const int64_t dim, SOFTMAX_MODE mode) {
-  auto contiguous_input = Contiguous(input);
+  auto contiguous_input = input.contiguous();
   CheckDimParams(contiguous_input, dim);
   auto output = at::empty_like(contiguous_input);
   SoftMaxCall(output, dim, contiguous_input, mode);
@@ -56,7 +56,7 @@ void OpInternalOut(
     const Tensor& input,
     const int64_t dim,
     SOFTMAX_MODE mode) {
-  auto contiguous_input = Contiguous(input);
+  auto contiguous_input = input.contiguous();
   CheckDimParams(contiguous_input, dim);
   TORCH_CHECK(output.is_contiguous(), "check contiguous failed for unary op!");
   SoftMaxCall(output, dim, contiguous_input, mode);
@@ -181,8 +181,8 @@ Tensor& SoftmaxBwdInternal(
   grad_input.resize_(grad_output.sizes());
 
   c10::musa::MUSAGuard device_guard(grad_output.device());
-  auto contiguous_grad_output = Contiguous(grad_output);
-  auto contiguous_output = Contiguous(output);
+  auto contiguous_grad_output = grad_output.contiguous();
+  auto contiguous_output = output.contiguous();
 
   const TensorArg grad_arg{grad_output, "grad", 0};
   const TensorArg output_arg{output, "output", 1};

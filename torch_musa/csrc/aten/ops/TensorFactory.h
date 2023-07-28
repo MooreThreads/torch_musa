@@ -51,19 +51,9 @@ Tensor empty_strided_musa(
     c10::optional<Device> device_opt,
     c10::optional<bool> pin_memory_opt);
 
-bool IsContiguous(
-    const Tensor& self,
-    MemoryFormat memory_format = MemoryFormat::Contiguous);
-// Contiguous create new tensor when self tensor's storage_offset > 0 and
-// not contiguous
-
-Tensor Contiguous(
+Tensor ContiguousRef(
     const Tensor& self,
     Tensor& result,
-    MemoryFormat memory_format = MemoryFormat::Contiguous);
-
-Tensor Contiguous(
-    const Tensor& self,
     MemoryFormat memory_format = MemoryFormat::Contiguous);
 
 } // namespace musa

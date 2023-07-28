@@ -34,14 +34,14 @@ Tensor Glu(const Tensor& self, int64_t dim) {
   dim = CheckGluDim(self, dim);
   auto output_size = self.sizes().vec();
   output_size[dim] = output_size[dim] / 2;
-  Tensor self_ = Contiguous(self);
+  Tensor self_ = self.contiguous();
   auto out = at::empty(output_size, self_.options());
   GluCall(out, self_, static_cast<int>(dim));
   return out;
 }
 
 Tensor& GluOut(const Tensor& self, int64_t dim, Tensor& out) {
-  Tensor self_ = Contiguous(self);
+  Tensor self_ = self.contiguous();
   dim = CheckGluDim(self_, dim);
   GluCall(out, self_, static_cast<int>(dim));
   return out;

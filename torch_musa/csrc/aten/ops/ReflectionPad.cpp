@@ -125,7 +125,8 @@ Tensor& ReflectPad1DOut(const Tensor& self, IntArrayRef pad, Tensor& output) {
   Pad op;
   ConfigPad(op, pad, Pad_MODE::REFLECT);
   TORCH_CHECK(output.is_contiguous(), "check contiguous failed");
-  PadCall(output, Contiguous(self), op);
+  auto contiguous_self = self.contiguous();
+  PadCall(output, contiguous_self, op);
   return output;
 }
 
@@ -133,7 +134,8 @@ Tensor ReflectPad1D(const Tensor& self, IntArrayRef pad) {
   MUSA_TENSOR_TYPE_CHECK(self);
   Pad op;
   ConfigPad(op, pad, Pad_MODE::REFLECT);
-  return PadInternal(Contiguous(self), pad, op);
+  auto contiguous_self = self.contiguous();
+  return PadInternal(contiguous_self, pad, op);
 }
 
 namespace {

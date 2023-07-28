@@ -233,8 +233,8 @@ void BinaryCall(
   other_tmp =
       alpha_scalar.equal(1) ? other_tmp : at::mul(other_tmp, alpha_scalar);
   if (NeedContiguous(self_tmp, other_tmp)) {
-    self_tmp = Contiguous(self_tmp);
-    other_tmp = Contiguous(other_tmp);
+    self_tmp = self_tmp.contiguous();
+    other_tmp = other_tmp.contiguous();
   }
   muTensor musa_self = CreateMUTensor(self_tmp);
   muTensor musa_other = CreateMUTensor(other_tmp);
@@ -476,8 +476,8 @@ at::Tensor& GELUBwd_out(
     const at::Tensor& self,
     c10::string_view approximate,
     at::Tensor& grad_input) {
-  auto contiguous_grad_output = Contiguous(grad_output);
-  auto contiguous_self = Contiguous(self);
+  auto contiguous_grad_output = grad_output.contiguous();
+  auto contiguous_self = self.contiguous();
 
   grad_input.resize_(self.sizes());
   auto approximate_type = at::native::get_gelutype_enum(approximate);
@@ -507,8 +507,8 @@ Tensor& ThresholdBwd_out(
     const Scalar& threshold,
     Tensor& grad_input) {
   c10::musa::MUSAGuard device_gaurd(self.device());
-  auto contiguous_grad_output = Contiguous(grad_output);
-  auto contiguous_self = Contiguous(self);
+  auto contiguous_grad_output = grad_output.contiguous();
+  auto contiguous_self = self.contiguous();
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Binary binary_op;

@@ -65,8 +65,8 @@ std::tuple<at::Tensor&, at::Tensor&> NllLossOut(
       input.scalar_type());
   c10::musa::MUSAGuard device_guard(input.device());
 
-  auto contiguous_input = Contiguous(input);
-  auto contiguous_target = Contiguous(target);
+  auto contiguous_input = input.contiguous();
+  auto contiguous_target = target.contiguous();
   TORCH_CHECK(
       input.dim() > 0 && input.dim() <= 2, "input tensor should be 1D or 2D");
   TORCH_CHECK(
@@ -122,7 +122,7 @@ std::tuple<at::Tensor&, at::Tensor&> NllLossOut(
   auto mt_total_weight = CreateMUTensor(total_weight);
   muTensor mt_weight;
   if (has_weight) {
-    auto contiguous_weight = Contiguous(weight.value());
+    auto contiguous_weight = weight.value().contiguous();
     mt_weight = CreateMUTensor(contiguous_weight);
   }
   CHECK_MUDNN_STATUS(
@@ -200,10 +200,10 @@ at::Tensor& NllLossBwdGradInput(
       "but now it is ",
       input.scalar_type());
   c10::musa::MUSAGuard guard_device(input.device());
-  auto contiguous_grad_output = Contiguous(grad_output);
-  auto contiguous_input = Contiguous(input);
-  auto contiguous_target = Contiguous(target);
-  auto contiguous_total_weight = Contiguous(total_weight);
+  auto contiguous_grad_output = grad_output.contiguous();
+  auto contiguous_input = input.contiguous();
+  auto contiguous_target = target.contiguous();
+  auto contiguous_total_weight = total_weight.contiguous();
 
   TORCH_CHECK(
       input.dim() > 0 && input.dim() <= 2, "input tensor should be 1D or 2D");
@@ -263,7 +263,7 @@ at::Tensor& NllLossBwdGradInput(
   auto mt_grad_input = CreateMUTensor(grad_input);
   muTensor mt_weight;
   if (has_weight) {
-    auto contiguous_weight = Contiguous(weight.value());
+    auto contiguous_weight = weight.value().contiguous();
     mt_weight = CreateMUTensor(contiguous_weight);
   }
   CHECK_MUDNN_STATUS(
@@ -393,9 +393,9 @@ Tensor KLDiv(
     output = at::empty_like(input, at::MemoryFormat::Contiguous);
   }
   kldiv.SetLogTarget(log_target);
-  Tensor contiguous_input = Contiguous(input);
+  Tensor contiguous_input = input.contiguous();
   auto mt_input = CreateMUTensor(contiguous_input);
-  Tensor contiguous_target = Contiguous(target);
+  Tensor contiguous_target = target.contiguous();
   auto mt_target = CreateMUTensor(contiguous_target);
   auto mt_output = CreateMUTensor(output);
   kldiv.Run(h, mt_output, mt_input, mt_target, InternalMemAlloc);
@@ -422,11 +422,11 @@ Tensor KLDivBwd(
   }
   kldiv.SetLogTarget(log_target);
 
-  Tensor grad_ = Contiguous(grad);
+  Tensor grad_ = grad.contiguous();
   auto mt_grad = CreateMUTensor(grad_);
-  Tensor contiguous_input = Contiguous(input);
+  Tensor contiguous_input = input.contiguous();
   auto mt_input = CreateMUTensor(contiguous_input);
-  Tensor contiguous_target = Contiguous(target);
+  Tensor contiguous_target = target.contiguous();
   auto mt_target = CreateMUTensor(contiguous_target);
   auto mt_gradin = CreateMUTensor(grad_input);
 

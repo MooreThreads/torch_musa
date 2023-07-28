@@ -346,27 +346,12 @@ Tensor& set_tensor_(Tensor& result, const Tensor& source) {
   return result;
 }
 
-bool IsContiguous(const Tensor& self, MemoryFormat memory_format) {
-  if (self.is_contiguous(memory_format) && !self.storage_offset() &&
-      (self.dim() == 0 || (self.dim() != 0 && self.stride(-1) == 1))) {
-    return true;
-  }
-  return false;
-}
-
-Tensor Contiguous(const Tensor& self, Tensor& ref, MemoryFormat memory_format) {
-  ref = Contiguous(self, memory_format);
+Tensor ContiguousRef(
+    const Tensor& self,
+    Tensor& ref,
+    MemoryFormat memory_format) {
+  ref = self.contiguous(memory_format);
   return ref;
-}
-
-Tensor Contiguous(const Tensor& self, MemoryFormat memory_format) {
-  if (IsContiguous(self, memory_format)) {
-    return self;
-  }
-  TORCH_CHECK(
-      memory_format != MemoryFormat::Preserve,
-      "preserve memory format is unsupported by the contiguous operator");
-  return self.clone(memory_format);
 }
 
 Tensor& EyeMOut(int64_t n, int64_t m, Tensor& result) {

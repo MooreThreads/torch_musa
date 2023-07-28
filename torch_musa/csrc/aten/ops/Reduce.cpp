@@ -150,7 +150,7 @@ void ReduceCall(
     const c10::optional<at::Scalar>& p = c10::nullopt,
     const bool is_norm = false) {
   c10::musa::MUSAGuard device_guard(self.device());
-  auto input = Contiguous(self);
+  auto input = self.contiguous();
   auto out = CreateMUTensor(output);
   auto in = CreateMUTensor(input);
 
@@ -404,7 +404,7 @@ Tensor Cumsum(
     const Tensor& self,
     int64_t dim,
     c10::optional<ScalarType> dtype_opt) {
-  Tensor self_ = Contiguous(self);
+  Tensor self_ = self.contiguous();
   auto out = at::empty_like(self);
   return CumsumCall(self_, dim, dtype_opt, out);
 }
@@ -413,7 +413,7 @@ Tensor& Cumsum_(
     Tensor& self,
     int64_t dim,
     c10::optional<ScalarType> dtype_opt) {
-  Tensor self_ = Contiguous(self);
+  Tensor self_ = self.contiguous();
   auto out = self;
   CumsumCall(self_, dim, dtype_opt, out);
   return self;
@@ -424,7 +424,7 @@ Tensor& Cumsum_Out(
     int64_t dim,
     c10::optional<ScalarType> dtype_opt,
     Tensor& out) {
-  Tensor self_ = Contiguous(self);
+  Tensor self_ = self.contiguous();
   CumsumCall(self_, dim, dtype_opt, out);
   return out;
 }
@@ -490,7 +490,7 @@ void ReduceIndicesCall(
 
   c10::musa::MUSAGuard device(self.device());
 
-  auto input = Contiguous(self);
+  auto input = self.contiguous();
 
   auto out = CreateMUTensor(output);
   auto ids = CreateMUTensor(indices);
@@ -668,7 +668,7 @@ Tensor& ArgmaxOut(
     c10::optional<int64_t> dim,
     bool keepdim,
     Tensor& result) {
-  Tensor contiguous_self = Contiguous(self);
+  Tensor contiguous_self = self.contiguous();
   if (!dim.has_value()) {
     contiguous_self = contiguous_self.flatten();
   }

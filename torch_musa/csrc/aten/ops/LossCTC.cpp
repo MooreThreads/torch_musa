@@ -78,11 +78,11 @@ namespace musa {
   Tensor neg_log_likelihood = at::empty(
       {batch_size}, log_probs.options(), at::MemoryFormat::Contiguous);
 
-  const Tensor& contiguous_log_probs = Contiguous(log_probs);
-  const Tensor& contiguous_targets = Contiguous(targets);
+  const Tensor& contiguous_log_probs = log_probs.contiguous();
+  const Tensor& contiguous_targets = targets.contiguous();
 
-  Tensor contiguous_input_lengths = Contiguous(input_lengths_t);
-  Tensor contiguous_target_lengths = Contiguous(target_lengths_t);
+  Tensor contiguous_input_lengths = input_lengths_t.contiguous();
+  Tensor contiguous_target_lengths = target_lengths_t.contiguous();
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::CTCLoss op;
@@ -171,13 +171,13 @@ Tensor CtcLossBackwardImpl(
   Tensor result =
       at::full_like(log_probs, neginf, LEGACY_CONTIGUOUS_MEMORY_FORMAT);
 
-  const Tensor& contiguous_grad = Contiguous(grad);
-  const Tensor& contiguous_log_probs = Contiguous(log_probs);
-  const Tensor& contiguous_targets = Contiguous(targets);
-  const Tensor& contiguous_loss = Contiguous(neg_log_likelihood);
-  const Tensor& contiguous_alpha = Contiguous(log_alpha);
-  Tensor contiguous_target_lengths_t = Contiguous(target_lengths_t);
-  Tensor contiguous_input_lengths_t = Contiguous(input_lengths_t);
+  const Tensor& contiguous_grad = grad.contiguous();
+  const Tensor& contiguous_log_probs = log_probs.contiguous();
+  const Tensor& contiguous_targets = targets.contiguous();
+  const Tensor& contiguous_loss = neg_log_likelihood.contiguous();
+  const Tensor& contiguous_alpha = log_alpha.contiguous();
+  Tensor contiguous_target_lengths_t = target_lengths_t.contiguous();
+  Tensor contiguous_input_lengths_t = input_lengths_t.contiguous();
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::CTCLoss op;

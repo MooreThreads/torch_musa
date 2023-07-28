@@ -48,8 +48,8 @@ Tensor Embedding(
   auto output = at::empty(
       size, weight.options().memory_format(at::MemoryFormat::Contiguous));
 
-  Tensor weight_ = Contiguous(weight);
-  Tensor indices_ = Contiguous(indices);
+  Tensor weight_ = weight.contiguous();
+  Tensor indices_ = indices.contiguous();
 
   EmbeddingRun(output, weight_, indices_, padding_idx);
   return output;
@@ -89,8 +89,8 @@ Tensor EmbeddingDenseBwd(
   Tensor grad_input = at::empty(
       {num_weights, grad_output.size(-1)},
       grad_output.options().memory_format(at::MemoryFormat::Contiguous));
-  auto contiguous_grad_output = Contiguous(grad_output);
-  auto contiguous_indices = Contiguous(indices);
+  auto contiguous_grad_output = grad_output.contiguous();
+  auto contiguous_indices = indices.contiguous();
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Embedding embedding;

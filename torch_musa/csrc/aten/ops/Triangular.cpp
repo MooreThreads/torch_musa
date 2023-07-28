@@ -167,7 +167,7 @@ void TriCallOut(
     TrilPorting(input, diag, out);
   }
 #if 0
-  Tensor contiguous_input = Contiguous(input);
+  Tensor contiguous_input = input.contiguous();
   muHandle& h = GetMudnnHandle();
   auto mudnn_out = CreateMUTensor(out);
   auto mudnn_input = CreateMUTensor(contiguous_input);

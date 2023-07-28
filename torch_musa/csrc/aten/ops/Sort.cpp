@@ -50,7 +50,7 @@ std::tuple<Tensor, Tensor> Sort(
     int64_t dim,
     bool descending) {
   int64_t dim_ = maybe_wrap_dim(dim, self.dim(), true);
-  auto self_ = Contiguous(self);
+  auto self_ = self.contiguous();
   Tensor values = at::empty(self_.sizes(), self_.options()).copy_(self_);
   Tensor indices = at::empty(self_.sizes(), self_.options().dtype(kLong));
 
@@ -70,7 +70,7 @@ std::tuple<Tensor&, Tensor&> SortOut(
     Tensor& values,
     Tensor& indices) {
   int64_t dim_ = maybe_wrap_dim(dim, self.dim(), true);
-  auto self_ = Contiguous(self);
+  auto self_ = self.contiguous();
   values.resize_(self_.sizes()).copy_(self_);
   indices.resize_(self_.sizes());
 
@@ -89,7 +89,7 @@ std::tuple<Tensor, Tensor> SortStable(
     int64_t dim,
     bool descending) {
   int64_t dim_ = maybe_wrap_dim(dim, self.dim(), true);
-  auto self_ = Contiguous(self);
+  auto self_ = self.contiguous();
   Tensor values = at::empty(self_.sizes(), self_.options()).copy_(self_);
   Tensor indices = at::empty(self_.sizes(), self_.options().dtype(kLong));
 
@@ -114,7 +114,7 @@ std::tuple<Tensor&, Tensor&> SortStableOut(
     Tensor& values,
     Tensor& indices) {
   int64_t dim_ = maybe_wrap_dim(dim, self.dim(), true);
-  auto self_ = Contiguous(self);
+  auto self_ = self.contiguous();
   values.resize_(self_.sizes()).copy_(self_);
   indices.resize_(self_.sizes());
 

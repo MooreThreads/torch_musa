@@ -168,8 +168,8 @@ Tensor Conv2d(
     int64_t groups) {
   Conv2dShapeCheck(input, weight, padding, groups);
 
-  auto contiguous_input = Contiguous(input);
-  auto contiguous_weight = Contiguous(weight);
+  auto contiguous_input = input.contiguous();
+  auto contiguous_weight = weight.contiguous();
 
   auto input_shape = contiguous_input.sizes();
   auto weight_shape = contiguous_weight.sizes();
@@ -242,8 +242,8 @@ Tensor Conv2dTranspose(
       groups);
   auto grad_input_t = at::empty(input_size, grad_output.options());
 
-  Tensor weight_cont = Contiguous(weight);
-  Tensor grad_output_cont = Contiguous(grad_output);
+  Tensor weight_cont = weight.contiguous();
+  Tensor grad_output_cont = grad_output.contiguous();
 
   auto gout = CreateMUTensor(grad_output_cont);
   auto gin = CreateMUTensor(grad_input_t);
@@ -276,8 +276,8 @@ Tensor Conv3d(
     int64_t groups) {
   Conv3dShapeCheck(input, weight, padding, groups);
 
-  auto contiguous_input = Contiguous(input);
-  auto contiguous_weight = Contiguous(weight);
+  auto contiguous_input = input.contiguous();
+  auto contiguous_weight = weight.contiguous();
 
   auto input_shape = contiguous_input.sizes();
   auto weight_shape = contiguous_weight.sizes();
@@ -413,8 +413,8 @@ Tensor Conv3dDataBwd(
     IntArrayRef dilation) {
   auto grad_input_t = at::empty(input.sizes(), grad_output.options());
 
-  Tensor weight_cont = Contiguous(weight);
-  Tensor grad_output_cont = Contiguous(grad_output);
+  Tensor weight_cont = weight.contiguous();
+  Tensor grad_output_cont = grad_output.contiguous();
 
   auto gout = CreateMUTensor(grad_output_cont);
   auto gin = CreateMUTensor(grad_input_t);
@@ -443,8 +443,8 @@ Tensor Conv2dDataBwd(
     IntArrayRef dilation) {
   auto grad_input_t = at::empty(input.sizes(), grad_output.options());
 
-  Tensor weight_cont = Contiguous(weight);
-  Tensor grad_output_cont = Contiguous(grad_output);
+  Tensor weight_cont = weight.contiguous();
+  Tensor grad_output_cont = grad_output.contiguous();
 
   auto gout = CreateMUTensor(grad_output_cont);
   auto gin = CreateMUTensor(grad_input_t);
@@ -472,9 +472,9 @@ Tensor Conv1dDataBwd(
     IntArrayRef output_padding,
     int64_t groups,
     IntArrayRef dilation) {
-  Tensor contiguous_input = Contiguous(input).unsqueeze(-1);
-  Tensor contiguous_weight = Contiguous(weight).unsqueeze(-1);
-  Tensor contiguous_grad_output = Contiguous(grad_output).unsqueeze(-1);
+  Tensor contiguous_input = input.contiguous().unsqueeze(-1);
+  Tensor contiguous_weight = weight.contiguous().unsqueeze(-1);
+  Tensor contiguous_grad_output = grad_output.contiguous().unsqueeze(-1);
 
   std::vector<int64_t> vstride({stride[0], 1});
   std::vector<int64_t> vpadding({padding[0], 0});
@@ -502,8 +502,8 @@ Tensor Conv3dWeightBwd(
   auto weight_size = weight.sizes();
   auto grad_weight_t = at::empty(weight_size, grad_output.options());
 
-  Tensor input_cont = Contiguous(input);
-  Tensor grad_output_cont = Contiguous(grad_output);
+  Tensor input_cont = input.contiguous();
+  Tensor grad_output_cont = grad_output.contiguous();
 
   auto gout = CreateMUTensor(grad_output_cont);
   auto gw = CreateMUTensor(grad_weight_t);
@@ -534,8 +534,8 @@ Tensor Conv2dWeightBwd(
   auto weight_size = weight.sizes();
   auto grad_weight_t = at::empty(weight_size, grad_output.options());
 
-  Tensor input_cont = Contiguous(input);
-  Tensor grad_output_cont = Contiguous(grad_output);
+  Tensor input_cont = input.contiguous();
+  Tensor grad_output_cont = grad_output.contiguous();
 
   auto gout = CreateMUTensor(grad_output_cont);
   auto gw = CreateMUTensor(grad_weight_t);
@@ -566,9 +566,9 @@ Tensor Conv1dWeightBwd(
       weight.dim() == 3 && input.dim() == 3,
       "Expected 3D for weight tensor and input.");
 
-  Tensor contiguous_input = Contiguous(input).unsqueeze(-1);
-  Tensor contiguous_weight = Contiguous(weight).unsqueeze(-1);
-  Tensor contiguous_grad_output = Contiguous(grad_output).unsqueeze(-1);
+  Tensor contiguous_input = input.contiguous().unsqueeze(-1);
+  Tensor contiguous_weight = weight.contiguous().unsqueeze(-1);
+  Tensor contiguous_grad_output = grad_output.contiguous().unsqueeze(-1);
 
   std::vector<int64_t> vstride({stride[0], 1});
   std::vector<int64_t> vpadding({padding[0], 0});

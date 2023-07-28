@@ -547,8 +547,8 @@ Tensor& IndexSelectOut(
     return IndexSelectOutPorting(self, dim, index, out);
   }
   c10::musa::MUSAGuard device_guard(self.device());
-  Tensor contiguous_self = Contiguous(self);
-  Tensor contiguous_other = Contiguous(index);
+  Tensor contiguous_self = self.contiguous();
+  Tensor contiguous_other = index.contiguous();
   TORCH_CHECK(
       dim < contiguous_self.dim() && dim >= -contiguous_self.dim(),
       "dim is invalid.");
@@ -563,8 +563,8 @@ Tensor IndexSelect(const Tensor& self, int64_t dim, const Tensor& index) {
     return IndexSelectPorting(self, dim, index);
   }
   c10::musa::MUSAGuard device_guard(self.device());
-  Tensor contiguous_self = Contiguous(self);
-  Tensor contiguous_index = Contiguous(index);
+  Tensor contiguous_self = self.contiguous();
+  Tensor contiguous_index = index.contiguous();
   auto out_shape = std::vector<int64_t>(contiguous_self.sizes().vec());
   int64_t index_len = contiguous_index.numel();
   TORCH_CHECK(

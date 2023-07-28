@@ -62,8 +62,8 @@ at::Tensor& MaskedSelectOut(
 
   c10::musa::MUSAGuard device_guard(mask.device());
 
-  auto contiguous_self = Contiguous(*self_temp);
-  auto contiguous_mask = Contiguous(*mask_temp);
+  auto contiguous_self = (*self_temp).contiguous();
+  auto contiguous_mask = (*mask_temp).contiguous();
 
   c10::MaybeOwned<Tensor> expand_mask, expand_input;
   std::tie(expand_mask, expand_input) =
@@ -125,7 +125,7 @@ at::Tensor& NonzeroOut(const at::Tensor& self, at::Tensor& out) {
   }
 
   c10::musa::MUSAGuard device_guard(self.device());
-  auto contiguous_self = Contiguous(self);
+  auto contiguous_self = self.contiguous();
 
   TORCH_CHECK(
       contiguous_self.numel() < std::numeric_limits<int>::max(),
@@ -195,8 +195,8 @@ at::Tensor& MaskedScatter(
       " and ",
       source.scalar_type());
   c10::musa::MUSAGuard device_guard(mask.device());
-  auto contiguous_self = Contiguous(self);
-  auto contiguous_mask = Contiguous(mask);
+  auto contiguous_self = self.contiguous();
+  auto contiguous_mask = mask.contiguous();
   c10::MaybeOwned<Tensor> b_mask =
       expand_inplace(contiguous_self, contiguous_mask, "masked_scatter_");
   if (b_mask->dtype() == ScalarType::Byte) {

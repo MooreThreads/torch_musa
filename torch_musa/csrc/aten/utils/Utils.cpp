@@ -42,7 +42,7 @@ void ConfigFormat(Tensor& t, muTensor& mt, bool auto_contiguous) {
       mt.SetFormat(muTensor::Format::NDHWC);
     }
   } else if (auto_contiguous) {
-    t = Contiguous(t);
+    t = t.contiguous();
     mt.SetAddr(t.data_ptr());
     if (t.dim() == 4) {
       mt.SetFormat(muTensor::Format::NCHW);

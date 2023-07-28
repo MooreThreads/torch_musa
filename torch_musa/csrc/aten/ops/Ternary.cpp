@@ -213,9 +213,9 @@ void TernaryCall(
     }
   }
 
-  auto contiguous_input1 = at::musa::Contiguous(input1);
-  auto contiguous_input2 = at::musa::Contiguous(input2);
-  auto contiguous_self = at::musa::Contiguous(self);
+  auto contiguous_input1 = input1.contiguous();
+  auto contiguous_input2 = input2.contiguous();
+  auto contiguous_self = self.contiguous();
   auto input1_mt = CreateMUTensor(contiguous_input1);
   auto input2_mt = CreateMUTensor(contiguous_input2);
   auto self_mt = CreateMUTensor(contiguous_self);
@@ -246,10 +246,10 @@ void TernarycommonDtypeCall(
   auto common_dtype = at::result_type(input1, input2);
   at::native::alpha_check(common_dtype, alpha_scalar);
   // WARN: output created by torch, which could be non-contiguous.
-  output = at::musa::Contiguous(output);
-  Tensor contiguous_self = Contiguous(self.to(common_dtype));
-  Tensor contiguous_input1 = Contiguous(input1.to(common_dtype));
-  Tensor contiguous_input2 = Contiguous(input2.to(common_dtype));
+  output = output.contiguous();
+  Tensor contiguous_self = self.to(common_dtype).contiguous();
+  Tensor contiguous_input1 = input1.to(common_dtype).contiguous();
+  Tensor contiguous_input2 = input2.to(common_dtype).contiguous();
   TernaryCall(
       output,
       contiguous_self,
@@ -270,10 +270,10 @@ Tensor& TernaryOut(
       self.scalar_type() == other.scalar_type(),
       "input scalar type must the same");
 
-  Tensor contiguous_out = Contiguous(output);
-  Tensor contiguous_cond = Contiguous(cond);
-  Tensor contiguous_self = Contiguous(self);
-  Tensor contiguous_other = Contiguous(other);
+  Tensor contiguous_out = output.contiguous();
+  Tensor contiguous_cond = cond.contiguous();
+  Tensor contiguous_self = self.contiguous();
+  Tensor contiguous_other = other.contiguous();
 
   // 1. deal with other and self tensor shape isn't same
   if (other.dim() == 0) {

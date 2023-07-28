@@ -41,8 +41,8 @@ at::Tensor& GatherOut(
       "but now it is ",
       input.scalar_type());
   c10::musa::MUSAGuard device_guard(input.device());
-  auto contiguous_input = Contiguous(input);
-  auto contiguous_index = Contiguous(index);
+  auto contiguous_input = input.contiguous();
+  auto contiguous_index = index.contiguous();
 
   out.resize_(contiguous_index.sizes());
 

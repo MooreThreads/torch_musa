@@ -72,7 +72,7 @@ PyTorch社区推荐使用PrivateUse1作为第三方扩展后端的key，所以�
         self.scalar_type());
        ....
     // 2).convert it to contiguous tensor
-    Tensor tensor_cong = Contiguous(tensor1);
+    Tensor tensor_cong = tensor1.contiguous();
        ...
     // 3). create muTensor，which binds the two variables by address.
     muTensor musa_tensor1 = CreateMUTensor(tensor_cong);

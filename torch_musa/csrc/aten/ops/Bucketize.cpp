@@ -37,10 +37,10 @@ Tensor Bucketize(
   ::musa::dnn::Bucketize mBucketize;
   CHECK_MUDNN_STATUS(mBucketize.SetRight(right), "SetRight");
 
-  auto self_contiguous = Contiguous(self);
+  auto self_contiguous = self.contiguous();
   auto self_input = CreateMUTensor(self_contiguous);
 
-  auto boundaries_contiguous = Contiguous(boundaries);
+  auto boundaries_contiguous = boundaries.contiguous();
   auto boundaries_input = CreateMUTensor(boundaries_contiguous);
   // note: Unsupported out data type: FLOAT in muDNN, hence out_int32 is dummy
   Tensor out = at::empty_like(
