@@ -17,6 +17,7 @@ namespace musa {
 bool IsTranspose(const Tensor& mat) {
   if (mat.stride(-2) == 1 && mat.stride(-1) == mat.size(-2) &&
       mat.transpose(-2, -1).is_contiguous()) {
+    // Transpose of a tensor is a view operation.
     return true;
   } else {
     return false;
