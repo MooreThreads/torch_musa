@@ -25,8 +25,8 @@ void UnaryCall(
     std::function<void(::musa::dnn::Unary&)> func) {
   c10::musa::MUSAGuard device_guard(i.device());
   muHandle& h = GetMudnnHandle();
-  auto in = CreateMUTensor(i, true);
-  auto out = CreateMUTensor(o, true);
+  auto in = CreateMUTensor(i);
+  auto out = CreateMUTensor(o);
 
   ::musa::dnn::Unary op;
   func(op);
@@ -82,7 +82,7 @@ void Unary_(
     const std::string& op_name,
     Tensor& input,
     std::function<void(::musa::dnn::Unary&)> func) {
-  input = Unary(op_name, input, func);
+  UnaryCall(op_name, input, input, func);
 }
 
 void UnaryOut(
@@ -90,7 +90,8 @@ void UnaryOut(
     Tensor& output,
     const Tensor& input,
     std::function<void(::musa::dnn::Unary&)> func) {
-  output = Unary(op_name, input, func);
+  output.resize_as_(input);
+  UnaryCall(op_name, output, input, func);
 }
 
 #define DEFINE_ACTIVATE_OP(op_name, mode)                          \
@@ -144,17 +145,12 @@ DEFINE_ACTIVATE_OP(Floor, ::musa::dnn::Unary::Mode::FLOOR)
   }                                                              \
                                                                  \
   Tensor op_name(const Tensor& self, const Scalar& value) {      \
-    Tensor output = at::empty_like(                              \
-        self,                                                    \
-        self.options()                                           \
-            .dtype(ScalarType::Bool)                             \
-            .memory_format(at::MemoryFormat::Contiguous));       \
-    op_name##Out(self, value, output);                           \
-    return output;                                               \
+    return UnaryBool(__func__, self, value, mode);               \
   }                                                              \
                                                                  \
   Tensor& op_name##_(Tensor& self, const Scalar& value) {        \
-    self = UnaryBool(__func__, self, value, mode);               \
+    auto out_tmp = UnaryBool(__func__, self, value, mode);       \
+    self.copy_(out_tmp);                                         \
     return self;                                                 \
   }
 
@@ -277,7 +273,13 @@ Tensor& MudnnClamp_(
     Tensor& self,
     const c10::optional<Scalar>& min,
     const c10::optional<Scalar>& max) {
-  self = Clamp(self, min, max);
+  const bool has_min = (min.has_value());
+  const bool has_max = (max.has_value());
+  TORCH_CHECK(
+      has_min || has_max,
+      "torch.clamp: either min, max or both scalars must be defined")
+  MUSA_TENSOR_TYPE_CHECK(self);
+  ClampCall(__func__, self, self, has_min, min, has_max, max);
   return self;
 }
 
@@ -378,7 +380,14 @@ Tensor& ClampOut(
     const c10::optional<Scalar>& min,
     const c10::optional<Scalar>& max,
     Tensor& out) {
-  out = Clamp(self, min, max);
+  const bool has_min = (min.has_value());
+  const bool has_max = (max.has_value());
+  TORCH_CHECK(
+      has_min || has_max,
+      "torch.clamp: either min, max or both scalars must be defined")
+  MUSA_TENSOR_TYPE_CHECK(self);
+  out.resize_as_(self);
+  ClampCall(__func__, out, self, has_min, min, has_max, max);
   return out;
 }
 
@@ -662,12 +671,17 @@ Tensor Neg(const Tensor& self) {
 }
 
 Tensor& Neg_(Tensor& self) {
-  self = Neg(self);
+  MUSA_TENSOR_TYPE_CHECK(self);
+  Scalar val = -1;
+  NegCall(__func__, self, self, val);
   return self;
 }
 
 Tensor& NegOut(const Tensor& self, Tensor& out) {
-  out = Neg(self);
+  MUSA_TENSOR_TYPE_CHECK(self);
+  Scalar val = -1;
+  out.resize_as_(self);
+  NegCall(__func__, out, self, val);
   return out;
 }
 
@@ -676,12 +690,16 @@ Tensor LogicalNot(const Tensor& self) {
 }
 
 Tensor& LogicalNot_(Tensor& self) {
-  self = LogicalNot(self);
+  auto out_tmp = LogicalNot(self);
+  self.resize_as_(out_tmp);
+  self.copy_(out_tmp);
   return self;
 }
 
 Tensor& LogicalNotOut(const Tensor& self, Tensor& out) {
-  out = LogicalNot(self).to(out.scalar_type());
+  auto out_tmp = LogicalNot(self).to(out.scalar_type());
+  out.resize_as_(out_tmp);
+  out.copy_(out_tmp);
   return out;
 }
 Tensor PowScalar(const Tensor& self, const Scalar& value) {

@@ -120,7 +120,7 @@ class Comparator:
         if not isinstance(self._comparator, (Callable, types.LambdaType)):
             raise TypeError("self._comparator must be a callable type")
 
-        return self._comparator(result, golden)
+        return self._comparator(result, golden) and result.shape == golden.shape
 
 
 class DefaultComparator(Comparator):

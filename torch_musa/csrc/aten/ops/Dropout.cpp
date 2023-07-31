@@ -57,7 +57,8 @@ namespace musa {
       at::MemoryFormat::Contiguous);
   Tensor output = at::empty_like(input, at::MemoryFormat::Contiguous);
   muHandle& h = GetMudnnHandle();
-  auto musa_input = CreateMUTensor(input);
+  auto contiguous_input = input.contiguous();
+  auto musa_input = CreateMUTensor(contiguous_input);
   auto musa_output = CreateMUTensor(output);
   auto musa_mask = CreateMUTensor(mask);
 
@@ -95,8 +96,10 @@ Tensor NativeDropoutBackward(
   c10::musa::MUSAGuard device_guard(grad_output.device());
   Tensor output = at::empty_like(grad_output, at::MemoryFormat::Contiguous);
   muHandle& h = GetMudnnHandle();
-  auto musa_grad_output = CreateMUTensor(grad_output);
-  auto musa_mask = CreateMUTensor(mask);
+  auto contiguous_grad_output = grad_output.contiguous();
+  auto contiguous_mask = mask.contiguous();
+  auto musa_grad_output = CreateMUTensor(contiguous_grad_output);
+  auto musa_mask = CreateMUTensor(contiguous_mask);
   auto musa_output = CreateMUTensor(output);
 
   ::musa::dnn::Dropout dropout;
