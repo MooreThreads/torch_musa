@@ -379,3 +379,55 @@ def test_max_pool2d(input_data, input_args):
         comparators=testing.QuantizedComparator(),
     )
     test.check_result()
+
+input_concat = [
+    {
+        "tensors": (torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.1, 127, torch.quint8),
+                  torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.141, 127, torch.quint8)),
+        "dim": 0,
+    },
+    {
+        "tensors": (torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.1, 0, torch.qint8),
+                  torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.1, 0, torch.qint8)),
+        "dim": 1,
+    },
+    {
+        "tensors": (torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.1, 1, torch.qint32),
+                  torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.1, 1, torch.qint32)),
+        "dim": 2,
+    },
+]
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_concat)
+def test_concat(input_data):
+    function(input_data, torch.cat)
+
+input_upsample = [
+    {
+        "input": torch.quantize_per_tensor(
+            torch.randn(1, 3, 4, 4), 0.01, 127, torch.quint8
+        )
+    },
+    {"input": torch.quantize_per_tensor(torch.randn(1, 3, 8, 8), 0.01, 0, torch.qint8)},
+    {
+        "input": torch.quantize_per_tensor(
+            torch.randn(1, 3, 2, 2), 0.01, 1, torch.qint32
+        )
+    },
+]
+input_scale_factor = [
+    {"scale_factor": (2, 2)},
+    {"scale_factor": (4, 4)},
+    {"scale_factor": (8, 8)},
+]
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_upsample)
+@pytest.mark.parametrize("input_args", input_scale_factor)
+def test_upsample_nearest2d(input_data, input_args):
+    test = testing.OpTest(
+        func=torch.nn.UpsamplingNearest2d,
+        input_args=input_args,
+        comparators=testing.QuantizedComparator(),
+    )
+    test.check_result(input_data)

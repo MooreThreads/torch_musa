@@ -2,7 +2,9 @@
 #include <ATen/WrapDimUtils.h>
 #include <ATen/core/DimVector.h>
 #include <ATen/core/Tensor.h>
+#include <ATen/core/op_registration/adaption.h>
 #include <ATen/native/Resize.h>
+#include <ATen/native/TensorShape.h>
 #include <ATen/quantized/QTensorImpl.h>
 #include <c10/util/irange.h>
 
@@ -10,7 +12,7 @@
 #include <ATen/NativeFunctions.h>
 
 #include <torch/library.h>
-
+#include "torch_musa/csrc/aten/quantized/QTensor.h"
 #include "torch_musa/csrc/aten/quantized/Quantizer.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 
@@ -156,11 +158,57 @@ Tensor UnsqueezeQuantized(const Tensor& self, int64_t dim) {
       self, geometry.sizes, geometry.strides, std::move(quantizer));
 }
 
+Tensor CatQuantized(const ITensorListRef& qxs, int64_t dim) {
+  c10::optional<Device> common_device = nullopt;
+  (void)common_device; // Suppress unused variable warning
+  c10::impl::check_and_update_common_device(
+      common_device, qxs, "CatQuantized", "qxs");
+  auto materialized = qxs.materialize();
+  at::native::check_cat_no_zero_dim(materialized);
+  dim = legacy_cat_wrap_dim(dim, materialized);
+
+  auto input = materialized[0].get();
+  const auto x_dtype = input.scalar_type();
+  const auto x_qscheme = input.qscheme();
+
+  std::vector<Tensor> xs;
+  xs.reserve(qxs.size());
+  for (const at::Tensor& qx : qxs) {
+    TORCH_CHECK(x_dtype == qx.scalar_type(), "All dtypes must be the same.");
+    TORCH_CHECK(
+        x_qscheme == qx.qscheme(), "Quantization schemes must be the same.");
+    xs.push_back(qx.dequantize());
+  }
+  Tensor output;
+  const Tensor output_fp32 = at::cat(xs, dim);
+  // return QuantizePerTensor(y, x_scale, x_zero_point, x_dtype);
+  if (x_qscheme == kPerTensorAffine) {
+    output = at::musa::QuantizePerTensor(
+        output_fp32, input.q_scale(), input.q_zero_point(), x_dtype);
+  } else if (
+      x_qscheme == kPerChannelAffine ||
+      x_qscheme == kPerChannelAffineFloatQParams) {
+    output = at::musa::QuantizePerChannel(
+        output_fp32,
+        input.q_per_channel_scales(),
+        input.q_per_channel_zero_points(),
+        input.q_per_channel_axis(),
+        x_dtype);
+  } else {
+    TORCH_CHECK(
+        false,
+        "QScheme not supported by upsample_nearest2d:",
+        toString(x_qscheme));
+  }
+  return output;
+}
+
 TORCH_LIBRARY_IMPL(aten, QuantizedPrivateUse1, m) {
   m.impl("squeeze", TORCH_FN(SqueezeQuantized));
   m.impl("squeeze.dim", TORCH_FN(SqueezeQuantizedDim));
   m.impl("squeeze.dims", TORCH_FN(SqueezeQuantizedDims));
   m.impl("unsqueeze", TORCH_FN(UnsqueezeQuantized));
+  m.impl("cat", TORCH_FN(CatQuantized));
 }
 } // namespace musa
 } // namespace at

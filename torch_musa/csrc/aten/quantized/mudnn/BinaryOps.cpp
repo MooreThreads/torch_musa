@@ -63,6 +63,15 @@ Tensor QAdd(
   return quantized_output;
 }
 
+template <bool kReluFused = false>
+at::Tensor QAddTensor(
+    const at::Tensor& qa,
+    const at::Tensor& qb,
+    const at::Scalar& alpha) {
+  TORCH_CHECK(alpha.equal(1), "Quantized add don't support set alpha yet.");
+  return QAdd<kReluFused>(qa, qb, qa.q_scale(), qa.q_zero_point());
+}
+
 TORCH_LIBRARY_IMPL(quantized, AutogradPrivateUse1, m) {
   m.impl(TORCH_SELECTIVE_NAME("quantized::add"), TORCH_FN(QAdd<false>));
   m.impl(TORCH_SELECTIVE_NAME("quantized::add_relu"), TORCH_FN(QAdd<true>));
@@ -71,6 +80,10 @@ TORCH_LIBRARY_IMPL(quantized, AutogradPrivateUse1, m) {
 TORCH_LIBRARY_IMPL(quantized, QuantizedPrivateUse1, m) {
   m.impl(TORCH_SELECTIVE_NAME("quantized::add"), TORCH_FN(QAdd<false>));
   m.impl(TORCH_SELECTIVE_NAME("quantized::add_relu"), TORCH_FN(QAdd<true>));
+}
+
+TORCH_LIBRARY_IMPL(aten, QuantizedPrivateUse1, m) {
+  m.impl("add.Tensor", TORCH_FN(QAddTensor</*ReLUFused=*/false>));
 }
 
 } // namespace
