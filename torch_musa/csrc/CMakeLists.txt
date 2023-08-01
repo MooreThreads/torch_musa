@@ -90,6 +90,7 @@ FILE(GLOB MU_SRCS
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/AmpKernels.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/NLLLoss2d.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/Activation.mu
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryFractionKernels.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Randperm.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/CrossKernel.mu
     aten/quantized/musa/*.mu
