@@ -9,10 +9,14 @@ FILE(GLOB _CSRCS
     core/*.cpp
     amp/*.cpp
     utils/*.cpp
-    distributed/*.cpp
     aten/quantized/*.cpp
     aten/quantized/mudnn/*.cpp
 )
+
+if(USE_MCCL)
+  FILE(GLOB _MCCL_CSRCS distributed/*.cpp)
+  list(APPEND MUSA_CSRCS ${_MCCL_CSRCS})
+endif()
 
 LIST(APPEND MUSA_CSRCS ${_CSRCS})
 

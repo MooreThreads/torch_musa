@@ -18,6 +18,7 @@ PYTORCH_TAG=v2.0.0
 MUSA_ARCH=21
 
 USE_STATIC_MKL=${USE_STATIC_MKL:-0}
+USE_MCCL=${USE_MCCL:-1}
 
 usage() {
   echo -e "\033[1;32mThis script is used to build PyTorch and Torch_MUSA. \033[0m"
@@ -146,11 +147,11 @@ build_torch_musa() {
   if [ $BUILD_WHEEL -eq 1 ]; then
     rm -rf dist build
     pip uninstall torch_musa -y
-    PYTORCH_REPO_PATH=${PYTORCH_PATH} DEBUG=${DEBUG_MODE} USE_ASAN=${ASAN_MODE} ENABLE_COMPILE_FP64=${COMPILE_FP64} MUSA_ARCH=${MUSA_ARCH} python setup.py bdist_wheel
+    PYTORCH_REPO_PATH=${PYTORCH_PATH} DEBUG=${DEBUG_MODE} USE_ASAN=${ASAN_MODE} ENABLE_COMPILE_FP64=${COMPILE_FP64} MUSA_ARCH=${MUSA_ARCH} USE_MCCL=${USE_MCCL} python setup.py bdist_wheel
     rm -rf torch_musa.egg-info
     pip install dist/*.whl
   else
-    PYTORCH_REPO_PATH=${PYTORCH_PATH} DEBUG=${DEBUG_MODE} USE_ASAN=${ASAN_MODE} ENABLE_COMPILE_FP64=${COMPILE_FP64} MUSA_ARCH=${MUSA_ARCH} python setup.py install
+    PYTORCH_REPO_PATH=${PYTORCH_PATH} DEBUG=${DEBUG_MODE} USE_ASAN=${ASAN_MODE} ENABLE_COMPILE_FP64=${COMPILE_FP64} MUSA_ARCH=${MUSA_ARCH} USE_MCCL=${USE_MCCL} python setup.py install
   fi
   popd
 }
