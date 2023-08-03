@@ -1,6 +1,6 @@
 diff --git a/aten/src/ATen/core/GeneratorForPrivateuseone.cpp b/aten/src/ATen/core/GeneratorForPrivateuseone.cpp
 new file mode 100644
-index 0000000000..734ea90de0
+index 0000000..734ea90
 --- /dev/null
 +++ b/aten/src/ATen/core/GeneratorForPrivateuseone.cpp
 @@ -0,0 +1,28 @@

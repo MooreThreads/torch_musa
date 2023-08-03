@@ -25,7 +25,7 @@ git add .  # New files support
 diff_files=$(git diff HEAD --name-only)
 for diff_file in ${diff_files[@]}
 do
-  patch_file_name="${PATCHES_DIR}/$(echo $diff_file | rev | cut -f1 -d'/' | rev).patch"
+  patch_file_name="${PATCHES_DIR}/$(echo $diff_file | sed 's/\//_/g' ).patch"
   if [ -f $patch_file_name ]
   then
     echo "Updating patch ${patch_file_name}"

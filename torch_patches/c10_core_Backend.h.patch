@@ -1,5 +1,5 @@
 diff --git a/c10/core/Backend.h b/c10/core/Backend.h
-index 5f3d077977..f5875cf5fc 100644
+index 5f3d077..f5875cf 100644
 --- a/c10/core/Backend.h
 +++ b/c10/core/Backend.h
 @@ -48,6 +48,7 @@ enum class Backend {
