@@ -188,6 +188,15 @@ def _test_barrier():
     assert t1 - t0 > 0.5
     assert t2 - t0 > 0.5 + rank
 
+def _test_broadcast_object():
+    rank = dist.get_rank()
+    obj = [1,2,3,rank]  # a demo obj of (1,2,3,0)
+    broadcast_list = [obj if rank == 0 else None]
+    dist.broadcast_object_list(broadcast_list, 0)
+    if rank != 0:
+        obj = broadcast_list[0]
+    assert obj == [1,2,3,0]
+
 def _test_demo(demo_fn, world_size):
     mp.spawn(demo_fn,
              args=(world_size,),
@@ -206,6 +215,7 @@ def _test_function(rank, world_size):
     _test_scatter()
     _test_all_to_all()
     _test_barrier()
+    _test_broadcast_object()
     cleanup()
 
 @testing.skip_if_not_multiple_musa_device
