@@ -68,8 +68,17 @@ at::Tensor QAddTensor(
     const at::Tensor& qa,
     const at::Tensor& qb,
     const at::Scalar& alpha) {
+  // This function is a little-bit tricky, it's used from quantized model graph
+  // that it takes one quantized-tensor and one float-tensor in, then outputs a
+  // float- tensor
   TORCH_CHECK(alpha.equal(1), "Quantized add don't support set alpha yet.");
-  return QAdd<kReluFused>(qa, qb, qa.q_scale(), qa.q_zero_point());
+  at::Tensor fa = qa.is_quantized() ? qa.dequantize() : qa;
+  at::Tensor fb = qb.is_quantized() ? qb.dequantize() : qb;
+  at::Tensor out = at::add(fa, fb, alpha);
+  if (kReluFused) {
+    out.relu_();
+  }
+  return out;
 }
 
 TORCH_LIBRARY_IMPL(quantized, AutogradPrivateUse1, m) {

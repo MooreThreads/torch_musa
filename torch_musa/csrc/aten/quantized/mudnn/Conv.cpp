@@ -17,16 +17,6 @@
 
 #include <mudnn.h>
 
-template <int kSpatialDim>
-at::SmallVector<int64_t, kSpatialDim + 2> MakeQConvOutputShape(
-    int N, // mini-batch
-    int M, // output channels
-    const std::array<int64_t, kSpatialDim>& input_image_shape,
-    const std::vector<int64_t>& kernel,
-    const torch::List<int64_t>& stride,
-    const torch::List<int64_t>& padding,
-    const torch::List<int64_t>& dilation);
-
 template <>
 at::SmallVector<int64_t, 4> MakeQConvOutputShape<2>(
     int N, // mini-batch
@@ -45,55 +35,12 @@ at::SmallVector<int64_t, 4> MakeQConvOutputShape<2>(
   return {N, M, Y_H, Y_W};
 }
 
-void inline SetMudnnQuantizationInfo(
-    at::musa::muTensor& self,
-    double scales,
-    int64_t zero_points) {
-  float scales_ = static_cast<float>(scales);
-  unsigned int zero_points_ = static_cast<unsigned int>(zero_points);
-  CHECK_MUDNN_STATUS(
-      self.SetQuantizationInfo(1, &scales_, &zero_points_),
-      "Set quantization info");
-}
-
-void inline SetMudnnFormat(at::musa::muTensor& t) {
-  CHECK_MUDNN_STATUS(
-      t.SetFormat(at::musa::muTensor::Format::NHWC),
-      "Set mudnn tensor format NHWC");
-}
-
-void inline ConfigConv(
-    ::musa::dnn::Convolution& c,
-    torch::List<int64_t> pad,
-    torch::List<int64_t> str,
-    torch::List<int64_t> dil) {
-  CHECK_MUDNN_STATUS(
-      c.SetGroups(1),
-      "SetGroups"); // We currently only support groups == 1 qconv
-  CHECK_MUDNN_STATUS(
-      c.SetComputeMode(::musa::dnn::Convolution::ComputeMode::ALL),
-      "SetComputeMode");
-
-  int sizes = pad.size();
-  if (sizes == 2) {
-    std::vector<int> pad_ = {
-        static_cast<int>(pad[0]), static_cast<int>(pad[1])};
-    std::vector<int> str_ = {
-        static_cast<int>(str[0]), static_cast<int>(str[1])};
-    std::vector<int> dil_ = {
-        static_cast<int>(dil[0]), static_cast<int>(dil[1])};
-    CHECK_MUDNN_STATUS(
-        c.SetNdInfo(sizes, pad_.data(), str_.data(), dil_.data()), "SetNdInfo");
-  } else {
-    TORCH_CHECK(false, "We currently only support quantized conv2d");
-  }
-}
-
 template <int kSpatialDim>
 template <bool kReluFused>
 void PackedConvWeightMudnn<kSpatialDim>::apply_impl_helper(
     at::Tensor& quantized_output,
     const at::Tensor& input,
+    const c10::optional<at::Tensor>& accum,
     double output_scale,
     int64_t output_zero_point) {
   // scale(s) and zero_point(s) of activation and weight
@@ -130,8 +77,15 @@ void PackedConvWeightMudnn<kSpatialDim>::apply_impl_helper(
     bias = at::musa::CreateEmptyMUTensor();
   }
 
-  // mudnn kernel support skip-connection add but we currently won't use that
+  // mudnn kernel support skip-connection add
   at::musa::muTensor add = at::musa::CreateEmptyMUTensor();
+  if (accum.has_value()) {
+    at::Tensor accum_ = accum.value().permute({0, 2, 3, 1});
+    add = at::musa::CreateMUTensor(accum_);
+    SetMudnnFormat(add);
+    SetMudnnQuantizationInfo(
+        add, accum.value().q_scale(), accum.value().q_zero_point());
+  }
 
   at::musa::muHandle& h = at::GetMudnnHandle();
   ::musa::dnn::Convolution op;
@@ -194,6 +148,7 @@ template <int kSpatialDim>
 template <bool kReluFused>
 at::Tensor PackedConvWeightMudnn<kSpatialDim>::apply_impl(
     const at::Tensor& act,
+    const c10::optional<at::Tensor>& accum,
     double output_scale,
     int64_t output_zero_point) {
   // Convolution attributes
@@ -236,11 +191,13 @@ at::Tensor PackedConvWeightMudnn<kSpatialDim>::apply_impl(
   apply_impl_helper<kReluFused>(
       quantized_output,
       act_maybe_padded.to(c10::MemoryFormat::ChannelsLast),
+      accum,
       output_scale,
       output_zero_point);
 
   // permute back to NCHW format
-  quantized_output = quantized_output.permute({0, 3, 1, 2});
+  quantized_output =
+      quantized_output.permute({0, 3, 1, 2}).to(c10::MemoryFormat::Contiguous);
 
   // need to return sliced tensor if output_channels was padded
   if (num_unpadded_output_channels_ != maybe_padded_weight_.size(3)) {
@@ -254,8 +211,8 @@ at::Tensor PackedConvWeightMudnn<kSpatialDim>::apply(
     const at::Tensor& input,
     double output_scale,
     int64_t output_zero_point) {
-  c10::musa::MUSAGuard device_guard(input.device());
-  return apply_impl<false>(input, output_scale, output_zero_point);
+  return apply_impl<false>(
+      input, c10::nullopt, output_scale, output_zero_point);
 }
 
 template <int kSpatialDim>
@@ -263,8 +220,7 @@ at::Tensor PackedConvWeightMudnn<kSpatialDim>::apply_relu(
     const at::Tensor& input,
     double output_scale,
     int64_t output_zero_point) {
-  c10::musa::MUSAGuard device_guard(input.device());
-  return apply_impl<true>(input, output_scale, output_zero_point);
+  return apply_impl<true>(input, c10::nullopt, output_scale, output_zero_point);
 }
 
 template at::Tensor PackedConvWeightMudnn<2>::apply(
