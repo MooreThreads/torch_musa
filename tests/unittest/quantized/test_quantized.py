@@ -380,27 +380,37 @@ def test_max_pool2d(input_data, input_args):
     )
     test.check_result()
 
+
 input_concat = [
     {
-        "tensors": (torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.1, 127, torch.quint8),
-                  torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.141, 127, torch.quint8)),
+        "tensors": (
+            torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.1, 127, torch.quint8),
+            torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.141, 127, torch.quint8),
+        ),
         "dim": 0,
     },
     {
-        "tensors": (torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.1, 0, torch.qint8),
-                  torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.1, 0, torch.qint8)),
+        "tensors": (
+            torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.1, 0, torch.qint8),
+            torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.1, 0, torch.qint8),
+        ),
         "dim": 1,
     },
     {
-        "tensors": (torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.1, 1, torch.qint32),
-                  torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.1, 1, torch.qint32)),
+        "tensors": (
+            torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.1, 1, torch.qint32),
+            torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.1, 1, torch.qint32),
+        ),
         "dim": 2,
     },
 ]
+
+
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_concat)
 def test_concat(input_data):
     function(input_data, torch.cat)
+
 
 input_upsample = [
     {
@@ -420,6 +430,7 @@ input_scale_factor = [
     {"scale_factor": (4, 4)},
     {"scale_factor": (8, 8)},
 ]
+
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_upsample)

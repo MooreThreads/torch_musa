@@ -79,8 +79,13 @@ void PackedConvWeightMudnn<kSpatialDim>::apply_impl_helper(
 
   // mudnn kernel support skip-connection add
   at::musa::muTensor add = at::musa::CreateEmptyMUTensor();
+  at::Tensor accum_;
   if (accum.has_value()) {
-    at::Tensor accum_ = accum.value().permute({0, 2, 3, 1});
+    TORCH_CHECK(
+        accum.value().is_quantized(),
+        "accum tensor in qconv must be a quantized Tensor");
+    accum_ =
+        accum.value().to(c10::MemoryFormat::ChannelsLast).permute({0, 2, 3, 1});
     add = at::musa::CreateMUTensor(accum_);
     SetMudnnFormat(add);
     SetMudnnQuantizationInfo(
@@ -196,8 +201,7 @@ at::Tensor PackedConvWeightMudnn<kSpatialDim>::apply_impl(
       output_zero_point);
 
   // permute back to NCHW format
-  quantized_output =
-      quantized_output.permute({0, 3, 1, 2}).to(c10::MemoryFormat::Contiguous);
+  quantized_output = quantized_output.permute({0, 3, 1, 2});
 
   // need to return sliced tensor if output_channels was padded
   if (num_unpadded_output_channels_ != maybe_padded_weight_.size(3)) {
