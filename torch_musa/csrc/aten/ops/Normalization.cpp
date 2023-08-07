@@ -83,25 +83,26 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNorm(
   auto options = input.options().dtype(input.scalar_type());
   auto output = at::empty_like(input, at::MemoryFormat::Contiguous);
   auto out = CreateMUTensor(output);
-  auto in = CreateMUTensor(input);
+  auto contiguous_input = ContiguousFormat(input);
+  auto in = CreateMUTensor(contiguous_input);
   muTensor s;
   muTensor b;
+  Tensor contiguous_weight;
+  Tensor contiguous_bias;
+  Tensor contiguous_running_mean;
+  Tensor contiguous_running_var;
+
   if (weight.defined()) {
-    s = CreateMUTensor(weight);
-    b = CreateMUTensor(bias);
+    s = CreateMUTensor(ContiguousRef(weight, contiguous_weight));
+    b = CreateMUTensor(ContiguousRef(bias, contiguous_bias));
   }
   muTensor am;
   muTensor av;
   // In case of track_running_stats is False
   if (running_mean.defined()) {
-    am = CreateMUTensor(running_mean);
-    av = CreateMUTensor(running_var);
+    am = CreateMUTensor(ContiguousRef(running_mean, contiguous_running_mean));
+    av = CreateMUTensor(ContiguousRef(running_var, contiguous_running_var));
   }
-
-  auto contiguous_input = input;
-  ConfigFormat(contiguous_input, in, true);
-  ConfigFormat(output, out, true);
-
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::BatchNorm bn;
   CHECK_MUDNN_STATUS(bn.SetEpsilon(eps), "SetEpsilon");
@@ -160,10 +161,6 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
   c10::MaybeOwned<Tensor> weight_maybe_owned =
       at::borrow_from_optional_tensor(weight_opt);
   const Tensor& weight = *weight_maybe_owned;
-  const Tensor& running_mean =
-      c10::value_or_else(running_mean_opt, [] { return Tensor(); });
-  const Tensor& running_var =
-      c10::value_or_else(running_var_opt, [] { return Tensor(); });
   const Tensor& save_mean =
       c10::value_or_else(save_mean_opt, [] { return Tensor(); });
   const Tensor& save_invstd =
@@ -206,21 +203,17 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
   auto dv = CreateMUTensor(grad_var);
   auto dg = CreateMUTensor(grad_weight);
   auto db = CreateMUTensor(grad_bias);
-  auto x = CreateMUTensor(input);
+  auto contiguous_input = ContiguousFormat(input);
+  auto x = CreateMUTensor(contiguous_input);
+  auto contiguous_grad_out = ContiguousFormat(grad_out);
   auto dy = CreateMUTensor(grad_out);
-  auto m = CreateMUTensor(save_mean);
-  auto v = CreateMUTensor(save_invstd);
-  auto g = CreateMUTensor(weight);
 
-  auto contiguous_input = input;
-  auto grad_out_ = grad_out;
-  ConfigFormat(contiguous_input, x, true);
-  ConfigFormat(grad_out_, dy, true);
-  ConfigFormat(grad_input, dx, true);
-  ConfigFormat(grad_weight, dg, true);
-  ConfigFormat(grad_bias, db, true);
-  ConfigFormat(grad_mean, dm, true);
-  ConfigFormat(grad_var, dv, true);
+  auto contiguous_save_mean = save_mean.contiguous();
+  auto m = CreateMUTensor(contiguous_save_mean);
+  auto contiguous_save_invstd = save_invstd.contiguous();
+  auto v = CreateMUTensor(save_invstd);
+  auto contiguous_weight = weight.contiguous();
+  auto g = CreateMUTensor(contiguous_weight);
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::BatchNorm bn;
@@ -259,12 +252,12 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
   auto M_N = at::native::_check_layer_norm_inputs(
       input, normalized_shape, weight, bias);
   auto M = M_N.first;
-  Tensor input_contiguous = input.contiguous();
-  auto output = at::empty_like(input_contiguous);
+  Tensor contiguous_input = ContiguousFormat(input);
+  auto output = at::empty_like(contiguous_input);
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::LayerNorm op;
-  auto mt_input = CreateMUTensor(input_contiguous);
+  auto mt_input = CreateMUTensor(contiguous_input);
   auto mt_output = CreateMUTensor(output);
   muTensor mt_gamma;
   muTensor mt_beta;
@@ -297,8 +290,6 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
         "but now it is ",
         bias.scalar_type());
   }
-  ConfigFormat(input_contiguous, mt_input, true);
-  ConfigFormat(output, mt_output, true);
 
   std::vector<int32_t> norm_axis;
   const int32_t diff = input.dim() - normalized_shape.size();

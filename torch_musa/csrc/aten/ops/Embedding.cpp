@@ -25,36 +25,6 @@
 namespace at {
 namespace musa {
 
-Tensor Embedding(
-    const Tensor& weight,
-    const Tensor& indices,
-    int64_t padding_idx,
-    bool scale_grad_by_freq,
-    bool sparse) {
-  TORCH_CHECK(weight.dim() == 2, "'weight' must be 2-D");
-  auto indices_arg = TensorArg(indices, "indices", 1);
-  auto weight_arg = TensorArg(weight, "weight", 1);
-  checkScalarTypes("embedding", indices_arg, {kLong, kInt});
-  checkScalarTypes("embedding", weight_arg, {kFloat, kHalf});
-  // these varibs are not used in musa so far.
-  UNUSED(scale_grad_by_freq);
-  UNUSED(sparse);
-  c10::musa::MUSAGuard device_guard(weight.device());
-
-  auto size = indices.sizes().vec();
-  for (auto d : weight.sizes().slice(1)) {
-    size.push_back(d);
-  }
-  auto output = at::empty(
-      size, weight.options().memory_format(at::MemoryFormat::Contiguous));
-
-  Tensor weight_ = weight.contiguous();
-  Tensor indices_ = indices.contiguous();
-
-  EmbeddingRun(output, weight_, indices_, padding_idx);
-  return output;
-}
-
 Tensor EmbeddingDenseBwd(
     const at::Tensor& grad_output,
     const at::Tensor& indices,
@@ -106,7 +76,6 @@ Tensor EmbeddingDenseBwd(
 }
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("embedding", &Embedding);
   m.impl("embedding_dense_backward", &EmbeddingDenseBwd);
 }
 

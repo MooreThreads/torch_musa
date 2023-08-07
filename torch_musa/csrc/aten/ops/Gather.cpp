@@ -76,6 +76,7 @@ at::Tensor Gather(
     int64_t dim,
     const at::Tensor& index,
     bool sparse_grad) {
+  c10::musa::MUSAGuard device_guard(self.device());
   Tensor result = at::empty(index.sizes(), self.options());
   GatherOut(self, dim, index, sparse_grad, result);
   return result;

@@ -56,7 +56,8 @@ at::Tensor& MaskedSelectOut(
       ? c10::MaybeOwned<Tensor>::owned(self.unsqueeze(0))
       : c10::MaybeOwned<Tensor>::borrowed(self);
   if (!mask_temp->numel() || !self_temp->numel()) {
-    out = at::empty({0}, self.options());
+    auto out_tmp = at::empty({0}, self.options());
+    out.copy_(out_tmp);
     return out;
   }
 
@@ -98,6 +99,7 @@ at::Tensor& MaskedSelectOut(
 }
 
 at::Tensor MaskedSelect(const at::Tensor& input, const at::Tensor& mask) {
+  c10::musa::MUSAGuard(input.device());
   auto result = at::empty({0}, input.options());
   MaskedSelectOut(input, mask, result);
   return result;
@@ -159,6 +161,7 @@ at::Tensor& NonzeroOut(const at::Tensor& self, at::Tensor& out) {
 }
 
 at::Tensor Nonzero(const at::Tensor& input) {
+  c10::musa::MUSAGuard(input.device());
   auto result = at::empty({0}, input.options().dtype(kLong));
   NonzeroOut(input, result);
   return result;
@@ -197,6 +200,7 @@ at::Tensor& MaskedScatter(
   c10::musa::MUSAGuard device_guard(mask.device());
   auto contiguous_self = self.contiguous();
   auto contiguous_mask = mask.contiguous();
+  auto contiguous_source = source.contiguous();
   c10::MaybeOwned<Tensor> b_mask =
       expand_inplace(contiguous_self, contiguous_mask, "masked_scatter_");
   if (b_mask->dtype() == ScalarType::Byte) {
@@ -213,9 +217,10 @@ at::Tensor& MaskedScatter(
   ::musa::dnn::MaskedScatter op;
   auto mt_input = CreateMUTensor(contiguous_self);
   auto mt_mask = CreateMUTensor(contiguous_mask);
-  auto mt_source = CreateMUTensor(source);
+  auto mt_source = CreateMUTensor(contiguous_source);
   CHECK_MUDNN_STATUS(
       op.Run(h, mt_input, mt_mask, mt_source, InternalMemAlloc), "Run");
+  self.copy_(contiguous_self);
   return self;
 }
 

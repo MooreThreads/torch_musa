@@ -31,6 +31,7 @@ int64_t CheckGluDim(const Tensor& in, int64_t dim) {
 }
 
 Tensor Glu(const Tensor& self, int64_t dim) {
+  c10::musa::MUSAGuard device_guard(self.device());
   dim = CheckGluDim(self, dim);
   auto output_size = self.sizes().vec();
   output_size[dim] = output_size[dim] / 2;

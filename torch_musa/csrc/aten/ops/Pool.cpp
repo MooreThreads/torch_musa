@@ -29,16 +29,12 @@ void PoolCall(
     Tensor* indices = nullptr) {
   c10::musa::MUSAGuard device_guard(input.device());
   auto out = CreateMUTensor(output);
-  auto in = CreateMUTensor(input);
+  auto contiguous_input = ContiguousFormat(input);
+  auto in = CreateMUTensor(contiguous_input);
   muTensor inds;
   if (indices != nullptr) {
     inds = CreateMUTensor(*indices);
   }
-
-  auto contiguous_input = input;
-
-  ConfigFormat(contiguous_input, in, true);
-  ConfigFormat(output, out, true);
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Pooling pool;
@@ -65,15 +61,15 @@ void PoolCallBwd(
     Tensor& grad_input,
     const Tensor* indices = nullptr) {
   c10::musa::MUSAGuard device_guard(grad_output.device());
-  auto in = CreateMUTensor(grad_output);
+  auto contiguous_grad_output = ContiguousFormat(grad_output);
+  auto in = CreateMUTensor(contiguous_grad_output);
   auto out = CreateMUTensor(grad_input);
   muTensor inds;
+  Tensor contiguous_indices;
   if (indices) {
+    contiguous_indices = indices->contiguous();
     inds = CreateMUTensor(*indices);
   }
-  auto contiguous_input = grad_output;
-  ConfigFormat(contiguous_input, in, true);
-  ConfigFormat(grad_input, out, true);
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Pooling pool;

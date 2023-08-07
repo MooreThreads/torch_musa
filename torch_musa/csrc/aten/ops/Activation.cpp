@@ -57,6 +57,7 @@ Tensor UnaryBool(
     const Tensor& input,
     const Scalar& value,
     UNARY_MODE mode) {
+  c10::musa::MUSAGuard device_guard(input.device());
   // as le/lt/ne/eq/gt/ge... ops return bool type
   Tensor output = at::empty_like(
       input,

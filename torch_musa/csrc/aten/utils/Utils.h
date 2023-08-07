@@ -72,7 +72,7 @@ inline muTensor CreateEmptyMUTensor() {
 
 // May need to contiguous the input pytorch tensor according the needed
 // tensor format, so need to pass tensor as reference
-void ConfigFormat(Tensor& t, muTensor& mt, bool auto_contiguous = false);
+void ConfigFormat(const Tensor& t, muTensor& mt);
 
 // use for memory handler
 void InternalMemFree(void* ptr);

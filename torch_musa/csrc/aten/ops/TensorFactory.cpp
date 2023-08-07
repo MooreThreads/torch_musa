@@ -346,6 +346,14 @@ Tensor& set_tensor_(Tensor& result, const Tensor& source) {
   return result;
 }
 
+Tensor ContiguousFormat(const Tensor& self) {
+  if (self.is_contiguous(at::MemoryFormat::ChannelsLast) &&
+      (self.dim() == 4 || self.dim() == 5)) {
+    return self;
+  }
+  return self.contiguous();
+}
+
 Tensor ContiguousRef(
     const Tensor& self,
     Tensor& ref,

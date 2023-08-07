@@ -113,13 +113,14 @@ std::tuple<at::Tensor&, at::Tensor&> NllLossOut(
     output.resize_({});
   }
   total_weight.resize_({});
+  auto contiguous_total_weight = total_weight.contiguous();
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::NLLLoss nll_loss_op;
   auto mt_input = CreateMUTensor(contiguous_input);
   auto mt_target = CreateMUTensor(contiguous_target);
   auto mt_output = CreateMUTensor(output);
-  auto mt_total_weight = CreateMUTensor(total_weight);
+  auto mt_total_weight = CreateMUTensor(contiguous_total_weight);
   muTensor mt_weight;
   if (has_weight) {
     auto contiguous_weight = weight.value().contiguous();
@@ -150,6 +151,7 @@ std::tuple<at::Tensor, at::Tensor> NllLoss(
     const c10::optional<at::Tensor>& weight,
     int64_t reduction,
     int64_t ignore_index) {
+  c10::musa::MUSAGuard guard_device(input.device());
   auto output = at::empty({0}, input.options());
   auto total_weight = at::empty(input.sizes(), input.options());
   NllLossOut(

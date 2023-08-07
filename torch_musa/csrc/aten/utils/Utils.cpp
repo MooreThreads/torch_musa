@@ -28,7 +28,7 @@ Tensor empty_strided_musa(
 }
 } // namespace
 
-void ConfigFormat(Tensor& t, muTensor& mt, bool auto_contiguous) {
+void ConfigFormat(const Tensor& t, muTensor& mt) {
   if (t.is_contiguous()) {
     if (t.dim() == 4) {
       mt.SetFormat(muTensor::Format::NCHW);
@@ -41,16 +41,6 @@ void ConfigFormat(Tensor& t, muTensor& mt, bool auto_contiguous) {
     } else if (t.dim() == 5) {
       mt.SetFormat(muTensor::Format::NDHWC);
     }
-  } else if (auto_contiguous) {
-    t = t.contiguous();
-    mt.SetAddr(t.data_ptr());
-    if (t.dim() == 4) {
-      mt.SetFormat(muTensor::Format::NCHW);
-    } else if (t.dim() == 5) {
-      mt.SetFormat(muTensor::Format::NCDHW);
-    }
-  } else {
-    TORCH_CHECK(false, "Failed to config MTensor format");
   }
 }
 
@@ -108,6 +98,7 @@ muTensor CreateMUTensor(const Tensor& t, bool use_stride) {
     rst.SetNdInfo(t.dim(), t.sizes().data());
   }
   SetTensorTypeAndAddr(t, rst);
+  ConfigFormat(t, rst);
   return rst;
 }
 

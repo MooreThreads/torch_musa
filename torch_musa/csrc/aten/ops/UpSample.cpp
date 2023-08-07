@@ -41,14 +41,11 @@ Tensor& UpSampleNearest2dOut(
   if (self.sizes() == result.sizes()) {
     result.copy_(self);
   } else if (self.numel() > 0) { // else result should be empty to return
-    Tensor contiguous_input = self.contiguous();
+    Tensor contiguous_input = ContiguousFormat(self);
 
     muHandle& h = GetMudnnHandle();
     auto in = CreateMUTensor(contiguous_input);
     auto out = CreateMUTensor(result);
-
-    ConfigFormat(contiguous_input, in, true);
-    ConfigFormat(result, out, false);
 
     ::musa::dnn::Interpolate op;
     CHECK_MUDNN_STATUS(
@@ -102,14 +99,11 @@ Tensor& UpSampleNearest2dBwdOut(
   const float h_scale = 1. / height_scale;
   const float w_scale = 1. / width_scale;
 
-  Tensor contiguous_input = grad_output.contiguous();
+  Tensor contiguous_grad_output = ContiguousFormat(grad_output);
 
   muHandle& h = GetMudnnHandle();
-  auto in = CreateMUTensor(contiguous_input);
+  auto in = CreateMUTensor(contiguous_grad_output);
   auto out = CreateMUTensor(grad_input);
-
-  ConfigFormat(contiguous_input, in, true);
-  ConfigFormat(grad_input, out, false);
 
   ::musa::dnn::Interpolate op;
   CHECK_MUDNN_STATUS(
@@ -328,14 +322,11 @@ Tensor& UpSampleBilinear2dOut(
   if (self.sizes() == result.sizes()) {
     result.copy_(self);
   } else if (self.numel() > 0) { // else result should be empty to return
-    Tensor contiguous_input = self.contiguous();
+    Tensor contiguous_input = ContiguousFormat(self);
 
     muHandle& h = GetMudnnHandle();
     auto in = CreateMUTensor(contiguous_input);
     auto out = CreateMUTensor(result);
-
-    ConfigFormat(contiguous_input, in, true);
-    ConfigFormat(result, out, false);
 
     ::musa::dnn::Interpolate op;
     CHECK_MUDNN_STATUS(
@@ -405,14 +396,11 @@ Tensor& UpSampleBilinear2dBwdOut(
   const float h_scale = 1. / height_scale;
   const float w_scale = 1. / width_scale;
 
-  Tensor contiguous_input = grad_output.contiguous();
+  Tensor contiguous_grad_output = ContiguousFormat(grad_output);
 
   muHandle& h = GetMudnnHandle();
-  auto in = CreateMUTensor(contiguous_input);
+  auto in = CreateMUTensor(contiguous_grad_output);
   auto out = CreateMUTensor(grad_input);
-
-  ConfigFormat(contiguous_input, in, true);
-  ConfigFormat(grad_input, out, false);
 
   ::musa::dnn::Interpolate op;
   CHECK_MUDNN_STATUS(
