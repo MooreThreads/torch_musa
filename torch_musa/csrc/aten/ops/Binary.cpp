@@ -107,7 +107,8 @@ inline bool SupportOptimizeScalarToUnary(
     const Tensor& other) {
   const bool support_mode_type = (m == BINARY_MODE::ADD &&
                                   (input.scalar_type() == ScalarType::Float ||
-                                   input.scalar_type() == ScalarType::Half)) ||
+                                   input.scalar_type() == ScalarType::Half ||
+                                   input.scalar_type() == ScalarType::Long)) ||
       (m == BINARY_MODE::TRUEDIV &&
        (input.scalar_type() == ScalarType::Float ||
         input.scalar_type() == ScalarType::Half)) ||
@@ -204,7 +205,9 @@ void BinaryCall(
     } else {
       out_tmp = at::empty(output.sizes(), self.options());
     }
-    output.copy_(out_tmp);
+    if (output.numel() > 0) {
+      output.copy_(out_tmp);
+    }
     return;
   }
   if (SupportOptimizeScalarToUnary(m, self, other)) {
@@ -224,11 +227,13 @@ void BinaryCall(
     other_tmp = other.to(device);
   }
 
-  if (other_tmp.dim() == 0) {
-    other_tmp = at::full_like(self, other_tmp.item(), kMUSA);
-  }
-  if (self_tmp.dim() == 0) {
-    self_tmp = at::full_like(other, self_tmp.item(), kMUSA);
+  // muDNN support binary broadcast mode: add, mul
+  if (m != BINARY_MODE::ADD && m != BINARY_MODE::MUL) {
+    if (other_tmp.dim() == 0 && self_tmp.dim() != 0) {
+      other_tmp = at::full_like(self, other_tmp.item(), kMUSA);
+    } else if (self_tmp.dim() == 0 && other_tmp.dim() != 0) {
+      self_tmp = at::full_like(other, self_tmp.item(), kMUSA);
+    }
   }
   other_tmp =
       alpha_scalar.equal(1) ? other_tmp : at::mul(other_tmp, alpha_scalar);
