@@ -36,17 +36,15 @@ void PackedLinearWeightMudnn::apply_impl_helper(
       "Linear only supports per-tensor quantized weight");
 
   // dequantize activation and weight to float
-  at::Tensor input_ = at::musa::DequantizeQuantized(input);
-  at::Tensor weight_ = at::musa::DequantizeQuantized(orig_weight);
+  at::Tensor input_ = input.dequantize();
+  at::Tensor weight_ = orig_weight.dequantize();
   at::Tensor result_;
 
   auto bias = bias_.has_value()
       ? c10::MaybeOwned<at::Tensor>::borrowed(*bias_)
       : c10::MaybeOwned<at::Tensor>::owned(c10::in_place);
 
-  if (input_.dim() == 2 && bias->defined()) {
-    result_ = at::addmm(*bias, input_, weight_);
-  } else if (input_.dim() == 3 && bias->defined() && input_.is_contiguous()) {
+  if (bias->defined() && input_.is_contiguous()) {
     const auto input_sizes = input_.sym_sizes();
     result_ = at::addmm(
         *bias,
@@ -93,15 +91,17 @@ at::Tensor PackedLinearWeightMudnn::apply_impl(
       " but got ",
       toString(act.scalar_type()));
   TORCH_CHECK(
-      act.dim() >= 2,
-      "Dimension of input tensor should be greater or equal to 2");
+      act.dim() == 2 || act.dim() == 3,
+      "Dimension of input tensor should be 2 or 3");
 
-  std::vector<int64_t> original_output_shape{act.sizes().vec()}; // 2D
+  std::vector<int64_t> original_output_shape{act.sizes().vec()};
   original_output_shape.back() = orig_weight.size(0); // output channels
+  std::vector<int64_t> output_shape = original_output_shape;
   // expects tensors to be at least 3D.
-  std::vector<int64_t> output_shape(3, 1);
-  output_shape[1] = original_output_shape[0];
-  output_shape[2] = original_output_shape[1];
+  // if the tensors are 2D, insert the dummy dimension
+  if (output_shape.size() < 3) {
+    output_shape.insert(output_shape.begin(), 1);
+  }
   at::Tensor quantized_output = at::_empty_affine_quantized(
       output_shape,
       at::device(at::kPrivateUse1).dtype(at::ScalarType::QUInt8),
@@ -109,10 +109,11 @@ at::Tensor PackedLinearWeightMudnn::apply_impl(
       output_zero_point);
   // expect tensors to be at least 3D. act is currently 2D. we will create a 3D
   // view
-  std::vector<int64_t> new_sizes(3, 1);
+  std::vector<int64_t> new_sizes(act.sizes().vec());
   // expect leading dimensions to be the dummy dimensions
-  new_sizes.back() = act.sizes().back();
-  new_sizes[1] = act.size(0);
+  if (new_sizes.size() < 3) {
+    new_sizes.insert(new_sizes.begin(), 1);
+  }
   apply_impl_helper<kReluFused>(
       quantized_output, act.view(new_sizes), output_scale, output_zero_point);
   return quantized_output.view(original_output_shape);

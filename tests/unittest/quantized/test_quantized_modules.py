@@ -192,11 +192,38 @@ linear_input_data = [
         "relu": False,
     },
     {
+        "module": nnq.Linear,
+        "input": torch.randn(8, 10, 128, requires_grad=False),
+        "in_features": 128,
+        "out_features": 512,
+        "bias": True,
+        "dtype": torch.qint8,
+        "relu": True,
+    },
+    {
+        "module": nnq.Linear,
+        "input": torch.randn(8, 10, 128, requires_grad=False),
+        "in_features": 128,
+        "out_features": 512,
+        "bias": True,
+        "dtype": torch.qint8,
+        "relu": False,
+    },
+    {
         "module": nniq.LinearReLU,
         "input": torch.randn(8, 128, requires_grad=False),
         "in_features": 128,
         "out_features": 512,
         "bias": False,
+        "dtype": torch.qint8,
+        "relu": True,
+    },
+    {
+        "module": nniq.LinearReLU,
+        "input": torch.randn(8, 128, requires_grad=False),
+        "in_features": 128,
+        "out_features": 512,
+        "bias": True,
         "dtype": torch.qint8,
         "relu": True,
     },
@@ -236,6 +263,8 @@ def test_qlinear(input_data):
     ).to("musa")
     out_scale = (foutput.max() - foutput.min()) / 256
     out_zero_point = 256 - int(foutput.max() / out_scale)
+    if fbias is not None:
+        fbias = fbias.to('musa')
     qmodule.set_weight_bias(qweight, fbias)
     qmodule.scale = out_scale
     qmodule.zero_point = out_zero_point
