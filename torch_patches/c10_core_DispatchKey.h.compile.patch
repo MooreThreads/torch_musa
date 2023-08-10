@@ -1,0 +1,15 @@
+diff --git a/c10/core/DispatchKey.h b/c10/core/DispatchKey.h
+index abc4ab7e98..a54e9e9e0b 100644
+--- a/c10/core/DispatchKey.h
++++ b/c10/core/DispatchKey.h
+@@ -39,9 +39,9 @@ namespace c10 {
+   _(HPU, extra)                                 \
+   _(VE, extra)                                  \
+   _(Lazy, extra)                                \
++  _(PrivateUse1, extra)                         \
+   _(Meta, extra)                                \
+   _(MTIA, extra)                                \
+-  _(PrivateUse1, extra)                         \
+   _(PrivateUse2, extra)                         \
+   _(PrivateUse3, extra)
+ 
