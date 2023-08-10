@@ -168,7 +168,7 @@ Tensor Conv2d(
     int64_t groups) {
   Conv2dShapeCheck(input, weight, padding, groups);
 
-  auto contiguous_input = ContiguousFormat(input);
+  auto contiguous_input = input.contiguous();
   auto contiguous_weight = weight.contiguous();
 
   auto input_shape = contiguous_input.sizes();
@@ -241,7 +241,7 @@ Tensor Conv2dTranspose(
   auto grad_input_t = at::empty(input_size, grad_output.options());
 
   Tensor weight_cont = weight.contiguous();
-  Tensor grad_output_cont = ContiguousFormat(grad_output);
+  Tensor grad_output_cont = grad_output.contiguous();
 
   auto gout = CreateMUTensor(grad_output_cont);
   auto gin = CreateMUTensor(grad_input_t);
@@ -272,7 +272,7 @@ Tensor Conv3d(
     int64_t groups) {
   Conv3dShapeCheck(input, weight, padding, groups);
 
-  auto contiguous_input = ContiguousFormat(input);
+  auto contiguous_input = input.contiguous();
   auto contiguous_weight = weight.contiguous();
 
   auto input_shape = contiguous_input.sizes();
@@ -409,7 +409,7 @@ Tensor Conv3dDataBwd(
   auto grad_input_t = at::empty(input.sizes(), grad_output.options());
 
   Tensor weight_cont = weight.contiguous();
-  Tensor grad_output_cont = ContiguousFormat(grad_output);
+  Tensor grad_output_cont = grad_output.contiguous();
 
   auto gout = CreateMUTensor(grad_output_cont);
   auto gin = CreateMUTensor(grad_input_t);
@@ -438,7 +438,7 @@ Tensor Conv2dDataBwd(
   auto grad_input_t = at::empty(input.sizes(), grad_output.options());
 
   Tensor weight_cont = weight.contiguous();
-  Tensor grad_output_cont = ContiguousFormat(grad_output);
+  Tensor grad_output_cont = grad_output.contiguous();
 
   auto gout = CreateMUTensor(grad_output_cont);
   auto gin = CreateMUTensor(grad_input_t);
@@ -495,8 +495,8 @@ Tensor Conv3dWeightBwd(
   auto weight_size = weight.sizes();
   auto grad_weight_t = at::empty(weight_size, grad_output.options());
 
-  Tensor input_cont = ContiguousFormat(input);
-  Tensor grad_output_cont = ContiguousFormat(grad_output);
+  Tensor input_cont = input.contiguous();
+  Tensor grad_output_cont = grad_output.contiguous();
 
   auto gout = CreateMUTensor(grad_output_cont);
   auto gw = CreateMUTensor(grad_weight_t);
@@ -525,8 +525,8 @@ Tensor Conv2dWeightBwd(
   auto weight_size = weight.sizes();
   auto grad_weight_t = at::empty(weight_size, grad_output.options());
 
-  Tensor input_cont = ContiguousFormat(input);
-  Tensor grad_output_cont = ContiguousFormat(grad_output);
+  Tensor input_cont = input.contiguous();
+  Tensor grad_output_cont = grad_output.contiguous();
 
   auto gout = CreateMUTensor(grad_output_cont);
   auto gw = CreateMUTensor(grad_weight_t);

@@ -49,7 +49,7 @@ Tensor MaxPool2dQuantized(
   auto ndim = input.dim();
   TORCH_CHECK(
       input.qscheme() == at::kPerTensorAffine,
-      "adaptive_avg_pool2d_quantized_cuda only supports per tensor quantized tensors");
+      "MaxPool2dQuantized(): only supports per tensor quantized tensors");
   TORCH_CHECK(
       ndim == 3 || ndim == 4, "Expecting the input tensor of rank 3 or 4.");
   TORCH_CHECK(
@@ -72,8 +72,9 @@ Tensor MaxPool2dQuantized(
       padding.size() == 2,
       "MaxPool2dQuantized(): Expected padding to be 2-dimensional: got ",
       padding.size());
-
-  auto input_fp32 = input.dequantize();
+  // TODO(@songlin.li): After the pool operator is provided in mudnn, the
+  // implementation will be replaced.
+  auto input_fp32 = input.dequantize().contiguous();
 
   auto [result_fp32, result_indice] = at::max_pool2d_with_indices(
       input_fp32, kernel_size, stride, padding, dilation, ceil_mode);

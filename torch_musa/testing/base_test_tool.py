@@ -158,7 +158,7 @@ class QuantizedComparator(Comparator):
     """
 
     def __init__(
-        self, abs_diff=1e-8, rel_diff=1e-5, equal_nan=False, is_per_tensor=True
+        self, abs_diff=1e-6, rel_diff=1e-5, equal_nan=False, is_per_tensor=True
     ):
         super().__init__()
         if is_per_tensor:

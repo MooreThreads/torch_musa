@@ -83,7 +83,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNorm(
   auto options = input.options().dtype(input.scalar_type());
   auto output = at::empty_like(input, at::MemoryFormat::Contiguous);
   auto out = CreateMUTensor(output);
-  auto contiguous_input = ContiguousFormat(input);
+  auto contiguous_input = input.contiguous();
   auto in = CreateMUTensor(contiguous_input);
   muTensor s;
   muTensor b;
@@ -203,10 +203,10 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
   auto dv = CreateMUTensor(grad_var);
   auto dg = CreateMUTensor(grad_weight);
   auto db = CreateMUTensor(grad_bias);
-  auto contiguous_input = ContiguousFormat(input);
+  auto contiguous_input = input.contiguous();
   auto x = CreateMUTensor(contiguous_input);
-  auto contiguous_grad_out = ContiguousFormat(grad_out);
-  auto dy = CreateMUTensor(grad_out);
+  auto contiguous_grad_out = grad_out.contiguous();
+  auto dy = CreateMUTensor(contiguous_grad_out);
 
   auto contiguous_save_mean = save_mean.contiguous();
   auto m = CreateMUTensor(contiguous_save_mean);
@@ -252,7 +252,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
   auto M_N = at::native::_check_layer_norm_inputs(
       input, normalized_shape, weight, bias);
   auto M = M_N.first;
-  Tensor contiguous_input = ContiguousFormat(input);
+  Tensor contiguous_input = input.contiguous();
   auto output = at::empty_like(contiguous_input);
 
   muHandle& h = GetMudnnHandle();

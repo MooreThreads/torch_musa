@@ -29,7 +29,7 @@ void PoolCall(
     Tensor* indices = nullptr) {
   c10::musa::MUSAGuard device_guard(input.device());
   auto out = CreateMUTensor(output);
-  auto contiguous_input = ContiguousFormat(input);
+  auto contiguous_input = input.contiguous();
   auto in = CreateMUTensor(contiguous_input);
   muTensor inds;
   if (indices != nullptr) {
@@ -61,7 +61,7 @@ void PoolCallBwd(
     Tensor& grad_input,
     const Tensor* indices = nullptr) {
   c10::musa::MUSAGuard device_guard(grad_output.device());
-  auto contiguous_grad_output = ContiguousFormat(grad_output);
+  auto contiguous_grad_output = grad_output.contiguous();
   auto in = CreateMUTensor(contiguous_grad_output);
   auto out = CreateMUTensor(grad_input);
   muTensor inds;

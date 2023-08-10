@@ -41,7 +41,7 @@ Tensor& UpSampleNearest2dOut(
   if (self.sizes() == result.sizes()) {
     result.copy_(self);
   } else if (self.numel() > 0) { // else result should be empty to return
-    Tensor contiguous_input = ContiguousFormat(self);
+    Tensor contiguous_input = self.contiguous();
 
     muHandle& h = GetMudnnHandle();
     auto in = CreateMUTensor(contiguous_input);
@@ -63,10 +63,14 @@ Tensor UpSampleNearest2d(
     IntArrayRef output_size,
     c10::optional<double> scales_h,
     c10::optional<double> scales_w) {
+  auto contiguous_input = self.contiguous();
   auto result = at::empty(
-      at::native::upsample_2d_common_check(self.sizes(), output_size),
-      self.options().memory_format(self.suggest_memory_format()));
-  UpSampleNearest2dOut(self, output_size, scales_h, scales_w, result);
+      at::native::upsample_2d_common_check(
+          contiguous_input.sizes(), output_size),
+      contiguous_input.options().memory_format(
+          contiguous_input.suggest_memory_format()));
+  UpSampleNearest2dOut(
+      contiguous_input, output_size, scales_h, scales_w, result);
   return result;
 }
 
@@ -99,7 +103,7 @@ Tensor& UpSampleNearest2dBwdOut(
   const float h_scale = 1. / height_scale;
   const float w_scale = 1. / width_scale;
 
-  Tensor contiguous_grad_output = ContiguousFormat(grad_output);
+  Tensor contiguous_grad_output = grad_output.contiguous();
 
   muHandle& h = GetMudnnHandle();
   auto in = CreateMUTensor(contiguous_grad_output);
@@ -322,7 +326,7 @@ Tensor& UpSampleBilinear2dOut(
   if (self.sizes() == result.sizes()) {
     result.copy_(self);
   } else if (self.numel() > 0) { // else result should be empty to return
-    Tensor contiguous_input = ContiguousFormat(self);
+    Tensor contiguous_input = self.contiguous();
 
     muHandle& h = GetMudnnHandle();
     auto in = CreateMUTensor(contiguous_input);
@@ -396,7 +400,7 @@ Tensor& UpSampleBilinear2dBwdOut(
   const float h_scale = 1. / height_scale;
   const float w_scale = 1. / width_scale;
 
-  Tensor contiguous_grad_output = ContiguousFormat(grad_output);
+  Tensor contiguous_grad_output = grad_output.contiguous();
 
   muHandle& h = GetMudnnHandle();
   auto in = CreateMUTensor(contiguous_grad_output);
