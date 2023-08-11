@@ -50,8 +50,10 @@ void inline ConfigConv(
   CHECK_MUDNN_STATUS(
       c.SetGroups(1),
       "SetGroups"); // We currently only support groups == 1 qconv
+  // TODO(mofan): quantized conv requires more complex logic and testing to
+  // adapt.
   CHECK_MUDNN_STATUS(
-      c.SetComputeMode(::musa::dnn::Convolution::ComputeMode::ALL),
+      c.SetComputeMode(::musa::dnn::Convolution::ComputeMode::TENSOR),
       "SetComputeMode");
 
   int sizes = pad.size();

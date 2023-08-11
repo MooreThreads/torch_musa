@@ -144,8 +144,13 @@ void ConfigConv(
              static_cast<int>(dil[2])}),
         "SetNdInfo");
   }
+  // TODO(kang.chen): At present, there is no tensor core on the s3000 hardware.
+  // Setting it to tensor will also go to the no tensor core calculation,
+  // so the actual implementation is also fp32, which will not affect the
+  // accuracy. When the allow_tf32 switch is added, the logic needs to be
+  // updated according its value.
   CHECK_MUDNN_STATUS(
-      c.SetComputeMode(::musa::dnn::Convolution::ComputeMode::ALL),
+      c.SetComputeMode(::musa::dnn::Convolution::ComputeMode::TENSOR),
       "SetComputeMode");
   CHECK_MUDNN_STATUS(c.SetGroups(groups), "SetGroups");
 }
