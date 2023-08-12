@@ -32,11 +32,6 @@ namespace musa {
       "Device of targets tensor of CtcLoss must be MUSA, "
       "but now is ",
       targets.device());
-  TORCH_CHECK(
-      log_probs.scalar_type() == at::ScalarType::Float,
-      "Dtype of log_probs tensor of CtcLoss only support Float32, ",
-      "but now it is ",
-      log_probs.scalar_type());
 
   c10::musa::MUSAGuard device_guard(log_probs.device());
 
@@ -51,20 +46,10 @@ namespace musa {
       target_lengths.size() == batch_size,
       "target_lengths must be of size batch_size");
 
-  int64_t tg_target_stride;
-  int64_t max_target_length = 0;
-  if (targets.dim() == 1) { // concatenated targets
-    for (int64_t i = 0; i < batch_size; i++) {
-      if (max_target_length < target_lengths[i])
-        max_target_length = target_lengths[i];
-    }
-  } else { // batch x max_target_length
-    // dim is 2
-    for (int64_t i = 0; i < batch_size; i++) {
-      if (max_target_length < target_lengths[i])
-        max_target_length = target_lengths[i];
-    }
-  }
+  // two cases, concatenated targets and batch x max_target_length
+  auto* tgt_lengths_data = target_lengths.data();
+  int64_t max_target_length =
+      *std::max_element(tgt_lengths_data, tgt_lengths_data + batch_size);
 
   auto target_lengths_t =
       at::tensor(target_lengths, targets.options().dtype(torch::kLong));
@@ -98,6 +83,8 @@ namespace musa {
 
   CHECK_MUDNN_STATUS(op.SetBlank(blank), "SetBlank");
   CHECK_MUDNN_STATUS(op.SetZeroInfinity(zero_infinity), "SetZeroInfinity");
+  CHECK_MUDNN_STATUS(
+      op.SetMaxTargetLength(max_target_length), "SetMaxTargetLenght");
 
   CHECK_MUDNN_STATUS(
       op.Run(
@@ -148,16 +135,6 @@ Tensor CtcLossBackwardImpl(
       "Device of log_alpha tensor of CtcLoss Backward must be MUSA, "
       "but now is ",
       log_alpha.device());
-  TORCH_CHECK(
-      log_probs.scalar_type() == at::ScalarType::Float,
-      "Dtype of log_probs tensor of CtcLoss Backward only support Float32, ",
-      "but now it is ",
-      log_probs.scalar_type());
-  TORCH_CHECK(
-      grad.scalar_type() == at::ScalarType::Float,
-      "Dtype of grad tensor of CtcLoss Backward only support Float32, ",
-      "but now it is ",
-      grad.scalar_type());
 
   c10::musa::MUSAGuard device_guard(grad.device());
 
@@ -170,6 +147,10 @@ Tensor CtcLossBackwardImpl(
 
   Tensor result =
       at::full_like(log_probs, neginf, LEGACY_CONTIGUOUS_MEMORY_FORMAT);
+
+  auto* tgt_lengths_data = target_lengths.data();
+  int64_t max_target_length =
+      *std::max_element(tgt_lengths_data, tgt_lengths_data + log_probs.size(1));
 
   const Tensor& contiguous_grad = grad.contiguous();
   const Tensor& contiguous_log_probs = log_probs.contiguous();
@@ -194,6 +175,8 @@ Tensor CtcLossBackwardImpl(
 
   CHECK_MUDNN_STATUS(op.SetBlank(blank), "SetBlank");
   CHECK_MUDNN_STATUS(op.SetZeroInfinity(zero_infinity), "SetZeroInfinity");
+  CHECK_MUDNN_STATUS(
+      op.SetMaxTargetLength(max_target_length), "SetMaxTargetLength");
 
   CHECK_MUDNN_STATUS(
       op.RunBwd(
