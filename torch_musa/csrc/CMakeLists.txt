@@ -113,8 +113,20 @@ if(NOT ENABLE_COMPILE_FP64)
     string(APPEND MUSA_MCC_FLAGS " -mathx-disable-fp64") # disable fp64
 endif()
 
-# TODO(@caizhi): Use FindOpenMP.cmake to replace absolute paths
-musa_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/aten/ops/musa aten/ops/torchvision /usr/lib/llvm-11/include/openmp/)
+# set openmp include directory
+set(llvm_openmp_search_list)
+foreach(item RANGE 6 20 1)
+  list(APPEND llvm_openmp_search_list /usr/lib/llvm-${item}/include/openmp/)
+endforeach()
+
+find_path(
+  OPENMP_INCLUDE_DIR omp.h
+  PATHS ${llvm_openmp_search_list}
+  REQUIRED
+  NO_DEFAULT_PATH)
+musa_include_directories(${OPENMP_INCLUDE_DIR})
+
+musa_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/aten/ops/musa aten/ops/torchvision)
 musa_add_library(${MUSA_KERNELS_LIB} SHARED ${MU_SRCS} ${PORTING_CPP_CSRCS} ${ATEN_MUSA_CSRCS})
 
 set(CUBLAS_LIB $ENV{MUSA_HOME}/lib/libmublas.so)

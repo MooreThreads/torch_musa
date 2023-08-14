@@ -62,6 +62,7 @@ pip install torch_musa-2.0.0-cp39-cp39-linux_x86_64.whl
 
 ```bash
 apt-get install ccache
+apt-get install libomp-11-dev
 pip install -r requirements.txt
 ```
 
