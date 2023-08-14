@@ -7,21 +7,24 @@
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/ops/musa/musa_ops.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-
 namespace at {
 namespace musa {
-// To judge whether the matrix is ​​transposed, the following two conditions
+
+bool MatContiguous(const Tensor& mat) {
+  for (int i = 0; i < mat.dim() - 1; i++) {
+    if (mat.stride(i) != mat.stride(i + 1) * mat.size(i + 1)) {
+      return false;
+    }
+  }
+  return mat.is_contiguous();
+}
+
+// If a matrix is ​​transposed, the following two conditions
 // need to be met
-// 1. m * n matrix, matrix.stride(0) == 1, matrix.stride(1) == m
+// 1. stride(i)=stride(i+1)*shape(i+1) for the origin matrix
 // 2. the origin matrix(untransposed matrix) should be contiguous
 bool IsTranspose(const Tensor& mat) {
-  if (mat.stride(-2) == 1 && mat.stride(-1) == mat.size(-2) &&
-      mat.transpose(-2, -1).is_contiguous()) {
-    // Transpose of a tensor is a view operation.
-    return true;
-  } else {
-    return false;
-  }
+  return MatContiguous(mat.transpose(-2, -1));
 }
 
 at::Tensor Dot(const at::Tensor& l, const at::Tensor& r) {
@@ -54,15 +57,18 @@ void MmCall(
   muHandle& h = GetMudnnHandle();
   bool trans_l = IsTranspose(l);
   bool trans_r = IsTranspose(r);
+
   // if IsTranspose(mat) is True, we don't need to clone to permutate memory
   Tensor contiguous_l;
   Tensor contiguous_r;
+
   // muDNN need origin mat shape info, so we need to transpose(-2, -1) here
   auto lmt = trans_l ? CreateMUTensor(l.transpose(-2, -1))
                      : CreateMUTensor(ContiguousRef(l, contiguous_l));
   auto rmt = trans_r ? CreateMUTensor(r.transpose(-2, -1))
                      : CreateMUTensor(ContiguousRef(r, contiguous_r));
   auto rst = CreateMUTensor(out);
+
   if (is_batch) {
     ::musa::dnn::BatchMatMul b_mm;
     CHECK_MUDNN_STATUS(b_mm.SetTranspose(trans_l, trans_r), "SetTranspose");
@@ -172,10 +178,10 @@ Tensor& BmmOut(const Tensor& self, const Tensor& mat2, Tensor& out) {
       self.size(0) == mat2.size(0) && self.size(2) == mat2.size(1),
       "self_shape[0] must equal to mat2_shape[0], and self_shape[2] "
       "must equal to mat2_shape[1]");
+
   MmCall(self, mat2, out, out, true);
   return out;
 }
-
 Tensor Bmm(const Tensor& self, const Tensor& mat2) {
   c10::musa::MUSAGuard(self.device());
   Tensor result = at::empty(

@@ -1,7 +1,7 @@
 """This package adds the memory utilities. These APIs are borrowed from cuda memory."""
 # pylint: disable=unused-import, invalid-name, too-many-statements, too-many-locals
 import collections
-from typing import Any, Union
+from typing import Any, Union,Tuple
 import torch
 from torch.types import Device
 import torch_musa
@@ -369,3 +369,22 @@ def max_memory_reserved(
 
     device = torch_musa.current_device()
     return memory_stats(device=device).get("reserved_bytes.all.peak", 0)
+
+
+def mem_get_info(device: Union[Device, int] = None) -> Tuple[int, int]:
+    r"""Returns the global free and total GPU memory occupied for a given
+    device using musaMemGetInfo.
+
+    Args:
+        device (torch.device or int, optional): selected device. Returns
+            statistic for the current device, given by :func:`~torch.musa.current_device`,
+            if :attr:`device` is ``None`` (default).
+
+    .. note::
+        See :ref:`musa-memory-management` for more
+        details about GPU memory management.
+    """
+    if device is None:
+        device = torch.musa.current_device()
+    device = _get_musa_device_index(device)
+    return torch.musa._MUSAC._musart.musaMemGetInfo(device)

@@ -405,7 +405,10 @@ Tensor Cumsum(
     int64_t dim,
     c10::optional<ScalarType> dtype_opt) {
   Tensor self_ = self.contiguous();
-  auto out = at::empty_like(self);
+  Tensor out = at::empty_like(self);
+  if (self.dtype() == at::kBool) {
+    out = out.to(at::kLong);
+  }
   return CumsumCall(self_, dim, dtype_opt, out);
 }
 
@@ -414,9 +417,16 @@ Tensor& Cumsum_(
     int64_t dim,
     c10::optional<ScalarType> dtype_opt) {
   Tensor self_ = self.contiguous();
-  auto out = self;
-  CumsumCall(self_, dim, dtype_opt, out);
-  return self;
+  if (self.dtype() == at::kBool) {
+    Tensor out = at::empty_like(self, at::kLong, at::MemoryFormat::Contiguous);
+    CumsumCall(self_, dim, dtype_opt, out);
+    self.copy_(out);
+    return self;
+  } else {
+    auto out = self;
+    self = CumsumCall(self_, dim, dtype_opt, out);
+    return self;
+  }
 }
 
 Tensor& Cumsum_Out(
@@ -425,8 +435,15 @@ Tensor& Cumsum_Out(
     c10::optional<ScalarType> dtype_opt,
     Tensor& out) {
   Tensor self_ = self.contiguous();
-  CumsumCall(self_, dim, dtype_opt, out);
-  return out;
+  if (self.dtype() == at::kBool) {
+    Tensor out_ = at::empty_like(self, at::kLong, at::MemoryFormat::Contiguous);
+    CumsumCall(self_, dim, dtype_opt, out_);
+    out.copy_(out_);
+    return out;
+  } else {
+    CumsumCall(self_, dim, dtype_opt, out);
+    return out;
+  }
 }
 
 // same like at::cuda::cumsum_out

@@ -52,8 +52,18 @@ def test_prod(input_data, dtype):
 def test_norm(input_data, dtype):
     function(input_data, dtype, torch.norm)
 
+
+extra_data_for_cumsum = [
+        {"input": torch.rand(3, 4) < 0.5, "dim": 1},
+        {"input": torch.rand([1, 10, 5]) < 0.5, "dim": 2},
+        {"input": torch.rand([1, 10, 5, 5]) < 0.5, "dim": 3},
+        {"input": torch.rand([1, 10, 5, 5, 10]) < 0.5, "dim": 4},
+        {"input": torch.rand([9, 8, 7, 6, 5, 4]) < 0.5, "dim": 5},
+        {"input": torch.rand([9, 8, 7, 6, 5, 4, 16]) < 0.5, "dim": 5},
+        {"input": torch.rand([9, 8, 7, 6, 5, 4, 5, 20]) < 0.5, "dim": 7}
+]
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@pytest.mark.parametrize("input_data", input_data)
+@pytest.mark.parametrize("input_data", input_data+extra_data_for_cumsum)
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_cumsum(input_data, dtype):
     function(input_data, dtype, torch.cumsum)

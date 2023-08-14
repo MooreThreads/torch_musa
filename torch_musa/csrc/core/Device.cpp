@@ -1,7 +1,11 @@
 #include "torch_musa/csrc/core/Device.h"
 #include <c10/util/CallOnce.h>
+#include <pybind11/embed.h>
 #include <deque>
+#include <iostream>
 #include "torch_musa/csrc/core/MUSAException.h"
+#include "torch_musa/csrc/core/MUSAGuard.h"
+namespace py = pybind11;
 
 namespace c10 {
 namespace musa {
@@ -120,5 +124,16 @@ void Synchronize() {
   musaDeviceSynchronize();
 }
 
+void init_mem_get_func(PyObject* module) {
+  auto m = py::handle(module).cast<py::module>();
+  auto musart = m.def_submodule("_musart", "libmusart.so bindings");
+  musart.def("musaMemGetInfo", [](int device) -> std::pair<size_t, size_t> {
+    c10::musa::MUSAGuard guard(device);
+    size_t device_free = 0;
+    size_t device_total = 0;
+    C10_MUSA_CHECK(musaMemGetInfo(&device_free, &device_total));
+    return {device_free, device_total};
+  });
+}
 } // namespace musa
 } // namespace c10

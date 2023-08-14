@@ -12,6 +12,18 @@ input_data = [
         "mat2": torch.randn(4, 5, 10),
     },
     {
+        "input": torch.randn(4,4).T.unsqueeze(0),
+        "mat2": torch.randn(4,4).T.unsqueeze(0),
+    },
+    {
+        "input": torch.randn(6,4).T.unsqueeze(0),
+        "mat2": torch.randn(4,6).T.unsqueeze(0),
+    },
+    {
+        "input": torch.randn(7,9).T.unsqueeze(0),
+        "mat2": torch.randn(9,7).T.unsqueeze(0),
+    },
+    {
         "input": torch.randn(4, 10, 5).transpose(1, 2),
         "mat2": torch.randn(4, 5, 10).transpose(1, 2),
     },

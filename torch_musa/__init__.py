@@ -33,7 +33,6 @@ except ImportError as err:
 
 torch.__setattr__("musa", sys.modules[__name__])  # pylint: disable=C2801
 
-
 from .core.device import Device as device
 from .core.device import DeviceOf as device_of
 from .core.device import (
@@ -47,7 +46,7 @@ from .core.device import (
     get_device_properties,
     can_device_access_peer,
     _exchange_device,
-    _DeviceGuard,
+    _DeviceGuard
 )
 
 from .core.stream import (
@@ -87,6 +86,7 @@ from .core.memory import (
     memory_allocated,
     max_memory_allocated,
     max_memory_reserved,
+    mem_get_info
 )
 
 
@@ -96,6 +96,13 @@ from .core.random import *
 
 register_deserialization()
 
-
 def _sleep(cycles):
     torch_musa._MUSAC._musa_sleep(cycles)
+
+
+def _get_mudnn_version():
+    return torch_musa._MUSAC._mudnn_version()
+
+setattr(torch.backends, 'mudnn', type('mudnn', (object,), {}))
+setattr(torch.backends.mudnn, 'version', _get_mudnn_version)
+setattr(torch.version, 'musa', torch_musa._MUSAC._musa_version)

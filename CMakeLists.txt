@@ -94,6 +94,7 @@ endif()
 include(${PROJECT_SOURCE_DIR}/cmake/utils.cmake)
 torch_musa_parse_version_str(TORCH_MUSA ${TORCH_MUSA_DEFAULT_VERSION})
 set(TORCH_MUSA_SOVERSION "${TORCH_MUSA_VERSION_MAJOR}.${TORCH_MUSA_VERSION_MINOR}")
+
 set(TORCH_MUSA_PYTHON_MINIMUM_VERSION 3.8)
 
 # Set default build type

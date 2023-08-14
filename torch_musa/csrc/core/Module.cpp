@@ -226,6 +226,11 @@ void AddMusaDeviceMethods(PyObject* module) {
 
   // Synchronize musa device.
   py_module.def("_musa_synchronize", []() { c10::musa::Synchronize(); });
+
+  // mudnn and musa version
+  py_module.def("_mudnn_version", []() { return MUDNN_VERSION; });
+
+  py_module.attr("_musa_version") = py::str(std::to_string(MUSA_VERSION));
 }
 
 void AddMusaStreamMethods(PyObject* module) {
