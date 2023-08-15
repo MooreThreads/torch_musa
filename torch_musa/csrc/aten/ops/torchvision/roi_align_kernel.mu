@@ -10,7 +10,6 @@ namespace vision {
 namespace ops {
 
 namespace {
-
 template <typename T>
 __device__ T bilinear_interpolate(
     const T* input,
@@ -339,34 +338,27 @@ at::Tensor roi_align_forward_kernel(
     int64_t pooled_width,
     int64_t sampling_ratio,
     bool aligned) {
-  TORCH_CHECK(input.numel(), "input must be a MUSA tensor");
-  TORCH_CHECK(rois.numel(), "rois must be a MUSA tensor");
+  TORCH_CHECK(input.is_privateuseone(), "input must be a MUSA tensor");
+  TORCH_CHECK(rois.is_privateuseone(), "rois must be a MUSA tensor");
   TORCH_CHECK(rois.size(1) == 5, "rois must have shape as Tensor[K, 5]");
-
   at::TensorArg input_t{input, "input", 1}, rois_t{rois, "rois", 2};
-
   at::CheckedFrom c = "roi_align_forward_kernel";
   at::checkAllSameGPU(c, {input_t, rois_t});
   at::checkAllSameType(c, {input_t, rois_t});
 
   at::musa::MUSAGuard device_guard(input.device());
-
   auto num_rois = rois.size(0);
   auto channels = input.size(1);
   auto height = input.size(2);
   auto width = input.size(3);
-
   at::Tensor output = at::zeros(
       {num_rois, channels, pooled_height, pooled_width}, input.options());
-
   auto output_size = num_rois * pooled_height * pooled_width * channels;
   musaStream_t stream = at::musa::getCurrentMUSAStream();
-
   dim3 grid(std::min(
       ceil_div(static_cast<int64_t>(output_size), static_cast<int64_t>(512)),
       static_cast<int64_t>(4096)));
   dim3 block(512);
-
   if (output.numel() == 0) {
     AT_MUSA_CHECK(musaGetLastError());
     return output;
@@ -389,6 +381,7 @@ at::Tensor roi_align_forward_kernel(
             rois_.data_ptr<scalar_t>(),
             output.data_ptr<scalar_t>());
       });
+  // Empty rois will raise invalid configuration argument error but output is accurate
   AT_MUSA_CHECK(musaGetLastError());
   return output;
 }
@@ -405,8 +398,8 @@ at::Tensor roi_align_backward_kernel(
     int64_t width,
     int64_t sampling_ratio,
     bool aligned) {
-  TORCH_CHECK(grad.numel(), "grad must be a MUSA tensor");
-  TORCH_CHECK(rois.numel(), "rois must be a MUSA tensor");
+  TORCH_CHECK(grad.is_privateuseone(), "grad must be a MUSA tensor");
+  TORCH_CHECK(rois.is_privateuseone(), "rois must be a MUSA tensor");
 
   at::TensorArg grad_t{grad, "grad", 1}, rois_t{rois, "rois", 2};
 

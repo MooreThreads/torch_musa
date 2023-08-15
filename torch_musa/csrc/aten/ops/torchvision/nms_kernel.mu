@@ -81,8 +81,8 @@ at::Tensor nms_kernel(
     const at::Tensor& dets,
     const at::Tensor& scores,
     double iou_threshold) {
-  TORCH_CHECK(dets.numel(), "dets must be a MUSA tensor");
-  TORCH_CHECK(scores.numel(), "scores must be a MUSA tensor");
+  TORCH_CHECK(dets.is_privateuseone(), "dets must be a MUSA tensor");
+  TORCH_CHECK(scores.is_privateuseone(), "scores must be a MUSA tensor");
 
   TORCH_CHECK(
       dets.dim() == 2, "boxes should be a 2d tensor, got ", dets.dim(), "D");

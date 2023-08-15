@@ -130,8 +130,8 @@ std::tuple<at::Tensor, at::Tensor> roi_pool_forward_kernel(
     double spatial_scale,
     int64_t pooled_height,
     int64_t pooled_width) {
-  TORCH_CHECK(input.numel(), "input must be a MUSA tensor");
-  TORCH_CHECK(rois.numel(), "rois must be a MUSA tensor");
+  TORCH_CHECK(input.is_privateuseone(), "input must be a MUSA tensor");
+  TORCH_CHECK(rois.is_privateuseone(), "rois must be a MUSA tensor");
   TORCH_CHECK(
       rois.size(1) == 5, "Tensor rois should have shape as Tensor[K, 5]");
 
@@ -199,9 +199,9 @@ at::Tensor roi_pool_backward_kernel(
     int64_t height,
     int64_t width) {
   // Check if input tensors are MUSA tensors
-  TORCH_CHECK(grad.numel(), "grad must be a MUSA tensor");
-  TORCH_CHECK(rois.numel(), "rois must be a MUSA tensor");
-  TORCH_CHECK(argmax.numel(), "argmax must be a MUSA tensor");
+  TORCH_CHECK(grad.is_privateuseone(), "grad must be a MUSA tensor");
+  TORCH_CHECK(rois.is_privateuseone(), "rois must be a MUSA tensor");
+  TORCH_CHECK(argmax.is_privateuseone(), "argmax must be a MUSA tensor");
 
   at::TensorArg grad_t{grad, "grad", 1}, rois_t{rois, "rois", 2},
       argmax_t{argmax, "argmax", 3};

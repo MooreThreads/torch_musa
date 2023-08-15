@@ -1,4 +1,5 @@
 #pragma once
+#include "torch_musa/csrc/aten/ops/TensorFactory.h"
 
 namespace vision {
 namespace ops {

@@ -324,8 +324,8 @@ std::tuple<at::Tensor, at::Tensor> ps_roi_align_forward_kernel(
     int64_t pooled_width,
     int64_t sampling_ratio) {
   // Check if input tensors are MUSA tensors
-  TORCH_CHECK(input.numel(), "input must be a MUSA tensor");
-  TORCH_CHECK(rois.numel(), "rois must be a MUSA tensor");
+  TORCH_CHECK(input.is_privateuseone(), "input must be a MUSA tensor");
+  TORCH_CHECK(rois.is_privateuseone(), "rois must be a MUSA tensor");
   TORCH_CHECK(
       rois.size(1) == 5, "Tensor rois should have shape as Tensor[K, 5]");
 
@@ -401,10 +401,10 @@ at::Tensor ps_roi_align_backward_kernel(
     int64_t height,
     int64_t width) {
   // Check if input tensors are MUSA tensors
-  TORCH_CHECK(grad.numel(), "grad must be a MUSA tensor");
-  TORCH_CHECK(rois.numel(), "rois must be a MUSA tensor");
+  TORCH_CHECK(grad.is_privateuseone(), "grad must be a MUSA tensor");
+  TORCH_CHECK(rois.is_privateuseone(), "rois must be a MUSA tensor");
   TORCH_CHECK(
-      channel_mapping.numel(), "channel_mapping must be a MUSA tensor");
+      channel_mapping.is_privateuseone(), "channel_mapping must be a MUSA tensor");
 
   at::TensorArg grad_t{grad, "grad", 1}, rois_t{rois, "rois", 2},
       channel_mapping_t{channel_mapping, "channel_mapping", 3};

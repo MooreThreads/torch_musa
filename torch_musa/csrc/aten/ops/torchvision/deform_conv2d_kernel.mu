@@ -1048,7 +1048,7 @@ at::Tensor deform_conv2d_forward_kernel(
   TORCH_CHECK(offset_c.ndimension() == 4);
   TORCH_CHECK(!use_mask || mask_c.ndimension() == 4);
   TORCH_CHECK(weight_c.ndimension() == 4);
-  TORCH_CHECK(input_c.numel(), "input must be a MUSA tensor");
+  TORCH_CHECK(input_c.is_privateuseone(), "input must be a MUSA tensor");
 
   at::DeviceGuard guard(input_c.device());
 
