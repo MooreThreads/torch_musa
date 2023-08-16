@@ -21,7 +21,6 @@
 #include "torch_musa/csrc/core/MUSAGuard.h"
 #include "torch_musa/csrc/core/MUSAStream.h"
 #include "torch_musa/csrc/distributed/MCCLUtils.h"
-#include "torch_musa/csrc/utils/Logging.h"
 
 #include <torch/csrc/distributed/c10d/ParamCommsUtils.hpp>
 #include <torch/csrc/distributed/c10d/PrefixStore.hpp>

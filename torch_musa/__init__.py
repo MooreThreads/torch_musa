@@ -4,6 +4,8 @@
 import warnings
 import sys
 import os
+import threading
+from typing import Set, Type
 import pkg_resources
 from packaging.version import Version
 import torch
@@ -23,6 +25,8 @@ if "2.0.0" not in torch.__version__:
         + torch.__version__,
         UserWarning,
     )
+
+_tensor_classes: Set[Type] = set()
 
 torch.utils.rename_privateuse1_backend("musa")
 
@@ -46,7 +50,7 @@ from .core.device import (
     get_device_properties,
     can_device_access_peer,
     _exchange_device,
-    _DeviceGuard
+    _DeviceGuard,
 )
 
 from .core.stream import (
@@ -86,7 +90,7 @@ from .core.memory import (
     memory_allocated,
     max_memory_allocated,
     max_memory_reserved,
-    mem_get_info
+    mem_get_info,
 )
 
 
@@ -96,6 +100,7 @@ from .core.random import *
 
 register_deserialization()
 
+
 def _sleep(cycles):
     torch_musa._MUSAC._musa_sleep(cycles)
 
@@ -103,6 +108,17 @@ def _sleep(cycles):
 def _get_mudnn_version():
     return torch_musa._MUSAC._mudnn_version()
 
-setattr(torch.backends, 'mudnn', type('mudnn', (object,), {}))
-setattr(torch.backends.mudnn, 'version', _get_mudnn_version)
-setattr(torch.version, 'musa', torch_musa._MUSAC._musa_version)
+
+setattr(torch.backends, "mudnn", type("mudnn", (object,), {}))
+setattr(torch.backends.mudnn, "version", _get_mudnn_version)
+setattr(torch.version, "musa", torch_musa._MUSAC._musa_version)
+
+from .core.tensor_attrs import set_torch_attributes
+
+
+def set_attributes():
+    """Set attributes for torch."""
+    set_torch_attributes()
+
+
+set_attributes()

@@ -18,12 +18,27 @@
 #include "torch_musa/csrc/core/Allocator.h"
 #include "torch_musa/csrc/core/Device.h"
 #include "torch_musa/csrc/core/Event.h"
+#include "torch_musa/csrc/core/PythonTensor.h"
 #include "torch_musa/csrc/core/Sleep.h"
 #include "torch_musa/csrc/core/Stream.h"
 #ifdef USE_MCCL
 #include "torch_musa/csrc/distributed/Register.h"
 #endif
 #include "torch_musa/csrc/utils/musa_lazy_init.h"
+
+void AddPyMethodDefs(std::vector<PyMethodDef>& vector, PyMethodDef* methods) {
+  if (!vector.empty()) {
+    // remove nullptr terminator
+    vector.pop_back();
+  }
+  while (true) {
+    vector.push_back(*methods);
+    if (!methods->ml_name) {
+      break;
+    }
+    methods++;
+  }
+}
 
 // yang.zhao: copied from torch/csrc/utils.cpp to avoid including other things.
 void THPUtils_invalidArguments(
@@ -334,19 +349,33 @@ void AddMusaAmpMethods(PyObject* module) {
   });
 }
 
-void InitMusaModule(PyObject* module) {
-  // TODO(mt-ai) Let's lazily init musa devices first.
-  THMPStream_init(module);
-  THMPEvent_init(module);
-  auto py_module = py::reinterpret_borrow<py::module>(module);
+PyObject* module;
+static std::vector<PyMethodDef> methods;
+
+PyObject* InitMusaModule() {
+  AddPyMethodDefs(methods, torch::musa::GetTensorMethods());
+
+  static struct PyModuleDef musa_module = {
+      PyModuleDef_HEAD_INIT, "torch_musa._MUSAC", nullptr, -1, methods.data()};
+  module = PyModule_Create(&musa_module);
+
+  // Initialize some Python bindings.
+  torch::musa::InitializePythonBindings();
 
   AddMusaDeviceMethods(module);
   AddMusaStreamMethods(module);
   AddMusaMemoryMethods(module);
   AddMusaAmpMethods(module);
+
+  // TODO(mt-ai) Let's lazily init musa devices.
+  THMPStream_init(module);
+  THMPEvent_init(module);
+
 #ifdef USE_MCCL
   AddMusaProcessGroupMethods(module);
 #endif
   // Register MUSA device properties
   at::musa::registerMusaDeviceProperties(module);
+
+  return module;
 }

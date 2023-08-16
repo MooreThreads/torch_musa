@@ -790,7 +790,7 @@ void ProcessGroupMCCL::mcclCommWatchdogInternal() {
                << ". This means that rank has aborted its MCCL communicators previously and is not in a healthy state."
                << ". Aborting appropriate communicators";
             std::string abortReason = ss.str();
-            LOG_WARNING << abortReason;
+            LOG(WARNING) << abortReason;
 
             // Now abort the appropriate communicators.
             std::lock_guard<std::mutex> lock(mutex_);

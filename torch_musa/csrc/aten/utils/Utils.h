@@ -2,6 +2,7 @@
 #define ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUUTILS_H_
 
 #include <ATen/Dispatch.h>
+#include <c10/core/Backend.h>
 
 #include <mudnn.h>
 #include "torch_musa/csrc/aten/mudnn/Handle.h"
@@ -46,8 +47,9 @@ namespace musa {
 using muTensor = ::musa::dnn::Tensor;
 using muHandle = ::musa::dnn::Handle;
 
+constexpr c10::Backend kMUSABackend = c10::Backend::PrivateUse1;
 constexpr DeviceType kMUSA = DeviceType::PrivateUse1;
-constexpr ::c10::DispatchKey kMUSAKey = ::c10::DispatchKey::PrivateUse1;
+constexpr c10::DispatchKey kMUSAKey = c10::DispatchKey::PrivateUse1;
 
 #define MUSA_TENSOR_TYPE_CHECK(self)                \
   TORCH_CHECK(                                      \
