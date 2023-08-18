@@ -1,5 +1,5 @@
 diff --git a/torch/distributed/distributed_c10d.py b/torch/distributed/distributed_c10d.py
-index be0006d..33a5748 100644
+index be0006d..4b70c9c 100644
 --- a/torch/distributed/distributed_c10d.py
 +++ b/torch/distributed/distributed_c10d.py
 @@ -63,6 +63,7 @@ _MPI_AVAILABLE = True
@@ -54,3 +54,20 @@ index be0006d..33a5748 100644
  
  @exception_handler
  def all_gather_object(object_list, obj, group=None):
+@@ -3296,11 +3313,11 @@ def barrier(group=GroupMember.WORLD, async_op=False, device_ids=None):
+ 
+     opts = BarrierOptions()
+     if device_ids is not None:
+-        if get_backend(group) != Backend.NCCL:
+-            raise RuntimeError(
+-                "Function argument device_ids not supported "
+-                "for the selected backend {}".format(get_backend(group))
+-            )
++#        if get_backend(group) != Backend.NCCL:
++#            raise RuntimeError(
++#                "Function argument device_ids not supported "
++#                "for the selected backend {}".format(get_backend(group))
++#            )
+         if isinstance(device_ids, list):
+             opts.device_ids = device_ids
+         else:
