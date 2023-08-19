@@ -4,6 +4,7 @@
 #include <ATen/quantized/QTensorImpl.h>
 #include <c10/core/CPUAllocator.h>
 
+#include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/quantized/Quantizer.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
@@ -95,6 +96,7 @@ inline Tensor NewQTensor(
     IntArrayRef sizes,
     const TensorOptions& options,
     QuantizerPtr quantizer) {
+  at::musa::lazyInitMUSA();
   auto memory_format =
       options.memory_format_opt().value_or(MemoryFormat::Contiguous);
   auto device = options.device();
