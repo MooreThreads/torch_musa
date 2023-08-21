@@ -25,7 +25,7 @@ all_basic_funcs = [
     torch.exp,
     torch.cos,
     torch.sin,
-    # torch.log, there maybe has a bug in new daily mudnn, comment temply
+    torch.log,
     torch.acos,
     torch.atan,
     torch.round,
@@ -46,7 +46,7 @@ all_inplace_funcs = [
     torch.exp_,
     torch.cos_,
     torch.sin_,
-    # torch.log, there maybe has a bug in new daily mudnn, comment temply
+    torch.log_,
     torch.acos_,
     torch.atan_,
     torch.round_,
@@ -74,7 +74,11 @@ def function(input_data, dtype, func):
         input_data["min"] = input_data["min"].to(dtype)
     if "max" in input_data.keys() and isinstance(input_data["max"], torch.Tensor):
         input_data["max"] = input_data["max"].to(dtype)
-    test = testing.OpTest(func=func, input_args=input_data)
+    if func in (torch.log, torch.log_):
+        test = testing.OpTest(func=func, input_args=input_data,
+                              comparators=testing.DefaultComparator(abs_diff=1e-6, equal_nan=True))
+    else:
+        test = testing.OpTest(func=func, input_args=input_data)
     test.check_result()
 
 

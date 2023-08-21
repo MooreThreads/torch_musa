@@ -146,8 +146,8 @@ bool require_copy_backup(const Tensor& src, const Tensor& self) {
 void permute_to_contiguous(const Tensor& self, const Tensor& src) {
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Permute op;
-  auto contiguous_out = CreateMUTensor(self, true);
-  auto contiguous_in = CreateMUTensor(src, true);
+  auto contiguous_out = CreateMUTensor(self);
+  auto contiguous_in = CreateMUTensor(src);
   CHECK_MUDNN_STATUS(op.Run(h, contiguous_out, contiguous_in), "Run");
 }
 
@@ -236,8 +236,8 @@ void mtgpu_impl_datacast(const Tensor& tensor_self, const Tensor& tensor_src) {
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Unary op;
 
-  auto contiguous_in = CreateMUTensor(tensor_src, true);
-  auto contiguous_out = CreateMUTensor(tensor_self, true);
+  auto contiguous_in = CreateMUTensor(tensor_src);
+  auto contiguous_out = CreateMUTensor(tensor_self);
 
   CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::CAST), "SetMode");
   CHECK_MUDNN_STATUS(op.Run(h, contiguous_out, contiguous_in), "Run");
@@ -264,7 +264,7 @@ inline void mtgpu_impl_copy(
       // Note: when H2D copy, tensor_src and tensor_self have different
       // dtypes, type conversions are performed on the CPU for CPU->GPU copies.
       auto cpu_cast_result = tensor_src.to(tensor_self.dtype());
-      auto musa_self = CreateMUTensor(tensor_self, true);
+      auto musa_self = CreateMUTensor(tensor_self);
       auto result = musa_self.CopyFrom(
           cpu_cast_result.data_ptr(),
           capacity,
@@ -275,7 +275,7 @@ inline void mtgpu_impl_copy(
           result == ::musa::dnn::Status::SUCCESS,
           "Copy(MEMCPY_HOST_TO_DEVICE)");
     } else {
-      auto musa_self = CreateMUTensor(tensor_self, true);
+      auto musa_self = CreateMUTensor(tensor_self);
       auto result = musa_self.CopyFrom(
           tensor_src.data_ptr(),
           capacity,
@@ -295,7 +295,7 @@ inline void mtgpu_impl_copy(
       cpu_tensor.copy_(tensor_src);
       tensor_self.copy_(cpu_tensor);
     } else {
-      auto musa_self = CreateMUTensor(tensor_self, true);
+      auto musa_self = CreateMUTensor(tensor_self);
       auto result = musa_self.CopyFrom(
           tensor_src.data_ptr(),
           capacity,

@@ -66,7 +66,7 @@ constexpr c10::DispatchKey kMUSAKey = c10::DispatchKey::PrivateUse1;
       " MUDNN failed in: ",                \
       msg);
 
-muTensor CreateMUTensor(const Tensor& t, bool use_stride = true);
+muTensor CreateMUTensor(const Tensor& t);
 
 inline muTensor CreateEmptyMUTensor() {
   return muTensor();

@@ -90,13 +90,9 @@ inline void SetTensorTypeAndAddr(const Tensor& t, muTensor& m_t) {
   m_t.SetAddr(t.data_ptr());
 }
 
-muTensor CreateMUTensor(const Tensor& t, bool use_stride) {
+muTensor CreateMUTensor(const Tensor& t) {
   muTensor rst;
-  if (use_stride) {
-    rst.SetNdInfo(t.dim(), t.sizes().data(), t.strides().data());
-  } else {
-    rst.SetNdInfo(t.dim(), t.sizes().data());
-  }
+  rst.SetNdInfo(t.dim(), t.sizes().data(), t.strides().data());
   SetTensorTypeAndAddr(t, rst);
   ConfigFormat(t, rst);
   return rst;

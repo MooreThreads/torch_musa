@@ -113,8 +113,10 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNorm(
   if (!training) {
     CHECK_MUDNN_STATUS(bn.RunPure(h, out, in, am, av, s, b), "RunPure");
   } else {
-    save_mean = at::empty({num_features}, options);
-    save_invstd = at::empty({num_features}, options);
+    save_mean =
+        at::empty({num_features}, options, at::MemoryFormat::Contiguous);
+    save_invstd =
+        at::empty({num_features}, options, at::MemoryFormat::Contiguous);
     auto m = CreateMUTensor(save_mean);
     auto v = CreateMUTensor(save_invstd);
 
@@ -211,7 +213,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
   auto contiguous_save_mean = save_mean.contiguous();
   auto m = CreateMUTensor(contiguous_save_mean);
   auto contiguous_save_invstd = save_invstd.contiguous();
-  auto v = CreateMUTensor(save_invstd);
+  auto v = CreateMUTensor(contiguous_save_invstd);
   auto contiguous_weight = weight.contiguous();
   auto g = CreateMUTensor(contiguous_weight);
 

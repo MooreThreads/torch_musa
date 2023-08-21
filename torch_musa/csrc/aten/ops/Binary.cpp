@@ -171,8 +171,9 @@ void UnaryCall(
   } else if (m == BINARY_MODE::TRUEDIV) {
     CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::DIV), "SetMode");
   }
-  auto mt_output = CreateMUTensor(output, true);
-  auto mt_input = CreateMUTensor(self, true);
+  auto mt_output = CreateMUTensor(output);
+  auto contiguous_self = self.contiguous();
+  auto mt_input = CreateMUTensor(contiguous_self);
   CHECK_MUDNN_STATUS(uop.Run(h, mt_output, mt_input), "Run " + op_name);
 }
 
@@ -237,10 +238,8 @@ void BinaryCall(
   }
   other_tmp =
       alpha_scalar.equal(1) ? other_tmp : at::mul(other_tmp, alpha_scalar);
-  if (NeedContiguous(self_tmp, other_tmp)) {
-    self_tmp = self_tmp.contiguous();
-    other_tmp = other_tmp.contiguous();
-  }
+  self_tmp = self_tmp.contiguous();
+  other_tmp = other_tmp.contiguous();
   muTensor musa_self = CreateMUTensor(self_tmp);
   muTensor musa_other = CreateMUTensor(other_tmp);
   muTensor musa_out = CreateMUTensor(output);
@@ -320,16 +319,16 @@ Tensor BinarycommonDtype(
       (self.scalar_type() == ScalarType::Double &&
        other.scalar_type() == ScalarType::Double)) {
     if (m == BINARY_MODE::MUL) {
-      return at::mul(self.cpu(), other.cpu()).to("musa");
+      return at::mul(self.cpu(), other.cpu()).to(device);
     } else if (m == BINARY_MODE::TRUEDIV) {
-      return at::div(self.cpu(), other.cpu()).to("musa");
+      return at::div(self.cpu(), other.cpu()).to(device);
     }
   }
   ScalarType common_dtype = at::result_type(self, other);
   at::native::alpha_check(common_dtype, alpha_scalar);
-  Tensor contiguous_self = self.to(common_dtype);
-  Tensor contiguous_other = other.to(common_dtype);
-  return Binary(op_name, contiguous_self, contiguous_other, m, alpha_scalar);
+  Tensor common_self = self.to(common_dtype);
+  Tensor common_other = other.to(common_dtype);
+  return Binary(op_name, common_self, common_other, m, alpha_scalar);
 }
 
 void BinarycommonDtypeCall(
@@ -343,7 +342,14 @@ void BinarycommonDtypeCall(
   at::native::alpha_check(common_dtype, alpha_scalar);
   Tensor common_self = self.to(common_dtype);
   Tensor common_other = other.to(common_dtype);
-  BinaryCall(op_name, output, common_self, common_other, m, alpha_scalar);
+  if (output.scalar_type() == common_dtype) {
+    BinaryCall(op_name, output, common_self, common_other, m, alpha_scalar);
+  } else {
+    auto common_output = output.to(common_dtype);
+    BinaryCall(
+        op_name, common_output, common_self, common_other, m, alpha_scalar);
+    output.copy_(common_output);
+  }
 }
 
 // TODO(mt-ai): All the binary operations should be moved to the musa

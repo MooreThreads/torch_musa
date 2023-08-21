@@ -2,6 +2,7 @@
 #include <ATen/NamedTensorUtils.h>
 #include <ATen/WrapDimUtilsMulti.h>
 #include <ATen/native/ReduceOpsUtils.h>
+#include <ATen/ops/max.h>
 #include <torch/library.h>
 
 #ifndef AT_PER_OPERATOR_HEADERS
@@ -561,7 +562,7 @@ Tensor MaxAll(const Tensor& self) {
   // TODO(@caizhi): use musa porting to instead putting to cpu.
   c10::musa::MUSAGuard device_guard(self.device());
   if (self.scalar_type() == ScalarType::Double) {
-    return at::min(self.to("cpu")).to("musa");
+    return at::max(self.to("cpu")).to("musa");
   }
   return MaxAllCall(self, ::musa::dnn::Reduce::Mode::MAX);
 }

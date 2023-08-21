@@ -72,9 +72,9 @@ at::Tensor& MaskedSelectOut(
   out.resize_({(*expand_input).numel()});
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::MaskedSelect maskedselect_op;
-  auto mt_input = CreateMUTensor(*expand_input, true);
-  auto mt_mask = CreateMUTensor(*expand_mask, true);
-  auto mt_result = CreateMUTensor(out, true);
+  auto mt_input = CreateMUTensor(*expand_input);
+  auto mt_mask = CreateMUTensor(*expand_mask);
+  auto mt_result = CreateMUTensor(out);
   CHECK_MUDNN_STATUS(
       maskedselect_op.Run(h, mt_result, mt_input, mt_mask, InternalMemAlloc),
       "Run");

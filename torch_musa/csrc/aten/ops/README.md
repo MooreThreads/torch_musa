@@ -3,7 +3,6 @@ there ares some ops that implemented on CPU:
  - remainder.Scalar_Tensor
  - convolution_overrideable   # input.dim() != 4 ||  weight.dim()  (rn50 doesn't hit this case)
  - cast  # double
- - \_index_put_impl_  # index's type == bool (rn50 doesn't hit this case)
  - scatter.src_out
  - scatter.src
  - native_group_norm_backward
@@ -11,6 +10,7 @@ there ares some ops that implemented on CPU:
  - mul, div # double, bool
  - fill # double
 
+ need to compare mudnn uncontiguous Unay/Binary vs contiguous + contiguous Unary/Binary performance
 
 ## Use device guard rightly
 
