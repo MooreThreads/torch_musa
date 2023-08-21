@@ -1,10 +1,12 @@
-#pragma once
+#ifndef TORCH_MUSA_CSRC_AMP_AUTOCAST_MODE_H_
+#define TORCH_MUSA_CSRC_AMP_AUTOCAST_MODE_H_
 
 #include <ATen/ATen.h>
-// #include <torch/csrc/utils.h>
-#include "torch_musa/csrc/aten/utils/Utils.h"
-namespace at {
+#include <pybind11/pybind11.h>
 
+#include "torch_musa/csrc/aten/utils/Utils.h"
+
+namespace at {
 namespace musa {
 namespace autocast {
 
@@ -24,6 +26,8 @@ TORCH_API at::ScalarType get_autocast_musa_dtype();
 TORCH_API void set_autocast_musa_dtype(at::ScalarType dtype);
 TORCH_API bool is_autocast_musa_enabled();
 TORCH_API void set_autocast_musa_enabled(bool enabled);
+
+PyMethodDef* GetAutocastMethods();
 
 namespace {
 bool is_autocast_eligible(const Tensor& tensor, DeviceType device_type) {
@@ -258,3 +262,5 @@ inline at::ScalarType type_from_firstarg(
 } // namespace autocast
 } // namespace musa
 } // namespace at
+
+#endif // TORCH_MUSA_CSRC_AMP_AUTOCAST_MODE_H_
