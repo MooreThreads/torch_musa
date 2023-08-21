@@ -91,13 +91,13 @@ apply_patches() {
     popd
   fi
 
-  for file in `ls -a $PATCHES_DIR`
+  for file in $(find ${PATCHES_DIR} -type f -print)
   do
     if [ "${file##*.}"x = "patch"x ]; then
       echo -e "\033[34mapplying patch: $file \033[0m"
       pushd $PYTORCH_PATH
-      git apply --check $PATCHES_DIR/$file
-      git apply $PATCHES_DIR/$file
+      git apply --check $file
+      git apply $file
       popd
     fi
   done
@@ -106,8 +106,7 @@ apply_patches() {
 build_pytorch() {
   echo -e "\033[34mBuilding PyTorch...\033[0m"
   if [ ! -d ${PYTORCH_PATH} ]; then
-    echo -e "\033[34mAn error occurred while building PyTorch, the specified PyTorch \
-             repo ${PYTORCH_PATH} does not exist \033[0m"
+    echo -e "\033[34mAn error occurred while building PyTorch, the specified PyTorch repo [${PYTORCH_PATH}] does not exist \033[0m"
     exit 1
   fi
 

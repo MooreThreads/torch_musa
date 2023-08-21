@@ -1,0 +1,15 @@
+diff --git a/tools/autograd/derivatives.yaml b/tools/autograd/derivatives.yaml
+index 1416505..9ac870e 100644
+--- a/tools/autograd/derivatives.yaml
++++ b/tools/autograd/derivatives.yaml
+@@ -2681,6 +2681,10 @@
+   output_differentiability: [True, False, False, False, False]
+   query, key, value: _flash_attention_backward(grad, query, key, value, output, softmax_logsumexp, cum_seq_q, cum_seq_k, max_q, max_k, dropout_p, is_causal, philox_seed, philox_offset)
+ 
++- name: _scaled_dot_product_attention_musa(Tensor query, Tensor key, Tensor value, Tensor? attn_mask=None, float dropout_p=0.0, bool is_causal=False) -> (Tensor output, Tensor attn_weights, Tensor bwd_reserve)
++  output_differentiability: [True, False, False]
++  query, key, value: _scaled_dot_product_attention_musa_backward(grad, query, key, value, output, attn_weights, bwd_reserve)
++  
+ # fft
+ - name: _fft_r2c(Tensor self, int[] dim, int normalization, bool onesided) -> Tensor
+   self: fft_r2c_backward(grad, dim, normalization, onesided, self.sym_size(dim.back()))

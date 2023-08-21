@@ -13,6 +13,9 @@ FILE(GLOB _CSRCS
     aten/quantized/mudnn/*.cpp
 )
 
+FILE(GLOB _MUDNN_ATTENTION_CSRCS aten/ops/attention/mudnn/*.cpp)
+LIST(APPEND MUSA_CSRCS ${_CSRCS} ${_MUDNN_ATTENTION_CSRCS})
+
 if(USE_MCCL)
   FILE(GLOB _MCCL_CSRCS distributed/*.cpp)
   list(APPEND MUSA_CSRCS ${_MCCL_CSRCS})
@@ -125,13 +128,14 @@ find_path(
   PATHS ${llvm_openmp_search_list}
   REQUIRED
   NO_DEFAULT_PATH)
-musa_include_directories(${OPENMP_INCLUDE_DIR})
 
+musa_include_directories(${OPENMP_INCLUDE_DIR})
 musa_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/aten/ops/musa aten/ops/torchvision)
+
 musa_add_library(${MUSA_KERNELS_LIB} SHARED ${MU_SRCS} ${PORTING_CPP_CSRCS} ${ATEN_MUSA_CSRCS})
 
-set(CUBLAS_LIB $ENV{MUSA_HOME}/lib/libmublas.so)
-target_link_libraries(${MUSA_KERNELS_LIB} ${CUBLAS_LIB})
+set(MUBLAS_LIB $ENV{MUSA_HOME}/lib/libmublas.so)
+target_link_libraries(${MUSA_KERNELS_LIB} ${MUBLAS_LIB})
 
 if(NOT MUSA_KERNELS_INSTALL_LIB_DIR)
     set(MUSA_KERNELS_INSTALL_LIB_DIR lib)

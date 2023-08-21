@@ -115,7 +115,8 @@ class Comparator:
             A bool value indicating whether computing result is right.
         """
         if self._comparator is None:
-            raise NotImplementedError("Comparator is not implemented by a subclass")
+            raise NotImplementedError(
+                "Comparator is not implemented by a subclass")
 
         if not isinstance(self._comparator, (Callable, types.LambdaType)):
             raise TypeError("self._comparator must be a callable type")

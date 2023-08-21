@@ -1,0 +1,54 @@
+diff --git a/aten/src/ATen/native/transformers/attention.cpp b/aten/src/ATen/native/transformers/attention.cpp
+index a5f0141..23c2b38 100644
+--- a/aten/src/ATen/native/transformers/attention.cpp
++++ b/aten/src/ATen/native/transformers/attention.cpp
+@@ -483,6 +483,28 @@ std::tuple<Tensor, Tensor> native_multi_head_attention_cpu(
+   return std::make_tuple(std::move(proj), std::move(qkt));
+ }
+ 
++std::tuple<Tensor, Tensor, Tensor>
++_scaled_dot_product_attention_musa_cpu_backward(
++    const at::Tensor& grad_out_,
++    const at::Tensor& query,
++    const at::Tensor& key,
++    const at::Tensor& value,
++    const at::Tensor& out,
++    const at::Tensor& attn_weights,
++    const at::Tensor& bwd_reserve) {
++  TORCH_CHECK(false, "No CPU implemetation for this aten func yet!");
++}
++
++std::tuple<Tensor, Tensor, Tensor> _scaled_dot_product_attention_cpu_musa(
++    const at::Tensor& query,
++    const at::Tensor& key,
++    const at::Tensor& value,
++    const c10::optional<Tensor>& mask,
++    double dropout_p,
++    bool is_causal) {
++  TORCH_CHECK(false, "No CPU implemetation for this aten func yet!");
++}
++
+ std::tuple<Tensor, Tensor, Tensor, Tensor> native_decoder_only_multi_head_attention(
+     const Tensor& query,
+     const Tensor& key,
+@@ -779,6 +801,10 @@ Tensor scaled_dot_product_attention(
+       query_, key, value, attn_mask_, dropout_p, is_causal);
+   }
+   sdp::SDPBackend backend = static_cast<sdp::SDPBackend>(choice_int);
++  if (query_.device().type() == DeviceType::PrivateUse1) {
++    // musa
++    backend = sdp::SDPBackend::musa;
++  }
+   switch (backend) {
+     case sdp::SDPBackend::flash_attention: {
+       auto out_lse_softmax = at::_scaled_dot_product_flash_attention(
+@@ -801,6 +827,9 @@ Tensor scaled_dot_product_attention(
+           attn_mask_,
+           dropout_p,
+           is_causal));
++    case sdp::SDPBackend::musa:
++      return std::get<0>(at::_scaled_dot_product_attention_musa(
++          query_, key, value, attn_mask_, dropout_p, is_causal));
+     default:
+       TORCH_CHECK(
+           false,

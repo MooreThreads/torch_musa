@@ -1,0 +1,14 @@
+diff --git a/aten/src/ATen/native/transformers/sdp_utils_cpp.h b/aten/src/ATen/native/transformers/sdp_utils_cpp.h
+index 1bcc307..9b6251d 100644
+--- a/aten/src/ATen/native/transformers/sdp_utils_cpp.h
++++ b/aten/src/ATen/native/transformers/sdp_utils_cpp.h
+@@ -7,6 +7,7 @@ enum class SDPBackend {
+   error = -1,
+   math = 0,
+   flash_attention = 1,
+-  efficient_attention = 2
++  efficient_attention = 2,
++  musa = 3
+ };
+ } // namespace sdp
+\ No newline at end of file

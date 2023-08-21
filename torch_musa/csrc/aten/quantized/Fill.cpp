@@ -13,7 +13,6 @@
 #else
 #include <ATen/ops/masked_fill_native.h>
 #include <ATen/ops/ones.h>
-
 #endif
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"

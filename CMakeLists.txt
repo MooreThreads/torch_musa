@@ -56,6 +56,7 @@ option(USE_TSAN "Use Thread Sanitizer" OFF)
 option(USE_MUSA "Use MUSA" ON)
 option(USE_MCCL "USE MCCL" ON)
 include(CMakeDependentOption)
+
 cmake_dependent_option(
   USE_MUDNN "Use muDNN" ON
   "USE_MUSA" OFF)
