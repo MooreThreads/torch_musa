@@ -30,16 +30,18 @@ bool IsTranspose(const Tensor& mat) {
 at::Tensor Dot(const at::Tensor& l, const at::Tensor& r) {
   c10::musa::MUSAGuard device_guard(l.device());
   muHandle& h = GetMudnnHandle();
-  Tensor out =
-      at::empty({1}, l.options().memory_format(at::MemoryFormat::Contiguous));
+  Tensor out = at::empty(
+      {1, 1}, l.options().memory_format(at::MemoryFormat::Contiguous));
   auto rst = CreateMUTensor(out);
-  Tensor contiguous_l = l.contiguous();
-  Tensor contiguous_r = r.contiguous();
+  // TODO : (lms)view out, l and r to fix the mudnn's convention
+  // https://github.mthreads.com/mthreads/muDNN/issues/304
+  Tensor contiguous_l = l.contiguous().view(c10::IntArrayRef{1, l.size(0)});
+  Tensor contiguous_r = r.contiguous().view(c10::IntArrayRef{l.size(0), 1});
   auto lmt = CreateMUTensor(contiguous_l);
   auto rmt = CreateMUTensor(contiguous_r);
 
   ::musa::dnn::Dot op;
-
+  op.SetComputeMode(::musa::dnn::Dot::ComputeMode::TENSOR);
   CHECK_MUDNN_STATUS(op.Run(h, rst, lmt, rmt, InternalMemAlloc), "Run")
   return out.squeeze();
 }
@@ -135,9 +137,11 @@ at::Tensor& AddMvOut(
   sz.push_back(mat2.size(0));
   sz.push_back(1);
   const at::Tensor& vec = mat2.view(sz);
+  // TODO:(lms) to avoid mudnn failing in gemv
+  // https://github.mthreads.com/mthreads/muDNN/issues/304
+  out = out.unsqueeze(-1);
   AddMmOut(self, mat1, vec, beta, alpha, out);
-  out = out.view(mat1.size(0));
-  return out;
+  return out.squeeze_();
 }
 
 at::Tensor AddMm(
@@ -178,7 +182,6 @@ Tensor& BmmOut(const Tensor& self, const Tensor& mat2, Tensor& out) {
       self.size(0) == mat2.size(0) && self.size(2) == mat2.size(1),
       "self_shape[0] must equal to mat2_shape[0], and self_shape[2] "
       "must equal to mat2_shape[1]");
-
   MmCall(self, mat2, out, out, true);
   return out;
 }

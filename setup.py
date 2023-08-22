@@ -70,7 +70,8 @@ def get_pytorch_install_path():
 
         pytorch_install_root = os.path.dirname(os.path.abspath(torch.__file__))
     except Exception:
-        raise RuntimeError("Building error: import torch failed when building!")
+        raise RuntimeError(
+            "Building error: import torch failed when building!")
     return pytorch_install_root
 
 
@@ -80,7 +81,8 @@ def build_musa_lib():
     gen_porting_dir = "generated_cuda_compatible"
     cuda_compatiable_path = os.path.join(BASE_DIR, build_dir, gen_porting_dir)
     if not os.path.isdir(cuda_compatiable_path):
-        port_cuda(pytorch_root, get_pytorch_install_path(), cuda_compatiable_path)
+        port_cuda(pytorch_root, get_pytorch_install_path(),
+                  cuda_compatiable_path)
 
     cmake = CMakeManager(build_dir)
     env = os.environ.copy()
@@ -89,9 +91,11 @@ def build_musa_lib():
     env["BUILD_PYTORCH_REPO_PATH"] = env["PYTORCH_REPO_PATH"]
     build_test = not check_negative_env_flag("BUILD_TEST")
     cmake_python_library = "{}/{}".format(
-        sysconfig.get_config_var("LIBDIR"), sysconfig.get_config_var("INSTSONAME")
+        sysconfig.get_config_var(
+            "LIBDIR"), sysconfig.get_config_var("INSTSONAME")
     )
-    cmake.generate(version, cmake_python_library, True, build_test, env, RERUN_CMAKE)
+    cmake.generate(version, cmake_python_library,
+                   True, build_test, env, RERUN_CMAKE)
     cmake.build(env)
 
 
@@ -147,7 +151,9 @@ def configure_extension_build():
 
 install_requires = ["packaging"]
 
-version=version.strip()+ "+git" + subprocess.check_output(["git", "rev-parse", "HEAD"]).decode("ascii").strip()[:7]
+version = version.strip() + "+git" + \
+    subprocess.check_output(["git", "rev-parse", "HEAD"]
+                            ).decode("ascii").strip()[:7]
 
 # Setup
 setup(
