@@ -11,7 +11,6 @@
 #include "torch_musa/csrc/core/MUSAGuard.h"
 
 #include <mudnn.h>
-
 namespace at {
 namespace musa {
 
@@ -29,6 +28,15 @@ Tensor& ArangeOut(const Scalar& end, Tensor& result) {
   return ArangeStartOut(/*start=*/0, end, /*step*/ 1, result);
 }
 
+Tensor& range_out(
+    const Scalar& start,
+    const Scalar& end,
+    const Scalar& step,
+    Tensor& result) {
+  c10::musa::MUSAGuard device_guard(result.device());
+  return at::native::range_cuda_out(start, end, step, result);
+}
+
 at::Tensor& LinspaceOut(
     const at::Scalar& start,
     const at::Scalar& end,
@@ -44,6 +52,7 @@ at::Tensor& LinspaceOut(
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("arange.start_out", &ArangeStartOut);
   m.impl("linspace.out", &LinspaceOut);
+  m.impl("range.out", &range_out);
 }
 
 } // namespace musa
