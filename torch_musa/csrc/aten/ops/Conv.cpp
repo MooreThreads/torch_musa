@@ -207,7 +207,8 @@ Tensor Conv2d(
 #ifdef ENABLE_FUSION
     ::musa::dnn::Convolution::FusedActivationDesc fused_desc;
     muTensor temp_add;
-    auto bias = CreateMUTensor(bias_opt.value());
+    auto contiguous_bias = bias_opt.value().contiguous();
+    auto bias = CreateMUTensor(contiguous_bias);
     CHECK_MUDNN_STATUS(
         c.RunFusion(
             h, out, in, ke, bias, temp_add, fused_desc, algo, InternalMemAlloc),
@@ -440,7 +441,8 @@ Tensor Conv2dDataBwd(
     int64_t groups,
     IntArrayRef dilation) {
   c10::musa::MUSAGuard device_guard(grad_output.device());
-  auto grad_input_t = at::empty(input.sizes(), grad_output.options());
+  auto grad_input_t = at::empty(
+      input.sizes(), grad_output.options(), at::MemoryFormat::Contiguous);
 
   Tensor weight_cont = weight.contiguous();
   Tensor grad_output_cont = grad_output.contiguous();
