@@ -515,9 +515,9 @@ TORCH_LIBRARY_IMPL(aten, AutocastPrivateUse1, m) {
   // TODO(kangchen): sum calcuate error when the output and self dtype
   // are different It will get inf, which cuda registers fp32_set_opt_dtype,
   // So I registered as fp32 temporarily.
-  KERNEL_MUSA(sum, fp32)
-  KERNEL_MUSA_FOR_MULTIFORM(sum, dim_IntList, fp32)
-  KERNEL_MUSA_FOR_MULTIFORM(sum, dim_DimnameList, fp32)
+  KERNEL_MUSA(sum, fp32_set_opt_dtype)
+  KERNEL_MUSA_FOR_MULTIFORM(sum, dim_IntList, fp32_set_opt_dtype)
+  KERNEL_MUSA_FOR_MULTIFORM(sum, dim_DimnameList, fp32_set_opt_dtype)
 
   // fp32_append_dtype
   // The fp32_append_dtype wrapper overrides implicit promotion behavior.

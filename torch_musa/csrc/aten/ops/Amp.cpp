@@ -3,6 +3,7 @@
 #include <ATen/ops/_amp_update_scale_native.h>
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 
+#include "torch_musa/csrc/aten/ops/Amp.h"
 namespace at {
 namespace musa {
 
@@ -54,12 +55,14 @@ at::Tensor& AmpUpdateScale(
       "wrapper_CUDA___amp_update_scale_",
       "found_inf");
   const OptionalDeviceGuard device_guard(device_of(self));
-  return at::native::_amp_update_scale_cuda_(
+  // TODO(kangchen): When porting, its double type calculates as 0, so I
+  // temporarily convert it to the float and update its implementation locally.
+  return AmpUpdateScaleMusa(
       self,
       growth_tracker,
       found_inf,
-      scale_growth_factor,
-      scale_backoff_factor,
+      static_cast<float>(scale_growth_factor),
+      static_cast<float>(scale_backoff_factor),
       growth_interval);
 }
 
