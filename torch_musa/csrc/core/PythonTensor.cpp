@@ -267,12 +267,19 @@ PyObject* GetTensorType(PyObject* self, PyObject* args, PyObject* kwargs) {
   END_HANDLE_TH_ERRORS
 }
 
-PyObject* TensorIsMusa(PyTensorType* self, void* unused) {
-  if (self->is_musa) {
-    Py_RETURN_TRUE;
-  } else {
-    Py_RETURN_FALSE;
-  }
+static PyObject* TensorIsMusa(
+    PyObject* self,
+    PyObject* args,
+    PyObject* kwargs) {
+  HANDLE_TH_ERRORS
+  static torch::PythonArgParser parser({"type(Tensor temp)"
+
+  });
+  torch::ParsedArgs<1> parsed_args;
+  auto r = parser.parse(args, kwargs, parsed_args);
+  auto self_ = r.tensor(0);
+  return torch::autograd::utils::wrap(at::musa::is_musa(self_));
+  END_HANDLE_TH_ERRORS
 }
 
 static PyObject* TensorInstancecheck(PyObject* _self, PyObject* arg) {
@@ -297,7 +304,6 @@ static struct PyMethodDef metaclass_methods[] = {
 static struct PyGetSetDef metaclass_properties[] = {
     {"dtype", (getter)TensorDtype, nullptr, nullptr, nullptr},
     {"layout", (getter)TensorLayout, nullptr, nullptr, nullptr},
-    {"is_musa", (getter)TensorIsMusa, nullptr, nullptr, nullptr},
     {nullptr}};
 
 static PyTypeObject metaclass = {
@@ -476,6 +482,10 @@ static void PyBindTensorTypes(const std::vector<PyTensorType>& tensor_types) {
 static PyMethodDef MusaTensorMethods[] = {
     {"_type",
      castPyCFunctionWithKeywords(GetTensorType),
+     METH_VARARGS | METH_KEYWORDS,
+     nullptr},
+    {"_is_musa",
+     castPyCFunctionWithKeywords(TensorIsMusa),
      METH_VARARGS | METH_KEYWORDS,
      nullptr},
     {nullptr}};
