@@ -20,12 +20,6 @@ c10::intrusive_ptr<ConvPackedParamsBase<kSpatialDim>> PackedConvWeightMudnn<
         torch::List<int64_t> dilation,
         int64_t groups,
         bool transpose) {
-  // TODO(@fan.mo): need to check out to implement groups for conv operator in
-  // Conv.cpp
-  TORCH_CHECK(
-      groups == 1,
-      "Quantized mudnn conv2d is currently limited to groups = 1; received groups =",
-      groups);
   TORCH_CHECK(
       weight.qscheme() == c10::kPerTensorAffine ||
           weight.qscheme() == c10::kPerTensorSymmetric,
@@ -64,55 +58,25 @@ c10::intrusive_ptr<ConvPackedParamsBase<kSpatialDim>> PackedConvWeightMudnn<
   TORCH_CHECK(
       !transpose, "mudnn quantized conv prepack expects transpose = false")
 
-  // convert int8 weight to uint8, TODO(@fan.mo) will remove this type cast in
-  // QY2
-  if (weight.scalar_type() == c10::kQInt8) {
-    auto weight_scale = weight.q_scale();
-    auto weight_zero_point = weight.q_zero_point();
-    TORCH_WARN(
-        "Conv weight is QInt8, which is not supported by mudnn currently, convert to QUInt8 instead.");
-    TORCH_CHECK(
-        weight_zero_point < 128, "QInt8 weight zp should less then 128");
+  TORCH_CHECK(
+      weight.scalar_type() == c10::kQInt8,
+      "TORCH_MUSA_ARCH > 210 requires weights in format QInt8, which is ",
+      weight.scalar_type());
+  TORCH_CHECK(
+      weight.q_zero_point() == 0,
+      "TORCH_MUSA_ARCH > 210 requires weights are quantized in per-tensor and symmetric quantization, ",
+      "zero_point should be 0, which is ",
+      weight.q_zero_point());
 
-    at::Tensor float_weight = weight.dequantize();
-    weight_zero_point += 128;
-    weight = at::musa::QuantizePerTensor(
-        float_weight, weight_scale, weight_zero_point, c10::kQUInt8);
-  }
-
-  const int num_unpadded_output_channels = weight.size(0);
+  const int output_channels = weight.size(0);
   const auto qtype = weight.qscheme();
   if (bias.has_value()) {
     TORCH_CHECK(bias.value().dim() == 1, "bias should be a vector (1D Tensor)");
     TORCH_CHECK(
-        bias.value().size(0) == num_unpadded_output_channels,
-        "bias should have K elements: " +
-            std::to_string(num_unpadded_output_channels));
+        bias.value().size(0) == output_channels,
+        "bias should have K elements: " + std::to_string(output_channels));
   }
-
-  // TODO(@fan.mo): mudnn needs input channel to be a multiplier of 32
-  // so weight input channel also should keep that rule
-  auto num_input_channels = weight.size(1);
-  int8_t num_output_slices2pad = (32 - num_unpadded_output_channels % 32) % 32;
-  int8_t num_input_slices2pad = (32 - num_input_channels % 32) % 32;
-  if (num_output_slices2pad != 0 || num_input_slices2pad != 0) {
-    // the second argument is an initializer list of padded values. there are 2
-    // values for each dimension. refer to
-    // https://pytorch.org/docs/stable/generated/torch.nn.functional.pad.html
-    // for more details
-    weight = at::pad(
-        weight,
-        {0, 0, 0, 0, 0, num_input_slices2pad, 0, num_output_slices2pad},
-        "constant",
-        0);
-    if (bias.has_value()) {
-      bias.value() =
-          at::pad(bias.value(), {0, num_output_slices2pad}, "constant", 0);
-    }
-  }
-  weight = weight.to(c10::MemoryFormat::ChannelsLast)
-               .permute({2, 3, 1, 0})
-               .contiguous();
+  weight = weight.permute({0, 2, 3, 1}).contiguous();
 
   auto ret_ptr = c10::make_intrusive<PackedConvWeightMudnn<kSpatialDim>>(
       weight,
@@ -124,7 +88,7 @@ c10::intrusive_ptr<ConvPackedParamsBase<kSpatialDim>> PackedConvWeightMudnn<
       groups,
       transpose,
       qtype,
-      num_unpadded_output_channels);
+      output_channels);
   return ret_ptr;
 }
 

@@ -100,6 +100,7 @@ inline Tensor NewQTensor(
   auto memory_format =
       options.memory_format_opt().value_or(MemoryFormat::Contiguous);
   auto device = options.device();
+  at::musa::lazyInitMUSA();
   at::Allocator* allocator = nullptr;
   if (device.is_privateuseone()) {
     allocator = c10::musa::MUSACachingAllocator::get();

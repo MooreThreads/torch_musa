@@ -15,6 +15,8 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 
+enum class ActMode { IDENTITY, RELU, SILU };
+
 template <int kSpatialDim>
 at::SmallVector<int64_t, kSpatialDim + 2> MakeQConvOutputShape(
     int N, // mini-batch
@@ -36,34 +38,25 @@ void inline SetMudnnQuantizationInfo(
       "Set quantization info");
 }
 
-void inline SetMudnnFormat(at::musa::muTensor& t) {
-  CHECK_MUDNN_STATUS(
-      t.SetFormat(at::musa::muTensor::Format::NHWC),
-      "Set mudnn tensor format NHWC");
-}
-
 void inline ConfigConv(
     ::musa::dnn::Convolution& c,
-    torch::List<int64_t> pad,
-    torch::List<int64_t> str,
-    torch::List<int64_t> dil) {
-  CHECK_MUDNN_STATUS(
-      c.SetGroups(1),
-      "SetGroups"); // We currently only support groups == 1 qconv
-  // TODO(mofan): quantized conv requires more complex logic and testing to
-  // adapt.
+    torch::List<int64_t> padding,
+    torch::List<int64_t> stride,
+    torch::List<int64_t> dilation,
+    int64_t groups) {
+  CHECK_MUDNN_STATUS(c.SetGroups(groups), "SetGroups");
   CHECK_MUDNN_STATUS(
       c.SetComputeMode(::musa::dnn::Convolution::ComputeMode::TENSOR),
       "SetComputeMode");
 
-  int sizes = pad.size();
+  int sizes = padding.size();
   if (sizes == 2) {
     std::vector<int> pad_ = {
-        static_cast<int>(pad[0]), static_cast<int>(pad[1])};
+        static_cast<int>(padding[0]), static_cast<int>(padding[1])};
     std::vector<int> str_ = {
-        static_cast<int>(str[0]), static_cast<int>(str[1])};
+        static_cast<int>(stride[0]), static_cast<int>(stride[1])};
     std::vector<int> dil_ = {
-        static_cast<int>(dil[0]), static_cast<int>(dil[1])};
+        static_cast<int>(dilation[0]), static_cast<int>(dilation[1])};
     CHECK_MUDNN_STATUS(
         c.SetNdInfo(sizes, pad_.data(), str_.data(), dil_.data()), "SetNdInfo");
   } else {
@@ -85,7 +78,7 @@ struct TORCH_API PackedConvWeightMudnn
       bool transpose,
       c10::QScheme q_scheme,
       int64_t output_channels)
-      : maybe_padded_weight_(std::move(orig_weight)),
+      : weight_(std::move(orig_weight)),
         bias_(std::move(bias)),
         stride_(std::move(stride)),
         padding_(std::move(padding)),
@@ -94,7 +87,7 @@ struct TORCH_API PackedConvWeightMudnn
         groups_(groups),
         transpose_(transpose),
         q_scheme_(q_scheme),
-        num_unpadded_output_channels_(output_channels) {
+        output_channels_(output_channels) {
   } // output channel needs to be stored when we have to pad this dimension
 
   at::Tensor apply(
@@ -107,6 +100,11 @@ struct TORCH_API PackedConvWeightMudnn
       double output_scale,
       int64_t output_zero_point) override;
 
+  at::Tensor apply_silu(
+      const at::Tensor& input,
+      double output_scale,
+      int64_t output_zero_point);
+
   at::Tensor apply_add(
       const at::Tensor& input,
       const at::Tensor& accum,
@@ -114,6 +112,12 @@ struct TORCH_API PackedConvWeightMudnn
       int64_t output_zero_point);
 
   at::Tensor apply_add_relu(
+      const at::Tensor& input,
+      const at::Tensor& accum,
+      double output_scale,
+      int64_t output_zero_point);
+
+  at::Tensor apply_add_silu(
       const at::Tensor& input,
       const at::Tensor& accum,
       double output_scale,
@@ -165,11 +169,7 @@ struct TORCH_API PackedConvWeightMudnn
   }
 
  private:
-  // cudnn needs conv2d's weight in **int8** dtype and output channel
-  // to be a multiple of 4, and it would pad weight to be one if it is not
-  // we currently follow what cudnn does and I (@fan.mo) didn't check that
-  // of **mudnn**, so we keep the name *maybe*_padded_weight_ here.
-  at::Tensor maybe_padded_weight_;
+  at::Tensor weight_;
   c10::optional<at::Tensor> bias_;
   torch::List<int64_t> stride_;
   torch::List<int64_t> padding_;
@@ -178,16 +178,16 @@ struct TORCH_API PackedConvWeightMudnn
   int64_t groups_;
   bool transpose_;
   c10::QScheme q_scheme_;
-  int64_t num_unpadded_output_channels_;
+  int64_t output_channels_;
 
-  template <bool ReluFused>
+  template <ActMode act_mode>
   at::Tensor apply_impl(
       const at::Tensor& input,
       const c10::optional<at::Tensor>& accum,
       double output_scale,
       int64_t output_zero_point);
 
-  template <bool ReluFused>
+  template <ActMode act_mode>
   void apply_impl_helper(
       at::Tensor& quantized_output,
       const at::Tensor& input,

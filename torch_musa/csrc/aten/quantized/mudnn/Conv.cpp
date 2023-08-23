@@ -36,7 +36,7 @@ at::SmallVector<int64_t, 4> MakeQConvOutputShape<2>(
 }
 
 template <int kSpatialDim>
-template <bool kReluFused>
+template <ActMode act_mode>
 void PackedConvWeightMudnn<kSpatialDim>::apply_impl_helper(
     at::Tensor& quantized_output,
     const at::Tensor& input,
@@ -51,19 +51,34 @@ void PackedConvWeightMudnn<kSpatialDim>::apply_impl_helper(
 
   auto act_scale = input.q_scale();
   auto act_zero_point = input.q_zero_point();
-  auto weight_scale = maybe_padded_weight_.q_scale();
-  auto weight_zero_point = maybe_padded_weight_.q_zero_point();
+  auto weight_scale = weight_.q_scale();
+  auto weight_zero_point = weight_.q_zero_point();
 
   // permute to NHWC format
   at::Tensor input_ = input.permute({0, 2, 3, 1});
   at::musa::muTensor in = at::musa::CreateMUTensor(input_);
-  at::musa::muTensor ke = at::musa::CreateMUTensor(maybe_padded_weight_);
+  at::musa::muTensor ke = at::musa::CreateMUTensor(weight_);
   at::musa::muTensor out = at::musa::CreateMUTensor(quantized_output);
   // set quantization info (scale and zero_point) to muTensors
   // and set their format
-  SetMudnnFormat(in);
-  SetMudnnFormat(out);
-  SetMudnnFormat(ke);
+  CHECK_MUDNN_STATUS(
+      in.SetFormat(at::musa::muTensor::Format::NHWC),
+      "Set input muTensor format as NHWC");
+  CHECK_MUDNN_STATUS(
+      out.SetFormat(at::musa::muTensor::Format::NHWC),
+      "Set output muTensor format as NHWC");
+  CHECK_MUDNN_STATUS(
+      ke.SetFormat(at::musa::muTensor::Format::NHWC),
+      "Set weight muTensor format as NHWC");
+  CHECK_MUDNN_STATUS(
+      in.SetType(::musa::dnn::TensorBase::Type::QINT8),
+      "Set input muTensor dtype as QINT8");
+  CHECK_MUDNN_STATUS(
+      out.SetType(::musa::dnn::TensorBase::Type::QINT8),
+      "Set output muTensor dtype as QINT8");
+  CHECK_MUDNN_STATUS(
+      ke.SetType(::musa::dnn::TensorBase::Type::QINT8),
+      "Set weight muTensor dtype as QINT8");
   SetMudnnQuantizationInfo(in, act_scale, act_zero_point);
   SetMudnnQuantizationInfo(out, output_scale, output_zero_point);
   SetMudnnQuantizationInfo(ke, weight_scale, weight_zero_point);
@@ -71,8 +86,7 @@ void PackedConvWeightMudnn<kSpatialDim>::apply_impl_helper(
   // if bias is used, we should make a muTensor and broadcast it first
   at::musa::muTensor bias;
   if (bias_.has_value() && bias_.value().numel() != 0) {
-    bias = at::musa::CreateMUTensor(
-        bias_.value()); // TODO(@fan.mo): check if broadcast is needed
+    bias = at::musa::CreateMUTensor(bias_.value());
   } else {
     bias = at::musa::CreateEmptyMUTensor();
   }
@@ -87,23 +101,31 @@ void PackedConvWeightMudnn<kSpatialDim>::apply_impl_helper(
     accum_ =
         accum.value().to(c10::MemoryFormat::ChannelsLast).permute({0, 2, 3, 1});
     add = at::musa::CreateMUTensor(accum_);
-    SetMudnnFormat(add);
+    CHECK_MUDNN_STATUS(
+        add.SetFormat(at::musa::muTensor::Format::NHWC),
+        "Set add muTensor format as NHWC");
+    CHECK_MUDNN_STATUS(
+        add.SetType(::musa::dnn::TensorBase::Type::QINT8),
+        "Set add muTensor dtype as QINT8");
     SetMudnnQuantizationInfo(
         add, accum.value().q_scale(), accum.value().q_zero_point());
   }
 
   at::musa::muHandle& h = at::GetMudnnHandle();
   ::musa::dnn::Convolution op;
-  ConfigConv(op, padding(), stride(), dilation());
+  ConfigConv(op, padding(), stride(), dilation(), groups());
 
   // from mudnn, 2 stands for RELU and 0 stands for IDENTITY
   ::musa::dnn::Convolution::FusedActivationDesc act;
-  if (kReluFused) {
-    act.SetMode(
-        static_cast<::musa::dnn::Convolution::FusedActivationDesc::Mode>(2));
-  } else {
+  if (ActMode::IDENTITY == act_mode) {
     act.SetMode(
         static_cast<::musa::dnn::Convolution::FusedActivationDesc::Mode>(0));
+  } else if (ActMode::RELU == act_mode) {
+    act.SetMode(
+        static_cast<::musa::dnn::Convolution::FusedActivationDesc::Mode>(2));
+  } else if (ActMode::SILU == act_mode) {
+    act.SetMode(
+        static_cast<::musa::dnn::Convolution::FusedActivationDesc::Mode>(7));
   }
 
   ::musa::dnn::Convolution::Algorithm algorithm =
@@ -126,8 +148,8 @@ void PackedConvWeightMudnn<kSpatialDim>::apply_impl_helper(
   return;
 }
 
-// Since mudnn(QY1) only supports uint8 format Tensor,
-// weight and output Tensor will be a clampped uint8 Tensor
+// weight and output Tensor will be a clampped int8 Tensor
+// while QY1 would cast weight to uint8 format
 /*
 Numerics:
 out_fp32  = conv_fp32(act_fp32, w_fp32, …)
@@ -150,7 +172,7 @@ TODO(@fan.mo): mudnn only supports symmetric quantization without zero-point(=0)
                         out_scale / (act_scale * w_scale))
 */
 template <int kSpatialDim>
-template <bool kReluFused>
+template <ActMode act_mode>
 at::Tensor PackedConvWeightMudnn<kSpatialDim>::apply_impl(
     const at::Tensor& act,
     const c10::optional<at::Tensor>& accum,
@@ -161,10 +183,9 @@ at::Tensor PackedConvWeightMudnn<kSpatialDim>::apply_impl(
   const auto num_input_channels = act.size(kSpatialDim - 1);
   const auto H = act.size(kSpatialDim);
   const auto W = act.size(kSpatialDim + 1);
-  const auto num_output_channels = maybe_padded_weight_.size(3);
-  std::vector<int64_t> kernel_size = {
-      maybe_padded_weight_.size(0), maybe_padded_weight_.size(1)};
-
+  const auto num_output_channels = weight_.size(0);
+  std::vector<int64_t> kernel_size = {weight_.size(1), weight_.size(2)};
+  at::ScalarType output_type = at::ScalarType::QInt8;
   at::SmallVector<int64_t, kSpatialDim + 2> output_shape =
       MakeQConvOutputShape<kSpatialDim>(
           batch_size,
@@ -174,39 +195,28 @@ at::Tensor PackedConvWeightMudnn<kSpatialDim>::apply_impl(
           stride_,
           padding_,
           dilation_);
-  // cudnn supports QInt8 output while mudnn only supports QUInt8 currently
   at::Tensor quantized_output = at::_empty_affine_quantized(
       output_shape,
-      at::device(at::kPrivateUse1).dtype(at::ScalarType::QUInt8),
+      at::device(at::kPrivateUse1).dtype(output_type),
       output_scale,
       output_zero_point,
       c10::MemoryFormat::ChannelsLast);
-
-  // mudnn requires input_channel to be multiplier of 32,
-  // would be modified to 4 or 8 later (cudnn is 4)
-  auto act_maybe_padded = act;
-  if (num_input_channels % 32 != 0) {
-    int8_t num_slices =
-        32 - num_input_channels % 32; // number of slices we need to pad
-    act_maybe_padded =
-        at::pad(act, {0, 0, 0, 0, 0, num_slices, 0, 0}, "constant", 0);
-  }
-
+  // permute to NHWC shape
   quantized_output = quantized_output.permute({0, 2, 3, 1});
-  apply_impl_helper<kReluFused>(
+
+  apply_impl_helper<act_mode>(
       quantized_output,
-      act_maybe_padded.to(c10::MemoryFormat::ChannelsLast),
+      act.to(c10::MemoryFormat::ChannelsLast),
       accum,
       output_scale,
       output_zero_point);
 
-  // permute back to NCHW format
+  if (output_channels_ != num_output_channels) {
+    return quantized_output.slice(1, 0, output_channels_);
+  }
+  // permute back to NCHW shape
   quantized_output = quantized_output.permute({0, 3, 1, 2});
 
-  // need to return sliced tensor if output_channels was padded
-  if (num_unpadded_output_channels_ != maybe_padded_weight_.size(3)) {
-    return quantized_output.slice(1, 0, num_unpadded_output_channels_);
-  }
   return quantized_output;
 }
 
@@ -215,7 +225,7 @@ at::Tensor PackedConvWeightMudnn<kSpatialDim>::apply(
     const at::Tensor& input,
     double output_scale,
     int64_t output_zero_point) {
-  return apply_impl<false>(
+  return apply_impl<ActMode::IDENTITY>(
       input, c10::nullopt, output_scale, output_zero_point);
 }
 
@@ -224,7 +234,17 @@ at::Tensor PackedConvWeightMudnn<kSpatialDim>::apply_relu(
     const at::Tensor& input,
     double output_scale,
     int64_t output_zero_point) {
-  return apply_impl<true>(input, c10::nullopt, output_scale, output_zero_point);
+  return apply_impl<ActMode::RELU>(
+      input, c10::nullopt, output_scale, output_zero_point);
+}
+
+template <int kSpatialDim>
+at::Tensor PackedConvWeightMudnn<kSpatialDim>::apply_silu(
+    const at::Tensor& input,
+    double output_scale,
+    int64_t output_zero_point) {
+  return apply_impl<ActMode::SILU>(
+      input, c10::nullopt, output_scale, output_zero_point);
 }
 
 template at::Tensor PackedConvWeightMudnn<2>::apply(
@@ -237,11 +257,16 @@ template at::Tensor PackedConvWeightMudnn<2>::apply_relu(
     double output_scale,
     int64_t output_zero_point);
 
+template at::Tensor PackedConvWeightMudnn<2>::apply_silu(
+    const at::Tensor& act,
+    double output_scale,
+    int64_t output_zero_point);
+
 namespace at {
 namespace musa {
 namespace {
 
-template <bool kReluFused>
+template <ActMode act_mode>
 class QConvInt8 final {
  public:
   static at::Tensor run(
@@ -250,10 +275,15 @@ class QConvInt8 final {
       double output_scale,
       int64_t output_zero_point) {
     c10::musa::MUSAGuard device_guard(act.device());
-    if (kReluFused) {
+    if (ActMode::RELU == act_mode) {
       return packed_weight->apply_relu(act, output_scale, output_zero_point);
-    } else {
+    } else if (ActMode::SILU == act_mode) {
+      return dynamic_cast<PackedConvWeightMudnn<2>*>(packed_weight.get())
+          ->apply_silu(act, output_scale, output_zero_point);
+    } else if (ActMode::IDENTITY == act_mode) {
       return packed_weight->apply(act, output_scale, output_zero_point);
+    } else {
+      TORCH_CHECK(false, "Unsupported fusion activation");
     }
   }
 };
@@ -265,19 +295,25 @@ TORCH_LIBRARY_IMPL(quantized, AutogradPrivateUse1, m) {
   // deprecate the old variants
   m.impl(
       TORCH_SELECTIVE_NAME("quantized::conv2d.new"),
-      TORCH_FN(QConvInt8<false>::run));
+      TORCH_FN(QConvInt8<ActMode::IDENTITY>::run));
   m.impl(
       TORCH_SELECTIVE_NAME("quantized::conv2d_relu.new"),
-      TORCH_FN(QConvInt8<true>::run));
+      TORCH_FN(QConvInt8<ActMode::RELU>::run));
+  m.impl(
+      TORCH_SELECTIVE_NAME("quantized::conv2d_silu.new"),
+      TORCH_FN(QConvInt8<ActMode::SILU>::run));
 }
 
 TORCH_LIBRARY_IMPL(quantized, QuantizedPrivateUse1, m) {
   m.impl(
       TORCH_SELECTIVE_NAME("quantized::conv2d.new"),
-      TORCH_FN(QConvInt8<false>::run));
+      TORCH_FN(QConvInt8<ActMode::IDENTITY>::run));
   m.impl(
       TORCH_SELECTIVE_NAME("quantized::conv2d_relu.new"),
-      TORCH_FN(QConvInt8<true>::run));
+      TORCH_FN(QConvInt8<ActMode::RELU>::run));
+  m.impl(
+      TORCH_SELECTIVE_NAME("quantized::conv2d_silu.new"),
+      TORCH_FN(QConvInt8<ActMode::SILU>::run));
 }
 
 } // namespace
