@@ -145,7 +145,8 @@ class CMakeManager(CMake):
 
         # We set some CMAKE_* options in our Python build code instead of relying on the user's direct settings. Emit an
         # error if the user also attempts to set these CMAKE options directly.
-        specified_cmake__options = set(build_options).intersection(cmake__options)
+        specified_cmake__options = set(
+            build_options).intersection(cmake__options)
         if len(specified_cmake__options) > 0:
             print(
                 ", ".join(specified_cmake__options)
@@ -165,7 +166,8 @@ class CMakeManager(CMake):
                 # github env vars use utf-8, on windows, non-ascii code may
                 # cause problem, so encode first
                 try:
-                    my_env[env_var_name] = str(my_env[env_var_name].encode("utf-8"))
+                    my_env[env_var_name] = str(
+                        my_env[env_var_name].encode("utf-8"))
                 except UnicodeDecodeError as e:
                     shex = ":".join(
                         "{:02x}".format(ord(c)) for c in my_env[env_var_name]
