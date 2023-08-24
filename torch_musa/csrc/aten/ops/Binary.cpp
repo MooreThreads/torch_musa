@@ -342,10 +342,11 @@ void BinarycommonDtypeCall(
   at::native::alpha_check(common_dtype, alpha_scalar);
   Tensor common_self = self.to(common_dtype);
   Tensor common_other = other.to(common_dtype);
-  if (output.scalar_type() == common_dtype) {
+  auto out_type = IsBoolMode(m) ? ScalarType::Bool : common_dtype;
+  if (output.scalar_type() == out_type) {
     BinaryCall(op_name, output, common_self, common_other, m, alpha_scalar);
   } else {
-    auto common_output = output.to(common_dtype);
+    auto common_output = output.to(out_type);
     BinaryCall(
         op_name, common_output, common_self, common_other, m, alpha_scalar);
     output.copy_(common_output);
