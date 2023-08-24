@@ -1,6 +1,44 @@
 FAQ
 ==========================
 
+设备查看问题
+-------------
+
+Q：如果在安装完驱动后，普通用户（非root用户）无法查看显卡，使用sudo权限才可以查看显卡？
+
+.. figure:: ../doc_image/render.*
+
+将该用户添加进render group后即可。
+
+#. 如果环境中已经有render group，执行下述命令即可：
+
+   ::
+   
+     sudo usermod -aG render `whoami`
+     
+#. 如果环境中没有render group，执行下述命令即可：
+
+   ::
+
+     sudo groupadd -o -g 109 render
+     sudo usermod -aG render `whoami`
+     
+
+计算库无法找到
+---------------
+
+Q：如果在安装torch_musa wheel包后， ``import torch_musa`` 时报错无法找到mudnn.so库？
+
+.. figure:: ../doc_image/mudnn.*
+
+
+#. 请确认 ``/usr/local/musa/lib/`` 目录下是否有该库，如果没有的话，需要安装该数学库；如果有的话，需要执行：
+
+   ::
+   
+     export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/musa/lib
+
+
 编译安装
 -----------
 

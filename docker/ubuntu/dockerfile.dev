@@ -18,6 +18,10 @@ COPY ./common/change_ubuntu_mirror.sh change_ubuntu_mirror.sh
 RUN bash change_ubuntu_mirror.sh && \
     rm -f change_ubuntu_mirror.sh
 
+# create render group
+# Only users in render group can use MooreThreads GPU
+RUN groupadd -o -g 109 render
+
 # install basic packages
 COPY ./common/install_base.sh install_base.sh
 RUN bash install_base.sh && \
