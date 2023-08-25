@@ -225,9 +225,6 @@ static PyObject* PyMusaInitExtension(
   set_module_attr("default_generators", default_musa_generators);
   BindGetDeviceProperties(m);
 
-  // Initialize some Python bindings.
-  torch::musa::InitializePythonBindings();
-
   Py_RETURN_NONE;
   END_HANDLE_TH_ERRORS
 }
@@ -450,6 +447,9 @@ static std::vector<PyMethodDef> methods;
 
 PyObject* InitMusaModule() {
   at::internal::lazy_init_num_threads();
+
+  // Initialize some Python bindings.
+  torch::musa::InitializePythonBindings();
 
   AddPyMethodDefs(methods, torch::musa::GetTensorMethods());
   AddPyMethodDefs(methods, MusaDeviceMethods);
