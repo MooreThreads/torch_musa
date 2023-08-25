@@ -3,7 +3,6 @@
 #include <ATen/NamedTensorUtils.h>
 #include <ATen/native/Activation.h>
 #include <ATen/native/BinaryOps.h>
-
 #ifndef AT_PER_OPERATOR_HEADERS
 #include <ATen/Functions.h>
 #include <ATen/NativeFunctions.h>
@@ -1017,6 +1016,24 @@ Tensor HardSwishBwd(const Tensor& grad_output, const Tensor& self) {
   return at::native::hardswish_backward(grad_output, self);
 }
 
+bool MUSAEqual(const at::Tensor& self, const at::Tensor& other) {
+  c10::musa::MUSAGuard device_guard(self.device());
+  TORCH_CHECK(
+      self.device() == other.device(),
+      "Cannot compare two tensors on "
+      "different devices. Got: ",
+      self.device(),
+      " and ",
+      other.device());
+  if (self.sizes() != other.sizes()) {
+    return false;
+  }
+  if (self.numel() == 0) {
+    return true;
+  }
+  return at::musa::EqualTensor(self, other).all().item().to<bool>();
+}
+
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("add.Tensor", &AddTensor);
   m.impl("add_.Tensor", &Add_Tensor);
@@ -1032,6 +1049,8 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("eq.Tensor", &EqualTensor);
   m.impl("eq_.Tensor", &Equal_Tensor);
   m.impl("eq.Tensor_out", &Equal_out);
+
+  m.impl("equal", &MUSAEqual);
 
   m.impl("ge.Tensor", &GreaterEqualTensor);
   m.impl("ge_.Tensor", &GreaterEqual_Tensor);

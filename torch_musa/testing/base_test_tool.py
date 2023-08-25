@@ -353,6 +353,8 @@ class OpTest:
             if isinstance(reduce, (tuple, list)):
                 for val in reduce:
                     res.append(val.to("cpu"))
+            elif isinstance(reduce,bool):
+                res.append(reduce)
             else:
                 res.append(reduce.to("cpu"))
             if test_out and "out" in input_args:
@@ -363,6 +365,9 @@ class OpTest:
 
     def compare_res(self, res1, res2):
         for i, (m_r, c_r) in enumerate(zip(res1, res2)):
+            if isinstance(m_r,bool):
+                assert m_r==c_r
+                return
             if self._ignored_result_indices and i in self._ignored_result_indices:
                 continue
             if c_r.dtype == torch.float16:
