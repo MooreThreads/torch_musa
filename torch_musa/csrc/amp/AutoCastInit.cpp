@@ -67,7 +67,7 @@ static PyObject* SetAutocastCacheEnabled(
     throw c10::TypeError(
         "enabled must be a bool (got %s)", Py_TYPE(arg)->tp_name);
   }
-  at::musa::autocast::set_autocast_musa_enabled(arg == Py_True);
+  at::musa::autocast::set_autocast_cache_enabled(arg == Py_True);
   Py_RETURN_NONE;
   END_HANDLE_TH_ERRORS
 }
@@ -76,7 +76,7 @@ static PyObject* IsAutocastCacheEnabled(
     PyObject* /* unused */,
     PyObject* /* unused */) {
   HANDLE_TH_ERRORS
-  if (at::musa::autocast::is_autocast_musa_enabled()) {
+  if (at::musa::autocast::is_autocast_cache_enabled()) {
     Py_RETURN_TRUE;
   } else {
     Py_RETURN_FALSE;

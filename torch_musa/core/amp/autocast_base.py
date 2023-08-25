@@ -73,9 +73,9 @@ class AutocastBase:
         elif self.device == "musa":
             supported_dtype = torch.musa.get_amp_supported_dtype()
             if self.fast_dtype not in supported_dtype:
-                error_message = f"In {self.custom_backend_name} autocast, but the target \
+                error_message = "In musa autocast, but the target \
                      dtype is not supported. "
-                error_message += f"Disabling autocast.\n {self.custom_backend_name} \
+                error_message += "Disabling autocast.\n musa \
                     Autocast only supports dtypes of "
                 error_message += (
                     ", ".join(str(dtype) for dtype in supported_dtype) + " currently."
@@ -117,8 +117,8 @@ class AutocastBase:
         elif self.device == "musa":
             if torch.musa.autocast_decrement_nesting() == 0:
                 torch.musa.clear_autocast_cache()
-            torch.musa.set_autocast_musa_enabled(self._enabled)
-            torch.musa.set_autocast_musa_dtype(self.fast_dtype)
+            torch.musa.set_autocast_musa_enabled(self.prev)
+            torch.musa.set_autocast_musa_dtype(self.prev_fastdtype)
         torch.musa.set_autocast_cache_enabled(self.prev_cache_enabled)
         return False
 

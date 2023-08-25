@@ -37,7 +37,7 @@ class SimpleModel(nn.Module):
 
 DEVICE = "musa"
 
-def train_in_fp16():
+def train_in_amp():
     set_seed()
     model = SimpleModel().to(DEVICE)
     criterion = nn.MSELoss()
@@ -84,6 +84,6 @@ def train_in_fp32():
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 def test_amp_autocast():
     res_fp32 = train_in_fp32()
-    res_fp16 = train_in_fp16()
+    res_fp16 = train_in_amp()
     torch.musa.synchronize()
     testing.DefaultComparator(res_fp16, res_fp32)
