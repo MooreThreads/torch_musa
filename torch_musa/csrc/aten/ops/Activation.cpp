@@ -166,6 +166,54 @@ SCALAR_COMPARISON(GtScalar, UNARY_MODE::GT)
 SCALAR_COMPARISON(EqScalar, UNARY_MODE::EQ)
 SCALAR_COMPARISON(NeScalar, UNARY_MODE::NE)
 
+/**
+ * auto poscoef = scale.to<float>(); // default this to 1
+ * auto negiptcoef = input_scale.to<float>();
+ * Original PyTorch implementation follows:
+ * out = out <= 0 ? (exp(input * negiptcoef) - 1) * negcoef : input *
+ * postcoef
+ * this equation is a little different with the ELU definition: out
+ * = out <= 0 ? (exp(input) - 1) * alpha : input Unfortunately, mudnn didn't
+ * support the upper one. Fortunately, Elu will always be valid.
+ */
+at::Tensor Elu(
+    const at::Tensor& self,
+    const c10::Scalar& alpha,
+    const c10::Scalar& scale,
+    const c10::Scalar& input_scale) {
+  return Unary(__func__, self, [&](::musa::dnn::Unary& op) {
+    auto negcoef = alpha.to<float>() * scale.to<float>();
+    op.SetAlpha(negcoef);
+    op.SetMode(::musa::dnn::Unary::Mode::ELU);
+  });
+}
+at::Tensor& Elu_(
+    at::Tensor& self,
+    const c10::Scalar& alpha,
+    const c10::Scalar& scale,
+    const c10::Scalar& input_scale) {
+  Unary_(__func__, self, [&](::musa::dnn::Unary& op) {
+    auto negcoef = alpha.to<float>() * scale.to<float>();
+    op.SetAlpha(negcoef);
+    op.SetMode(::musa::dnn::Unary::Mode::ELU);
+  });
+  return self;
+}
+
+at::Tensor& EluOut(
+    const at::Tensor& self,
+    const c10::Scalar& alpha,
+    const c10::Scalar& scale,
+    const c10::Scalar& input_scale,
+    at::Tensor& result) {
+  UnaryOut(__func__, result, self, [&](::musa::dnn::Unary& op) {
+    auto negcoef = alpha.to<float>() * scale.to<float>();
+    op.SetAlpha(negcoef);
+    op.SetMode(::musa::dnn::Unary::Mode::ELU);
+  });
+  return result;
+}
+
 Tensor GELU(const Tensor& self, c10::string_view approximate) {
   auto approximate_type = at::native::get_gelutype_enum(approximate);
   TORCH_CHECK(
@@ -1862,6 +1910,10 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("floor", &Floor);
   m.impl("floor_", &Floor_);
   m.impl("floor.out", &FloorOut);
+
+  m.impl("elu", &Elu);
+  m.impl("elu_", &Elu_);
+  m.impl("elu.out", &EluOut);
 
   m.impl("hardtanh", &HardTanh);
   m.impl("hardtanh_", &HardTanh_);
