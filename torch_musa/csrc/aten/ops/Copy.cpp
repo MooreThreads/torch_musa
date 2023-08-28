@@ -212,10 +212,6 @@ void mtgpu_impl_copy_d2d(
     }
   }
 
-  if (!non_blocking) {
-    TORCH_MUSA_CHECK(musaStreamSynchronize(copy_stream));
-  }
-
   if (src_device != dst_device) {
     // dst waits on src barrier (dst already waits on dst). We cannot
     // operate on dst's copy until the copy is complete.
@@ -335,7 +331,7 @@ Tensor mtgpu_copy_from(
   if (is_musa(src) && is_musa(self)) {
     // call cast during copy with different type.
     if (src.dtype() == self.dtype()) {
-      mtgpu_impl_copy_d2d(self, src, non_blocking);
+      mtgpu_impl_copy_d2d(self, src);
       return self;
     }
 
@@ -345,7 +341,7 @@ Tensor mtgpu_copy_from(
     }
 
     Tensor dst_contig = src.to(self.dtype());
-    mtgpu_impl_copy_d2d(self, dst_contig, non_blocking);
+    mtgpu_impl_copy_d2d(self, dst_contig);
 
     return self;
   }
