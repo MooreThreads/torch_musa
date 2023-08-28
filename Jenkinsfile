@@ -16,6 +16,9 @@ def ifTriggeredByTimer() {
 pipeline {
   parameters {
     choice(name: 'HARDWARE_PLATFORM', choices: ['MThreads GPU'], description: 'Target hardware platform')
+    booleanParam(name: 'RUN_NEXT_STAGE', defaultValue: true, description: 'Whether to run the next stage in daily CI stages')
+    booleanParam(name: 'DAILY_UT_PASSED', defaultValue: false, description: 'Whether daily unit test passed')
+    booleanParam(name: 'DAILY_IT_PASSED', defaultValue: false, description: 'Whether daily integration test passed')
   }
 
   agent {
@@ -51,69 +54,134 @@ pipeline {
         }
       }
     }
-    stage('Build') {
-      steps {
-        container('main') {
-          sh '/bin/bash --login scripts/update_daily_mudnn.sh'
-          sh '/bin/bash --login -c "conda run -n py38 --no-capture-output /bin/bash build.sh"'
+    stage('Parallel Build & Test') {
+      parallel {
+        stage('Stable Build & Test') {
+          agent {
+            kubernetes {
+              yamlFile 'ci/templates/musa.yaml'
+              defaultContainer "main"
+            }
+          }
+          when {
+            beforeAgent true
+            expression { !ifTriggeredByTimer() }
+          }
+          stages {
+            stage('Build') {
+              steps {
+                sh 'git config --global --add safe.directory \"*\"'
+                sh '/bin/bash --login scripts/update_release_mudnn.sh'
+                sh '/bin/bash --login -c "conda run -n py38 --no-capture-output /bin/bash build.sh"'
+              }
+            }
+            stage('Unit Test') {
+              steps {
+                sh '/bin/bash --login scripts/run_unittest.sh'
+              }
+            }
+            stage('Integration Test') {
+              steps {
+                sh '/bin/bash --login scripts/run_integration_test.sh'
+              }
+            }
+          }
         }
-      }
-    }
-    stage('Unit Test') {
-      steps {
-        container('main') {
-          sh '/bin/bash --login scripts/run_unittest.sh'
-        }
-      }
-    }
-    stage('Integration Test') {
-      steps {
-        container('main') {
-          sh '/bin/bash --login scripts/run_integration_test.sh'
+        stage('Daily Build & Test') {
+          stages {
+            stage('Build') {
+              steps {
+                container('main') {
+                  script {
+                    catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                      sh '/bin/bash --login scripts/update_daily_mudnn.sh'
+                      sh '/bin/bash --login -c "conda run -n py38 --no-capture-output /bin/bash build.sh"'
+                    }
+                  }
+                }
+              }
+              post {
+                success {
+                  echo 'BUILD SUCCESS!'
+                }
+                failure {
+                  script {
+                    echo 'BUILD FAILURE!'
+                    params.RUN_NEXT_STAGE = false
+                  }
+                }
+              }
+            }
+            stage('Unit Test') {
+              when {
+                expression { params.RUN_NEXT_STAGE == true }
+              }
+              steps {
+                container('main') {
+                  script {
+                    catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                      sh '/bin/bash --login scripts/run_unittest.sh'
+                    }
+                  }
+                }
+              }
+              post {
+                success {
+                  script {
+                    echo 'Unit Test SUCCESS!'
+                    params.DAILY_UT_PASSED = true
+                  }
+                }
+                failure {
+                  echo 'Unit Test FAILURE!'
+                }
+              }
+            }
+            stage('Integration Test') {
+              when {
+                expression { params.RUN_NEXT_STAGE == true }
+              }
+              steps {
+                container('main') {
+                  script {
+                    catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                      sh '/bin/bash --login scripts/run_integration_test.sh'
+                    }
+                  }
+                }
+              }
+              post {
+                success {
+                  script {
+                    echo 'Integration Test SUCCESS!'
+                    params.DAILY_IT_PASSED = true
+                  }
+                }
+                failure {
+                  echo 'Integration Test FAILURE!'
+                }
+              }
+            }
+          }
         }
       }
     }
     stage('Daily Release') {
-      agent {
-        kubernetes {
-          yamlFile 'ci/templates/musa.yaml'
-          defaultContainer "main"
-        }
-      }
       when {
-        beforeAgent true
+        // beforeAgent true
         allOf {
           branch 'main'
           expression { ifTriggeredByTimer() }
+          expression { return params.DAILY_UT_PASSED && params.DAILY_IT_PASSED }
         }
       }
       steps {
         container('main') {
-          sh 'git config --global --add safe.directory \"*\"'
-          sh '/bin/bash --login scripts/update_daily_mudnn.sh'
-          // Add some description
-          sh 'echo "commit id: "$(git rev-parse HEAD) > /artifacts/README.txt'
-          sh 'echo "dependencies: " >> /artifacts/README.txt && \
-              DAILY_MUDNN_ABS_DIR=$(find $PWD -name daily_mudnn*) && \
-              echo "daily_mudnn:"$(find $DAILY_MUDNN_ABS_DIR -name "*.txt" | awk -F/ \'{print $NF}\' | awk -F_ \'{print $1}\') >> /artifacts/README.txt && \
-              cat .musa_dependencies >> /artifacts/README.txt'
-
-          // Build wheel packages under python3.8, using the existing conda environment
-          sh '/bin/bash --login -c "/opt/conda/condabin/conda run -n py38 --no-capture-output USE_STATIC_MKL=1 /bin/bash build.sh -c -w"'
-          // Copy built wheel packages to shared directory "/artifacts"
-          sh 'cp dist/*.whl /artifacts/ && cp ${PYTORCH_REPO_PATH}/dist/*.whl /artifacts/'
-
-          // Build wheel packages under python3.9, create a new conda environment
-          sh '/bin/bash --login -c "/opt/conda/condabin/conda env create -f docker/common/conda-env-torch_musa-py39.yaml" && \
-              /opt/conda/condabin/conda run -n py39 --no-capture-output pip install -r docker/common/requirements-py39.txt -i \
-              https://pypi.tuna.tsinghua.edu.cn/simple'
-          // The py38 build cache needs to be cleaned
-          sh '/bin/bash --login -c "/opt/conda/condabin/conda run -n py39 --no-capture-output USE_STATIC_MKL=1 /bin/bash build.sh -c -w"'
-          sh 'cp dist/*.whl /artifacts/ && cp ${PYTORCH_REPO_PATH}/dist/*.whl /artifacts/'
+          sh '/bin/bash --login -c "BUILD_ARTIFACTS=1 /bin/bash scripts/run_daily_release.sh"'
         }
         container('release') {
           // Publish new release to oss (minio)
-          sh 'oss-release /artifacts/'
+          sh '/bin/bash --login -c "PUBLISH_ARTIFACTS=1 /bin/bash scripts/run_daily_release.sh"'
         }
       }
     }
