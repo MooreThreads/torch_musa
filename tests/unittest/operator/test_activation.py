@@ -419,3 +419,23 @@ def test_softplus(shape, dtype, beta, threshold, test_out):
         func=torch.nn.functional.softplus, input_args=input_args)
     test.check_result()
 # test softplus end
+
+
+# ============================== Test complex abs kernel func begin ============================== #
+
+
+input_complex_datas = []
+for data in testing.get_raw_data():
+    if len(data.size()) < 8:
+        cpu_complex = torch.empty_like(data, dtype=torch.complex64)
+        input_complex_datas.append({"input": cpu_complex})
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_complex_datas)
+def test_complex_abs_kernel_func(input_data):
+    test = testing.OpTest(func=torch.abs, input_args=input_data)
+    test.check_result()
+
+
+# ============================== Test complex abs kernel func end ============================== #

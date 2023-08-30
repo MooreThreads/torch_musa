@@ -14,7 +14,7 @@ inputdata = [j * torch.rand(i) for i in range(20, 100, 29) for j in range(1, 10,
 n_fft = [i for i in range(4, 20, 3)]
 center = [True, False]
 pad_mode = ["constant", "reflect", "replicate", "circular"]
-return_complex = [False]
+return_complex = [False, True]
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)

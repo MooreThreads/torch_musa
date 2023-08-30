@@ -9,6 +9,7 @@ there ares some ops that implemented on CPU:
  - min, max # double
  - mul, div # double, bool
  - fill # double
+ - stft, stft.center # _fft_r2c/_fft_c2c and complex tensor transpose
 
  need to compare mudnn uncontiguous Unay/Binary vs contiguous + contiguous Unary/Binary performance
 

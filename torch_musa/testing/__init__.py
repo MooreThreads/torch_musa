@@ -15,6 +15,8 @@ from .base_test_tool import (
     MULTIGPU_AVAILABLE,
     test_on_nonzero_card_if_multiple_musa_device,
     gen_ip_port,
+    _complex_cpu_to_musa_adjust,
+    _complex_musa_to_cpu_adjust,
 )
 
 from .common_utils import (

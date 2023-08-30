@@ -97,6 +97,17 @@ def get_all_types():
         torch.int64,
     ]
 
+def _complex_musa_to_cpu_adjust(musa_complex: torch.Tensor) -> torch.Tensor:
+    musa_real = torch.view_as_real(musa_complex)
+    cpu_real = musa_real.to("cpu")
+    cpu_complex = torch.view_as_complex(cpu_real)
+    return cpu_complex
+
+def _complex_cpu_to_musa_adjust(cpu_complex: torch.Tensor, musa_device: str) -> torch.Tensor:
+    cpu_real = torch.view_as_real(cpu_complex)
+    musa_real = cpu_real.to(musa_device)
+    musa_complex = torch.view_as_complex(musa_real)
+    return musa_complex
 
 class Comparator:
     """
@@ -279,9 +290,20 @@ class OpTest:
             stack.enter_context(mode_context)
             for k in self._input_args:
                 if isinstance(self._input_args[k], torch.Tensor):
-                    input_args[k] = self._input_args[k].to(device).clone()
-                    if fp16 and input_args[k].dtype == torch.float32:
-                        input_args[k] = input_args[k].to(torch.float16)
+                    if not self._input_args[k].is_complex():
+                        input_args[k] = self._input_args[k].to(device).clone()
+                        if fp16 and input_args[k].dtype == torch.float32:
+                            input_args[k] = input_args[k].to(torch.float16)
+                    else:
+                        str_input_device = str(self._input_args[k].device)
+                        if str_input_device.startswith("musa") \
+                            and device.startswith("cpu"):
+                            input_args[k] = _complex_musa_to_cpu_adjust(self._input_args[k])
+                        elif str_input_device.startswith("cpu") \
+                            and device.startswith("musa"):
+                            input_args[k] = _complex_cpu_to_musa_adjust(self._input_args[k], device)
+                        else:
+                            input_args[k] = self._input_args[k]
                 else:
                     input_args[k] = self._input_args[k]
 
@@ -356,7 +378,12 @@ class OpTest:
             elif isinstance(reduce,bool):
                 res.append(reduce)
             else:
-                res.append(reduce.to("cpu"))
+                if isinstance(reduce, torch.Tensor) and    \
+                    reduce.is_complex() and                \
+                    str(reduce.device).startswith("musa"):
+                    res.append(_complex_musa_to_cpu_adjust(reduce))
+                else:
+                    res.append(reduce.to("cpu"))
             if test_out and "out" in input_args:
                 res.append(input_args["out"].to("cpu"))
             for i in grad:

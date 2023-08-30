@@ -1,9 +1,17 @@
 #include <ATen/Config.h>
+#include <ATen/native/UnaryOps.h>
 // clang-format off
 // Some classes in NativeFunctions.h require the corrosponding definition in Exception.h
 #include <c10/util/Exception.h>
+
 // clang-format on
+#ifndef AT_PER_OPERATOR_HEADERS
+#include <ATen/Functions.h>
 #include <ATen/NativeFunctions.h>
+#else
+#include <ATen/ops/abs_native.h>
+#endif
+
 #include <ATen/core/op_registration/adaption.h>
 #include <ATen/native/Activation.h>
 #include <ATen/native/Resize.h>
@@ -16,6 +24,59 @@
 
 namespace at {
 namespace musa {
+
+namespace {
+
+template <typename Stub>
+static inline Tensor& UnaryOpOutImplComplex2Float(
+    Tensor& result,
+    const Tensor& self,
+    Stub& stub) {
+  TORCH_CHECK(
+      self.is_complex(),
+      "Unary op through musa kernel expects complex input dtype, but got ",
+      self.scalar_type());
+
+  if (!result.is_complex()) {
+    // Checks if the corresponding float type can be cast to the desired dtype
+    const auto float_type = c10::toRealValueType(self.scalar_type());
+    TORCH_CHECK(
+        canCast(float_type, result.scalar_type()),
+        "result type ",
+        float_type,
+        " can't be cast to the desired output type ",
+        result.scalar_type());
+
+    // Runs the function complex->complex, as TensorIterator expects
+    Tensor complex_result = at::empty({0}, self.options());
+    auto iter = TensorIterator::unary_op(complex_result, self);
+    stub(iter.device_type(), iter);
+
+    // Copies the complex result to the actual result and returns it
+    at::native::resize_output(result, complex_result.sizes());
+    result.copy_(at::real(complex_result));
+    return result;
+  }
+
+  auto iter = TensorIterator::unary_op(result, self);
+  stub(iter.device_type(), iter);
+  return result;
+}
+
+static inline Tensor& MusaAbsOutWithKernelComplex2Float(
+    const Tensor& self,
+    Tensor& result) {
+  return UnaryOpOutImplComplex2Float(result, self, at::native::abs_stub);
+}
+
+static inline Tensor MusaAbsWithKernelComplex2Float(const Tensor& self) {
+  const auto float_type = c10::toRealValueType(self.scalar_type());
+  Tensor result = at::empty_like(self, self.options().dtype(float_type));
+  return MusaAbsOutWithKernelComplex2Float(self, result);
+}
+
+} // anonymous namespace
+
 using UNARY_MODE = ::musa::dnn::Unary::Mode;
 
 void UnaryCall(
@@ -75,6 +136,13 @@ Tensor Unary(
     const Tensor& input,
     std::function<void(::musa::dnn::Unary&)> func) {
   c10::musa::MUSAGuard device_guard(input.device());
+
+  if (C10_UNLIKELY(input.is_complex())) {
+    if (op_name == "Abs") {
+      return MusaAbsWithKernelComplex2Float(input);
+    }
+  }
+
   Tensor output = at::empty_like(input);
   auto contiguous_input = input.contiguous();
   MUSA_TENSOR_TYPE_CHECK(input);
