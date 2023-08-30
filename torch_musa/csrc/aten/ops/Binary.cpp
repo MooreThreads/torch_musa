@@ -100,24 +100,28 @@ inline bool IsComparisonOp(const BINARY_MODE m) {
       m == BINARY_MODE::GT || m == BINARY_MODE::LE || m == BINARY_MODE::LT;
 }
 
+// only supports when muDNN has relate UNARY_MODE
+inline bool SupportMode(BINARY_MODE m) {
+  return (
+      m == BINARY_MODE::ADD || m == BINARY_MODE::SUB || m == BINARY_MODE::MUL ||
+      m == BINARY_MODE::FLOORMOD || m == BINARY_MODE::TRUEDIV ||
+      m == BINARY_MODE::FLOORDIV || m == BINARY_MODE::TRUNCATEDIV);
+}
+
+inline bool SupportType(at::ScalarType type) {
+  return type == ScalarType::Float || type == ScalarType::Half ||
+      type == ScalarType::Int || type == ScalarType::Long;
+}
+
 inline bool SupportOptimizeScalarToUnary(
     BINARY_MODE m,
     const Tensor& input,
     const Tensor& other) {
-  const bool support_mode_type = (m == BINARY_MODE::ADD &&
-                                  (input.scalar_type() == ScalarType::Float ||
-                                   input.scalar_type() == ScalarType::Half ||
-                                   input.scalar_type() == ScalarType::Long)) ||
-      (m == BINARY_MODE::TRUEDIV &&
-       (input.scalar_type() == ScalarType::Float ||
-        input.scalar_type() == ScalarType::Half)) ||
-      (m == BINARY_MODE::MUL &&
-       (input.scalar_type() == ScalarType::Float ||
-        input.scalar_type() == ScalarType::Long ||
-        input.scalar_type() == ScalarType::Half));
+  const bool support_mode = SupportMode(m);
+  const bool support_type = SupportType(input.scalar_type());
   const bool support_dim_device =
       other.dim() == 0 && other.device() == DeviceType::CPU;
-  return support_mode_type && support_dim_device;
+  return support_mode && support_type && support_dim_device;
 };
 
 inline bool IsBoolMode(BINARY_MODE m) {
@@ -140,36 +144,31 @@ void UnaryCall(
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Unary uop;
   auto other_scalar = other.item();
-  auto ConvertBinaryModeToString = [](BINARY_MODE mode) -> std::string {
-    switch (mode) {
-      case BINARY_MODE::ADD:
-        return "Binary ADD";
-      case BINARY_MODE::MUL:
-        return "Binary MUL";
-      case BINARY_MODE::TRUEDIV:
-        return "Binary TRUEDIV";
-      default:
-        return "";
-    }
-  };
   if (other_scalar.isFloatingPoint()) {
     CHECK_MUDNN_STATUS(uop.SetAlpha(other_scalar.toDouble()), "SetAlpha");
   } else if (other_scalar.isIntegral(false)) {
     CHECK_MUDNN_STATUS(uop.SetAlpha(other_scalar.toLong()), "SetAlpha");
   } else {
     AT_ERROR(
-        other_scalar.type(),
-        " is not implemented for '",
-        ConvertBinaryModeToString(m),
-        "'!");
+        other_scalar.type(), " is not implemented for broadcast in Binary");
   }
+
   if (m == BINARY_MODE::MUL) {
     CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::MUL), "SetMode");
   } else if (m == BINARY_MODE::ADD) {
     CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::ADD), "SetMode");
   } else if (m == BINARY_MODE::TRUEDIV) {
-    CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::DIV), "SetMode");
+    CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::TRUEDIV), "SetMode");
+  } else if (m == BINARY_MODE::SUB) {
+    CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::SUB), "SetMode");
+  } else if (m == BINARY_MODE::FLOORMOD) {
+    CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::FLOORMOD), "SetMode");
+  } else if (m == BINARY_MODE::TRUNCATEDIV) {
+    CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::TRUNCATEDIV), "SetMode");
+  } else {
+    AT_ERROR("Invalid mode for broadcast in Binary");
   }
+
   auto mt_output = CreateMUTensor(output);
   auto contiguous_self = self.contiguous();
   auto mt_input = CreateMUTensor(contiguous_self);
@@ -214,26 +213,25 @@ void BinaryCall(
     UnaryCall(self, other, output, m, op_name);
     return;
   }
+
   if (SupportOptimizeScalarToUnary(m, other, self)) {
-    UnaryCall(other, self, output, m, op_name);
-    return;
+    if (m == BINARY_MODE::ADD || m == BINARY_MODE::MUL) {
+      UnaryCall(other, self, output, m, op_name);
+      return;
+    }
   }
   Tensor self_tmp = self;
+  Tensor other_tmp = other;
+
+  if (self_tmp.dim() == 0 && other_tmp.dim() != 0 && m != BINARY_MODE::ADD &&
+      m != BINARY_MODE::MUL) {
+    self_tmp = at::full_like(other, self_tmp.item(), kMUSA);
+  }
   if (!is_musa(self_tmp)) {
     self_tmp = self.to(device);
   }
-  Tensor other_tmp = other;
   if (!is_musa(other_tmp)) {
     other_tmp = other.to(device);
-  }
-
-  // muDNN support binary broadcast mode: add, mul
-  if (m != BINARY_MODE::ADD && m != BINARY_MODE::MUL) {
-    if (other_tmp.dim() == 0 && self_tmp.dim() != 0) {
-      other_tmp = at::full_like(self, other_tmp.item(), kMUSA);
-    } else if (self_tmp.dim() == 0 && other_tmp.dim() != 0) {
-      self_tmp = at::full_like(other, self_tmp.item(), kMUSA);
-    }
   }
   other_tmp =
       alpha_scalar.equal(1) ? other_tmp : at::mul(other_tmp, alpha_scalar);
@@ -459,12 +457,9 @@ Tensor& Div_Tensor_mode(
   return self;
 }
 
-// TODO(MT AI) use musa instead of cpu
 Tensor RemainderScalarTensor(const Scalar& self, const Tensor& other) {
-  Tensor other_cpu = other.cpu();
-  Tensor out = at::remainder(self, other_cpu);
-  auto out_musa = out.to("musa");
-  return out_musa;
+  auto self_tmp = at::full_like(other, self, kMUSA);
+  return at::remainder(self_tmp, other);
 }
 
 #define DEFINE_BINARY_GRAD_OP(op_name, mode)                                 \

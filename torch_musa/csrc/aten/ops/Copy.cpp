@@ -203,9 +203,9 @@ void mtgpu_impl_copy_d2d(
           dst, src, size, musaMemcpyDeviceToDevice, copy_stream));
     }
   } else {
-    TORCH_CHECK(same_type == true, "Device to device copy is unsupported");
-    TORCH_CHECK(same_conj == true, "Device to device copy is unsupported");
-    TORCH_CHECK(same_neg == true, "Device to device copy is unsupported");
+    TORCH_CHECK(same_type, "Device to device copy is unsupported");
+    TORCH_CHECK(same_conj, "Device to device copy is unsupported");
+    TORCH_CHECK(same_neg, "Device to device copy is unsupported");
     if (!is_contig) {
       permute_to_contiguous(tensor_self, tensor_src);
       return;
@@ -305,6 +305,13 @@ inline void mtgpu_impl_copy(
   } else {
     TORCH_CHECK(false, "Unsupported memcpy type!");
   }
+
+  if (tensor_self.is_conj() != tensor_src.is_conj()) {
+    tensor_self.conj_physical_();
+  }
+  if (tensor_self.is_neg() != tensor_src.is_neg()) {
+    tensor_self.neg_();
+  }
 }
 
 } // namespace
@@ -363,26 +370,33 @@ Tensor mtgpu_copy_from(
     Tensor dst_contig;
     Tensor src_contig;
 
-    dst_contig = dst.is_contiguous()
-        ? dst
-        : at::empty_like(dst, LEGACY_CONTIGUOUS_MEMORY_FORMAT);
-    auto src_temp = src.itemsize() < dst.itemsize()
-        ? src.expand_as(dst)
-        : src.to(dst.dtype()).expand_as(dst);
-    src_contig = src_temp.is_contiguous()
-        ? src_temp
-        : src_temp.clone(MemoryFormat::Contiguous);
+    // If non_blocking is true - type conversions are performed on the GPU
+    // for CPU-GPU copies, otherwise type conversions are performed on the CPU.
+    // Type conversions are performed on the src device for GPU-GPU copies.
+    if (is_musa(self) || non_blocking) {
+      dst_contig = dst.is_contiguous()
+          ? dst
+          : at::empty_like(dst, LEGACY_CONTIGUOUS_MEMORY_FORMAT);
+      src_contig = src.to(self.scalar_type()).expand_as(dst).contiguous();
+    } else {
+      bool same_type = self.scalar_type() == src.scalar_type();
+      dst_contig = (dst.is_contiguous() && same_type)
+          ? dst
+          : at::empty_like(
+                dst, src.scalar_type(), LEGACY_CONTIGUOUS_MEMORY_FORMAT);
+      src_contig = src.expand_as(dst).contiguous();
+    }
+    dst_contig._set_conj(dst.is_conj());
+    src_contig._set_conj(self.is_conj());
 
-    mtgpu_impl_copy(dst_contig, src_contig, copy_type, non_blocking);
+    dst_contig._set_neg(dst.is_neg());
+    src_contig._set_neg(self.is_neg());
+    // mtgpu_impl_copy(dst_contig, src_contig, copy_type, non_blocking);
+    dst_contig.copy_(src_contig, non_blocking);
 
     if (!dst_contig.is_same(dst)) {
       TORCH_INTERNAL_ASSERT(dst.device() == dst_contig.device());
-      if (dst.device().type() == DeviceType::CPU) {
-        dst.copy_(dst_contig);
-      } else {
-        // call d2d copy to convert intermediate tensor into dst.
-        mtgpu_impl_copy_d2d(dst, dst_contig);
-      }
+      dst.copy_(dst_contig);
     }
   } else {
     mtgpu_impl_copy(self, src, copy_type, non_blocking);

@@ -711,7 +711,7 @@ void NegCall(
       break;
     }
     default:
-      TORCH_CHECK(false, "Unsupported tensor dtype: ", t_type);
+      TORCH_CHECK(false, "Unsupported tensor dtype in Neg: ", t_type);
       throw;
   }
 }

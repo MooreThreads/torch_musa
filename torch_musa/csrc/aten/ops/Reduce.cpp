@@ -274,10 +274,12 @@ Tensor& SumIntListOut(
     bool keepdim,
     optional<ScalarType> opt_dtype,
     Tensor& output) {
-  Tensor output_tmp = Reduction(
-      self, dim.value(), keepdim, opt_dtype, ::musa::dnn::Reduce::Mode::ADD);
-  output.resize_as_(output_tmp);
-  output.copy_(output_tmp);
+  c10::musa::MUSAGuard device_guard(self.device());
+  DimVector dims_(dim.value());
+  maybe_wrap_dims(dims_, self.dim());
+  auto shape = at::meta::get_reduction_shape(self, dims_, keepdim);
+  output.resize_(shape);
+  ReduceCall(output, self, dim.value(), ::musa::dnn::Reduce::Mode::ADD);
   return output;
 }
 
