@@ -51,6 +51,10 @@ Tensor empty_strided_musa(
     c10::optional<Device> device_opt,
     c10::optional<bool> pin_memory_opt);
 
+Tensor Contiguous(
+    const Tensor& self,
+    MemoryFormat memory_format = MemoryFormat::Contiguous);
+
 Tensor ContiguousRef(
     const Tensor& self,
     Tensor& result,

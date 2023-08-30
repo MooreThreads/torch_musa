@@ -151,7 +151,7 @@ void ReduceCall(
     const c10::optional<at::Scalar>& p = c10::nullopt,
     const bool is_norm = false) {
   c10::musa::MUSAGuard device_guard(self.device());
-  auto input = self.contiguous();
+  auto input = Contiguous(self);
   auto out = CreateMUTensor(output);
   auto in = CreateMUTensor(input);
 

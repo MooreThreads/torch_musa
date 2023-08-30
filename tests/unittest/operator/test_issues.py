@@ -64,3 +64,25 @@ def test_empty_cat():
     c = torch.cat((a,b), 0)
     c_m = torch.cat((a.to("musa"),b.to("musa")), 0)
     testing.DefaultComparator(c, c_m)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_issue_415():
+    x = torch.randn((16, 1, 768)).transpose(1, 2)
+    x_mu = x.to("musa")
+    func = torch.nn.functional.adaptive_avg_pool1d
+    testing.DefaultComparator(func(x, 1), func(x_mu, 1))
+
+    x = torch.randn((16, 1, 16, 32)).to(memory_format=torch.channels_last)
+    x_mu = x.to("musa")
+    testing.DefaultComparator(torch.mean(x), torch.mean(x_mu))
+
+    x = torch.randn((16, 32, 1, 1)).to(memory_format=torch.channels_last)
+    x_mu = x.to("musa")
+    testing.DefaultComparator(torch.sum(x), torch.sum(x_mu))
+    testing.DefaultComparator(torch.sum(x, 0, keepdim=True), torch.sum(x_mu, 0, keepdim=True))
+
+    x = torch.randn((4, 1, 16)).transpose(1, 2).unsqueeze(1)
+    x_mu = x.to("musa")
+    testing.DefaultComparator(torch.max(x), torch.max(x_mu))
+    testing.DefaultComparator(torch.max(x, 0, keepdim=True), torch.max(x_mu, 0, keepdim=True))

@@ -346,6 +346,26 @@ Tensor& set_tensor_(Tensor& result, const Tensor& source) {
   return result;
 }
 
+Tensor Contiguous(const Tensor& self, MemoryFormat memory_format) {
+  if (4 == self.dim() && self.is_contiguous() &&
+      self.is_contiguous(MemoryFormat::ChannelsLast)) {
+    if (self.stride(1) != 1 && self.stride(3) != 1) {
+      // Why we still need to check the stride at index1 and index3 ?
+      // assume that the current input Tensor has shape (4, 1, 16, 1) and stride
+      // (16, 16, 1, 16), in this case, MemoryFormat::Contiguous ==
+      // input.suggest_memory_format() always equal to true, which hinders to
+      // get the desired Contiguous format result. See
+      // https://github.com/pytorch/pytorch/blob/c263bd43e8e8502d4726643bc6fd046f0130ac0e/aten/src/ATen/native/TensorConversions.cpp#L377-L393
+      // for more details of Tensor.to()
+      Tensor temp = at::empty_like(self, memory_format);
+      temp.copy_(self);
+      return temp;
+    }
+    return self.to(memory_format);
+  }
+  return self.contiguous(memory_format);
+}
+
 Tensor ContiguousRef(
     const Tensor& self,
     Tensor& ref,
