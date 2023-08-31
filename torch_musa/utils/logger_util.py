@@ -1,9 +1,11 @@
+"""logger util"""
 import logging.config
 import sys
 from logging import Formatter, StreamHandler
 
 
 def create_logger():
+    """create logger instance"""
     log_format = "%(asctime)s | %(module)s | %(thread)d | %(levelname)s : %(message)s"
     log_date_fmt = "%Y-%m-%d %H:%M:%S"
 

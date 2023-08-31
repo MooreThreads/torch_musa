@@ -4,6 +4,8 @@ import glob
 import sys
 import sysconfig
 import distutils.command.clean
+
+from os.path import dirname, join
 from setuptools import setup, find_packages
 from setuptools.command.install import install as Install
 
@@ -26,9 +28,9 @@ if not CLEAN_MODE:
         raise RuntimeError(
             "Building error: PYTORCH_REPO_PATH must be set to PyTorch repository when building, but now it is empty!"
         )
-    sys.path.append(os.path.join(pytorch_root, "tools"))
+    sys.path.append(join(dirname(__file__), "torch_musa"))
     from setup_helpers.env import check_negative_env_flag, build_type
-    from tools.setup_helper.cmake_manager import CMakeManager
+    from setup_helpers.cmake import CMake
 
 version_file = open("version.txt", "r")
 version = version_file.readlines()[0]
@@ -84,7 +86,7 @@ def build_musa_lib():
         port_cuda(pytorch_root, get_pytorch_install_path(),
                   cuda_compatiable_path)
 
-    cmake = CMakeManager(build_dir)
+    cmake = CMake(build_dir, install_dir_prefix="torch_musa")
     env = os.environ.copy()
     env["GENERATED_PORTING_DIR"] = cuda_compatiable_path
     # add `BUILD` prefix to avoid env being filtered.
@@ -155,6 +157,13 @@ version = version.strip() + "+git" + \
     subprocess.check_output(["git", "rev-parse", "HEAD"]
                             ).decode("ascii").strip()[:7]
 
+def package_files(directory):
+    paths = []
+    for root, dirs, files in os.walk(directory):
+        for file in files:
+            paths.append(os.path.join("..", root, file))
+    return paths
+
 # Setup
 setup(
     name="torch_musa",
@@ -179,7 +188,12 @@ setup(
             "csrc/aten/ops/musa/*.h",
             "csrc/aten/utils/*.h",
             "share/cmake/*.cmake",
-        ],
+            "setup_helpers/*.py",
+            "utils/*.py",
+            "utils/mapping/*.json",
+            "../cmake/*.cmake",
+            "../cmake/modules/*.cmake"
+        ] + package_files("build/generated_cuda_compatible"),
     },
     install_requires=install_requires,
     extras_require={},

@@ -10,7 +10,6 @@ from torch_musa import testing
 
 support_dtypes = [torch.float32]
 
-
 def get_forge_data(num_boxes):
     boxes = torch.cat((torch.rand(num_boxes, 2), torch.rand(num_boxes, 2) + 10), dim=1)
     assert max(boxes[:, 0]) < min(boxes[:, 2])  # x1 < x2
@@ -19,13 +18,11 @@ def get_forge_data(num_boxes):
     idxs = torch.randint(0, 4, size=(num_boxes,))
     return boxes, scores, idxs
 
-
 def make_rois(img_size, num_imgs, dtype, num_rois=1000):
     rois = torch.randint(0, img_size // 2, size=(num_rois, 5)).to(dtype)
     rois[:, 0] = torch.randint(0, num_imgs, size=(num_rois,))  # set batch index
     rois[:, 3:] += rois[:, 1:3]  # make sure boxes aren't degenerate
     return rois
-
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("num_boxes", [1000, 500, 10])
@@ -41,7 +38,6 @@ def test_batched_nms(num_boxes, iou_threshold, dtype):
     test = testing.OpTest(func=torchvision.ops.batched_nms, input_args=input_args)
     test.check_result()
 
-
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("size", [(3, 224, 224), (1, 300, 600), (10, 1000, 2000)])
 @pytest.mark.parametrize("dtype", support_dtypes)
@@ -52,7 +48,6 @@ def test_masks_to_boxes(size, dtype):
     test = testing.OpTest(func=torchvision.ops.masks_to_boxes,
                           input_args=input_args)
     test.check_result()
-
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("num_boxes", [1000, 500, 10])
@@ -68,7 +63,6 @@ def test_nms(num_boxes, iou_threshold, dtype):
                           input_args=input_args)
     test.check_result()
 
-
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("dtype", support_dtypes)
 @pytest.mark.parametrize("spatial_scale", [0.5, 1.0, 1.5, 2.0])
@@ -79,7 +73,6 @@ def test_roi_align(dtype, spatial_scale, sampling_ratio, aligned):
     img_size = 10
     n_channels = 2
     num_imgs = 1
-
     x = torch.randint(50, 100, size=(num_imgs, n_channels, img_size, img_size)).to(dtype)
     rois = make_rois(img_size, num_imgs, dtype)
     input_args = {}
@@ -93,7 +86,6 @@ def test_roi_align(dtype, spatial_scale, sampling_ratio, aligned):
                           input_args=input_args)
     test.check_result()
 
-
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("dtype", support_dtypes)
 @pytest.mark.parametrize("spatial_scale", [0.5, 1.0, 1.5, 2.0])
@@ -102,7 +94,6 @@ def test_roi_pool(dtype, spatial_scale):
     img_size = 10
     n_channels = 2
     num_imgs = 1
-
     x = torch.randint(50, 100, size=(num_imgs, n_channels, img_size, img_size)).to(dtype)
     rois = make_rois(img_size, num_imgs, dtype)
     input_args = {}
@@ -124,7 +115,6 @@ def test_ps_roi_align(dtype, spatial_scale, sampling_ratio):
     img_size = 10
     n_channels = 25
     num_imgs = 1
-
     x = torch.randint(50, 100, size=(num_imgs, n_channels, img_size, img_size)).to(dtype)
     rois = make_rois(img_size, num_imgs, dtype)
     input_args = {}
@@ -146,7 +136,6 @@ def test_ps_roi_pool(dtype, spatial_scale):
     img_size = 10
     n_channels = 25
     num_imgs = 1
-
     x = torch.randint(50, 100, size=(num_imgs, n_channels, img_size, img_size)).to(dtype)
     rois = make_rois(img_size, num_imgs, dtype)
     input_args = {}
@@ -183,7 +172,6 @@ def test_feature_pyramid_network(in_channels_list, out_channels, dtype):
     assert torch.allclose(output_cpu['feat2'], output_musa['feat2'].to("cpu"))
     assert torch.allclose(output_cpu['feat3'], output_musa['feat3'].to("cpu"))
 
-
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("featmap_names", [['feat1', 'feat3']])
 @pytest.mark.parametrize("output_size", [3])
@@ -195,9 +183,6 @@ def test_multi_scale_roi_align(featmap_names, output_size, sampling_ratio, dtype
     i['feat1'] = torch.rand(1, 5, 64, 64).to(dtype)
     i['feat2'] = torch.rand(1, 5, 32, 32).to(dtype)
     i['feat3'] = torch.rand(1, 5, 16, 16).to(dtype)
-
-    # after https://jira.mthreads.com/browse/SW-26801 is solved then fake_data can be modified as
-    # torch.rand(6, 4)
     fake_data = torch.tensor([
         [0.1678, 0.4586, 0.6704, 0.5342],
         [0.7101, 0.4826, 0.9034, 0.8015],
@@ -222,7 +207,6 @@ def test_multi_scale_roi_align(featmap_names, output_size, sampling_ratio, dtype
 
     assert torch.allclose(output_cpu, output_musa.to("cpu"))
 
-
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("dtype", support_dtypes)
 def test_box_area(dtype):
@@ -235,7 +219,6 @@ def test_box_area(dtype):
                           input_args=input_args
                           )
     test.check_result()
-
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("dtype", support_dtypes)
@@ -251,7 +234,6 @@ def test_box_convert(dtype, in_fmt, out_fmt):
     test = testing.OpTest(func=torchvision.ops.box_convert, input_args=input_args)
     test.check_result()
 
-
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("dtype", support_dtypes)
 def test_box_iou(dtype):
@@ -266,7 +248,6 @@ def test_box_iou(dtype):
     test = testing.OpTest(func=torchvision.ops.box_iou, input_args=input_args)
     test.check_result()
 
-
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("dtype", support_dtypes)
 @pytest.mark.parametrize("size", [(100, 100), (50, 200)])
@@ -276,12 +257,10 @@ def test_clip_boxes_to_image(dtype, size):
     input_args = {}
     input_args["boxes"] = boxes.to(dtype)
     input_args["size"] = size
-
     test = testing.OpTest(func=torchvision.ops.clip_boxes_to_image,
                           input_args=input_args
                           )
     test.check_result()
-
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("dtype", support_dtypes)
@@ -298,7 +277,6 @@ def test_complete_box_iou(dtype):
     test = testing.OpTest(func=torchvision.ops.complete_box_iou, input_args=input_args)
     test.check_result()
 
-
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("dtype", support_dtypes)
 def test_distance_box_iou(dtype):
@@ -314,7 +292,6 @@ def test_distance_box_iou(dtype):
     test = testing.OpTest(func=torchvision.ops.distance_box_iou, input_args=input_args)
     test.check_result()
 
-
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("dtype", support_dtypes)
 def test_generalized_box_iou(dtype):
@@ -328,7 +305,6 @@ def test_generalized_box_iou(dtype):
 
     test = testing.OpTest(func=torchvision.ops.generalized_box_iou, input_args=input_args)
     test.check_result()
-
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("dtype", support_dtypes)
@@ -363,7 +339,6 @@ def test_complete_box_iou_loss(dtype, reduction, eps):
                           )
     test.check_result()
 
-
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("dtype", support_dtypes)
 @pytest.mark.parametrize("reduction", ['none', 'mean', 'sum'])
@@ -383,7 +358,6 @@ def test_distance_box_iou_loss(dtype, reduction, eps):
                           input_args=input_args
                           )
     test.check_result()
-
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("dtype", support_dtypes)
@@ -405,7 +379,6 @@ def test_generalized_box_iou_loss(dtype, reduction, eps):
                           )
     test.check_result()
 
-
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("dtype", support_dtypes)
 @pytest.mark.parametrize("alpha", [-1, 0.25, 0.5, 0.85])
@@ -425,7 +398,6 @@ def test_sigmoid_focal_loss(dtype, alpha, gamma, reduction):
     test = testing.OpTest(func=torchvision.ops.sigmoid_focal_loss, input_args=input_args)
     test.check_result()
 
-
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("dtype ", support_dtypes)
 @pytest.mark.parametrize("in_channels", [10, 100])
@@ -441,13 +413,11 @@ def test_conv2d_norm_activation(dtype, in_channels, out_channels, kernel_size, s
     )
     input_data = torch.rand(1, in_channels, 10, 10).to(dtype)
     output_cpu = m(input_data)
-
     input_data = input_data.to("musa")
     m = m.to("musa")
     output_musa = m(input_data)
 
     assert torch.allclose(output_cpu, output_musa.to("cpu"), atol=1e-5)
-
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("dtype ", support_dtypes)
@@ -464,13 +434,11 @@ def test_conv3d_norm_activation(dtype, in_channels, out_channels, kernel_size, s
     )
     input_data = torch.rand(1, in_channels, 10, 10, 10).to(dtype)
     output_cpu = m(input_data)
-
     input_data = input_data.to("musa")
     m = m.to("musa")
     output_musa = m(input_data)
 
     assert torch.allclose(output_cpu, output_musa.to("cpu"), atol=1e-4)
-
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("num_features", [100, 300, 600])
@@ -483,13 +451,11 @@ def test_frozen_batch_norm2d(num_features, dtype, eps):
     )
     input_data = torch.rand(3, num_features, 600, 400).to(dtype)
     output_cpu = m(input_data)
-
     input_data = input_data.to("musa")
     m = m.to("musa")
     output_musa = m(input_data)
 
     assert torch.allclose(output_cpu, output_musa.to("cpu"))
-
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("in_channels", [100, 200, 300])
@@ -502,13 +468,11 @@ def test_mlp(in_channels, hidden_channels, dtype):
     )
     input_data = torch.rand(3, 3, 600, in_channels).to(dtype)
     output_cpu = m(input_data)
-
     input_data = input_data.to("musa")
     m = m.to("musa")
     output_musa = m(input_data)
 
     assert torch.allclose(output_cpu, output_musa.to("cpu"))
-
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("dtype", support_dtypes)
@@ -519,13 +483,11 @@ def test_permute(dtype, dims):
     )
     input_data = torch.rand(3, 4, 5).to(dtype)
     output_cpu = m(input_data)
-
     input_data = input_data.to("musa")
     m = m.to("musa")
     output_musa = m(input_data)
 
     assert torch.allclose(output_cpu, output_musa.to("cpu"))
-
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_channels", [100, 200, 300])
@@ -538,13 +500,11 @@ def test_squeeze_excitation(input_channels, squeeze_channels, dtype):
     )
     input_data = torch.rand(3, input_channels, 20, 40).to(dtype)
     output_cpu = m(input_data)
-
     input_data = input_data.to("musa")
     m = m.to("musa")
     output_musa = m(input_data)
 
     assert torch.allclose(output_cpu, output_musa.to("cpu"))
-
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("p", [0, 1])
@@ -561,7 +521,6 @@ def test_stochastic_depth(p, dtype, mode, training):
                           input_args=input_args
                           )
     test.check_result()
-
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("dtype", support_dtypes)
@@ -580,7 +539,6 @@ def test_deform_conv2d(dtype):
                           )
     test.check_result()
 
-
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("p", [0])
 @pytest.mark.parametrize("dtype", support_dtypes)
@@ -596,7 +554,6 @@ def test_drop_block2d(p, dtype, block_size):
                           input_args=input_args
                           )
     test.check_result()
-
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("p", [0])

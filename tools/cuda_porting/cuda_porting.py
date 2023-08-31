@@ -1,6 +1,7 @@
 import os
 import shutil
 import ahocorasick
+from os.path import join, dirname, abspath
 from typing import Dict
 from tools.cuda_porting.match_rewrite import init_ac_automaton, transform_file
 
@@ -68,11 +69,12 @@ def port_cuda(
     Returns: None.
     """
     # Prepare main cuda-porting map
-    current_dir = os.path.dirname(os.path.abspath(__file__))
+    current_dir = dirname(abspath(__file__))
+    mapping_dir = join(dirname(dirname(current_dir)), "torch_musa/utils/mapping")
     map_files = [
-        os.path.join(current_dir, "include.json"),
-        os.path.join(current_dir, "general.json"),
-        os.path.join(current_dir, "extra.json"),
+        join(mapping_dir, "include.json"),
+        join(mapping_dir, "general.json"),
+        join(mapping_dir, "extra.json"),
     ]
     main_automaton = init_ac_automaton(map_files)
 
