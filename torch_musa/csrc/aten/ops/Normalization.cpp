@@ -305,8 +305,14 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
 
   const auto input_shape = input.sizes();
   const int32_t axis = input.dim() - normalized_shape.size();
-  auto mean = at::empty({M}, input.options());
-  auto rstd = at::empty({M}, input.options());
+  at::TensorOptions options = input.options();
+  bool set_mean_rstd_fp32 = (input.scalar_type() == at::ScalarType::Half);
+  if (set_mean_rstd_fp32) {
+    // Mudnn does not support fp16 mean && rstd
+    options = options.dtype(at::ScalarType::Float);
+  }
+  auto mean = at::empty({M}, options);
+  auto rstd = at::empty({M}, options);
   if (M > 0) {
     std::vector<int64_t> stat_shape;
     for (int32_t idx = 0; idx < axis; ++idx) {

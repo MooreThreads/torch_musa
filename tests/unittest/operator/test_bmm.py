@@ -40,6 +40,6 @@ def test_bmm(input_data):
     test = testing.OpTest(
         func=torch.bmm,
         input_args=input_data,
-        comparators=testing.DefaultComparator(abs_diff=1e-6)
+        comparators=testing.DefaultComparator(abs_diff=1e-6),
     )
     test.check_result()
