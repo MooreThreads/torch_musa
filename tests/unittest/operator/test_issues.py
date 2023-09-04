@@ -86,3 +86,13 @@ def test_issue_415():
     x_mu = x.to("musa")
     testing.DefaultComparator(torch.max(x), torch.max(x_mu))
     testing.DefaultComparator(torch.max(x, 0, keepdim=True), torch.max(x_mu, 0, keepdim=True))
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_div_broadcast():
+    inp = torch.randn(40, 1)
+    out = torch.div(inp, 1, rounding_mode='floor')
+    out_musa = torch.div(inp.to('musa'), 1, rounding_mode='floor')
+    testing.DefaultComparator(out, out_musa)
+    out = torch.div(inp, 1, rounding_mode='trunc')
+    out_musa = torch.div(inp.to('musa'), 1, rounding_mode='trunc')
+    testing.DefaultComparator(out, out_musa)

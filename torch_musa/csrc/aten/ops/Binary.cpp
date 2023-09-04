@@ -163,6 +163,8 @@ void UnaryCall(
     CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::SUB), "SetMode");
   } else if (m == BINARY_MODE::FLOORMOD) {
     CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::FLOORMOD), "SetMode");
+  } else if (m == BINARY_MODE::FLOORDIV) {
+    CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::FLOORDIV), "SetMode");
   } else if (m == BINARY_MODE::TRUNCATEDIV) {
     CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::TRUNCATEDIV), "SetMode");
   } else {
