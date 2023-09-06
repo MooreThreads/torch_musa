@@ -2,15 +2,18 @@
 set -ex
 
 MT_OPENCV_URL="http://oss.mthreads.com/release-ci/Math-X/mt_opencv.tar.gz"
-MU_RAND_URL="http://oss.mthreads.com/release-ci/Math-X/muRAND_dev1.0.0.tar.gz"
+# use this mu_rand_url in next docker image version
+# MU_RAND_URL="https://oss.mthreads.com/release-ci/Math-X/muRAND_dev1.0.0.tar.gz"
+MU_RAND_URL="https://oss.mthreads.com/release-ci/computeQA/mathX/newest/murand.tar.gz"
 MU_SPARSE_URL="http://oss.mthreads.com/release-ci/Math-X/muSPARSE_dev0.1.0.tar.gz"
-MU_ALG_URL="http://oss.mthreads.com/release-ci/Math-X/muAlg_dev-0.1.1-Linux.deb"
-MU_TRUST_URL="http://oss.mthreads.com/release-ci/Math-X/muThrust_dev-0.1.1-Linux.deb"
+MU_ALG_URL="https://oss.mthreads.com/release-ci/computeQA/mathX/newest/mualg.tar"
+MU_THRUST_URL="https://oss.mthreads.com/release-ci/computeQA/mathX/newest/muthrust.tar"
+
 WORK_DIR="${PWD}"
 DATE=$(date +%Y%m%d)
 
 # parse parameters
-parameters=`getopt -o h:: --long mt_opencv_url:,mu_rand_url:,mu_sparse_url:,mu_alg_url:,mu_trust_url:,help, -n "$0" -- "$@"`
+parameters=`getopt -o h:: --long mt_opencv_url:,mu_rand_url:,mu_sparse_url:,mu_alg_url:,mu_thrust_url:,help, -n "$0" -- "$@"`
 [ $? -ne 0 ] && exit 1
 
 eval set -- "$parameters"
@@ -21,7 +24,7 @@ while true;do
     --mu_rand_url)   MU_RAND_URL=$2; shift 2;;
     --mu_sparse_url) MU_SPARSE_URL=$2; shift 2;;
     --mu_alg_url)    MU_ALG_URL=$2; shift 2;;
-    --mu_trust_url) MU_TRUST_URL=$2; shift 2;;
+    --mu_thrust_url) MU_THRUST_URL=$2; shift 2;;
     --) shift ; break ;;
     *) exit 1 ;;
   esac
@@ -61,22 +64,46 @@ install_mu_sparse() {
   popd
 }
 
-install_mu_alg_url() {
+install_mu_alg() {
+  suffix=$(basename "$MU_ALG_URL" | awk -F. '{print $NF}')
   if [ -d $1 ]; then
     rm -rf $1/mu_alg*.deb
+    rm -rf $1/mu_alg*.tar
   fi
-  echo -e "\033[34mDownloading mu_alg.deb to $1\033[0m"
-  wget --no-check-certificate $MU_ALG_URL -O $1/mu_alg.deb
-  sudo dpkg -i $1/mu_alg.deb
+  if [ ${suffix} == "tar" ]; then
+    echo -e "\033[34mDownloading mu_alg.tar to $1\033[0m"
+    wget --no-check-certificate $MU_ALG_URL -O $1/mu_alg.tar
+    mkdir -p $1/muAlg
+    tar xf $1/mu_alg.tar --strip-components 2 -C $1/muAlg
+    pushd $1/muAlg
+    ls | xargs dpkg -i
+    popd
+  elif [ ${suffix} == "deb" ]; then
+    echo -e "\033[34mDownloading mu_alg.deb to $1\033[0m"
+    wget --no-check-certificate $MU_ALG_URL -O $1/mu_alg.deb
+    sudo dpkg -i $1/mu_alg.deb
+  fi
 }
 
-install_trust_url() {
+install_thrust() {
+  suffix=$(basename "$MU_THRUST_URL" | awk -F. '{print $NF}')
   if [ -d $1 ]; then
     rm -rf $1/mu_thrust*.deb
+    rm -rf $1/mu_thrust.tar
   fi
-  echo -e "\033[34mDownloading mu_thrust.deb to $1\033[0m"
-  wget --no-check-certificate $MU_TRUST_URL -O $1/mu_thrust.deb
-  sudo dpkg -i $1/mu_thrust.deb
+  if [ ${suffix} == "tar" ]; then
+    echo -e "\033[34mDownloading mu_thrust.tar to $1\033[0m"
+    wget --no-check-certificate $MU_THRUST_URL -O $1/mu_thrust.tar
+    mkdir -p $1/muThrust
+    tar xf $1/mu_thrust.tar --strip-components 2 -C $1/muThrust
+    pushd $1/muThrust
+    ls | xargs dpkg -i
+    popd
+  elif [ ${suffix} == "deb" ]; then
+    echo -e "\033[34mDownloading mu_thrust.deb to $1\033[0m"
+    wget --no-check-certificate $MU_THRUST_URL -O $1/mu_thrust.deb
+    sudo dpkg -i $1/mu_thrust.deb
+  fi
 }
 
 main() {
@@ -87,7 +114,7 @@ main() {
     eval $fn_name $WORK_DIR/$DATE
   done
   pushd ~
-  sudo rm -rf $WORK_DIR/$DATE
+  rm -rf $WORK_DIR/$DATE
   popd
 }
 

@@ -2,8 +2,7 @@
 # mccl will be integrated into musa_toolkits soon
 set -ex
 
-#MCCL_URL="http://oss.mthreads.com/release-rc/cuda_compatible/rc1.3.0/mccl_rc1.1.0.txz"
-MCCL_URL="https://oss.mthreads.com/release-ci/computeQA/tmp/20230627_MCCL_tmp_pkg/MCCL/mccl.tar.gz"
+MCCL_URL="https://oss.mthreads.com/release-rc/cuda_compatible/dev1.4.2/mccl_dev1.2.2.tar.gz"
 WORK_DIR="${PWD}"
 DATE=$(date +%Y%m%d)
 
@@ -42,5 +41,5 @@ install_mccl() {
 mkdir -p $WORK_DIR/$DATE
 install_mccl $WORK_DIR/$DATE
 pushd ~
-sudo rm -rf $WORK_DIR/$DATE
+rm -rf $WORK_DIR/$DATE
 popd

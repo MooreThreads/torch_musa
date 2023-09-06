@@ -75,12 +75,18 @@ fi
 
 
 PYTORCH_ROOT_DIR=${PYTORCH_REPO_ROOT_PATH:-${HOME}}
+TORCH_VISION_ROOT_DIR=${TORCH_VISION_REPO_ROOT_PATH:-${HOME}}
 
 if [ ! -d "$PYTORCH_ROOT_DIR/pytorch" ]; then
   # if pytorch repo not exists, download it firstly
   echo "pytorch will be downloaded to ${PYTORCH_ROOT_DIR}"
   git clone -b ${PYTORCH_TAG} https://github.com/pytorch/pytorch.git --depth=1 $PYTORCH_ROOT_DIR/pytorch
   git submodule update --init --recursive
+fi
+
+if [ ! -d "$TORCH_VISION_ROOT_DIR/vision" ]; then
+  echo "torchvision will be downloaded to ${TORCH_VISION_ROOT_DIR}"
+  git clone https://github.com/pytorch/vision.git --depth=1 $TORCH_VISION_ROOT_DIR/vision
 fi
 
 BUILD_DIR=$(pwd)/tmp
@@ -93,8 +99,9 @@ cp $CUR_ROOT/../requirements.txt $BUILD_DIR
 
 pushd $BUILD_DIR
 if [ ${RELEASE} -eq 0 ]; then
-  # prepare pytorch and torch_musa
+  # prepare pytorch, torchvision and torch_musa
   cp -r $PYTORCH_ROOT_DIR/pytorch $BUILD_DIR
+  cp -r $TORCH_VISION_ROOT_DIR/vision $BUILD_DIR
   git clone https://github.mthreads.com/mthreads/torch_musa.git
 fi
 

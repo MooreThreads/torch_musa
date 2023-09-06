@@ -9,5 +9,5 @@ wget --no-check-certificate $MINICONDA_URL -O conda_install.sh
 mkdir -p /opt/conda
 sudo bash ./conda_install.sh -b -f -p "/opt/conda"
 sudo sed -e 's|PATH="\(.*\)"|PATH="/opt/conda/bin:\1"|g' -i /etc/environment
-sudo rm -f ./conda_install.sh
+rm -f ./conda_install.sh
 popd

@@ -117,24 +117,24 @@ python setup.py install
 
 #### Docker Image for Developer
 ```bash
-docker run -it --privileged --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev:latest /bin/bash
+docker run -it --privileged --pull always --network=host --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev:latest /bin/bash
 ```
 <details>
 <summary>Docker Image List</summary>
 
 | Docker Tag | Description |
 | ---- | --- |
-| [**latest/v0.1.16**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | build and install torchvision from source code [a6dea86] <br> other components are the same with v0.1.15 |
+| [**latest/v0.1.17**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | musatoolkits dev1.4.2 (ddk musa_2.2.0)<br> mudnn daily20230822; mccl dev1.2.2 <br> libomp-11-dev <br> muAlg_dev-0.3.0 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.3.0 |
+| [**v0.1.16**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | build and install torchvision from source code [a6dea86] <br> other components are the same with v0.1.15 |
 | [**v0.1.15**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | musatoolkits rc1.4.0 (ddk musa_2.1.1)<br> mudnn rtm_2.1.1; mccl 20230627 <br> libomp-11-dev <br> muAlg _dev-0.1.1 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.1.1 |
 | [**v0.1.14**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | musatoolkits rc1.4.0-rc1 (ddk rc1.4.0-rc1)<br> mudnn rc1.4.0-rc1; mccl_rc1.1.0 <br> libomp-11-dev <br> muAlg _dev-0.1.1 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.1.1 |
 | [**v0.1.13**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | musatoolkits-20230605 (ddk_20230604 develop or newer)<br> mudnn 20230605; mccl_rc1.1.0 <br> libomp-11-dev <br> muAlg _dev-0.1.1 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.1.1 |
-| [**v0.1.12**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | musatoolkits-20230605 (ddk_20230604 develop or newer)<br> mudnn 20230605; mccl_rc1.1.0 <br> muAlg _dev-0.1.1 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.1.1 |
 
 </details>  
 
 #### Docker Image for User
 ```bash
-docker run -it --privileged --name=torch_musa_release --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-release:v0.1.12 /bin/bash
+docker run -it --privileged --pull always --network=host --name=torch_musa_release --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-release:v0.1.12 /bin/bash
 ```
 <details>
 <summary>Docker Image List</summary>

@@ -33,7 +33,7 @@ RUN bash install_base.sh && \
 # cuz the torch_musa environment was successfully configured only on ubuntu20.04 
 # using default gcc9 currently.
 ARG GCC_VERSION
-COPY ./common/install_gcc.sh install_gcc.sh 
+COPY ./common/install_gcc.sh install_gcc.sh
 RUN bash install_gcc.sh && \
     rm -f install_gcc.sh
 
@@ -93,6 +93,8 @@ RUN pushd /home/torch_musa && \
     pip install numpy==1.23.1 pytest==7.2.2 protobuf==3.19.0 \
     googleapis-common-protos==1.56.4 importlib-metadata==4.11.3 \
     pillow==9.2.0 pylint==2.17.3 requests black && \
+    # workaround for https://github.com/pytorch/pytorch/issues/99625
+    conda install -y "llvm-openmp<16" && \
     popd && \
     source deactivate
 
@@ -102,7 +104,7 @@ RUN ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
     bash create_softlink4mkl.sh /opt/conda/envs/${ENV_NAME}/lib && \
     rm -f create_softlink4mkl.sh
 
-# prepare some envs & build original pytorch and torch_musa from scratch
+# prepare some envs & build original pytorch from scratch
 ENV MUSA_HOME=/usr/local/musa
 ENV LD_LIBRARY_PATH=$MUSA_HOME/lib:$LD_LIBRARY_PATH
 ENV PATH=/usr/local/musa/bin:/opt/conda/bin:$PATH
@@ -117,13 +119,13 @@ RUN ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
     conda deactivate
 
 WORKDIR /tmp
-RUN git clone https://github.com/pytorch/vision.git --depth=1 && \
-    pushd vision && \
+COPY ./vision ./vision
+RUN pushd vision && \
     ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
     source activate ${ENV_NAME} && \
     python setup.py install && \
     popd && \
-    rm -rf vision
+    rm -rf /tmp
 
 # add variables to the beginning of ~/.bashrc
 # cause shell maybe termintated by this command [ -z "$PS1" ] && return

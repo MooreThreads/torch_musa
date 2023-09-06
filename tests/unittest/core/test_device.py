@@ -38,8 +38,8 @@ def test_get_musa_devcie_index():
     """Test exception case about torch.musa.device(xxx)"""
     with torch.musa.device("musa:1"):
         assert torch.musa.current_device() == 1
-        with torch.musa.device("musa:2"):
-            assert torch.musa.current_device() == 2
+        with torch.musa.device("musa:0"):
+            assert torch.musa.current_device() == 0
         assert torch.musa.current_device() == 1
     assert torch.musa.current_device() == 0
 
