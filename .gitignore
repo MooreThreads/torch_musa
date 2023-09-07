@@ -148,3 +148,7 @@ torch_musa/share
 # daily mudnn package
 daily_mudnn_*/
 scripts/daily_mudnn_*/
+daily_musa_toolkits_*/
+daily_mublas_*/
+daily_mualg_*/
+download/

@@ -14,13 +14,11 @@ PUBLISH=${PUBLISH_ARTIFACTS:-0}
 
 build_artifacts() {
     git config --global --add safe.directory "*"
-    # daily whl release and daily testing use same POD 
-    # bash scripts/update_daily_mudnn.sh
     # Add some description
     echo "commit id: $(git rev-parse HEAD)" > ${ARTIFACTS_DIR}README.txt
-    daily_mudnn_abs_dir=$(find $PWD -name daily_mudnn*)
-    daily_mudnn_timestamp=$(find $daily_mudnn_abs_dir -name "*.txt" | awk -F/ '{print $NF}' | awk -F_ '{print $1}')
-    echo "daily_mudnn:${daily_mudnn_timestamp}" >> ${ARTIFACTS_DIR}README.txt
+    mudnn_abs_dir=$(find $PWD -name release_mudnn*)
+    mudnn_timestamp=$(find $mudnn_abs_dir -name "*.txt" | awk -F/ '{print $NF}' | awk -F_ '{print $1}')
+    echo "mudnn:${mudnn_timestamp}" >> ${ARTIFACTS_DIR}README.txt
     cat $PWD/.musa_dependencies >> ${ARTIFACTS_DIR}README.txt
 
     # Build wheel packages under python3.8, using the existing conda environment
@@ -40,15 +38,15 @@ build_artifacts() {
 publish_artifacts() {
     # the build and release are done in separate containers, but they belong to the same POD
     git config --global --add safe.directory "*"
-    daily_mudnn_abs_dir=$(find $PWD -name daily_mudnn*)
-    daily_mudnn_timestamp=$(find $daily_mudnn_abs_dir -name "*.txt" | awk -F/ '{print $NF}' | awk -F_ '{print $1}')
+    mudnn_abs_dir=$(find $PWD -name release_mudnn*)
+    mudnn_timestamp=$(find $mudnn_abs_dir -name "*.txt" | awk -F/ '{print $NF}' | awk -F_ '{print $1}')
 
     oss-release ${ARTIFACTS_DIR}
 
-    # NB: Treat the mudnn that have passed daily release as stable one
-    stable_mudnn_oss_dir="myoss/mt-ai-data/infra/framework/torch_musa/dependency/mudnn"
-    mc cp -q ${daily_mudnn_abs_dir}/mudnn.tar ${stable_mudnn_oss_dir}/history/${daily_mudnn_timestamp}/
-    mc cp -q ${daily_mudnn_abs_dir}/mudnn.tar ${stable_mudnn_oss_dir}/
+    # # NB: Treat the mudnn that have passed daily release as stable one
+    # stable_mudnn_oss_dir="myoss/mt-ai-data/infra/framework/torch_musa/dependency/mudnn"
+    # mc cp -q ${mudnn_abs_dir}/mudnn.tar ${stable_mudnn_oss_dir}/history/${mudnn_timestamp}/
+    # mc cp -q ${mudnn_abs_dir}/mudnn.tar ${stable_mudnn_oss_dir}/
 }
 
 pushd ${TORCH_MUSA_DIR}

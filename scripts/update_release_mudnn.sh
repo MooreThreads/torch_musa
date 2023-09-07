@@ -1,4 +1,7 @@
 #!/bin/bash
+# We will update mudnn in Stable testing mainly in two cases:
+# 1. mudnn changed its interfaces only, no need to update docker image
+# 2. mudnn's dependencies changed, such as musa runtime, we'd better update docker image
 set -e
 
 DATE=$(date +%Y%m%d)

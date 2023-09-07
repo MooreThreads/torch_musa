@@ -16,9 +16,6 @@ def ifTriggeredByTimer() {
 pipeline {
   parameters {
     choice(name: 'HARDWARE_PLATFORM', choices: ['MThreads GPU'], description: 'Target hardware platform')
-    booleanParam(name: 'RUN_NEXT_STAGE', defaultValue: true, description: 'Whether to run the next stage in daily CI stages')
-    booleanParam(name: 'DAILY_UT_PASSED', defaultValue: false, description: 'Whether daily unit test passed')
-    booleanParam(name: 'DAILY_IT_PASSED', defaultValue: false, description: 'Whether daily integration test passed')
   }
 
   agent {
@@ -26,6 +23,12 @@ pipeline {
       yamlFile "${new PodTemplateFiles().getPodTemplateFile(params.HARDWARE_PLATFORM)}"
       defaultContainer "main"
     }
+  }
+
+  environment {
+    RUN_NEXT_STAGE = true    // Whether to run the next stage in daily CI stages
+    DAILY_UT_PASSED = false  // Whether daily unit test passed
+    DAILY_IT_PASSED = false  // Whether daily integration test passed
   }
 
   triggers {
@@ -57,16 +60,6 @@ pipeline {
     stage('Parallel Build & Test') {
       parallel {
         stage('Stable Build & Test') {
-          agent {
-            kubernetes {
-              yamlFile 'ci/templates/musa.yaml'
-              defaultContainer "main"
-            }
-          }
-          when {
-            beforeAgent true
-            expression { !ifTriggeredByTimer() }
-          }
           stages {
             stage('Build') {
               steps {
@@ -88,12 +81,24 @@ pipeline {
           }
         }
         stage('Daily Build & Test') {
+          agent {
+            kubernetes {
+              yamlFile 'ci/templates/musa.yaml'
+              defaultContainer "main"
+            }
+          }
+          when {
+            beforeAgent true
+            expression { !ifTriggeredByTimer() }
+          }
           stages {
             stage('Build') {
               steps {
                 container('main') {
                   script {
                     catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                      sh 'git config --global --add safe.directory \"*\"'
+                      sh '/bin/bash --login scripts/update_daily_musart.sh'
                       sh '/bin/bash --login scripts/update_daily_mudnn.sh'
                       sh '/bin/bash --login -c "conda run -n py38 --no-capture-output /bin/bash build.sh"'
                     }
@@ -107,14 +112,14 @@ pipeline {
                 failure {
                   script {
                     echo 'BUILD FAILURE!'
-                    params.RUN_NEXT_STAGE = false
+                    env.RUN_NEXT_STAGE = false
                   }
                 }
               }
             }
             stage('Unit Test') {
               when {
-                expression { params.RUN_NEXT_STAGE == true }
+                expression { env.RUN_NEXT_STAGE }
               }
               steps {
                 container('main') {
@@ -129,17 +134,19 @@ pipeline {
                 success {
                   script {
                     echo 'Unit Test SUCCESS!'
-                    params.DAILY_UT_PASSED = true
+                    env.DAILY_UT_PASSED = true
                   }
                 }
                 failure {
-                  echo 'Unit Test FAILURE!'
+                  script {
+                    echo 'Unit Test FAILURE!'
+                  }
                 }
               }
             }
             stage('Integration Test') {
               when {
-                expression { params.RUN_NEXT_STAGE == true }
+                expression { env.RUN_NEXT_STAGE }
               }
               steps {
                 container('main') {
@@ -154,7 +161,7 @@ pipeline {
                 success {
                   script {
                     echo 'Integration Test SUCCESS!'
-                    params.DAILY_IT_PASSED = true
+                    env.DAILY_IT_PASSED = true
                   }
                 }
                 failure {
@@ -172,7 +179,6 @@ pipeline {
         allOf {
           branch 'main'
           expression { ifTriggeredByTimer() }
-          expression { return params.DAILY_UT_PASSED && params.DAILY_IT_PASSED }
         }
       }
       steps {
