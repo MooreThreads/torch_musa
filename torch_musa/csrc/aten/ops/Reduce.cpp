@@ -106,6 +106,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/musa_lazy_init.h"
 
 #include <mudnn.h>
 
@@ -766,6 +767,17 @@ std::tuple<Tensor&, Tensor&> MinNamesDimMin(
   return std::tuple<Tensor&, Tensor&>(output, indices);
 }
 
+std::tuple<at::Tensor, at::Tensor> VarMeanCorrection(
+    const at::Tensor& self,
+    at::OptionalIntArrayRef dim,
+    c10::optional<int64_t> correction,
+    bool keepdim) {
+  // No device check
+  torch::utils::musa_lazy_init();
+  c10::musa::MUSAGuard device_guard(self.device());
+  return at::native::var_mean(self, dim, correction, keepdim);
+}
+
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("mean", &Mean);
   m.impl("mean.dim", &MeanDim);
@@ -809,6 +821,8 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("all.dim", &AllDim);
   m.impl("all.out", &AllDimOut);
   m.impl("argmax.out", &ArgmaxOut);
+
+  m.impl("var_mean.correction", &VarMeanCorrection);
 }
 
 } // namespace musa

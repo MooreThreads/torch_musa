@@ -1,0 +1,15 @@
+diff --git a/aten/src/ATen/native/ReduceOps.cpp b/aten/src/ATen/native/ReduceOps.cpp
+index 91bf398..9913f2f 100644
+--- a/aten/src/ATen/native/ReduceOps.cpp
++++ b/aten/src/ATen/native/ReduceOps.cpp
+@@ -1726,8 +1726,8 @@ static std::tuple<Tensor&, Tensor&> std_var_mean_out(
+     at::OptionalIntArrayRef dim, c10::optional<int64_t> correction_opt,
+     bool keepdim, bool take_sqrt) {
+   AT_ASSERT(result1.defined() && result2.defined());
+-  TORCH_CHECK(self.device().is_cpu() || self.is_cuda(),
+-              fname, " only supports tensors on a CPU or CUDA device, got: ",
++  TORCH_CHECK(self.device().is_cpu() || self.is_cuda() || self.device().type() == kPrivateUse1,
++              fname, " only supports tensors on a CPU or CUDA or MUSA device, got: ",
+               self.device().type());
+   TORCH_CHECK(self.layout() == Layout::Strided,
+               fname, " only supports strided layout, got: ", self.layout());

@@ -82,6 +82,7 @@ FILE(GLOB MU_SRCS
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ReduceNormKernel.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ReduceMaxValuesKernel.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ReduceAMinMaxKernel.mu
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ReduceMomentKernel.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Randperm.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Shape.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TensorCompare.mu
