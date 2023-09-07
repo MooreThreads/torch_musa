@@ -80,49 +80,70 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNorm(
     check_dims_match_num_input_features("bias", num_features, bias.numel());
   }
 
+  // input and output tensors
   auto options = input.options().dtype(input.scalar_type());
-  auto output = at::empty_like(input, at::MemoryFormat::Contiguous);
-  auto out = CreateMUTensor(output);
-  auto contiguous_input = input.contiguous();
-  auto in = CreateMUTensor(contiguous_input);
-  muTensor s;
-  muTensor b;
+  Tensor contiguous_input = input.contiguous();
+  Tensor output = at::empty_like(input, at::MemoryFormat::Contiguous);
   Tensor contiguous_weight;
   Tensor contiguous_bias;
   Tensor contiguous_running_mean;
   Tensor contiguous_running_var;
+  Tensor save_mean = at::empty({0}, options);
+  Tensor save_invstd = at::empty({0}, options);
+  // computational muTensors
+  muTensor in = CreateMUTensor(contiguous_input);
+  muTensor out = CreateMUTensor(output);
+  muTensor scale;
+  muTensor bias_;
+  muTensor mean;
+  muTensor variance;
 
   if (weight.defined()) {
-    s = CreateMUTensor(ContiguousRef(weight, contiguous_weight));
-    b = CreateMUTensor(ContiguousRef(bias, contiguous_bias));
+    scale = CreateMUTensor(ContiguousRef(weight, contiguous_weight));
+    bias_ = CreateMUTensor(ContiguousRef(bias, contiguous_bias));
   }
-  muTensor am;
-  muTensor av;
   // In case of track_running_stats is False
   if (running_mean.defined()) {
-    am = CreateMUTensor(ContiguousRef(running_mean, contiguous_running_mean));
-    av = CreateMUTensor(ContiguousRef(running_var, contiguous_running_var));
+    mean = CreateMUTensor(ContiguousRef(running_mean, contiguous_running_mean));
+    variance =
+        CreateMUTensor(ContiguousRef(running_var, contiguous_running_var));
   }
+
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::BatchNorm bn;
   CHECK_MUDNN_STATUS(bn.SetEpsilon(eps), "SetEpsilon");
-
-  auto save_mean = at::empty({0}, options);
-  auto save_invstd = at::empty({0}, options);
+  CHECK_MUDNN_STATUS(bn.SetTraining(training), "SetTraining");
+  // muDNN supports PER_CHANNEL and PER_ACTIVATION modes, while PER_ACTIVATION
+  // has higher performance and lower accuracy, we hard code PER_CHANNEL here to
+  // keep the accuracy (BN can be folded into conv easily which could speed up
+  // inference)
+  CHECK_MUDNN_STATUS(
+      bn.SetMode(::musa::dnn::BatchNorm::Mode::PER_CHANNEL), "SetTraining");
 
   if (!training) {
-    CHECK_MUDNN_STATUS(bn.RunPure(h, out, in, am, av, s, b), "RunPure");
+    CHECK_MUDNN_STATUS(
+        bn.RunPure(h, out, in, mean, variance, scale, bias_), "RunPure");
   } else {
     save_mean =
         at::empty({num_features}, options, at::MemoryFormat::Contiguous);
     save_invstd =
         at::empty({num_features}, options, at::MemoryFormat::Contiguous);
-    auto m = CreateMUTensor(save_mean);
-    auto v = CreateMUTensor(save_invstd);
+    muTensor cur_mean = CreateMUTensor(save_mean);
+    muTensor cur_var = CreateMUTensor(save_invstd);
 
     CHECK_MUDNN_STATUS(
         bn.RunComposite(
-            h, out, in, am, av, m, v, s, b, momentum, InternalMemAlloc),
+            h,
+            out,
+            in,
+            mean,
+            variance,
+            cur_mean,
+            cur_var,
+            scale,
+            bias_,
+            momentum,
+            InternalMemAlloc),
         "RunComposite");
   }
   return std::tuple<Tensor&, Tensor&, Tensor&>{output, save_mean, save_invstd};
@@ -326,6 +347,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
   }
   auto mt_mean = CreateMUTensor(mean);
   auto mt_rstd = CreateMUTensor(rstd);
+
   CHECK_MUDNN_STATUS(
       op.Run(h, mt_output, mt_mean, mt_rstd, mt_input, mt_gamma, mt_beta),
       "Run");
@@ -359,13 +381,15 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
       "Device of rstd tensor of LayerNormBackward must be MUSA, but now is ",
       rstd.device());
   TORCH_CHECK(
-      grad_out.scalar_type() == at::ScalarType::Float,
-      "Dtype of grad_out tensor of LayerNormBackward only support Float32, ",
+      grad_out.scalar_type() == at::ScalarType::Float ||
+          grad_out.scalar_type() == at::ScalarType::Half,
+      "Dtype of grad_out tensor of LayerNormBackward only support Float32/Half, ",
       "but now it is ",
       grad_out.scalar_type());
   TORCH_CHECK(
-      input.scalar_type() == at::ScalarType::Float,
-      "Dtype of input tensor of LayerNormBackward only support Float32, ",
+      input.scalar_type() == at::ScalarType::Float ||
+          input.scalar_type() == at::ScalarType::Half,
+      "Dtype of input tensor of LayerNormBackward only support Float32/Half, ",
       "but now it is ",
       input.scalar_type());
   TORCH_CHECK(
@@ -460,8 +484,9 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
           "but now is ",
           weight.device());
       TORCH_CHECK(
-          weight.scalar_type() == at::ScalarType::Float,
-          "Dtype of weight tensor of LayerNormBackward only support Float32, ",
+          weight.scalar_type() == at::ScalarType::Float ||
+              weight.scalar_type() == at::ScalarType::Half,
+          "Dtype of weight tensor of LayerNormBackward only support Float32/Half, ",
           "but now it is ",
           weight.scalar_type());
     }

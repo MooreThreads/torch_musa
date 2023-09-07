@@ -195,7 +195,6 @@ Tensor Conv2d(
 
   auto in = CreateMUTensor(contiguous_input);
   auto out = CreateMUTensor(output);
-
   auto ke = CreateMUTensor(contiguous_weight);
 
   muHandle& h = GetMudnnHandle();
@@ -356,15 +355,20 @@ Tensor Convolution(
       "Device of weight tensor of Convolution must be MUSA, but now is",
       input.device());
   TORCH_CHECK(
-      weight.scalar_type() == at::ScalarType::Float,
-      "Dtype of weight tensor of Convolution only support Float32, ",
+      weight.scalar_type() == at::ScalarType::Float ||
+          weight.scalar_type() == at::ScalarType::Half,
+      "Dtype of weight tensor of Convolution only support Float32 and Half, ",
       "but now it is ",
       weight.scalar_type());
   TORCH_CHECK(
-      input.scalar_type() == at::ScalarType::Float,
-      "Dtype of input tensor of Convolution only support Float32, ",
+      input.scalar_type() == at::ScalarType::Float ||
+          input.scalar_type() == at::ScalarType::Half,
+      "Dtype of input tensor of Convolution only support Float32 and Half, ",
       "but now it is ",
       input.scalar_type());
+  TORCH_CHECK(
+      input.scalar_type() == weight.scalar_type(),
+      "input dtype and weight dtype must be the same");
 
   c10::musa::MUSAGuard device_guard(input.device());
   if (input.dim() == 4 && weight.dim() == 4) {

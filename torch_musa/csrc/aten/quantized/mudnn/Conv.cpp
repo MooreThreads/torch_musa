@@ -70,15 +70,6 @@ void PackedConvWeightMudnn<kSpatialDim>::apply_impl_helper(
   CHECK_MUDNN_STATUS(
       ke.SetFormat(at::musa::muTensor::Format::NHWC),
       "Set weight muTensor format as NHWC");
-  CHECK_MUDNN_STATUS(
-      in.SetType(::musa::dnn::TensorBase::Type::QINT8),
-      "Set input muTensor dtype as QINT8");
-  CHECK_MUDNN_STATUS(
-      out.SetType(::musa::dnn::TensorBase::Type::QINT8),
-      "Set output muTensor dtype as QINT8");
-  CHECK_MUDNN_STATUS(
-      ke.SetType(::musa::dnn::TensorBase::Type::QINT8),
-      "Set weight muTensor dtype as QINT8");
   SetMudnnQuantizationInfo(in, act_scale, act_zero_point);
   SetMudnnQuantizationInfo(out, output_scale, output_zero_point);
   SetMudnnQuantizationInfo(ke, weight_scale, weight_zero_point);
@@ -104,9 +95,6 @@ void PackedConvWeightMudnn<kSpatialDim>::apply_impl_helper(
     CHECK_MUDNN_STATUS(
         add.SetFormat(at::musa::muTensor::Format::NHWC),
         "Set add muTensor format as NHWC");
-    CHECK_MUDNN_STATUS(
-        add.SetType(::musa::dnn::TensorBase::Type::QINT8),
-        "Set add muTensor dtype as QINT8");
     SetMudnnQuantizationInfo(
         add, accum.value().q_scale(), accum.value().q_zero_point());
   }

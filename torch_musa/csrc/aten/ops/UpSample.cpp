@@ -6,9 +6,10 @@
 #include <c10/util/Exception.h>
 #include <torch/library.h>
 
-#include <mudnn_image.h>
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+
+#include <mudnn.h>
 
 namespace at {
 namespace musa {
@@ -21,40 +22,99 @@ Tensor& UpSampleNearest2dOut(
     Tensor& result) {
   MUSA_TENSOR_TYPE_CHECK(self);
   c10::musa::MUSAGuard device_guard(self.device());
+  TORCH_CHECK(
+      self.dim() == 4,
+      "UpSampleNearest2dOut needs input to be a 4-D tensor, which is ",
+      self.dim());
+  TORCH_CHECK(
+      result.dim() == 4,
+      "UpSampleNearest2dOut needs output to be a 4-D tensor, which is ",
+      result.dim());
+  TORCH_CHECK(
+      self.scalar_type() == c10::ScalarType::Float ||
+          self.scalar_type() == c10::ScalarType::Half,
+      "UpSampleNearest2dOut needs input to be a float or half dtype tensor, which is",
+      self.scalar_type());
+
+  if (self.numel() == 0) {
+    return result;
+  }
+
+  if (self.sizes() == result.sizes()) {
+    result.copy_(self);
+    return result;
+  }
 
   int output_height = output_size[0];
   int output_width = output_size[1];
 
-  int contiguous_inputheight = self.size(2);
-  int contiguous_inputwidth = self.size(3);
+  int input_height = self.size(2);
+  int input_width = self.size(3);
 
   const float height_scale = at::native::compute_scales_value<float>(
-      scales_h, contiguous_inputheight, output_height);
+      scales_h, input_height, output_height);
   const float width_scale = at::native::compute_scales_value<float>(
-      scales_w, contiguous_inputwidth, output_width);
+      scales_w, input_width, output_width);
+
+  bool is_half = self.scalar_type() == c10::ScalarType::Half;
+  Tensor in_;
+  Tensor out_;
+  at::musa::muTensor in;
+  at::musa::muTensor out;
+
+  muHandle& h = GetMudnnHandle();
+  ::musa::dnn::Interpolate op;
+  CHECK_MUDNN_STATUS(
+      op.SetMode(::musa::dnn::Interpolate::Mode::NEAREST), "SetMode");
+  CHECK_MUDNN_STATUS(
+      op.SetScaleInfo({height_scale, width_scale}), "SetScaleInfo");
 
   if (self.suggest_memory_format() == at::MemoryFormat::ChannelsLast) {
-    TORCH_CHECK(false, "Now not supported NHWC");
-  }
-
-  // if shapes are the same, just copy and return.
-  if (self.sizes() == result.sizes()) {
-    result.copy_(self);
-  } else if (self.numel() > 0) { // else result should be empty to return
-    Tensor contiguous_input = self.contiguous();
-
-    muHandle& h = GetMudnnHandle();
-    auto in = CreateMUTensor(contiguous_input);
-    auto out = CreateMUTensor(result);
-
-    ::musa::dnn::Interpolate op;
+    // if result tensor comes from UpSampleNearest2d, then it already has the
+    // same format as input, otherwise we should make both of them the same
+    // format
+    if (result.suggest_memory_format() != at::MemoryFormat::ChannelsLast) {
+      out_ = result.to(at::MemoryFormat::ChannelsLast).permute({0, 2, 3, 1});
+    }
+    // mudnn doesn't support fp16 upsampel, so we have to cast fp16 to fp32
+    // to enable half train/inference, which would have some overheads
+    if (is_half) {
+      in_ = self.to(c10::ScalarType::Float).permute({0, 2, 3, 1});
+      out_ = result.to(c10::ScalarType::Float).permute({0, 2, 3, 1});
+    } else {
+      in_ = self.permute({0, 2, 3, 1});
+      out_ = result.permute({0, 2, 3, 1});
+    }
+    in = CreateMUTensor(in_);
+    out = CreateMUTensor(out_);
     CHECK_MUDNN_STATUS(
-        op.SetMode(::musa::dnn::Interpolate::Mode::NEAREST), "SetMode");
+        in.SetFormat(at::musa::muTensor::Format::NHWC),
+        "Set input to NHWC format");
     CHECK_MUDNN_STATUS(
-        op.SetScaleInfo({height_scale, width_scale}), "SetScaleInfo");
+        out.SetFormat(at::musa::muTensor::Format::NHWC),
+        "Set output to NHWC format");
+    CHECK_MUDNN_STATUS(op.Run(h, out, in), "Run");
 
+    out_ = out_.permute({0, 3, 1, 2});
+    if (is_half) {
+      out_ = out_.to(c10::ScalarType::Half);
+    }
+  } else if (is_half) {
+    in_ = self.to(c10::ScalarType::Float).contiguous();
+    out_ = result.to(c10::ScalarType::Float);
+    in = CreateMUTensor(in_);
+    out = CreateMUTensor(out_);
+    CHECK_MUDNN_STATUS(op.Run(h, out, in), "Run");
+    out_ = out_.to(c10::ScalarType::Half);
+  } else {
+    in_ = self.contiguous();
+    out_ = result;
+    in = CreateMUTensor(in_);
+    out = CreateMUTensor(out_);
     CHECK_MUDNN_STATUS(op.Run(h, out, in), "Run");
   }
+
+  result.copy_(out_);
   return result;
 }
 
@@ -63,14 +123,10 @@ Tensor UpSampleNearest2d(
     IntArrayRef output_size,
     c10::optional<double> scales_h,
     c10::optional<double> scales_w) {
-  auto contiguous_input = self.contiguous();
   auto result = at::empty(
-      at::native::upsample_2d_common_check(
-          contiguous_input.sizes(), output_size),
-      contiguous_input.options().memory_format(
-          contiguous_input.suggest_memory_format()));
-  UpSampleNearest2dOut(
-      contiguous_input, output_size, scales_h, scales_w, result);
+      at::native::upsample_2d_common_check(self.sizes(), output_size),
+      self.options().memory_format(self.suggest_memory_format()));
+  UpSampleNearest2dOut(self, output_size, scales_h, scales_w, result);
   return result;
 }
 

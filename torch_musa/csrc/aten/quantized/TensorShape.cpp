@@ -109,8 +109,8 @@ Tensor SqueezeQtensor(const Tensor& self, c10::OptionalIntArrayRef dims) {
         axis,
         quantizer->scalar_type());
   }
-  // TODO: quantized Tensor support for SymInt needs to be added but basic
-  // building blocs are missing for now.
+  // TODO(@fan.mo): quantized Tensor support for SymInt needs to be added but
+  // basic building blocks are missing for now.
   auto result = MakeQtensor(
       self,
       C10_AS_INTARRAYREF_SLOW(sizes),

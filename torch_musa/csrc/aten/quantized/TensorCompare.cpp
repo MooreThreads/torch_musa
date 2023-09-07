@@ -20,7 +20,6 @@ std::tuple<Tensor, Tensor> QMax(const Tensor& self, int64_t dim, bool keepdim) {
   Tensor max =
       at::empty({0}, self.options().dtype(toUnderlying(self.scalar_type())));
   at::max_outf(self.int_repr(), dim, keepdim, max, max_indices);
-  // TODO(@fan.mo): check qscheme
   return std::tuple<Tensor, Tensor>(
       at::musa::MakePerTensorQuantizedTensor(
           max, self.q_scale(), self.q_zero_point()),
@@ -37,7 +36,6 @@ std::tuple<Tensor, Tensor> QMin(const Tensor& self, int64_t dim, bool keepdim) {
   Tensor min =
       at::empty({0}, self.options().dtype(toUnderlying(self.scalar_type())));
   at::min_outf(self.int_repr(), dim, keepdim, min, min_indices);
-  // TODO(@fan.mo): check qscheme
   return std::tuple<Tensor, Tensor>(
       at::musa::MakePerTensorQuantizedTensor(
           min, self.q_scale(), self.q_zero_point()),
