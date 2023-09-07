@@ -163,6 +163,35 @@ The following two key changes are required when using **torch_musa**:
    a = torch.tensor([1.2, 2.3], dtype=torch.float32, device='musa')
    b = torch.tensor([1.2, 2.3], dtype=torch.float32, device='cpu').to('musa')
    ```
+**torch musa** has integrated torchvision ops in the musa backend. Please do the following if torchvision is not installed:
+- Install torchvision package via building from source
+  ```
+  # ensure torchvision is not installed
+  pip uninstall torchvision
+  
+  git clone https://github.com/pytorch/vision.git
+  cd vision
+  python setup.py install
+  ```
+- Use torchvision musa backend:
+  ```
+  import torch
+  import torch_musa
+  import torchvision
+
+  def get_forge_data(num_boxes):
+      boxes = torch.cat((torch.rand(num_boxes, 2), torch.rand(num_boxes, 2) + 10), dim=1)
+      assert max(boxes[:, 0]) < min(boxes[:, 2])  # x1 < x2
+      assert max(boxes[:, 1]) < min(boxes[:, 3])  # y1 < y2
+      scores = torch.rand(num_boxes)
+      return boxes, scores
+
+  num_boxes = 10
+  boxes, scores = get_forge_data(num_boxes)
+  iou_threshold = 0.5
+  print(torchvision.ops.nms(boxes=boxes.to("musa"), scores=scores.to("musa"), iou_threshold=iou_threshold))
+  ```
+  
 
 ### Example of Frequently Used APIs
 
