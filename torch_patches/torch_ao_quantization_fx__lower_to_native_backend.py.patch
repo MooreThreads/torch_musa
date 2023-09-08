@@ -1,5 +1,5 @@
 diff --git a/torch/ao/quantization/fx/_lower_to_native_backend.py b/torch/ao/quantization/fx/_lower_to_native_backend.py
-index 15bfff0..96756b0 100644
+index 15bfff0..fdb84b8 100644
 --- a/torch/ao/quantization/fx/_lower_to_native_backend.py
 +++ b/torch/ao/quantization/fx/_lower_to_native_backend.py
 @@ -109,7 +109,7 @@ def is_copy_node(node, modules):
@@ -20,6 +20,15 @@ index 15bfff0..96756b0 100644
          "relu",
          "relu_",
      ]
+@@ -171,7 +171,7 @@ def is_general_tensor_shape_node(node, modules):
+ 
+ def is_other_node(node, modules):
+     func_list = [
+-        torch.cat,
++        # torch.cat,
+     ]
+     method_list: List[Any] = []
+     module_type_list: List[Any] = []
 @@ -266,6 +266,7 @@ STATIC_LOWER_FUSED_MODULE_MAP: Dict[Type[nn.Module], Tuple[Type[nn.Module], Type
      nni.ConvReLU1d: (nnqr.Conv1d, nniq.ConvReLU1d),
      nni.ConvReLU2d: (nnqr.Conv2d, nniq.ConvReLU2d),

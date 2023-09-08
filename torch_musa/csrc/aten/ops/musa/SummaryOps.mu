@@ -3,11 +3,11 @@
 #include <ATen/Dispatch.h>
 #include <ATen/NumericUtils.h>
 #include <ATen/core/Tensor.h>
-#include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include <ATen/native/Resize.h>
+#include <torch/library.h>
 #include <ATen/musa/Atomic.muh>
 #include <ATen/musa/MUSA_PORT_ApplyUtils.muh>
-#include <torch/library.h>
+#include "torch_musa/csrc/aten/musa/MUSAContext.h"
 
 #ifndef AT_PER_OPERATOR_HEADERS
 #include <ATen/Functions.h>
@@ -51,7 +51,7 @@ __device__ static IndexType getBin(
     bin -= 1;
   return bin;
 }
-}
+} // namespace
 
 /*
   Kernel for computing the histogram of the input.
@@ -164,34 +164,28 @@ __global__ void kernelHistogram1D(
 }
 
 #define HANDLE_CASE(MEMORY_TYPE, WEIGHTS_OP, SHARED_MEM)                 \
-  kernelHistogram1D<                                                     \
-      output_t,                                                          \
-      input_t,                                                           \
-      IndexType,                                                         \
-      1,                                                                 \
-      2,                                                                 \
-      -1,                                                                \
-      MEMORY_TYPE><<<grid, block, SHARED_MEM, getCurrentMUSAStream()>>>( \
-      aInfo,                                                             \
-      pInfo,                                                             \
-      bInfo,                                                             \
-      nbins,                                                             \
-      minvalue,                                                          \
-      maxvalue,                                                          \
-      totalElements,                                                     \
-      WEIGHTS_OP);                                                       \
+  kernelHistogram1D<output_t, input_t, IndexType, 1, 2, -1, MEMORY_TYPE> \
+      <<<grid, block, SHARED_MEM, getCurrentMUSAStream()>>>(             \
+          aInfo,                                                         \
+          pInfo,                                                         \
+          bInfo,                                                         \
+          nbins,                                                         \
+          minvalue,                                                      \
+          maxvalue,                                                      \
+          totalElements,                                                 \
+          WEIGHTS_OP);                                                   \
   C10_MUSA_KERNEL_LAUNCH_CHECK();
 
-#define HANDLE_SWITCH_CASE(mType, getOp)                                   \
-  switch (mType) {                                                         \
-    case MUSAHistogramMemoryType::SHARED:                                  \
-      HANDLE_CASE(MUSAHistogramMemoryType::SHARED, getOp, sharedMem);      \
-      break;                                                               \
-    case MUSAHistogramMemoryType::MULTI_BLOCK:                             \
-      HANDLE_CASE(MUSAHistogramMemoryType::MULTI_BLOCK, getOp, 0);         \
-      break;                                                               \
-    default:                                                               \
-      HANDLE_CASE(MUSAHistogramMemoryType::GLOBAL, getOp, 0);              \
+#define HANDLE_SWITCH_CASE(mType, getOp)                              \
+  switch (mType) {                                                    \
+    case MUSAHistogramMemoryType::SHARED:                             \
+      HANDLE_CASE(MUSAHistogramMemoryType::SHARED, getOp, sharedMem); \
+      break;                                                          \
+    case MUSAHistogramMemoryType::MULTI_BLOCK:                        \
+      HANDLE_CASE(MUSAHistogramMemoryType::MULTI_BLOCK, getOp, 0);    \
+      break;                                                          \
+    default:                                                          \
+      HANDLE_CASE(MUSAHistogramMemoryType::GLOBAL, getOp, 0);         \
   }
 
 inline int64_t getFreeGlobalMemory() {
@@ -395,8 +389,8 @@ Tensor _histc_musa_template(
 
 #if !defined(USE_ROCM)
   TORCH_CHECK(
-      !(at::_isinf(minvalue) || at::_isinf(maxvalue) ||
-        at::_isnan(minvalue) || at::_isnan(maxvalue)),
+      !(at::_isinf(minvalue) || at::_isinf(maxvalue) || at::_isnan(minvalue) ||
+        at::_isnan(maxvalue)),
       "range of [",
       minvalue,
       ", ",
@@ -422,10 +416,12 @@ Tensor _histc_musa_template(
 
 namespace native {
 Tensor _bincount_musa(
-    const Tensor& self, const c10::optional<Tensor>& weights_opt,
+    const Tensor& self,
+    const c10::optional<Tensor>& weights_opt,
     int64_t minlength) {
   // See [Note: hacky wrapper removal for optional tensor]
-  c10::MaybeOwned<Tensor> weights_maybe_owned = at::borrow_from_optional_tensor(weights_opt);
+  c10::MaybeOwned<Tensor> weights_maybe_owned =
+      at::borrow_from_optional_tensor(weights_opt);
   const Tensor& weights = *weights_maybe_owned;
 
   // See Note [Writing Nondeterministic Operations]
@@ -458,7 +454,12 @@ Tensor _histc_musa(
   });
 }
 
-Tensor& _histc_out_musa(const Tensor& self, int64_t bins, const Scalar& min, const Scalar& max, Tensor& result) {
+Tensor& _histc_out_musa(
+    const Tensor& self,
+    int64_t bins,
+    const Scalar& min,
+    const Scalar& max,
+    Tensor& result) {
   auto ret = _histc_musa(self, bins, min, max);
   resize_output(result, ret.sizes());
   result.copy_(ret);

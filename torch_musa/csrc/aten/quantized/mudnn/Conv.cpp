@@ -32,7 +32,7 @@ at::SmallVector<int64_t, 4> MakeQConvOutputShape<2>(
       (H + 2 * padding[0] - dilation[0] * (kernel[0] - 1) - 1) / stride[0] + 1;
   const int64_t Y_W =
       (W + 2 * padding[1] - dilation[1] * (kernel[1] - 1) - 1) / stride[1] + 1;
-  return {N, M, Y_H, Y_W};
+  return {N, Y_H, Y_W, M}; // create a NHWC shape
 }
 
 template <int kSpatialDim>
@@ -106,14 +106,11 @@ void PackedConvWeightMudnn<kSpatialDim>::apply_impl_helper(
   // from mudnn, 2 stands for RELU and 0 stands for IDENTITY
   ::musa::dnn::Convolution::FusedActivationDesc act;
   if (ActMode::IDENTITY == act_mode) {
-    act.SetMode(
-        static_cast<::musa::dnn::Convolution::FusedActivationDesc::Mode>(0));
+    act.SetMode(::musa::dnn::Convolution::FusedActivationDesc::Mode::IDENTITY);
   } else if (ActMode::RELU == act_mode) {
-    act.SetMode(
-        static_cast<::musa::dnn::Convolution::FusedActivationDesc::Mode>(2));
+    act.SetMode(::musa::dnn::Convolution::FusedActivationDesc::Mode::RELU);
   } else if (ActMode::SILU == act_mode) {
-    act.SetMode(
-        static_cast<::musa::dnn::Convolution::FusedActivationDesc::Mode>(7));
+    act.SetMode(::musa::dnn::Convolution::FusedActivationDesc::Mode::SILU);
   }
 
   ::musa::dnn::Convolution::Algorithm algorithm =
@@ -188,9 +185,7 @@ at::Tensor PackedConvWeightMudnn<kSpatialDim>::apply_impl(
       at::device(at::kPrivateUse1).dtype(output_type),
       output_scale,
       output_zero_point,
-      c10::MemoryFormat::ChannelsLast);
-  // permute to NHWC shape
-  quantized_output = quantized_output.permute({0, 2, 3, 1});
+      c10::MemoryFormat::Contiguous);
 
   apply_impl_helper<act_mode>(
       quantized_output,

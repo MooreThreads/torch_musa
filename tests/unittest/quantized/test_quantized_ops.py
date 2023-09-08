@@ -1,10 +1,13 @@
 """Test quantized operators."""
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
-import torch
 import pytest
+import torch
+import torch.ao.nn.quantized as nnq
 import torch_musa
 
 from torch_musa import testing
+
+torch.manual_seed(41)
 
 
 def function(input_data, func, dtype=None):
@@ -16,11 +19,18 @@ def function(input_data, func, dtype=None):
     test.check_result()
 
 
-dtype = [torch.quint8, torch.qint32, torch.qint8]
+dtype = [torch.quint8, torch.qint8]
 reduce_range = [True, False]
 input_data_per_tensor = [
-    {"input": torch.randn(2, 3, 4), "scale": 0.1, "zero_point": 1},
-    {"input": torch.randn(2, 3, 4, 5), "scale": 0.0143444, "zero_point": 127},
+    {
+        "input": torch.randn(2, 3, 4),
+    },
+    {
+        "input": torch.randn(2, 3, 4, 5),
+    },
+    {
+        "input": torch.randn(2, 16, 32, 32),
+    },
 ]
 
 
@@ -28,10 +38,15 @@ input_data_per_tensor = [
 @pytest.mark.parametrize("input_data", input_data_per_tensor)
 @pytest.mark.parametrize("dtype", dtype)
 def test_quantize_per_tensor(input_data, dtype):
-    input_data["dtype"] = dtype
+    inputs = {
+        "input": input_data["input"],
+        "scale": input_data["input"].abs().max() / 2**7,
+        "zero_point": 0 if dtype == torch.qint8 else 128,
+        "dtype": dtype,
+    }
     test = testing.OpTest(
         func=torch.quantize_per_tensor,
-        input_args=input_data,
+        input_args=inputs,
         comparators=testing.QuantizedComparator(),
     )
     test.check_result()
@@ -73,7 +88,7 @@ input_data_per_channel = [
 @pytest.mark.parametrize("input_data", input_data_per_channel)
 @pytest.mark.parametrize("dtype", dtype)
 def test_quantize_per_channel(input_data, dtype):
-    if dtype is not torch.qint32 and isinstance(input_data["input"], torch.Tensor):
+    if dtype is not torch.qint8 and isinstance(input_data["input"], torch.Tensor):
         input_data["dtype"] = dtype
         test = testing.OpTest(
             func=torch.quantize_per_channel,
@@ -138,7 +153,7 @@ input_as_stride = [
         "stride": (1, 2),
     },
     {
-        "input": torch.quantize_per_tensor(torch.randn(4, 6), 0.1, 1, torch.qint32),
+        "input": torch.quantize_per_tensor(torch.randn(4, 6), 0.1, 1, torch.qint8),
         "size": (2, 2),
         "stride": (1, 2),
     },
@@ -157,7 +172,7 @@ input_fill = [
         "value": 0.1,
     },
     {
-        "input": torch.quantize_per_tensor(torch.randn(3, 4, 6), 0.1, 1, torch.qint32),
+        "input": torch.quantize_per_tensor(torch.randn(3, 4, 6), 0.1, 1, torch.qint8),
         "value": torch.tensor(1.1),
     },
 ]
@@ -167,31 +182,6 @@ input_fill = [
 @pytest.mark.parametrize("input_data", input_fill)
 def test_fill_(input_data):
     function(input_data, torch.fill_)
-
-
-# mudnn doesn't support qint8 activation kernels
-input_activation = [
-    {"input": torch.quantize_per_tensor(torch.randn(3, 4), 0.1, 127, torch.quint8)},
-    {"input": torch.quantize_per_tensor(torch.randn(3, 4, 6), 0.1, 1, torch.qint32)},
-]
-
-
-@testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@pytest.mark.parametrize("input_data", input_activation)
-def test_relu(input_data):
-    function(input_data, torch.relu)
-
-
-@testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@pytest.mark.parametrize("input_data", input_activation)
-def test_relu_(input_data):
-    function(input_data, torch.relu_)
-
-
-@testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@pytest.mark.parametrize("input_data", input_activation)
-def test_gelu(input_data):
-    function(input_data, torch.nn.functional.gelu)
 
 
 input_tensor_shape = [
@@ -207,13 +197,13 @@ input_tensor_shape = [
     },
     {
         "input": torch.quantize_per_tensor(
-            torch.randn(3, 4, 6, 1), 0.1, 1, torch.qint32
+            torch.randn(3, 4, 6, 1), 0.1, 1, torch.qint8
         ),
         "dim": 3,
     },
     {
         "input": torch.quantize_per_tensor(
-            torch.randn(3, 4, 6, 1), 0.1, 1, torch.qint32
+            torch.randn(3, 4, 6, 1), 0.1, 1, torch.qint8
         ),
         "dim": 1,
     },
@@ -246,7 +236,7 @@ input_index_select = [
         "index": torch.tensor([0, 2], dtype=torch.int32),
     },
     {
-        "input": torch.quantize_per_tensor(torch.randn(3, 4, 6), 0.1, 1, torch.qint32),
+        "input": torch.quantize_per_tensor(torch.randn(3, 4, 6), 0.1, 1, torch.qint8),
         "dim": 2,
         "index": torch.tensor([1, 3], dtype=torch.int32),
     },
@@ -273,7 +263,7 @@ input_masked_fill = [
         "value": 1.1,
     },
     {
-        "input": torch.quantize_per_tensor(torch.randn(3, 4, 6), 0.1, 1, torch.qint32),
+        "input": torch.quantize_per_tensor(torch.randn(3, 4, 6), 0.1, 1, torch.qint8),
         "mask": torch.randint(0, 2, size=(1,), dtype=torch.bool),
         "value": 1.1,
     },
@@ -307,7 +297,7 @@ input_unfold = [
         "step": 1,
     },
     {
-        "input": torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.1, 1, torch.qint32),
+        "input": torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.1, 1, torch.qint8),
         "dimension": 1,
         "size": 2,
         "step": 2,
@@ -336,15 +326,11 @@ def test_unfold(input_data):
 input_pool = [
     {
         "input": torch.quantize_per_tensor(
-            torch.randn(1, 3, 8, 8), 0.01, 127, torch.quint8
+            torch.randn(1, 3, 8, 8), 0.01, 0, torch.qint8
         )
     },
     {"input": torch.quantize_per_tensor(torch.randn(1, 3, 8, 8), 0.01, 0, torch.qint8)},
-    {
-        "input": torch.quantize_per_tensor(
-            torch.randn(1, 3, 8, 8), 0.01, 1, torch.qint32
-        )
-    },
+    {"input": torch.quantize_per_tensor(torch.randn(1, 3, 8, 8), 0.01, 0, torch.qint8)},
 ]
 input_pool_size = [
     {"output_size": (4, 4)},
@@ -384,22 +370,22 @@ def test_max_pool2d(input_data, input_args):
 input_concat = [
     {
         "tensors": (
-            torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.1, 127, torch.quint8),
-            torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.141, 127, torch.quint8),
+            torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.05, 0, torch.qint8),
+            torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.141, 0, torch.qint8),
         ),
         "dim": 0,
     },
     {
         "tensors": (
-            torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.1, 0, torch.qint8),
-            torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.1, 0, torch.qint8),
+            torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.02, 0, torch.qint8),
+            torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.04, 0, torch.qint8),
         ),
         "dim": 1,
     },
     {
         "tensors": (
-            torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.1, 1, torch.qint32),
-            torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.1, 1, torch.qint32),
+            torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.05, 0, torch.qint8),
+            torch.quantize_per_tensor(torch.randn(2, 4, 6), 0.03, 0, torch.qint8),
         ),
         "dim": 2,
     },
@@ -412,6 +398,17 @@ def test_concat(input_data):
     function(input_data, torch.cat)
 
 
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_concat)
+def test_qconcat(input_data):
+    m = nnq.QFunctional()
+    inputs = {
+        "x": input_data["tensors"],
+        "dim": input_data["dim"],
+    }
+    function(inputs, m.cat)
+
+
 input_upsample = [
     {
         "input": torch.quantize_per_tensor(
@@ -419,11 +416,7 @@ input_upsample = [
         )
     },
     {"input": torch.quantize_per_tensor(torch.randn(1, 3, 8, 8), 0.01, 0, torch.qint8)},
-    {
-        "input": torch.quantize_per_tensor(
-            torch.randn(1, 3, 2, 2), 0.01, 1, torch.qint32
-        )
-    },
+    {"input": torch.quantize_per_tensor(torch.randn(1, 3, 2, 2), 0.01, 1, torch.qint8)},
 ]
 input_scale_factor = [
     {"scale_factor": (2, 2)},

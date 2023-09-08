@@ -1,8 +1,8 @@
 #include <ATen/ATen.h>
-#include "torch_musa/csrc/aten/musa/MUSAContext.h"
-#include "torch_musa/csrc/core/MUSAGuard.h"
 #include <torch/library.h>
 #include <ATen/native/musa/KernelUtils.muh>
+#include "torch_musa/csrc/aten/musa/MUSAContext.h"
+#include "torch_musa/csrc/core/MUSAGuard.h"
 
 #include "musa_helpers.h"
 
@@ -381,7 +381,8 @@ at::Tensor roi_align_forward_kernel(
             rois_.data_ptr<scalar_t>(),
             output.data_ptr<scalar_t>());
       });
-  // Empty rois will raise invalid configuration argument error but output is accurate
+  // Empty rois will raise invalid configuration argument error but output is
+  // accurate
   AT_MUSA_CHECK(musaGetLastError());
   return output;
 }

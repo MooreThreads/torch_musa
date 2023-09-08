@@ -1,8 +1,8 @@
 #include <ATen/ATen.h>
 #include <ATen/AccumulateType.h>
+#include <torch/library.h>
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
-#include <torch/library.h>
 
 #include "musa_helpers.h"
 

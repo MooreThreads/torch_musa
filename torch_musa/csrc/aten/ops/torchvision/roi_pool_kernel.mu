@@ -1,9 +1,9 @@
 #include <ATen/ATen.h>
-#include "torch_musa/csrc/aten/musa/MUSAContext.h"
-#include "torch_musa/csrc/core/MUSAGuard.h"
 #include <float.h>
 #include <torch/library.h>
 #include <ATen/native/musa/KernelUtils.muh>
+#include "torch_musa/csrc/aten/musa/MUSAContext.h"
+#include "torch_musa/csrc/core/MUSAGuard.h"
 
 #include "musa_helpers.h"
 

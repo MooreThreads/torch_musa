@@ -16,6 +16,8 @@
 #include "torch_musa/csrc/aten/quantized/Quantizer.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 
+#include <mudnn.h>
+
 namespace at {
 namespace musa {
 namespace {
@@ -163,7 +165,7 @@ Tensor CatQuantized(const ITensorListRef& qxs, int64_t dim) {
   (void)common_device; // Suppress unused variable warning
   c10::impl::check_and_update_common_device(
       common_device, qxs, "CatQuantized", "qxs");
-  auto materialized = qxs.materialize();
+  const auto& materialized = qxs.materialize();
   at::native::check_cat_no_zero_dim(materialized);
   dim = legacy_cat_wrap_dim(dim, materialized);
 
@@ -181,7 +183,7 @@ Tensor CatQuantized(const ITensorListRef& qxs, int64_t dim) {
   }
   Tensor output;
   const Tensor output_fp32 = at::cat(xs, dim);
-  // return QuantizePerTensor(y, x_scale, x_zero_point, x_dtype);
+
   if (x_qscheme == kPerTensorAffine) {
     output = at::musa::QuantizePerTensor(
         output_fp32, input.q_scale(), input.q_zero_point(), x_dtype);
@@ -195,11 +197,124 @@ Tensor CatQuantized(const ITensorListRef& qxs, int64_t dim) {
         input.q_per_channel_axis(),
         x_dtype);
   } else {
-    TORCH_CHECK(
-        false,
-        "QScheme not supported by upsample_nearest2d:",
-        toString(x_qscheme));
+    TORCH_CHECK(false, "QScheme not supported by cat", toString(x_qscheme));
   }
+  return output;
+}
+
+Tensor QuantizedCatOut(const c10::List<Tensor>& qxs, int64_t dim, Tensor out) {
+  TORCH_CHECK(
+      out.qscheme() == kPerTensorAffine || out.qscheme() == kPerTensorSymmetric,
+      "Quantized cat only supports quantize-per-tensor");
+  if (dim >= 0) {
+    TORCH_CHECK(dim < qxs[0].dim(), "Wrong dim: ", dim);
+  } else {
+    dim = dim + qxs[0].dim();
+    TORCH_CHECK(dim < qxs[0].dim(), "Wrong din: ", dim);
+  }
+  float scale = static_cast<float>(out.q_scale());
+  unsigned int zero_point = static_cast<unsigned int>(out.q_zero_point());
+
+  std::vector<at::musa::muTensor> mu_tensors;
+  mu_tensors.reserve(qxs.size());
+
+  for (const Tensor& qx : qxs) {
+    at::musa::muTensor mu_qx;
+    if (!qx.is_contiguous()) {
+      mu_qx = at::musa::CreateMUTensor(qx.contiguous());
+    } else {
+      mu_qx = at::musa::CreateMUTensor(qx);
+    }
+    CHECK_MUDNN_STATUS(
+        mu_qx.SetQuantizationInfo(1, &scale, &zero_point),
+        "Set quantization info");
+    CHECK_MUDNN_STATUS(
+        mu_qx.SetType(at::musa::muTensor::Type::QINT8),
+        "Set quantization dtype");
+    mu_tensors.emplace_back(mu_qx);
+  }
+  at::musa::muTensor out_ = at::musa::CreateMUTensor(out);
+  CHECK_MUDNN_STATUS(
+      out_.SetQuantizationInfo(1, &scale, &zero_point),
+      "Set quantization info");
+  CHECK_MUDNN_STATUS(
+      out_.SetType(at::musa::muTensor::Type::QINT8), "Set quantization dtype");
+
+  at::musa::muHandle& h = at::GetMudnnHandle();
+  ::musa::dnn::Concat op;
+  CHECK_MUDNN_STATUS(op.SetAxis(dim), "Set concat axis");
+  CHECK_MUDNN_STATUS(
+      op.Run(h, out_, qxs.size(), mu_tensors.data()), "Run concat");
+
+  return out;
+}
+
+Tensor QuantizedCat(
+    const c10::List<Tensor>& qxs,
+    int64_t dim,
+    c10::optional<double> scale,
+    c10::optional<int64_t> zero_point) {
+  const at::Tensor& qx0 = qxs[0];
+  if (dim >= 0) {
+    TORCH_CHECK(dim < qxs[0].dim(), "Wrong dim: ", dim);
+  } else {
+    dim = dim + qxs[0].dim();
+    TORCH_CHECK(dim < qxs[0].dim(), "Wrong dim: ", dim);
+  }
+  TORCH_CHECK(
+      qx0.qscheme() == kPerTensorAffine || qx0.qscheme() == kPerTensorSymmetric,
+      "Quantized cat only supports quantize-per-tensor");
+  double scale_ = scale.has_value() ? scale.value() : qx0.q_scale();
+  int64_t zero_point_ =
+      zero_point.has_value() ? zero_point.value() : qx0.q_zero_point();
+  float scale_m = static_cast<float>(scale_);
+  unsigned int zero_point_m = static_cast<unsigned int>(zero_point_);
+  auto dtype = qx0.scalar_type();
+
+  std::vector<at::musa::muTensor> mu_tensors;
+  mu_tensors.reserve(qxs.size());
+
+  std::vector<int64_t> output_shape(
+      qx0.sizes().data(), qx0.sizes().data() + qx0.dim());
+  output_shape[dim] = 0;
+
+  for (const Tensor& qx : qxs) {
+    at::musa::muTensor mu_qx;
+    output_shape[dim] += qx.size(dim);
+    if (!qx.is_contiguous()) {
+      mu_qx = at::musa::CreateMUTensor(qx.contiguous());
+    } else {
+      mu_qx = at::musa::CreateMUTensor(qx);
+    }
+    CHECK_MUDNN_STATUS(
+        mu_qx.SetQuantizationInfo(1, &scale_m, &zero_point_m),
+        "Set quantization info");
+    CHECK_MUDNN_STATUS(
+        mu_qx.SetType(at::musa::muTensor::Type::QINT8),
+        "Set quantization dtype");
+    mu_tensors.emplace_back(mu_qx);
+  }
+
+  Tensor output = at::_empty_affine_quantized(
+      output_shape,
+      at::device(at::kPrivateUse1).dtype(dtype),
+      scale_,
+      zero_point_,
+      c10::MemoryFormat::Contiguous);
+
+  at::musa::muTensor out_ = at::musa::CreateMUTensor(output);
+  CHECK_MUDNN_STATUS(
+      out_.SetQuantizationInfo(1, &scale_m, &zero_point_m),
+      "Set quantization info");
+  CHECK_MUDNN_STATUS(
+      out_.SetType(at::musa::muTensor::Type::QINT8), "Set quantization dtype");
+
+  at::musa::muHandle& h = at::GetMudnnHandle();
+  ::musa::dnn::Concat op;
+  CHECK_MUDNN_STATUS(op.SetAxis(dim), "Set concat axis");
+  CHECK_MUDNN_STATUS(
+      op.Run(h, out_, qxs.size(), mu_tensors.data()), "Run concat");
+
   return output;
 }
 
@@ -210,5 +325,11 @@ TORCH_LIBRARY_IMPL(aten, QuantizedPrivateUse1, m) {
   m.impl("unsqueeze", TORCH_FN(UnsqueezeQuantized));
   m.impl("cat", TORCH_FN(CatQuantized));
 }
+
+TORCH_LIBRARY_IMPL(quantized, QuantizedPrivateUse1, m) {
+  m.impl(TORCH_SELECTIVE_NAME("quantized::cat"), TORCH_FN(QuantizedCat));
+  m.impl(TORCH_SELECTIVE_NAME("quantized::cat_out"), TORCH_FN(QuantizedCatOut));
+}
+
 } // namespace musa
 } // namespace at

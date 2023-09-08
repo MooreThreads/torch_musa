@@ -8,6 +8,8 @@ import torch_musa
 
 from torch_musa import testing
 
+torch.manual_seed(41)
+
 conv_input_data = [
     {
         "input": torch.randn(2, 32, 16, 16, requires_grad=False),

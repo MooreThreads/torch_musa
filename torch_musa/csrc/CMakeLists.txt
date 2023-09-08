@@ -76,14 +76,15 @@ FILE(GLOB MU_SRCS
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/MultinomialKernel.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/NLLLoss2d.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/PointwiseOpsKernel.mu
-    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/RangeFactories.mu
-    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Repeat.mu
-    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ReflectionPad.mu
-    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ReduceNormKernel.mu
-    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ReduceMaxValuesKernel.mu
-    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ReduceAMinMaxKernel.mu
-    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ReduceMomentKernel.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Randperm.mu
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/RangeFactories.mu
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ReduceAMinMaxKernel.mu
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ReduceMaxValuesKernel.mu
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ReduceMomentKernel.mu
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ReduceNormKernel.mu
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ReflectionPad.mu
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Repeat.mu
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ReplicationPadding.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Shape.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TensorCompare.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TensorTransformations.mu
@@ -95,11 +96,10 @@ FILE(GLOB MU_SRCS
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleBicubic2d.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleBilinear2d.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleLinear1d.mu
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleNearest1d.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleNearest3d.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryOpsKernel.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/WeightNorm.mu
-    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ReplicationPadding.mu
-    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleNearest1d.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/Activation.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/IntReprQuant.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/MakePerTensorQuantizedTensor.mu

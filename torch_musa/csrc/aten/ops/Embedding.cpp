@@ -16,7 +16,6 @@
 #include <ATen/ops/zeros.h>
 #endif
 
-#include "torch_musa/csrc/aten/ops/Embedding.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 

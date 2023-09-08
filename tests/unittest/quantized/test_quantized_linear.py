@@ -8,6 +8,7 @@ import torch_musa
 
 from torch_musa import testing
 
+torch.manual_seed(41)
 
 linear_input_data = [
     {

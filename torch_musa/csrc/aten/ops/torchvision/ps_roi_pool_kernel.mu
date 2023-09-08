@@ -1,8 +1,8 @@
 #include <ATen/ATen.h>
-#include "torch_musa/csrc/aten/musa/MUSAContext.h"
-#include "torch_musa/csrc/core/MUSAGuard.h"
 #include <torch/library.h>
 #include <ATen/native/musa/KernelUtils.muh>
+#include "torch_musa/csrc/aten/musa/MUSAContext.h"
+#include "torch_musa/csrc/core/MUSAGuard.h"
 
 #include "musa_helpers.h"
 
@@ -223,7 +223,8 @@ at::Tensor ps_roi_pool_backward_kernel(
   TORCH_CHECK(grad.is_privateuseone(), "grad must be a MUSA tensor");
   TORCH_CHECK(rois.is_privateuseone(), "rois must be a MUSA tensor");
   TORCH_CHECK(
-      channel_mapping.is_privateuseone(), "channel_mapping must be a MUSA tensor");
+      channel_mapping.is_privateuseone(),
+      "channel_mapping must be a MUSA tensor");
 
   at::TensorArg grad_t{grad, "grad", 1}, rois_t{rois, "rois", 2},
       channel_mapping_t{channel_mapping, "channel_mapping", 3};
