@@ -427,7 +427,7 @@ def test_softplus(shape, dtype, beta, threshold, test_out):
 input_complex_datas = []
 for data in testing.get_raw_data():
     if len(data.size()) < 8:
-        cpu_complex = torch.empty_like(data, dtype=torch.complex64)
+        cpu_complex = torch.randn_like(data, dtype=torch.complex64)
         input_complex_datas.append({"input": cpu_complex})
 
 
