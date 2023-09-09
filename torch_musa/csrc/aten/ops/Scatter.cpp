@@ -76,10 +76,11 @@ Tensor& ScatterAddOut(
       out.device());
 
   TORCH_CHECK(
-      self.scalar_type() == at::ScalarType::Float,
-      "Dtype of input tensor of scatter_add only support Float32, but "
-      "now it is ",
-      self.scalar_type());
+      self.scalar_type() == out.scalar_type(),
+      "Dtype of input tensor of scatter_add should be same as out, which is ",
+      self.scalar_type(),
+      ", and out dtype is ",
+      out.scalar_type());
   TORCH_CHECK(
       index.scalar_type() == at::ScalarType::Long ||
           index.scalar_type() == at::ScalarType::Int,
@@ -87,12 +88,14 @@ Tensor& ScatterAddOut(
       "now it is ",
       index.scalar_type());
   TORCH_CHECK(
-      src.scalar_type() == at::ScalarType::Float,
-      "Dtype of src tensor of scatter_add only support Float32, but now it is ",
+      src.scalar_type() == at::ScalarType::Float ||
+          src.scalar_type() == at::ScalarType::Long,
+      "Dtype of src tensor of scatter_add only support Float32/Long, but now it is ",
       src.scalar_type());
   TORCH_CHECK(
-      out.scalar_type() == at::ScalarType::Float,
-      "Dtype of out tensor of scatter_add only support Float32, but now it is ",
+      out.scalar_type() == at::ScalarType::Float ||
+          out.scalar_type() == at::ScalarType::Long,
+      "Dtype of out tensor of scatter_add only support Float32/Long, but now it is ",
       out.scalar_type());
   c10::musa::MUSAGuard device_guard(self.device());
   if (dim < 0) {
