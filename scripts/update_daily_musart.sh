@@ -24,22 +24,6 @@ popd
 bash ${torch_musa_dir}/docker/common/install_math.sh
 ####### end
 
-####### revise the mublas to 08.16
-mublas_path="./daily_mublas_${DATE}"
-mublas_oss_link="https://oss.mthreads.com/release-ci/computeQA/mathX/history/GPU_ARCH_MP_21/20230816muBLAS6bea9f96fcompute_mathX_pkg379/mublas.tar.gz"
-
-wget --no-check-certificate ${mublas_oss_link} -P ${mublas_path}
-tar -xvzf ${mublas_path}/mublas.tar.gz -C ${mublas_path}
-
-pushd ${mublas_path}/muBLAS
-bash install.sh
-popd
-####### end
-
-
-
-
-
 ####### install mccl
 bash ${torch_musa_dir}/docker/common/install_mccl.sh
 ####### end
