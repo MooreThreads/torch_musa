@@ -16,6 +16,23 @@ from torch.testing._comparison import (
 from torch.utils._mode_utils import no_dispatch
 import torch_musa
 
+
+def get_musa_arch() -> int:
+    """Get musa arch string, 21 for QY1, 22 for QY2, and so on."""
+    try:
+        properties = torch_musa.get_device_properties(0)
+        major = properties.major
+        minor = properties.minor
+        musa_arch_string = int(major * 10 + minor)
+    except Exception as err:  # pylint: disable=W0718
+        print("get_devie_properties failed, reason:")
+        print(err)
+        print("Default musa arch properties is: 21")  # depend on CI machine
+        musa_arch_string = 21
+
+    return musa_arch_string
+
+
 @functools.lru_cache()
 def get_cycles_per_ms() -> float:
     """Measure and return approximate number of cycles per millisecond for torch_musa._sleep"""
@@ -40,7 +57,7 @@ def get_cycles_per_ms() -> float:
     for _ in range(num):
         vals.append(measure())
     vals = sorted(vals)
-    return mean(vals[2: num - 2])
+    return mean(vals[2 : num - 2])
 
 
 @contextlib.contextmanager
@@ -93,12 +110,12 @@ class ImagePair(TensorLikePair):
     """image pair definition"""
 
     def __init__(
-            self,
-            actual,
-            expected,
-            *,
-            mae=False,
-            **other_parameters,
+        self,
+        actual,
+        expected,
+        *,
+        mae=False,
+        **other_parameters,
     ):
         if all(isinstance(input, PIL.Image.Image) for input in [actual, expected]):
             actual, expected = [to_image_tensor(input) for input in [actual, expected]]
@@ -126,19 +143,19 @@ class ImagePair(TensorLikePair):
 
 
 def assert_close(
-        actual,
-        expected,
-        *,
-        allow_subclasses=True,
-        rtol=None,
-        atol=None,
-        equal_nan=False,
-        check_device=True,
-        check_dtype=True,
-        check_layout=True,
-        check_stride=False,
-        msg=None,
-        **kwargs,
+    actual,
+    expected,
+    *,
+    allow_subclasses=True,
+    rtol=None,
+    atol=None,
+    equal_nan=False,
+    check_device=True,
+    check_dtype=True,
+    check_layout=True,
+    check_stride=False,
+    msg=None,
+    **kwargs,
 ):
     """
     Superset of :func:`torch.testing.assert_close` with support for PIL vs.

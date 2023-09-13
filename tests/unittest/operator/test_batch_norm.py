@@ -14,10 +14,32 @@ input_data = [
     torch.randn(256, 100, 16, 16),
 ]
 
+train = [True, False]
+
+
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
-def test_batch_norm(input_data):
+@pytest.mark.parametrize("train", train)
+def test_batch_norm(input_data, train):
     m = torch.nn.BatchNorm2d(100)
+    m.train(train)
     output = m(input_data)
-    output_musa = m.to('musa')(input_data.to('musa'))
+    output_musa = m.to("musa")(input_data.to("musa"))
     assert testing.DefaultComparator(abs_diff=1e-5)(output, output_musa.cpu())
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_data)
+@pytest.mark.skip(
+    # testing.get_musa_arch() < 22,  # uncomment when CI uses QY2
+    reason="fp16 batch_norm supported in QY2 or later",
+)
+@pytest.mark.parametrize("train", train)
+def test_batch_norm_fp16(input_data, train):
+    m = torch.nn.BatchNorm2d(100)
+    m.train(train)
+    output = m(input_data)
+    m.half()
+    input_data = input_data.half()
+    output_musa = m.to("musa")(input_data.to("musa"))
+    assert testing.DefaultComparator(abs_diff=1e-2)(output, output_musa.cpu().float())

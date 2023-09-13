@@ -20,6 +20,7 @@ from .base_test_tool import (
 )
 
 from .common_utils import (
+    get_musa_arch,
     get_cycles_per_ms,
     freeze_rng_state,
     cpu_and_musa,

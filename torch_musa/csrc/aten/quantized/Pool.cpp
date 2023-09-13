@@ -78,12 +78,6 @@ void QuantizedMaxPool2dImpl(
   SetMudnnQuantizationInfo(mu_input, scale, zero_point);
   SetMudnnQuantizationInfo(mu_out, scale, zero_point);
   CHECK_MUDNN_STATUS(
-      mu_input.SetType(at::musa::muTensor::Type::QINT8),
-      "Set input muTensor dtype as QINT8");
-  CHECK_MUDNN_STATUS(
-      mu_out.SetType(at::musa::muTensor::Type::QINT8),
-      "Set output muTensor dtype as QINT8");
-  CHECK_MUDNN_STATUS(
       mu_input.SetFormat(at::musa::muTensor::Format::NHWC),
       "Set input muTensor format as NHWC");
   CHECK_MUDNN_STATUS(
@@ -119,12 +113,6 @@ void QuantizedAvgPool2dImpl(
   at::musa::muTensor mu_out = at::musa::CreateMUTensor(output);
   SetMudnnQuantizationInfo(mu_input, scale, zero_point);
   SetMudnnQuantizationInfo(mu_out, scale, zero_point);
-  CHECK_MUDNN_STATUS(
-      mu_input.SetType(at::musa::muTensor::Type::QINT8),
-      "Set input muTensor dtype as QINT8");
-  CHECK_MUDNN_STATUS(
-      mu_out.SetType(at::musa::muTensor::Type::QINT8),
-      "Set output muTensor dtype as QINT8");
   CHECK_MUDNN_STATUS(
       mu_input.SetFormat(at::musa::muTensor::Format::NHWC),
       "Set input muTensor format as NHWC");

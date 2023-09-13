@@ -206,6 +206,9 @@ Tensor QuantizedCatOut(const c10::List<Tensor>& qxs, int64_t dim, Tensor out) {
   TORCH_CHECK(
       out.qscheme() == kPerTensorAffine || out.qscheme() == kPerTensorSymmetric,
       "Quantized cat only supports quantize-per-tensor");
+  TORCH_CHECK(
+      out.scalar_type() == c10::kQInt8,
+      "Quantize cat out should be qint8 dtype");
   if (dim >= 0) {
     TORCH_CHECK(dim < qxs[0].dim(), "Wrong dim: ", dim);
   } else {
@@ -219,6 +222,9 @@ Tensor QuantizedCatOut(const c10::List<Tensor>& qxs, int64_t dim, Tensor out) {
   mu_tensors.reserve(qxs.size());
 
   for (const Tensor& qx : qxs) {
+    TORCH_CHECK(
+        qx.scalar_type() == c10::kQInt8,
+        "quantized cat only supports qint8 tensors");
     at::musa::muTensor mu_qx;
     if (!qx.is_contiguous()) {
       mu_qx = at::musa::CreateMUTensor(qx.contiguous());
@@ -228,17 +234,12 @@ Tensor QuantizedCatOut(const c10::List<Tensor>& qxs, int64_t dim, Tensor out) {
     CHECK_MUDNN_STATUS(
         mu_qx.SetQuantizationInfo(1, &scale, &zero_point),
         "Set quantization info");
-    CHECK_MUDNN_STATUS(
-        mu_qx.SetType(at::musa::muTensor::Type::QINT8),
-        "Set quantization dtype");
     mu_tensors.emplace_back(mu_qx);
   }
   at::musa::muTensor out_ = at::musa::CreateMUTensor(out);
   CHECK_MUDNN_STATUS(
       out_.SetQuantizationInfo(1, &scale, &zero_point),
       "Set quantization info");
-  CHECK_MUDNN_STATUS(
-      out_.SetType(at::musa::muTensor::Type::QINT8), "Set quantization dtype");
 
   at::musa::muHandle& h = at::GetMudnnHandle();
   ::musa::dnn::Concat op;
@@ -279,6 +280,9 @@ Tensor QuantizedCat(
   output_shape[dim] = 0;
 
   for (const Tensor& qx : qxs) {
+    TORCH_CHECK(
+        qx.scalar_type() == c10::kQInt8,
+        "quantized cat only supports qint8 tensors");
     at::musa::muTensor mu_qx;
     output_shape[dim] += qx.size(dim);
     if (!qx.is_contiguous()) {
@@ -289,9 +293,6 @@ Tensor QuantizedCat(
     CHECK_MUDNN_STATUS(
         mu_qx.SetQuantizationInfo(1, &scale_m, &zero_point_m),
         "Set quantization info");
-    CHECK_MUDNN_STATUS(
-        mu_qx.SetType(at::musa::muTensor::Type::QINT8),
-        "Set quantization dtype");
     mu_tensors.emplace_back(mu_qx);
   }
 
@@ -306,8 +307,6 @@ Tensor QuantizedCat(
   CHECK_MUDNN_STATUS(
       out_.SetQuantizationInfo(1, &scale_m, &zero_point_m),
       "Set quantization info");
-  CHECK_MUDNN_STATUS(
-      out_.SetType(at::musa::muTensor::Type::QINT8), "Set quantization dtype");
 
   at::musa::muHandle& h = at::GetMudnnHandle();
   ::musa::dnn::Concat op;

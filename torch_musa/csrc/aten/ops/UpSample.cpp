@@ -56,6 +56,7 @@ Tensor& UpSampleNearest2dOut(
   const float width_scale = at::native::compute_scales_value<float>(
       scales_w, input_width, output_width);
 
+  // TODO(@fan.mo): muDNN Interpolate doesn't support Half type
   bool is_half = self.scalar_type() == c10::ScalarType::Half;
   Tensor in_;
   Tensor out_;

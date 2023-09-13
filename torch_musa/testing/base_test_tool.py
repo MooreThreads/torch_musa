@@ -97,17 +97,22 @@ def get_all_types():
         torch.int64,
     ]
 
+
 def _complex_musa_to_cpu_adjust(musa_complex: torch.Tensor) -> torch.Tensor:
     musa_real = torch.view_as_real(musa_complex)
     cpu_real = musa_real.to("cpu")
     cpu_complex = torch.view_as_complex(cpu_real)
     return cpu_complex
 
-def _complex_cpu_to_musa_adjust(cpu_complex: torch.Tensor, musa_device: str) -> torch.Tensor:
+
+def _complex_cpu_to_musa_adjust(
+    cpu_complex: torch.Tensor, musa_device: str
+) -> torch.Tensor:
     cpu_real = torch.view_as_real(cpu_complex)
     musa_real = cpu_real.to(musa_device)
     musa_complex = torch.view_as_complex(musa_real)
     return musa_complex
+
 
 class Comparator:
     """
@@ -126,8 +131,7 @@ class Comparator:
             A bool value indicating whether computing result is right.
         """
         if self._comparator is None:
-            raise NotImplementedError(
-                "Comparator is not implemented by a subclass")
+            raise NotImplementedError("Comparator is not implemented by a subclass")
 
         if not isinstance(self._comparator, (Callable, types.LambdaType)):
             raise TypeError("self._comparator must be a callable type")
@@ -296,12 +300,18 @@ class OpTest:
                             input_args[k] = input_args[k].to(torch.float16)
                     else:
                         str_input_device = str(self._input_args[k].device)
-                        if str_input_device.startswith("musa") \
-                            and device.startswith("cpu"):
-                            input_args[k] = _complex_musa_to_cpu_adjust(self._input_args[k])
-                        elif str_input_device.startswith("cpu") \
-                            and device.startswith("musa"):
-                            input_args[k] = _complex_cpu_to_musa_adjust(self._input_args[k], device)
+                        if str_input_device.startswith("musa") and device.startswith(
+                            "cpu"
+                        ):
+                            input_args[k] = _complex_musa_to_cpu_adjust(
+                                self._input_args[k]
+                            )
+                        elif str_input_device.startswith("cpu") and device.startswith(
+                            "musa"
+                        ):
+                            input_args[k] = _complex_cpu_to_musa_adjust(
+                                self._input_args[k], device
+                            )
                         else:
                             input_args[k] = self._input_args[k]
                 else:
@@ -375,12 +385,14 @@ class OpTest:
             if isinstance(reduce, (tuple, list)):
                 for val in reduce:
                     res.append(val.to("cpu"))
-            elif isinstance(reduce,bool):
+            elif isinstance(reduce, bool):
                 res.append(reduce)
             else:
-                if isinstance(reduce, torch.Tensor) and    \
-                    reduce.is_complex() and                \
-                    str(reduce.device).startswith("musa"):
+                if (
+                    isinstance(reduce, torch.Tensor)
+                    and reduce.is_complex()
+                    and str(reduce.device).startswith("musa")
+                ):
                     res.append(_complex_musa_to_cpu_adjust(reduce))
                 else:
                     res.append(reduce.to("cpu"))
@@ -392,8 +404,8 @@ class OpTest:
 
     def compare_res(self, res1, res2):
         for i, (m_r, c_r) in enumerate(zip(res1, res2)):
-            if isinstance(m_r,bool):
-                assert m_r==c_r
+            if isinstance(m_r, bool):
+                assert m_r == c_r
                 return
             if self._ignored_result_indices and i in self._ignored_result_indices:
                 continue
