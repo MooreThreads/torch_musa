@@ -1,5 +1,4 @@
 #!/bin/bash
-set -e
 
 CUR_DIR=$(cd $(dirname $0);pwd)
 TORCH_MUSA_HOME=$CUR_DIR
@@ -107,6 +106,7 @@ apply_patches() {
 
 build_pytorch() {
   echo -e "\033[34mBuilding PyTorch...\033[0m"
+  status=0
   if [ ! -d ${PYTORCH_PATH} ]; then
     echo -e "\033[34mAn error occurred while building PyTorch, the specified PyTorch repo [${PYTORCH_PATH}] does not exist \033[0m"
     exit 1
@@ -119,13 +119,15 @@ build_pytorch() {
     rm -rf dist
     pip uninstall torch -y
     PYTORCH_BUILD_NUMBER=${PYTORCH_BUILD_NUMBER} PYTORCH_BUILD_VERSION=${PYTORCH_BUILD_VERSION} DEBUG=${DEBUG_MODE} USE_ASAN=${ASAN_MODE} USE_STATIC_MKL=${USE_STATIC_MKL} USE_MKL=1 USE_MKLDNN=1 USE_MKLDNN_CBLAS=1 python setup.py bdist_wheel
+    status=$?
     rm -rf torch.egg-info
     pip install dist/*.whl
   else
     PYTORCH_BUILD_NUMBER=${PYTORCH_BUILD_NUMBER} PYTORCH_BUILD_VERSION=${PYTORCH_BUILD_VERSION} DEBUG=${DEBUG_MODE} USE_ASAN=${ASAN_MODE} USE_STATIC_MKL=${USE_STATIC_MKL} USE_MKL=1 USE_MKLDNN=1 USE_MKLDNN_CBLAS=1 python setup.py install
+    status=$?
   fi
-
   popd
+  return $status
 }
 
 clean_pytorch() {
@@ -139,22 +141,27 @@ clean_torch_musa() {
   echo -e "\033[34mCleaning torch_musa...\033[0m"
   pushd ${TORCH_MUSA_HOME}
   python setup.py clean
+  rm -rf $CUR_DIR/build
   popd
 }
 
 build_torch_musa() {
   echo -e "\033[34mBuilding torch_musa...\033[0m"
+  status=0
   pushd ${TORCH_MUSA_HOME}
   if [ $BUILD_WHEEL -eq 1 ]; then
     rm -rf dist build
     pip uninstall torch_musa -y
     PYTORCH_REPO_PATH=${PYTORCH_PATH} DEBUG=${DEBUG_MODE} USE_ASAN=${ASAN_MODE} ENABLE_COMPILE_FP64=${COMPILE_FP64} MUSA_ARCH=${MUSA_ARCH} USE_MCCL=${USE_MCCL} python setup.py bdist_wheel
+    status=$?
     rm -rf torch_musa.egg-info
     pip install dist/*.whl
   else
     PYTORCH_REPO_PATH=${PYTORCH_PATH} DEBUG=${DEBUG_MODE} USE_ASAN=${ASAN_MODE} ENABLE_COMPILE_FP64=${COMPILE_FP64} MUSA_ARCH=${MUSA_ARCH} USE_MCCL=${USE_MCCL} python setup.py install
+    status=$?
   fi
   popd
+  return $status
 }
 
 main() {
@@ -174,12 +181,31 @@ main() {
     fi
     apply_patches
     build_pytorch
+    build_pytorch_status=$?
+    if [ $build_pytorch_status -ne 0 ]; then
+      clean_and_build="bash build.sh -c  # Clean PyTorch/torch_musa and build"
+      echo -e "\033[31mBuilding PyTorch failed, please try cleaning first before building: \033[0m"
+      echo -e "\033[32m$clean_and_build \033[0m"
+      exit 1
+    fi
   fi
   if [ ${BUILD_TORCH_MUSA} -eq 1 ]; then  
     if [ ${CLEAN} -eq 1 ]; then
       clean_torch_musa
     fi
     build_torch_musa
+    build_torch_musa_status=$?
+    if [ $build_torch_musa_status -ne 0 ]; then
+      echo -e "\033[31mPlease try the following commands once building torch_musa is failed: \033[0m"
+      echo -e "\033[32mClean PyTorch/torch_musa and build: \033[0m"
+      echo "cmd1: bash build.sh -c"
+      echo -e "\033[32mIf cmd1 still failed, update torch_musa to newest and build: \033[0m"
+      echo "cmd2: git fetch && git rebase origin/main && bash build.sh -c"
+      echo -e "\033[32mIf cmd2 still failed, update libraries and build: \033[0m"
+      echo "cmd3: bash scripts/update_daily_musart.sh && bash scripts/update_daily_mudnn.sh && bash build.sh -c"
+      echo -e "\033[32mIf cmd3 still failed, please check driver version on your host machine. \033[0m"
+      exit 1
+    fi
   fi
 }
 

@@ -84,7 +84,7 @@ bash build.sh --musa   # build torch_musa only
 bash build.sh --fp64   # compile fp64 in kernels using mcc in torch_musa
 bash build.sh --debug  # build in debug mode
 bash build.sh --asan   # build in asan mode
-bash build.sh --clean  # clean everything built
+bash build.sh --clean  # clean everything built and build
 ```
 
 #### Building Step by Step From Source
