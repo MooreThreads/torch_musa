@@ -104,6 +104,10 @@ c10::optional<Tensor> maybe_create_proxy(
     IntArrayRef strides,
     const TensorOptions& options);
 
+bool MatContiguous(const Tensor& mat);
+
+bool IsTranspose(const Tensor& mat);
+
 } // namespace musa
 
 using musa::kMUSA;

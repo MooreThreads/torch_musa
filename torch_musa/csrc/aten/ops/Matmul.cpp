@@ -10,23 +10,6 @@
 namespace at {
 namespace musa {
 
-bool MatContiguous(const Tensor& mat) {
-  for (int i = 0; i < mat.dim() - 1; i++) {
-    if (mat.stride(i) != mat.stride(i + 1) * mat.size(i + 1)) {
-      return false;
-    }
-  }
-  return mat.is_contiguous();
-}
-
-// If a matrix is ​​transposed, the following two conditions
-// need to be met
-// 1. stride(i)=stride(i+1)*shape(i+1) for the origin matrix
-// 2. the origin matrix(untransposed matrix) should be contiguous
-bool IsTranspose(const Tensor& mat) {
-  return MatContiguous(mat.transpose(-2, -1));
-}
-
 at::Tensor Dot(const at::Tensor& l, const at::Tensor& r) {
   c10::musa::MUSAGuard device_guard(l.device());
   muHandle& h = GetMudnnHandle();

@@ -448,7 +448,6 @@ for data in testing.get_raw_data():
         cpu_complex = torch.randn_like(data, dtype=torch.complex64)
         input_complex_datas.append({"input": cpu_complex})
 
-
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_complex_datas)
 def test_complex_abs_kernel_func(input_data):

@@ -121,14 +121,24 @@ Tensor UnaryBool(
     UNARY_MODE mode) {
   c10::musa::MUSAGuard device_guard(input.device());
   // as le/lt/ne/eq/gt/ge... ops return bool type
+
+  Tensor input_tmp;
+  if (IsTranspose(input)) {
+    input_tmp = input.transpose(-1, -2);
+  } else {
+    input_tmp = input.contiguous();
+  }
   Tensor output = at::empty_like(
-      input,
-      input.options()
+      input_tmp,
+      input_tmp.options()
           .dtype(ScalarType::Bool)
           .memory_format(at::MemoryFormat::Contiguous));
-  auto contiguous_input = input.contiguous();
-  UnaryBoolOut(op_name, output, contiguous_input, value, mode);
-  return output;
+  UnaryBoolOut(op_name, output, input_tmp, value, mode);
+  if (IsTranspose(input)) {
+    return output.transpose(-1, -2);
+  } else {
+    return output;
+  }
 }
 
 Tensor Unary(
@@ -143,11 +153,22 @@ Tensor Unary(
     }
   }
 
-  Tensor output = at::empty_like(input);
-  auto contiguous_input = input.contiguous();
   MUSA_TENSOR_TYPE_CHECK(input);
-  UnaryCall(op_name, output, contiguous_input, func);
-  return output;
+  Tensor input_tmp;
+  if (IsTranspose(input)) {
+    input_tmp = input.transpose(-1, -2);
+  } else {
+    input_tmp = input.contiguous();
+  }
+  Tensor output = at::empty_like(
+      input_tmp,
+      input_tmp.options().memory_format(at::MemoryFormat::Contiguous));
+  UnaryCall(op_name, output, input_tmp, func);
+  if (IsTranspose(input)) {
+    return output.transpose(-1, -2);
+  } else {
+    return output;
+  }
 }
 
 void Unary_(
@@ -210,22 +231,28 @@ DEFINE_ACTIVATE_OP(Log10, ::musa::dnn::Unary::Mode::LOG10)
 DEFINE_ACTIVATE_OP(Log2, ::musa::dnn::Unary::Mode::LOG2)
 DEFINE_ACTIVATE_OP(Floor, ::musa::dnn::Unary::Mode::FLOOR)
 
-#define SCALAR_COMPARISON(op_name, mode)                          \
-  Tensor& op_name##Out(                                           \
-      const Tensor& self, const Scalar& value, Tensor& output) {  \
-    auto contiguous_self = self.contiguous();                     \
-    UnaryBoolOut(__func__, output, contiguous_self, value, mode); \
-    return output;                                                \
-  }                                                               \
-                                                                  \
-  Tensor op_name(const Tensor& self, const Scalar& value) {       \
-    return UnaryBool(__func__, self, value, mode);                \
-  }                                                               \
-                                                                  \
-  Tensor& op_name##_(Tensor& self, const Scalar& value) {         \
-    auto out_tmp = UnaryBool(__func__, self, value, mode);        \
-    self.copy_(out_tmp);                                          \
-    return self;                                                  \
+#define SCALAR_COMPARISON(op_name, mode)                                   \
+  Tensor& op_name##Out(                                                    \
+      const Tensor& self, const Scalar& value, Tensor& output) {           \
+    if (IsTranspose(self) && IsTranspose(output)) {                        \
+      output.transpose_(-1, -2);                                           \
+      UnaryBoolOut(__func__, output, self.transpose(-1, -2), value, mode); \
+      output.transpose_(-1, -2);                                           \
+    } else {                                                               \
+      auto contiguous_self = self.contiguous();                            \
+      UnaryBoolOut(__func__, output, contiguous_self, value, mode);        \
+    }                                                                      \
+    return output;                                                         \
+  }                                                                        \
+                                                                           \
+  Tensor op_name(const Tensor& self, const Scalar& value) {                \
+    return UnaryBool(__func__, self, value, mode);                         \
+  }                                                                        \
+                                                                           \
+  Tensor& op_name##_(Tensor& self, const Scalar& value) {                  \
+    auto out_tmp = UnaryBool(__func__, self, value, mode);                 \
+    self.copy_(out_tmp);                                                   \
+    return self;                                                           \
   }
 
 SCALAR_COMPARISON(LeScalar, UNARY_MODE::LE)
@@ -913,7 +940,15 @@ void NegCall(
     const Tensor& self,
     const c10::optional<Scalar>& val) {
   auto t_type = self.scalar_type();
-  auto contiguous_self = self.contiguous();
+  Tensor contiguous_self;
+  bool isT = false;
+  if (IsTranspose(self) && IsTranspose(out)) {
+    contiguous_self = self.transpose(-1, -2);
+    out.transpose_(-1, -2);
+    isT = true;
+  } else {
+    contiguous_self = self.contiguous();
+  }
   switch (t_type) {
     case ScalarType::Float: {
       const double alpha = val.value().to<double>();
@@ -954,6 +989,9 @@ void NegCall(
     default:
       TORCH_CHECK(false, "Unsupported tensor dtype in Neg: ", t_type);
       throw;
+  }
+  if (isT) {
+    out.transpose_(-1, -2);
   }
 }
 

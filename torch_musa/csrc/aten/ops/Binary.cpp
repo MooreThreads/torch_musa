@@ -87,14 +87,6 @@ namespace musa {
 using BINARY_MODE = ::musa::dnn::Binary::Mode;
 using UNARY_MODE = ::musa::dnn::Unary::Mode;
 
-// TODO(MT AI) maybe we don't need this condition function when mudnn supports
-bool NeedContiguous(const Tensor& self, const Tensor& other) {
-  if (self.strides().equals(other.strides())) {
-    return false;
-  }
-  return true;
-}
-
 inline bool IsComparisonOp(const BINARY_MODE m) {
   return m == BINARY_MODE::EQ || m == BINARY_MODE::NE || m == BINARY_MODE::GE ||
       m == BINARY_MODE::GT || m == BINARY_MODE::LE || m == BINARY_MODE::LT;
@@ -172,11 +164,22 @@ void UnaryCall(
   } else {
     AT_ERROR("Invalid mode for broadcast in Binary");
   }
+  Tensor contiguous_self;
+  bool isT = false;
+  if (IsTranspose(self) && IsTranspose(output)) {
+    contiguous_self = self.transpose(-1, -2);
+    output.transpose_(-1, -2);
+    isT = true;
+  } else {
+    contiguous_self = self.contiguous();
+  }
 
-  auto mt_output = CreateMUTensor(output);
-  auto contiguous_self = self.contiguous();
   auto mt_input = CreateMUTensor(contiguous_self);
+  auto mt_output = CreateMUTensor(output);
   CHECK_MUDNN_STATUS(uop.Run(h, mt_output, mt_input), "Run " + op_name);
+  if (isT) {
+    output.transpose_(-1, -2);
+  }
 }
 
 /**
@@ -239,16 +242,29 @@ void BinaryCall(
   }
   other_tmp =
       alpha_scalar.equal(1) ? other_tmp : at::mul(other_tmp, alpha_scalar);
-  self_tmp = self_tmp.contiguous();
-  other_tmp = other_tmp.contiguous();
-  muTensor musa_self = CreateMUTensor(self_tmp);
-  muTensor musa_other = CreateMUTensor(other_tmp);
+  Tensor self_;
+  Tensor other_;
+  bool isT = false;
+  if (IsTranspose(self_tmp) && IsTranspose(other_tmp) && IsTranspose(output)) {
+    self_ = self_tmp.transpose(-1, -2);
+    other_ = other_tmp.transpose(-1, -2);
+    output.transpose_(-1, -2);
+    isT = true;
+  } else {
+    self_ = self_tmp.contiguous();
+    other_ = other_tmp.contiguous();
+  }
+  muTensor musa_self = CreateMUTensor(self_);
+  muTensor musa_other = CreateMUTensor(other_);
   muTensor musa_out = CreateMUTensor(output);
 
   ::musa::dnn::Binary bop;
   CHECK_MUDNN_STATUS(bop.SetMode(m), "SetMode");
   CHECK_MUDNN_STATUS(
       bop.Run(h, musa_out, musa_self, musa_other), "Run " + op_name);
+  if (isT) {
+    output.transpose_(-1, -2);
+  }
 }
 
 extern Tensor create_out(
