@@ -55,6 +55,10 @@ def MUSAExtension(name, sources, *args, **kwargs):
 
     # define library_dirs
     library_dirs = kwargs.get('library_dirs', [])
+    torch_lib_path = join(dirname(torch.__file__), "lib")
+    torch_musa_lib_path = join(dirname(torch_musa.__file__), "lib")
+    library_dirs.append(torch_lib_path)
+    library_dirs.append(torch_musa_lib_path)
     kwargs['library_dirs'] = library_dirs
 
     # define libraries
@@ -63,6 +67,7 @@ def MUSAExtension(name, sources, *args, **kwargs):
     libraries.append('torch')
     libraries.append('torch_cpu')
     libraries.append('torch_python')
+    libraries.append('musa_python')
     kwargs['libraries'] = libraries
 
     kwargs['language'] = 'c++'
@@ -128,8 +133,6 @@ def MUSAExtension(name, sources, *args, **kwargs):
         extra_compile_args += ["-fsanitize=address"]
         extra_link_args += ["-fsanitize=address"]
 
-    torch_lib_path = join(dirname(torch.__file__), "lib")
-    torch_musa_lib_path = join(dirname(torch_musa.__file__), "lib")
     extra_link_args = extra_link_args + ["-Wl,-rpath,$ORIGIN/lib"] + \
                       [f"-Wl,-rpath,{torch_lib_path}"] + [f"-Wl,-rpath,{torch_musa_lib_path}"]
 
