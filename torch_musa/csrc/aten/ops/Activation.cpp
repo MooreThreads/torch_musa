@@ -196,6 +196,7 @@ DEFINE_ACTIVATE_OP(HardSwish, ::musa::dnn::Unary::Mode::HARDSWISH)
 // TODO(chen.feng): use muDNN when the output issue is fixed
 // DEFINE_ACTIVATE_OP(HardSigmoid, ::musa::dnn::Unary::Mode::HARDSIGMOID)
 DEFINE_ACTIVATE_OP(Tanh, ::musa::dnn::Unary::Mode::TANH)
+DEFINE_ACTIVATE_OP(Tan, ::musa::dnn::Unary::Mode::TAN)
 DEFINE_ACTIVATE_OP(Sigmoid, ::musa::dnn::Unary::Mode::SIGMOID)
 DEFINE_ACTIVATE_OP(Exp, ::musa::dnn::Unary::Mode::EXP)
 DEFINE_ACTIVATE_OP(Sin, ::musa::dnn::Unary::Mode::SIN)
@@ -709,6 +710,128 @@ struct structured_softplus_out_out final
   std::array<c10::optional<c10::ExclusivelyOwned<Tensor>>, 1> proxy_outputs_;
   c10::musa::OptionalMUSAGuard guard_;
 };
+
+struct structured_softplus_backward_out_functional final
+    : public at::native::structured_softplus_backward_out {
+  void set_output_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+    outputs_[output_idx] = create_out(sizes, strides, options);
+    if (!names.empty()) {
+      namedinference::propagate_names(*outputs_[output_idx], names);
+    }
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_softplus_backward_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+  void set_output_raw_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+    outputs_[output_idx] = create_out(sizes, strides, options);
+    if (!names.empty()) {
+      namedinference::propagate_names(*outputs_[output_idx], names);
+    }
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_softplus_backward_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+  const Tensor& maybe_get_output(int64_t output_idx) override {
+    return *outputs_[output_idx];
+  }
+  std::array<c10::ExclusivelyOwned<Tensor>, 1> outputs_;
+  c10::musa::OptionalMUSAGuard guard_;
+};
+
+struct structured_softplus_backward_out_out final
+    : public at::native::structured_softplus_backward_out {
+  structured_softplus_backward_out_out(Tensor& out0)
+      : outputs_{std::ref(out0)} {}
+  void set_output_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+    const auto& out = outputs_[output_idx].get();
+    resize_out(out, sizes, strides, options);
+    auto maybe_proxy = maybe_create_proxy(out, sizes, strides, options);
+    if (C10_UNLIKELY(maybe_proxy.has_value())) {
+      proxy_outputs_[output_idx] =
+          c10::ExclusivelyOwned<Tensor>(std::move(maybe_proxy).value());
+    }
+    if (!names.empty()) {
+      namedinference::propagate_names(outputs_[output_idx], names);
+    }
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_softplus_backward_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+  void set_output_raw_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+    const auto& out = outputs_[output_idx].get();
+    resize_out(out, sizes, strides, options);
+    if (!names.empty()) {
+      namedinference::propagate_names(outputs_[output_idx], names);
+    }
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_softplus_backward_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+  const Tensor& maybe_get_output(int64_t output_idx) override {
+    return proxy_outputs_[output_idx].has_value() ? **proxy_outputs_[output_idx]
+                                                  : outputs_[output_idx].get();
+  }
+  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
+  std::array<c10::optional<c10::ExclusivelyOwned<Tensor>>, 1> proxy_outputs_;
+  c10::musa::OptionalMUSAGuard guard_;
+};
+
 } // namespace
 
 at::Tensor& SoftPlusOut(
@@ -734,6 +857,56 @@ at::Tensor SoftPlus(
   return std::move(op.outputs_[0]).take();
 }
 
+at::Tensor& wrapper_MUSA_softplus_backward_out_grad_input(
+    const at::Tensor& grad_output,
+    const at::Tensor& self,
+    const at::Scalar& beta,
+    const at::Scalar& threshold,
+    at::Tensor& grad_input) {
+  c10::optional<Device> common_device = nullopt;
+  (void)common_device; // Suppress unused variable warning
+  c10::impl::check_and_update_common_device(
+      common_device,
+      grad_input,
+      "wrapper_MUSA_softplus_backward_out_grad_input",
+      "grad_input");
+  c10::impl::check_and_update_common_device(
+      common_device,
+      grad_output,
+      "wrapper_MUSA_softplus_backward_out_grad_input",
+      "grad_output");
+  c10::impl::check_and_update_common_device(
+      common_device,
+      self,
+      "wrapper_MUSA_softplus_backward_out_grad_input",
+      "self");
+  structured_softplus_backward_out_out op(grad_input);
+  op.meta(grad_output, self, beta, threshold);
+  op.impl(grad_output, self, beta, threshold, op.maybe_get_output(0));
+  if (op.proxy_outputs_[0].has_value())
+    op.outputs_[0].get().copy_(**op.proxy_outputs_[0]);
+  return grad_input;
+}
+
+at::Tensor wrapper_MUSA_softplus_backward(
+    const at::Tensor& grad_output,
+    const at::Tensor& self,
+    const at::Scalar& beta,
+    const at::Scalar& threshold) {
+  c10::optional<Device> common_device = nullopt;
+  (void)common_device; // Suppress unused variable warning
+  c10::impl::check_and_update_common_device(
+      common_device,
+      grad_output,
+      "wrapper_MUSA_softplus_backward",
+      "grad_output");
+  c10::impl::check_and_update_common_device(
+      common_device, self, "wrapper_MUSA_softplus_backward", "self");
+  structured_softplus_backward_out_functional op;
+  op.meta(grad_output, self, beta, threshold);
+  op.impl(grad_output, self, beta, threshold, *op.outputs_[0]);
+  return std::move(op.outputs_[0]).take();
+}
 void NegCall(
     const std::string& op_name,
     Tensor& out,
@@ -1910,6 +2083,10 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("tanh_", &Tanh_);
   m.impl("tanh.out", &TanhOut);
 
+  m.impl("tan", &Tan);
+  m.impl("tan_", &Tan_);
+  m.impl("tan.out", &TanOut);
+
   m.impl("atan", &Atan);
   m.impl("atan_", &Atan_);
   m.impl("atan.out", &AtanOut);
@@ -1994,6 +2171,10 @@ TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
 
   m.impl("softplus", &SoftPlus);
   m.impl("softplus.out", &SoftPlusOut);
+  m.impl("softplus_backward", &wrapper_MUSA_softplus_backward);
+  m.impl(
+      "softplus_backward.grad_input",
+      &wrapper_MUSA_softplus_backward_out_grad_input);
 
   m.impl("isnan", &IsNan);
 }

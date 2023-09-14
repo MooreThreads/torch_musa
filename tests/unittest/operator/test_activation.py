@@ -20,6 +20,7 @@ all_basic_funcs = [
     torch.sqrt,
     torch.rsqrt,
     torch.tanh,
+    torch.tan,
     torch.reciprocal,
     torch.sigmoid,
     torch.exp,
@@ -40,6 +41,7 @@ all_inplace_funcs = [
     torch.abs_,
     torch.sqrt_,
     torch.rsqrt_,
+    torch.tan_,
     torch.tanh_,
     torch.reciprocal_,
     torch.sigmoid_,
@@ -419,6 +421,22 @@ def test_softplus(shape, dtype, beta, threshold, test_out):
         func=torch.nn.functional.softplus, input_args=input_args)
     test.check_result()
 # test softplus end
+
+
+@pytest.mark.parametrize("value", testing.get_raw_data())
+def test_softplus_backward(value):
+    """
+    SoftPlus_backward tests.
+    """
+    cpu_input =value
+    m_input = cpu_input.clone().detach().to('musa')
+    cpu_input.requires_grad = True
+    m_input.requires_grad = True
+    func = torch.nn.Softplus()
+    func(cpu_input).sum().backward()
+    func(m_input).sum().backward()
+    testing.DefaultComparator()(cpu_input.grad, m_input.grad)
+# test SoftPlus_backward end
 
 
 # ============================== Test complex abs kernel func begin ============================== #
