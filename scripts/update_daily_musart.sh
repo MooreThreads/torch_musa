@@ -30,32 +30,32 @@ bash ${torch_musa_dir}/docker/common/install_mccl.sh
 
 
 ####### update the muAlg
-mualg_path="./daily_mualg_${DATE}"
-mualg_oss_link="https://oss.mthreads.com/release-ci/computeQA/mathX/newest/mualg.tar"
-wget --no-check-certificate ${mualg_oss_link} -P ${mualg_path}
-tar -xvf ${mualg_path}/mualg.tar -C ${mualg_path}
+# mualg_path="./daily_mualg_${DATE}"
+# mualg_oss_link="https://oss.mthreads.com/release-ci/computeQA/mathX/newest/mualg.tar"
+# wget --no-check-certificate ${mualg_oss_link} -P ${mualg_path}
+# tar -xvf ${mualg_path}/mualg.tar -C ${mualg_path}
 
-pushd ${mualg_path}/package
-# running in root permission
-for DEB_NAME in *.deb; do
-  dpkg -i ${DEB_NAME}
-done
-popd
+# pushd ${mualg_path}/package
+# # running in root permission
+# for DEB_NAME in *.deb; do
+#   dpkg -i ${DEB_NAME}
+# done
+# popd
 
 ####### end
 
 ####### update mcc to latest
-musa_newest_path="http://oss.mthreads.com/release-ci/computeQA/musa/newest"
-mtcc_pkg_release="mtcc-nightly-x86_64-linux-gnu-ubuntu-20.04.tar.gz"
-musa_path=${musa_newest_path}
-mtcc_pkg=${mtcc_pkg_release}
-download_dir=${scripts_dir}/download/
-mtcc_dir="mtcc"
-mkdir -p "${download_dir}/${mtcc_dir}"
-pushd "${download_dir}/${mtcc_dir}"
-wget --no-check-certificate "${musa_path}/${mtcc_pkg}" -P ./
-tar -xvf "${mtcc_pkg}"
-./install.sh
-popd
+# musa_newest_path="http://oss.mthreads.com/release-ci/computeQA/musa/newest"
+# mtcc_pkg_release="mtcc-nightly-x86_64-linux-gnu-ubuntu-20.04.tar.gz"
+# musa_path=${musa_newest_path}
+# mtcc_pkg=${mtcc_pkg_release}
+# download_dir=${scripts_dir}/download/
+# mtcc_dir="mtcc"
+# mkdir -p "${download_dir}/${mtcc_dir}"
+# pushd "${download_dir}/${mtcc_dir}"
+# wget --no-check-certificate "${musa_path}/${mtcc_pkg}" -P ./
+# tar -xvf "${mtcc_pkg}"
+# ./install.sh
+# popd
 
 ####### end

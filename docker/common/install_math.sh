@@ -3,8 +3,6 @@ set -ex
 
 ARCH=GPU_ARCH_MP_21 # default to MP_21 arch for muBLAS
 MT_OPENCV_URL="http://oss.mthreads.com/release-ci/Math-X/mt_opencv.tar.gz"
-# use this mu_rand_url in next docker image version
-# MU_RAND_URL="https://oss.mthreads.com/release-ci/Math-X/muRAND_dev1.0.0.tar.gz"
 MU_RAND_URL="https://oss.mthreads.com/release-ci/computeQA/mathX/newest/murand.tar.gz"
 MU_SPARSE_URL="http://oss.mthreads.com/release-ci/Math-X/muSPARSE_dev0.1.0.tar.gz"
 MU_ALG_URL="https://oss.mthreads.com/release-ci/computeQA/mathX/newest/mualg.tar"
@@ -151,9 +149,12 @@ install_blas() {
 main() {
   # Get all install function names
   function_names=$(grep "^install" $0 | sed -nE 's/^([a-zA-Z0-9_]+)\(.*/\1/p')
+  excluded_libs=("install_blas" "install_mu_rand")
   mkdir -p $WORK_DIR/$DATE
   for fn_name in $function_names; do
-    eval $fn_name $WORK_DIR/$DATE
+    if [[ ! "${excluded_libs[@]}" =~ "${fn_name}" ]]; then
+      eval $fn_name $WORK_DIR/$DATE
+    fi
   done
   pushd ~
   rm -rf $WORK_DIR/$DATE
