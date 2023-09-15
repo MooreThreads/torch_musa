@@ -232,7 +232,8 @@ void mtgpu_impl_datacast(const Tensor& tensor_self, const Tensor& tensor_src) {
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Unary op;
 
-  auto contiguous_in = CreateMUTensor(tensor_src);
+  auto contiguous_tensor_src = tensor_src.contiguous();
+  auto contiguous_in = CreateMUTensor(contiguous_tensor_src);
   auto contiguous_out = CreateMUTensor(tensor_self);
 
   CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::CAST), "SetMode");
