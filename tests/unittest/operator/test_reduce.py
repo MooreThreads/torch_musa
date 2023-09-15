@@ -1,6 +1,7 @@
 """Test reduce operators."""
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
 import pytest
+import numpy as np
 import torch
 from torch_musa import testing
 
@@ -97,3 +98,45 @@ def test_all(input_data, dtype):
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_argmax(input_data, dtype):
     function(input_data, dtype, torch.argmax)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("config", [
+    [(0,), [0], ],
+    [(450,), [0], ],
+    [(2111, 3000), [1],],
+    [(4, 5, 6, 7), [0, 2], ],
+    [(2, 3, 4, 5, 6, 7), [1, 3, 5], ],
+    [(2, 3, 4, 5, 6, 7, 8, 9), [0, 2, 4, 6], ],
+])
+def test_sum_i32_in_f32_out(config):
+    min_val, max_val = -5, 5
+    x_np = np.random.uniform(min_val, max_val, size=config[0]).astype("int32")
+    x_tensor = torch.from_numpy(x_np)
+    test = testing.OpTest(func=torch.sum,
+                          input_args={"input": x_tensor,
+                                      "dim": config[1],
+                                      "dtype": torch.float32},
+                          comparators=testing.DefaultComparator(abs_diff=1e-8))
+    test.check_result()
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("config", [
+    [(5,), 0, ],
+    [(2, 3), 1, ],
+    [(5, 3, 2), 1, ],
+    [(2, 2, 5, 2), 3, ],
+    [(2, 2, 1, 1, 1, 1), 5, ]
+])
+@pytest.mark.parametrize("interval", [[-5, 5], [1, 5]])
+def test_prod_i32_in_f32_out(config, interval):
+    min_val, max_val = interval[0], interval[1]
+    x_np = np.random.uniform(min_val, max_val, size=config[0]).astype("int32")
+    x_tensor = torch.from_numpy(x_np)
+    test = testing.OpTest(func=torch.prod,
+                          input_args={"input": x_tensor,
+                                      "dim": config[1],
+                                      "dtype": torch.float32},
+                          comparators=testing.DefaultComparator(abs_diff=1e-8))
+    test.check_result()
