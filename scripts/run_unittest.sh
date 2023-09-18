@@ -2,8 +2,8 @@
 set -exo pipefail
 
 # Unit tests
-pytest -s tests/unittest/operator
-pytest -s tests/unittest/core
-pytest -s tests/unittest/distributed
-pytest -s tests/unittest/amp
-pytest -s tests/unittest/quantized
+pytest -v tests/unittest/operator
+pytest -v tests/unittest/core
+pytest -v tests/unittest/distributed
+pytest -v tests/unittest/amp
+pytest -v tests/unittest/quantized

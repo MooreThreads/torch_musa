@@ -24,6 +24,7 @@
     - [Docker Image for Developer](#docker-image-for-developer)
     - [Docker Image for User](#docker-image-for-user)
 - [Getting Started](#getting-started)
+  - [Code Style](#coding-style)
   - [Key Changes](#key-changes)
   - [Example of Frequently Used APIs](#example-of-frequently-used-apis)
   - [Example of Inference Demo](#example-of-inference-demo)
@@ -147,6 +148,26 @@ docker run -it --privileged --pull always --network=host --name=torch_musa_relea
 </details>  
 
 ## Getting Started
+### Coding Style
+**torch_musa** mainly follows [Google C++ style](https://google.github.io/styleguide/cppguide.html) and customized PEP8 Python style.
+You can use the linting tools under `tools/lint` to check if coding styles are correctly followed.
+```bash
+# Check Python linting errors
+bash tools/lint/pylint.sh --rev main
+
+# Check C++ linting errorrs
+bash tools/lint/git-clang-format.sh --rev main
+```
+
+You can use the following command to fix C++ linting errors with clang-format-11 and above.
+```bash
+bash tools/lint/git-clang-format.sh -i --rev main
+```
+Python errors are slightly different. `tools/lint/git-black.sh` can be used to
+format the Python code, but other linting errors, e.g. naming, still needs to be fixed
+manually according to the prompted errors.
+
+
 ### Key Changes
 The following two key changes are required when using **torch_musa**:
  - Import **torch_musa** package
