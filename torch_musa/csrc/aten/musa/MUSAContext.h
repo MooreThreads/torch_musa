@@ -36,6 +36,8 @@ It is expected that the modules whose functions compose this interface will
 manage their own state. There is only a single MUSA context/state.
 */
 
+using c10::musa::memcpy_and_sync;
+
 /**
  * DEPRECATED: use device_count() instead
  */

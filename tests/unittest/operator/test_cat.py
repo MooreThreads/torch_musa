@@ -1,5 +1,5 @@
 """Test cat operator."""
-# pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
+# pylint: disable=missing-function-docstring, redefined-outer-name, unused-import, C0103
 import torch
 import pytest
 import torch_musa
@@ -38,3 +38,15 @@ def test_cat(input_data):
         input_args=inputs,
     )
     test.check_result()
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize(
+    "dtype", testing.get_all_types() + [torch.half, torch.int8, torch.int16]
+)
+def test_cat_zero_shape(dtype):
+    x0 = torch.randn(1000, 4).to(dtype)
+    x1 = torch.randn(0, 4).to(dtype)
+    y_cpu = torch.cat([x0, x1], dim=0)
+    y_musa = torch.cat([x0.to("musa"), x1.to("musa")], dim=0)
+    testing.DefaultComparator(y_musa, y_cpu)

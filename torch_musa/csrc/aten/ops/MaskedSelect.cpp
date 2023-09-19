@@ -114,19 +114,19 @@ at::Tensor& NonzeroOut(const at::Tensor& self, at::Tensor& out) {
       out.device().type() == kMUSA,
       "Device of output tensor of Nonzero must be MUSA, but now is ",
       out.device());
-  TORCH_CHECK(
-      self.scalar_type() == at::ScalarType::Float ||
-          self.scalar_type() == at::ScalarType::Bool,
-      "Dtype of input tensor of NoneZero only support "
-      "Float32/Bool, ",
-      "but now it is ",
-      self.scalar_type());
+
   if (!self.numel()) {
     out.resize_({0, self.dim()});
     return out;
   }
 
   c10::musa::MUSAGuard device_guard(self.device());
+
+  if (self.scalar_type() != at::ScalarType::Float &&
+      self.scalar_type() != at::ScalarType::Bool) {
+    return at::native::nonzero_out_cuda(self, out);
+  }
+
   auto contiguous_self = self.contiguous();
 
   TORCH_CHECK(

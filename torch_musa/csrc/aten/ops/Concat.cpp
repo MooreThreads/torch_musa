@@ -21,12 +21,12 @@ Tensor& CatOut(const at::ITensorListRef& tensors, int64_t dim, Tensor& out) {
 
   // Sicne muDNN concat doesn't support uncontiguous tensors,
   // so we store contiguous tensors for muTensors
-  std::vector<Tensor> rt_tensors(materialized.size());
+  std::vector<Tensor> rt_tensors;
   int elements = 0;
 
   for (int idx = 0; idx < materialized.size(); ++idx) {
     if (materialized[idx].get().numel() > 0) {
-      rt_tensors[idx] = materialized[idx].get().contiguous();
+      rt_tensors.emplace_back(materialized[idx].get().contiguous());
       elements++;
     }
   }
