@@ -411,10 +411,22 @@ Tensor Clamp(
   TORCH_CHECK(
       has_min || has_max,
       "torch.clamp: either min, max or both scalars must be defined")
-  Tensor output = at::empty_like(self, at::MemoryFormat::Contiguous);
-  MUSA_TENSOR_TYPE_CHECK(self);
 
-  ClampCall(__func__, output, self, has_min, min, has_max, max);
+  // TODO(jing.li): eliminate fp32 conversion workaround after muDNN supports
+  // fp16 calculation.
+  const bool self_fp16 = (self.scalar_type() == ScalarType::Half);
+  const Tensor input = self_fp16 ? self.to(ScalarType::Float) : self;
+  Tensor output = at::empty_like(
+      self,
+      c10::TensorOptions(at::MemoryFormat::Contiguous)
+          .dtype(input.scalar_type()));
+
+  MUSA_TENSOR_TYPE_CHECK(self);
+  ClampCall(__func__, output, input, has_min, min, has_max, max);
+
+  if (self_fp16) {
+    return output.to(ScalarType::Half);
+  }
   return output;
 }
 

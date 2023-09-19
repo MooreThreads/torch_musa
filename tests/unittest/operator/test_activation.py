@@ -245,6 +245,19 @@ def test_clamp_min_max(input_data, _min, _max, dtype, func):
     }
     function(input_args, dtype, func)
 
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_datas)
+@pytest.mark.parametrize("_min", min_value)
+@pytest.mark.parametrize("_max", max_value)
+def test_clamp_min_max_fp16(input_data, _min, _max):
+    input_args = {
+        "input": input_data["input"].to(torch.float16).to(torch.float32),
+        "min": _min,
+        "max": _max,
+    }
+    test = testing.OpTest(func=torch.clamp, input_args=input_args,
+                          comparators=testing.DefaultComparator(abs_diff=1e-5))
+    test.check_musafp16_vs_musafp32()
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_datas)
@@ -256,6 +269,17 @@ def test_clamp_min(input_data, _min, dtype, func):
     input_args = {"input": input_data["input"], "min": _min}
     function(input_args, dtype, func)
 
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_datas)
+@pytest.mark.parametrize("_min", min_value)
+def test_clamp_min_fp16(input_data, _min):
+    input_args = {
+        "input": input_data["input"].to(torch.float16).to(torch.float32),
+        "min": _min,
+    }
+    test = testing.OpTest(func=torch.clamp, input_args=input_args,
+                          comparators=testing.DefaultComparator(abs_diff=1e-5))
+    test.check_musafp16_vs_musafp32()
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_datas)
@@ -266,6 +290,17 @@ def test_clamp_max(input_data, _max, dtype, func):
     input_args = {"input": input_data["input"], "max": _max}
     function(input_args, dtype, func)
 
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_datas)
+@pytest.mark.parametrize("_max", max_value)
+def test_clamp_max_fp16(input_data, _max):
+    input_args = {
+        "input": input_data["input"].to(torch.float16).to(torch.float32),
+        "max": _max,
+    }
+    test = testing.OpTest(func=torch.clamp, input_args=input_args,
+                          comparators=testing.DefaultComparator(abs_diff=1e-5))
+    test.check_musafp16_vs_musafp32()
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_datas)
