@@ -459,9 +459,106 @@ TORCH_API at::Tensor& cumsum_out(
   return at::musa::Cumsum_Out(self, dim, dtype, out);
 }
 
+namespace {
+
+struct StructuredMusaAny final : public at::native::structured_any_all_out {
+  void set_output_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    outputs_[output_idx] = create_out(sizes, strides, options);
+    if (!names.empty()) {
+      namedinference::propagate_names(*outputs_[output_idx], names);
+    }
+  }
+
+  void set_output_raw_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    outputs_[output_idx] = create_out(sizes, strides, options);
+    if (!names.empty()) {
+      namedinference::propagate_names(*outputs_[output_idx], names);
+    }
+  }
+
+  const Tensor& maybe_get_output(int64_t output_idx) override {
+    return *outputs_[output_idx];
+  }
+
+  std::array<c10::ExclusivelyOwned<Tensor>, 1> outputs_;
+};
+
+at::Tensor WrapperMusaAny(const at::Tensor& self) {
+  StructuredMusaAny op;
+  op.meta(self);
+  op.impl(self, *op.outputs_[0]);
+  return std::move(op.outputs_[0]).take();
+}
+
+struct StructuredMusaAnyOut final : public at::native::structured_any_all_out {
+  StructuredMusaAnyOut(Tensor& out0) : outputs_{std::ref(out0)} {}
+
+  void set_output_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    const auto& out = outputs_[output_idx].get();
+    resize_out(out, sizes, strides, options);
+    auto maybe_proxy = maybe_create_proxy(out, sizes, strides, options);
+    if (C10_UNLIKELY(maybe_proxy.has_value())) {
+      proxy_outputs_[output_idx] =
+          c10::ExclusivelyOwned<Tensor>(std::move(maybe_proxy).value());
+    }
+    if (!names.empty()) {
+      namedinference::propagate_names(outputs_[output_idx], names);
+    }
+  }
+
+  void set_output_raw_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    const auto& out = outputs_[output_idx].get();
+    resize_out(out, sizes, strides, options);
+    if (!names.empty()) {
+      namedinference::propagate_names(outputs_[output_idx], names);
+    }
+  }
+
+  const Tensor& maybe_get_output(int64_t output_idx) override {
+    return proxy_outputs_[output_idx].has_value() ? **proxy_outputs_[output_idx]
+                                                  : outputs_[output_idx].get();
+  }
+
+  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
+  std::array<c10::optional<c10::ExclusivelyOwned<Tensor>>, 1> proxy_outputs_;
+};
+
+at::Tensor& WrapperMusaAnyOut(const at::Tensor& self, at::Tensor& out) {
+  StructuredMusaAnyOut op(out);
+  op.meta(self);
+  op.impl(self, op.maybe_get_output(0));
+  if (op.proxy_outputs_[0].has_value()) {
+    op.outputs_[0].get().copy_(**op.proxy_outputs_[0]);
+  }
+  return out;
+}
+
+} // anonymous namespace
+
 Tensor Any(const Tensor& self) {
-  TORCH_CHECK(
-      self.scalar_type() == ScalarType::Bool, "Now only support bool type");
+  if (self.scalar_type() != ScalarType::Bool) {
+    return WrapperMusaAny(self);
+  }
   return Reduction(
       self,
       IntArrayRef{},
@@ -471,8 +568,9 @@ Tensor Any(const Tensor& self) {
 }
 
 Tensor& AnyOut(const Tensor& self, Tensor& out) {
-  TORCH_CHECK(
-      self.scalar_type() == ScalarType::Bool, "Now only support bool type");
+  if (self.scalar_type() != ScalarType::Bool) {
+    return WrapperMusaAnyOut(self, out);
+  }
   IntArrayRef dims = {};
   ReduceCall(out, self, dims, ::musa::dnn::Reduce::Mode::OR);
   return out;
@@ -615,11 +713,108 @@ std::tuple<Tensor&, Tensor&> MaxNamesDimMax(
   return std::tuple<Tensor&, Tensor&>(output, indices);
 }
 
+namespace {
+
+struct StructuredMusaAll final : public at::native::structured_all_all_out {
+  void set_output_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    outputs_[output_idx] = create_out(sizes, strides, options);
+    if (!names.empty()) {
+      namedinference::propagate_names(*outputs_[output_idx], names);
+    }
+  }
+
+  void set_output_raw_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    outputs_[output_idx] = create_out(sizes, strides, options);
+    if (!names.empty()) {
+      namedinference::propagate_names(*outputs_[output_idx], names);
+    }
+  }
+
+  const Tensor& maybe_get_output(int64_t output_idx) override {
+    return *outputs_[output_idx];
+  }
+
+  std::array<c10::ExclusivelyOwned<Tensor>, 1> outputs_;
+};
+
+at::Tensor WrapperMusaAll(const at::Tensor& self) {
+  StructuredMusaAll op;
+  op.meta(self);
+  op.impl(self, *op.outputs_[0]);
+  return std::move(op.outputs_[0]).take();
+}
+
+struct StructuredMusaAllOut final : public at::native::structured_all_all_out {
+  StructuredMusaAllOut(Tensor& out0) : outputs_{std::ref(out0)} {}
+
+  void set_output_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    const auto& out = outputs_[output_idx].get();
+    resize_out(out, sizes, strides, options);
+    auto maybe_proxy = maybe_create_proxy(out, sizes, strides, options);
+    if (C10_UNLIKELY(maybe_proxy.has_value())) {
+      proxy_outputs_[output_idx] =
+          c10::ExclusivelyOwned<Tensor>(std::move(maybe_proxy).value());
+    }
+    if (!names.empty()) {
+      namedinference::propagate_names(outputs_[output_idx], names);
+    }
+  }
+
+  void set_output_raw_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    const auto& out = outputs_[output_idx].get();
+    resize_out(out, sizes, strides, options);
+    if (!names.empty()) {
+      namedinference::propagate_names(outputs_[output_idx], names);
+    }
+  }
+
+  const Tensor& maybe_get_output(int64_t output_idx) override {
+    return proxy_outputs_[output_idx].has_value() ? **proxy_outputs_[output_idx]
+                                                  : outputs_[output_idx].get();
+  }
+
+  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
+  std::array<c10::optional<c10::ExclusivelyOwned<Tensor>>, 1> proxy_outputs_;
+};
+
+at::Tensor& WrapperMusaAllOut(const at::Tensor& self, at::Tensor& out) {
+  StructuredMusaAllOut op(out);
+  op.meta(self);
+  op.impl(self, op.maybe_get_output(0));
+  if (op.proxy_outputs_[0].has_value()) {
+    op.outputs_[0].get().copy_(**op.proxy_outputs_[0]);
+  }
+  return out;
+}
+
+} // anonymous namespace
+
 Tensor All(const Tensor& self) {
-  TORCH_CHECK(
-      self.scalar_type() == ScalarType::Bool ||
-          self.scalar_type() == ScalarType::Byte,
-      "Now only support bool/uint8 type");
+  if (self.scalar_type() != ScalarType::Bool &&
+      self.scalar_type() != ScalarType::Byte) {
+    return WrapperMusaAll(self);
+  }
+
   // mtdnn now only support bool, so we need to cast when input_dype=Byte
   if (self.scalar_type() == ScalarType::Byte) {
     Tensor self_ = self.to(ScalarType::Bool);

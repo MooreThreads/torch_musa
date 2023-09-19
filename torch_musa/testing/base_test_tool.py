@@ -152,6 +152,17 @@ class DefaultComparator(Comparator):
         )
 
 
+class BooleanComparator(Comparator):
+    """The boolean difference comparator."""
+
+    def __init__(self):
+        """
+        Use element-wise equality to compare the result and golden.
+        """
+        super().__init__()
+        self._comparator = torch.eq
+
+
 class AbsDiffComparator(Comparator):
     """The absolute difference comparator."""
 

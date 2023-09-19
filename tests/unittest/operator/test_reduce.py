@@ -140,3 +140,34 @@ def test_prod_i32_in_f32_out(config, interval):
                                       "dtype": torch.float32},
                           comparators=testing.DefaultComparator(abs_diff=1e-8))
     test.check_result()
+
+
+any_all_integer_input_data = [
+    {"input": torch.randint(-1, 1, [1, 10])},
+    {"input": torch.randint(-1, 1, [1, 10, 5])},
+    {"input": torch.randint(-1, 1, [1, 10, 5, 5])},
+    {"input": torch.randint(-1, 1, [1, 10, 5, 5, 10])},
+    {"input": torch.randint(-1, 1, [9, 8, 7, 6, 5, 4])},
+    {"input": torch.randint(-1, 1, [9, 8, 7, 6, 5, 4, 16])},
+    {"input": torch.randint(-1, 1, [9, 8, 7, 6, 5, 4, 5, 20])}
+]
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", any_all_integer_input_data)
+@pytest.mark.parametrize("dtype", [torch.int32, torch.int64])
+def test_any_integer(input_data, dtype):
+    input_data["input"] = input_data["input"].to(dtype)
+    test = testing.OpTest(func=torch.any,
+                          input_args=input_data,
+                          comparators=testing.BooleanComparator())
+    test.check_result()
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", any_all_integer_input_data)
+@pytest.mark.parametrize("dtype", [torch.int32, torch.int64])
+def test_all_integer(input_data, dtype):
+    input_data["input"] = input_data["input"].to(dtype)
+    test = testing.OpTest(func=torch.all,
+                          input_args=input_data,
+                          comparators=testing.BooleanComparator())
+    test.check_result()
