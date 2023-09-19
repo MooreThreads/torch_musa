@@ -39,9 +39,6 @@ Tensor empty_musa(
   auto device = device_or_default(device_opt);
   c10::musa::OptionalMUSAGuard guard(device);
 
-  bool pin_memory = pinned_memory_or_default(pin_memory_opt);
-
-  TORCH_CHECK(pin_memory == false, "MUSA only support not pinned memory");
   TORCH_CHECK(device.type() == at::musa::kMUSA, "Device isn't MUSA!");
   c10::Allocator* allocator = c10::musa::MUSACachingAllocator::get();
 

@@ -1,3 +1,5 @@
+#ifndef TORCH_MUSA_CSRC_CORE_MUSA_HOOKS_INTERFACE_H_
+#define TORCH_MUSA_CSRC_CORE_MUSA_HOOKS_INTERFACE_H_
 #include <ATen/core/Generator.h>
 #include <c10/core/Device.h>
 #include <c10/util/Exception.h>
@@ -50,3 +52,5 @@ namespace detail {
 const MUSAHooksInterface& getMUSAHooks();
 } // namespace detail
 } // namespace at
+
+#endif // TORCH_MUSA_CSRC_CORE_MUSA_HOOKS_INTERFACE_H_

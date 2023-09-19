@@ -3,9 +3,11 @@
 import pytest
 import torch
 from torch import nn
+from torch.utils.data import DataLoader, Dataset
 
 import torch_musa
 from torch_musa import testing
+from torch_musa.testing import get_cycles_per_ms
 
 
 def test_single_op():
@@ -93,3 +95,67 @@ def test_all_devices_ops():
     assert m_reserved == 256 * 1024 * 1024  # maximally reserved 256MB
     assert allocated == (64 + 256) * 1024 * 1024  # allocated 320MB
     assert reserved == (64 + 256) * 1024 * 1024  # reserved 320MB
+
+
+def test_caching_pinned_memory():
+    """Test caching host allocator functions."""
+    # check that allocations are re-used after deletion
+    pinned_tensor = torch.tensor([1]).pin_memory("musa")
+    ptr = pinned_tensor.data_ptr()
+    del pinned_tensor
+    pinned_tensor = torch.tensor([1]).pin_memory("musa")
+    assert pinned_tensor.data_ptr() == ptr, "allocation not reused."
+
+    # check that the allocation is not re-used if it's in-use by a copy
+    gpu_tensor = torch.tensor([0], device="musa")
+    torch.musa._sleep(int(1000 * get_cycles_per_ms()))  # delay the copy by 1s
+    gpu_tensor.copy_(pinned_tensor, non_blocking=True)
+    del pinned_tensor
+    pinned_tensor = torch.tensor([1]).pin_memory("musa")
+    assert pinned_tensor.data_ptr() != ptr, "allocation re-used too soon."
+    assert list(gpu_tensor) == [1]
+
+    # check pin memory copy with different dtypes
+    gpu_tensor = torch.tensor([0.0], device="musa", dtype=torch.float32)
+    pinned_tensor = torch.tensor([1], dtype=torch.int8).pin_memory("musa")
+    gpu_tensor.copy_(pinned_tensor, non_blocking=True)
+    assert list(gpu_tensor) == [1]
+
+    # check pin memory D2H copy
+    gpu_tensor = torch.tensor([1], device="musa")
+    pinned_tensor = torch.tensor([0], dtype=torch.int32).pin_memory("musa")
+    pinned_tensor.copy_(gpu_tensor)
+    assert list(pinned_tensor) == [1]
+
+
+class DictDataset(Dataset):
+    """Dictionary data loader."""
+    def __len__(self):
+        return 4
+
+    def __getitem__(self, ndx):
+        return {
+            "a_tensor": torch.empty(4, 2).fill_(ndx),
+            "another_dict": {
+                "a_number": ndx,
+            },
+        }
+
+
+def test_pin_memory_dataloader():
+    """Test dataloader with pin memory."""
+    dataset = DictDataset()
+    loader = DataLoader(dataset, batch_size=2, pin_memory=True, pin_memory_device="musa")
+    for sample in loader:
+        assert sample["a_tensor"].is_pinned("musa")
+        assert sample["another_dict"]["a_number"].is_pinned("musa")
+
+
+@testing.skip_if_not_multiple_musa_device
+def test_pin_memory_dataloader_non_zero_device():
+    """Test dataloader with pin memory on non-zero gpu."""
+    dataset = DictDataset()
+    loader = DataLoader(dataset, batch_size=2, pin_memory=True, pin_memory_device="musa:1")
+    for sample in loader:
+        assert sample["a_tensor"].is_pinned("musa:1")
+        assert sample["another_dict"]["a_number"].is_pinned("musa:1")

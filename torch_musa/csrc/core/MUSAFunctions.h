@@ -50,6 +50,9 @@ void __inline__ memcpy_and_sync(
   C10_MUSA_CHECK(musaStreamSynchronize(stream));
 }
 
+bool hasPrimaryContext(DeviceIndex device_index);
+c10::optional<DeviceIndex> getDeviceIndexWithPrimaryContext();
+
 } // namespace musa
 } // namespace c10
 #endif // TORCH_MUSA_CSRC_CORE_MUSAFUNCTIONS_H_

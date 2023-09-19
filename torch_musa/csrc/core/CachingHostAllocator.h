@@ -18,9 +18,7 @@ bool CachingHostAllocator_recordEvent(void* ptr, void* ctx, MUSAStream stream);
 void CachingHostAllocator_emptyCache();
 
 inline at::DataPtr HostAlloc(size_t size) {
-  C10_THROW_ERROR(
-      NotImplementedError, "HostAlloc in torch_musa is not supported now!");
-  return at::DataPtr();
+  return getCachingHostAllocator()->allocate(size);
 }
 
 } // namespace musa
