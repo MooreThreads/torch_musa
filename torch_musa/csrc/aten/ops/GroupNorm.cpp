@@ -71,10 +71,8 @@ std::tuple<Tensor, Tensor, Tensor> NativeGroupNorm(
   const Tensor& beta_ref = *beta_maybe_owned;
 
   check_group_norm_inputs(X, gamma_ref, beta_ref, C, group);
-  // TODO(@fan.mo): mudnn doesn't support fp16 group_norm
-  bool is_half = X.scalar_type() == at::ScalarType::Half;
 
-  Tensor contiguous_X = is_half ? X.to(at::ScalarType::Float) : X.contiguous();
+  Tensor contiguous_X = X.contiguous();
   Tensor contiguous_Y = at::native::empty_like(contiguous_X);
   Tensor contiguous_mean = at::empty({N, group}, contiguous_X.options());
   Tensor contiguous_rstd = at::empty({N, group}, contiguous_X.options());
@@ -88,14 +86,11 @@ std::tuple<Tensor, Tensor, Tensor> NativeGroupNorm(
   muTensor gamma = muTensor();
   muTensor beta = muTensor();
   if (gamma_ref.defined()) {
-    contiguous_gamma = is_half
-        ? gamma_ref.contiguous().to(at::ScalarType::Float)
-        : gamma_ref.contiguous();
+    contiguous_gamma = gamma_ref.contiguous();
     gamma = CreateMUTensor(contiguous_gamma);
   }
   if (beta_ref.defined()) {
-    contiguous_beta = is_half ? beta_ref.contiguous().to(at::ScalarType::Float)
-                              : beta_ref.contiguous();
+    contiguous_beta = beta_ref.contiguous();
     beta = CreateMUTensor(contiguous_beta);
   }
 
@@ -105,12 +100,6 @@ std::tuple<Tensor, Tensor, Tensor> NativeGroupNorm(
   CHECK_MUDNN_STATUS(op.SetAxis(1), "SetAxis");
   CHECK_MUDNN_STATUS(op.SetGroup(static_cast<int>(group)), "SetGroup");
   CHECK_MUDNN_STATUS(op.Run(h, out, mean, rstd, in, gamma, beta), "RunOp");
-
-  if (is_half) {
-    contiguous_Y = contiguous_Y.to(at::ScalarType::Half);
-    contiguous_mean = contiguous_mean.to(at::ScalarType::Half);
-    contiguous_rstd = contiguous_rstd.to(at::ScalarType::Half);
-  }
 
   return std::make_tuple(contiguous_Y, contiguous_mean, contiguous_rstd);
 }

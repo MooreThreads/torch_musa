@@ -81,22 +81,14 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNorm(
   if (running_mean.defined()) {
     check_dims_match_num_input_features(
         "running_mean", num_features, running_mean.numel());
-    // TODO(@fan.mo): mudnn fp16 bn needs running_mean/var to be fp32 to keep
-    // accuracy
-    contiguous_running_mean = running_mean.scalar_type() == at::ScalarType::Half
-        ? running_mean.to(at::ScalarType::Float).contiguous()
-        : running_mean.contiguous();
+    contiguous_running_mean = running_mean.contiguous();
   } else if (!training) {
     AT_ERROR("running_mean must be defined in evaluation mode");
   }
   if (running_var.defined()) {
     check_dims_match_num_input_features(
         "running_var", num_features, running_var.numel());
-    // TODO(@fan.mo): mudnn fp16 bn needs running_mean/var to be fp32 to keep
-    // accuracy
-    contiguous_running_var = running_var.scalar_type() == at::ScalarType::Half
-        ? running_var.to(at::ScalarType::Float).contiguous()
-        : running_var.contiguous();
+    contiguous_running_var = running_var.contiguous();
   } else if (!training) {
     AT_ERROR("running_var must be defined in evaluation mode");
   }
