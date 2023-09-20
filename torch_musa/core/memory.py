@@ -6,7 +6,35 @@ import torch
 from torch.types import Device
 import torch_musa
 from torch_musa.core.device import _get_musa_device_index
+from ._lazy_init import _lazy_init
+from ._utils import _get_musa_device_index
 
+
+def set_per_process_memory_fraction(fraction, device: Union[Device, int] = None) -> None:
+    """Set memory fraction for a process.
+    The fraction is used to limit an caching allocator to allocated memory on a MUSA device.
+    The allowed value equals the total visible memory multiplied fraction.
+    If trying to allocate more than the allowed value in a process, will raise an out of
+    memory error in allocator.
+
+    Args:
+        fraction(float): Range: 0~1. Allowed memory equals total_memory * fraction.
+        device (torch.device or int, optional): selected device. If it is
+            ``None`` the default MUSA device is used.
+    .. note::
+        In general, the total available free memory is less than the total capacity.
+    """
+    _lazy_init()
+    if device is None:
+        device = torch_musa.current_device()
+    device = _get_musa_device_index(device)
+    if not isinstance(fraction, float):
+        raise TypeError('Invalid type for fraction argument, must be `float`')
+    if fraction < 0 or fraction > 1:
+        raise ValueError(f'Invalid fraction value: {fraction}. '
+                         'Allowed range: 0~1')
+
+    torch_musa._MUSAC._musa_setMemoryFraction(fraction, device)
 
 def empty_cache():
     """Releases all unoccupied cached memory currently held by the caching

@@ -520,7 +520,6 @@ class MTGPUCachingAllocator {
         params.block->ptr != nullptr);
     Block* block = params.block;
     Block* remaining = nullptr;
-
     const bool already_split = block->is_split();
     if (should_split(block, size)) {
       remaining = block;
@@ -1269,7 +1268,9 @@ void local_raw_delete(void* ptr);
 
 class MusaCachingAllocatorImpl {
  public:
-  MusaCachingAllocatorImpl() {
+  MusaCachingAllocatorImpl() {}
+
+  void init(int device_count) {
     const int64_t dev_num = static_cast<int64_t>(c10::musa::device_count());
     device_allocator_.reserve(dev_num);
     for (int i = 0; i < dev_num; ++i) {
@@ -1420,13 +1421,7 @@ struct C10_API MusaCachingAllocator final : MUSAAllocator {
   }
 
   void init(int device_count) override {
-    // TODO(@MTAI): all device allocators have been initialized in constructor
-    // of MusaCachingAllocator. Implement lazy initialization would be better as
-    // CUDA. Related code :
-    // https://github.com/pytorch/pytorch/blob/v2.0.0/torch/csrc/cuda/Module.cpp#L1059
-    // https://github.com/pytorch/pytorch/blob/v2.0.0/aten/src/ATen/Context.h#L107
-    // https://github.com/pytorch/pytorch/blob/v2.0.0/aten/src/ATen/cuda/detail/CUDAHooks.cpp#L81
-    (void)device_count;
+    allocator_impl_->init(device_count);
   }
 
   bool initialized() override {
@@ -1641,6 +1636,18 @@ inline std::string format_size(uint64_t size) {
     os << " GiB";
   }
   return os.str();
+}
+
+void init(int device_count) {
+  c10::musa::MusaCachingAllocator* palloc =
+      c10::musa::GetMusaCachingAllocator();
+  palloc->init(device_count);
+}
+
+void SetMemoryFraction(double fraction, int device) {
+  c10::musa::MusaCachingAllocator* palloc =
+      c10::musa::GetMusaCachingAllocator();
+  palloc->setMemoryFraction(fraction, device);
 }
 
 void EmptyCache() {

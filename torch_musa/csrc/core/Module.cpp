@@ -176,6 +176,27 @@ PyObject* PyMusaMemorySnapshot(PyObject* /* unused */, PyObject* /* unused */) {
   END_HANDLE_TH_ERRORS
 }
 
+PyObject* PyMusaSetMemoryFraction(PyObject* _unused, PyObject* args) {
+  HANDLE_TH_ERRORS
+  PyObject* fraction_o = nullptr;
+  PyObject* device_o = nullptr;
+  if (!PyArg_ParseTuple(args, "OO", &fraction_o, &device_o)) {
+    THPUtils_invalidArguments(
+        args,
+        nullptr,
+        "set_memory_fraction",
+        1,
+        "(double fraction, int device);");
+    return nullptr;
+  }
+  double fraction = PyFloat_AsDouble(fraction_o);
+  int64_t device = PyLong_AsLongLong(device_o);
+
+  c10::musa::MUSACachingAllocator::SetMemoryFraction(fraction, device);
+  END_HANDLE_TH_ERRORS
+  Py_RETURN_NONE;
+}
+
 static void BindGetDeviceProperties(PyObject* module) {
   // Add method to torch_musa
   auto m = py::handle(module).cast<py::module>();
@@ -415,6 +436,7 @@ static PyMethodDef MusaMemoryMethods[] = {
     {"_musa_memoryStats", PyMusaMemoryStats, METH_O, nullptr},
     {"_musa_resetPeakStats", PyMusaResetPeakStats, METH_NOARGS, nullptr},
     {"_musa_memorySnapshot", PyMusaMemorySnapshot, METH_NOARGS, nullptr},
+    {"_musa_setMemoryFraction", PyMusaSetMemoryFraction, METH_VARARGS, nullptr},
     {nullptr}};
 
 static PyMethodDef MusaStreamMethods[] = {

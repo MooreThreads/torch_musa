@@ -80,6 +80,7 @@ from .core.amp.common import (
 from .core.serialization import register_deserialization
 
 from .core.memory import (
+    set_per_process_memory_fraction,
     empty_cache,
     reset_peak_stats,
     memory_stats,

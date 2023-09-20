@@ -159,3 +159,34 @@ def test_pin_memory_dataloader_non_zero_device():
     for sample in loader:
         assert sample["a_tensor"].is_pinned("musa:1")
         assert sample["another_dict"]["a_number"].is_pinned("musa:1")
+
+
+def test_set_per_process_memory_fraction():
+    # test invalid fraction value.
+    with pytest.raises(TypeError, match="Invalid type"):
+        torch.musa.set_per_process_memory_fraction(int(1))
+    with pytest.raises(ValueError, match="Invalid fraction value"):
+        torch.musa.set_per_process_memory_fraction(-0.1)
+    with pytest.raises(ValueError, match="Invalid fraction value"):
+        torch.musa.set_per_process_memory_fraction(2.0)
+
+    tensor = torch.zeros(1024, device='musa')
+    torch.musa.empty_cache()
+    total_memory = torch.musa.get_device_properties(0).total_memory
+    torch.musa.set_per_process_memory_fraction(0.5, 0)
+
+    # test 0.499 allocation is ok.
+    #TODO(Xiaokang Shang): Waitint for MUSA support contiguous virtual address.
+    application = int(total_memory * 0.499) - torch.musa.max_memory_reserved()
+    tmp_tensor = torch.empty(application, dtype=torch.int8, device='musa')
+    del tmp_tensor
+    torch.musa.empty_cache()
+
+    application = int(total_memory * 0.5)
+    # it will get OOM when try to allocate more than half memory.
+    with pytest.raises(RuntimeError, match="out of memory"):
+        torch.empty(application, dtype=torch.int8, device='musa')
+
+    # ensure out of memory error doesn't disturb subsequent kernel
+    tensor.fill_(1)
+    assert (tensor == 1).all()

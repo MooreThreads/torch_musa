@@ -237,6 +237,8 @@ class MUSAAllocator : public Allocator {
   virtual std::string name() = 0;
 };
 
+void init(int device_count);
+void SetMemoryFraction(double fraction, int device);
 void EmptyCache();
 void ResetPeakStats();
 DeviceStats GetDeviceStats(int64_t device);
