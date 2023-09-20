@@ -56,8 +56,6 @@ Tensor& UpSampleNearest2dOut(
   const float width_scale = at::native::compute_scales_value<float>(
       scales_w, input_width, output_width);
 
-  // TODO(@fan.mo): muDNN Interpolate doesn't support Half type
-  bool is_half = self.scalar_type() == c10::ScalarType::Half;
   Tensor in_;
   Tensor out_;
   at::musa::muTensor in;
@@ -76,16 +74,10 @@ Tensor& UpSampleNearest2dOut(
     // format
     if (result.suggest_memory_format() != at::MemoryFormat::ChannelsLast) {
       out_ = result.to(at::MemoryFormat::ChannelsLast).permute({0, 2, 3, 1});
-    }
-    // mudnn doesn't support fp16 upsampel, so we have to cast fp16 to fp32
-    // to enable half train/inference, which would have some overheads
-    if (is_half) {
-      in_ = self.to(c10::ScalarType::Float).permute({0, 2, 3, 1});
-      out_ = result.to(c10::ScalarType::Float).permute({0, 2, 3, 1});
     } else {
-      in_ = self.permute({0, 2, 3, 1});
       out_ = result.permute({0, 2, 3, 1});
     }
+    in_ = self.permute({0, 2, 3, 1});
     in = CreateMUTensor(in_);
     out = CreateMUTensor(out_);
     CHECK_MUDNN_STATUS(
@@ -95,18 +87,7 @@ Tensor& UpSampleNearest2dOut(
         out.SetFormat(at::musa::muTensor::Format::NHWC),
         "Set output to NHWC format");
     CHECK_MUDNN_STATUS(op.Run(h, out, in), "Run");
-
     out_ = out_.permute({0, 3, 1, 2});
-    if (is_half) {
-      out_ = out_.to(c10::ScalarType::Half);
-    }
-  } else if (is_half) {
-    in_ = self.to(c10::ScalarType::Float).contiguous();
-    out_ = result.to(c10::ScalarType::Float);
-    in = CreateMUTensor(in_);
-    out = CreateMUTensor(out_);
-    CHECK_MUDNN_STATUS(op.Run(h, out, in), "Run");
-    out_ = out_.to(c10::ScalarType::Half);
   } else {
     in_ = self.contiguous();
     out_ = result;
