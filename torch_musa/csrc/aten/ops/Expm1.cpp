@@ -21,6 +21,8 @@
 #include "torch_musa/csrc/core/MUSAGuard.h"
 #include "torch_musa/csrc/core/MUSAStream.h"
 #include "torch_musa/csrc/core/PeerToPeerAccess.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
+
 namespace at {
 namespace musa {
 struct structured_expm1_out_functional final
@@ -236,10 +238,9 @@ at::Tensor& Expm1_(at::Tensor& self) {
   return self;
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("expm1", &Expm1);
-  m.impl("expm1_", &Expm1_);
-  m.impl("expm1.out", &Expm1_out_out);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "expm1", Expm1)
+ADVANCED_REGISTER(aten, PrivateUse1, "expm1_", Expm1_)
+ADVANCED_REGISTER(aten, PrivateUse1, "expm1.out", Expm1_out_out)
+
 } // namespace musa
 } // namespace at

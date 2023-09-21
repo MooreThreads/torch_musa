@@ -20,6 +20,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -606,22 +607,32 @@ Tensor MseLoss(const Tensor& self, const Tensor& target, int64_t reduction) {
   return std::move(op.outputs_[0]).take();
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("mse_loss", &MseLoss);
-  m.impl("mse_loss.out", &MseLossOut);
-  m.impl("mse_loss_backward", &MseLossBwd);
-  m.impl("mse_loss_backward.grad_input", &MseLossBwdGradInput);
+ADVANCED_REGISTER(aten, PrivateUse1, "mse_loss", MseLoss)
+ADVANCED_REGISTER(aten, PrivateUse1, "mse_loss.out", MseLossOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "mse_loss_backward", MseLossBwd)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "mse_loss_backward.grad_input",
+    MseLossBwdGradInput)
 
-  m.impl("nll_loss_forward.output", &NllLossOut);
-  m.impl("nll_loss_forward", &NllLoss);
-  m.impl("nll_loss_backward.grad_input", &NllLossBwdGradInput);
-  m.impl("nll_loss_backward", &NllLossBwd);
+ADVANCED_REGISTER(aten, PrivateUse1, "nll_loss_forward.output", NllLossOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "nll_loss_forward", NllLoss)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "nll_loss_backward.grad_input",
+    NllLossBwdGradInput)
+ADVANCED_REGISTER(aten, PrivateUse1, "nll_loss_backward", NllLossBwd)
 
-  m.impl("nll_loss2d_forward.output", &NllLoss2dOut);
-  m.impl("nll_loss2d_forward", &NllLoss2d);
-  m.impl("nll_loss2d_backward.grad_input", &NllLoss2dBwdGradInput);
-  m.impl("nll_loss2d_backward", &NllLoss2dBwd);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "nll_loss2d_forward.output", NllLoss2dOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "nll_loss2d_forward", NllLoss2d)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "nll_loss2d_backward.grad_input",
+    NllLoss2dBwdGradInput)
+ADVANCED_REGISTER(aten, PrivateUse1, "nll_loss2d_backward", NllLoss2dBwd)
 
 } // namespace musa
 } // namespace at

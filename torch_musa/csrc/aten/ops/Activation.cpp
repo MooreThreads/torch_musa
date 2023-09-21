@@ -21,7 +21,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-
+#include "torch_musa/csrc/utils/register_wrapper.h"
 namespace at {
 namespace musa {
 
@@ -2059,175 +2059,183 @@ at::Tensor Sign(const at::Tensor& self) {
   return std::move(op.outputs_[0]).take();
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("abs", &Abs);
-  m.impl("abs_", &Abs_);
-  m.impl("abs.out", &AbsOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "abs", Abs)
+ADVANCED_REGISTER(aten, PrivateUse1, "abs_", Abs_)
+ADVANCED_REGISTER(aten, PrivateUse1, "abs.out", AbsOut)
 
-  m.impl("sgn", &Sgn);
-  m.impl("sgn_", &Sgn_);
-  m.impl("sgn.out", &SgnOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "sgn", Sgn)
+ADVANCED_REGISTER(aten, PrivateUse1, "sgn_", Sgn_)
+ADVANCED_REGISTER(aten, PrivateUse1, "sgn.out", SgnOut)
 
-  m.impl("sign", &Sign);
-  m.impl("sign_", &Sign_);
-  m.impl("sign.out", &SignOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "sign", Sign)
+ADVANCED_REGISTER(aten, PrivateUse1, "sign_", Sign_)
+ADVANCED_REGISTER(aten, PrivateUse1, "sign.out", SignOut)
 
-  m.impl("bitwise_not", &BitwiseNot);
-  m.impl("bitwise_not_", &BitwiseNot_);
-  m.impl("bitwise_not.out", &BitwiseNotOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "bitwise_not", BitwiseNot)
+ADVANCED_REGISTER(aten, PrivateUse1, "bitwise_not_", BitwiseNot_)
+ADVANCED_REGISTER(aten, PrivateUse1, "bitwise_not.out", BitwiseNotOut)
 
-  m.impl("logical_not", &LogicalNot);
-  m.impl("logical_not_", &LogicalNot_);
-  m.impl("logical_not.out", &LogicalNotOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "logical_not", LogicalNot)
+ADVANCED_REGISTER(aten, PrivateUse1, "logical_not_", LogicalNot_)
+ADVANCED_REGISTER(aten, PrivateUse1, "logical_not.out", LogicalNotOut)
 
-  m.impl("eq.Scalar", &EqScalar);
-  m.impl("eq_.Scalar", &EqScalar_);
-  m.impl("eq.Scalar_out", &EqScalarOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "eq.Scalar", EqScalar)
+ADVANCED_REGISTER(aten, PrivateUse1, "eq_.Scalar", EqScalar_)
+ADVANCED_REGISTER(aten, PrivateUse1, "eq.Scalar_out", EqScalarOut)
 
-  m.impl("relu", &Relu);
-  m.impl("relu_", &Relu_);
+ADVANCED_REGISTER(aten, PrivateUse1, "relu", Relu)
+ADVANCED_REGISTER(aten, PrivateUse1, "relu_", Relu_)
 
-  m.impl("lt.Scalar", &LtScalar);
-  m.impl("lt_.Scalar", &LtScalar_);
-  m.impl("lt.Scalar_out", &LtScalarOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "lt.Scalar", LtScalar)
+ADVANCED_REGISTER(aten, PrivateUse1, "lt_.Scalar", LtScalar_)
+ADVANCED_REGISTER(aten, PrivateUse1, "lt.Scalar_out", LtScalarOut)
 
-  m.impl("le.Scalar", &LeScalar);
-  m.impl("le_.Scalar", &LeScalar_);
-  m.impl("le.Scalar_out", &LeScalarOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "le.Scalar", LeScalar)
+ADVANCED_REGISTER(aten, PrivateUse1, "le_.Scalar", LeScalar_)
+ADVANCED_REGISTER(aten, PrivateUse1, "le.Scalar_out", LeScalarOut)
 
-  m.impl("ne.Scalar", &NeScalar);
-  m.impl("ne_.Scalar", &NeScalar_);
-  m.impl("ne.Scalar_out", &NeScalarOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "ne.Scalar", NeScalar)
+ADVANCED_REGISTER(aten, PrivateUse1, "ne_.Scalar", NeScalar_)
+ADVANCED_REGISTER(aten, PrivateUse1, "ne.Scalar_out", NeScalarOut)
 
-  m.impl("gt.Scalar", &GtScalar);
-  m.impl("gt_.Scalar", &GtScalar_);
-  m.impl("gt.Scalar_out", &GtScalarOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "gt.Scalar", GtScalar)
+ADVANCED_REGISTER(aten, PrivateUse1, "gt_.Scalar", GtScalar_)
+ADVANCED_REGISTER(aten, PrivateUse1, "gt.Scalar_out", GtScalarOut)
 
-  m.impl("ge.Scalar", &GeScalar);
-  m.impl("ge_.Scalar", &GeScalar_);
-  m.impl("ge.Scalar_out", &GeScalarOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "ge.Scalar", GeScalar)
+ADVANCED_REGISTER(aten, PrivateUse1, "ge_.Scalar", GeScalar_)
+ADVANCED_REGISTER(aten, PrivateUse1, "ge.Scalar_out", GeScalarOut)
 
-  m.impl("sqrt", &Sqrt);
-  m.impl("sqrt.out", &SqrtOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "sqrt", Sqrt)
+ADVANCED_REGISTER(aten, PrivateUse1, "sqrt.out", SqrtOut)
 
-  m.impl("round", &Round);
-  m.impl("round_", &Round_);
-  m.impl("round.out", &RoundOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "round", Round)
+ADVANCED_REGISTER(aten, PrivateUse1, "round_", Round_)
+ADVANCED_REGISTER(aten, PrivateUse1, "round.out", RoundOut)
 
-  m.impl("rsqrt", &Rsqrt);
-  m.impl("rsqrt.out", &RsqrtOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "rsqrt", Rsqrt)
+ADVANCED_REGISTER(aten, PrivateUse1, "rsqrt.out", RsqrtOut)
 
-  m.impl("hardswish", &HardSwish);
-  m.impl("hardswish_", &HardSwish_);
-  m.impl("hardswish.out", &HardSwishOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "hardswish", HardSwish)
+ADVANCED_REGISTER(aten, PrivateUse1, "hardswish_", HardSwish_)
+ADVANCED_REGISTER(aten, PrivateUse1, "hardswish.out", HardSwishOut)
 
-  m.impl("hardsigmoid", &HardSigmoid);
-  m.impl("hardsigmoid_", &HardSigmoid_);
-  m.impl("hardsigmoid.out", &HardSigmoidOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "hardsigmoid", HardSigmoid)
+ADVANCED_REGISTER(aten, PrivateUse1, "hardsigmoid_", HardSigmoid_)
+ADVANCED_REGISTER(aten, PrivateUse1, "hardsigmoid.out", HardSigmoidOut)
 
-  m.impl("acos", &Acos);
-  m.impl("acos_", &Acos_);
-  m.impl("acos.out", &AcosOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "acos", Acos)
+ADVANCED_REGISTER(aten, PrivateUse1, "acos_", Acos_)
+ADVANCED_REGISTER(aten, PrivateUse1, "acos.out", AcosOut)
 
-  m.impl("tanh", &Tanh);
-  m.impl("tanh_", &Tanh_);
-  m.impl("tanh.out", &TanhOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "tanh", Tanh)
+ADVANCED_REGISTER(aten, PrivateUse1, "tanh_", Tanh_)
+ADVANCED_REGISTER(aten, PrivateUse1, "tanh.out", TanhOut)
 
-  m.impl("tan", &Tan);
-  m.impl("tan_", &Tan_);
-  m.impl("tan.out", &TanOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "tan", Tan)
+ADVANCED_REGISTER(aten, PrivateUse1, "tan_", Tan_)
+ADVANCED_REGISTER(aten, PrivateUse1, "tan.out", TanOut)
 
-  m.impl("atan", &Atan);
-  m.impl("atan_", &Atan_);
-  m.impl("atan.out", &AtanOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "atan", Atan)
+ADVANCED_REGISTER(aten, PrivateUse1, "atan_", Atan_)
+ADVANCED_REGISTER(aten, PrivateUse1, "atan.out", AtanOut)
 
-  m.impl("log", &Log);
-  m.impl("log_", &Log_);
-  m.impl("log.out", &LogOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "log", Log)
+ADVANCED_REGISTER(aten, PrivateUse1, "log_", Log_)
+ADVANCED_REGISTER(aten, PrivateUse1, "log.out", LogOut)
 
-  m.impl("log2", &Log2);
-  m.impl("log2_", &Log2_);
-  m.impl("log2.out", &Log2Out);
+ADVANCED_REGISTER(aten, PrivateUse1, "log2", Log2)
+ADVANCED_REGISTER(aten, PrivateUse1, "log2_", Log2_)
+ADVANCED_REGISTER(aten, PrivateUse1, "log2.out", Log2Out)
 
-  m.impl("gelu", &GELU);
-  m.impl("gelu.out", &GELUOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "gelu", GELU)
+ADVANCED_REGISTER(aten, PrivateUse1, "gelu.out", GELUOut)
 
-  m.impl("clamp", &Clamp);
-  m.impl("clamp_", &Clamp_);
-  m.impl("clamp.out", &ClampOut);
-  m.impl("clamp.Tensor_out", &ClampTensorOut);
-  m.impl("clamp_min.out", &ClampMinOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "clamp", Clamp)
+ADVANCED_REGISTER(aten, PrivateUse1, "clamp_", Clamp_)
+ADVANCED_REGISTER(aten, PrivateUse1, "clamp.out", ClampOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "clamp.Tensor_out", ClampTensorOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "clamp_min.out", ClampMinOut)
 
-  m.impl("reciprocal", &Reciprocal);
-  m.impl("reciprocal_", &Reciprocal_);
-  m.impl("reciprocal.out", &ReciprocalOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "reciprocal", Reciprocal)
+ADVANCED_REGISTER(aten, PrivateUse1, "reciprocal_", Reciprocal_)
+ADVANCED_REGISTER(aten, PrivateUse1, "reciprocal.out", ReciprocalOut)
 
-  m.impl("sigmoid", &Sigmoid);
-  m.impl("sigmoid_", &Sigmoid_);
-  m.impl("sigmoid.out", &SigmoidOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "sigmoid", Sigmoid)
+ADVANCED_REGISTER(aten, PrivateUse1, "sigmoid_", Sigmoid_)
+ADVANCED_REGISTER(aten, PrivateUse1, "sigmoid.out", SigmoidOut)
 
-  m.impl("ceil", &Ceil);
-  m.impl("ceil_", &Ceil_);
-  m.impl("ceil.out", &CeilOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "ceil", Ceil)
+ADVANCED_REGISTER(aten, PrivateUse1, "ceil_", Ceil_)
+ADVANCED_REGISTER(aten, PrivateUse1, "ceil.out", CeilOut)
 
-  m.impl("exp", &Exp);
-  m.impl("exp_", &Exp_);
-  m.impl("exp.out", &ExpOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "exp", Exp)
+ADVANCED_REGISTER(aten, PrivateUse1, "exp_", Exp_)
+ADVANCED_REGISTER(aten, PrivateUse1, "exp.out", ExpOut)
 
-  m.impl("silu", &Silu);
-  m.impl("silu_", &Silu_);
-  m.impl("silu.out", &SiluOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "silu", Silu)
+ADVANCED_REGISTER(aten, PrivateUse1, "silu_", Silu_)
+ADVANCED_REGISTER(aten, PrivateUse1, "silu.out", SiluOut)
 
-  m.impl("cos", &Cos);
-  m.impl("cos_", &Cos_);
-  m.impl("cos.out", &CosOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "cos", Cos)
+ADVANCED_REGISTER(aten, PrivateUse1, "cos_", Cos_)
+ADVANCED_REGISTER(aten, PrivateUse1, "cos.out", CosOut)
 
-  m.impl("sin", &Sin);
-  m.impl("sin_", &Sin_);
-  m.impl("sin.out", &SinOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "sin", Sin)
+ADVANCED_REGISTER(aten, PrivateUse1, "sin_", Sin_)
+ADVANCED_REGISTER(aten, PrivateUse1, "sin.out", SinOut)
 
-  m.impl("neg", &Neg);
-  m.impl("neg_", &Neg_);
-  m.impl("neg.out", &NegOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "neg", Neg)
+ADVANCED_REGISTER(aten, PrivateUse1, "neg_", Neg_)
+ADVANCED_REGISTER(aten, PrivateUse1, "neg.out", NegOut)
 
-  m.impl("pow.Tensor_Scalar", &PowScalar);
-  m.impl("pow_.Scalar", &PowScalar_);
-  m.impl("pow.Tensor_Scalar_out", &PowScalarOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "pow.Tensor_Scalar", PowScalar)
+ADVANCED_REGISTER(aten, PrivateUse1, "pow_.Scalar", PowScalar_)
+ADVANCED_REGISTER(aten, PrivateUse1, "pow.Tensor_Scalar_out", PowScalarOut)
 
-  m.impl("leaky_relu", &LeakyRelu);
-  m.impl("leaky_relu_", &LeakyRelu_);
-  m.impl("leaky_relu.out", &LeakyReluOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "leaky_relu", LeakyRelu)
+ADVANCED_REGISTER(aten, PrivateUse1, "leaky_relu_", LeakyRelu_)
+ADVANCED_REGISTER(aten, PrivateUse1, "leaky_relu.out", LeakyReluOut)
 
-  m.impl("log10", &Log10);
-  m.impl("log10_", &Log10_);
-  m.impl("log10.out", &Log10Out);
+ADVANCED_REGISTER(aten, PrivateUse1, "log10", Log10)
+ADVANCED_REGISTER(aten, PrivateUse1, "log10_", Log10_)
+ADVANCED_REGISTER(aten, PrivateUse1, "log10.out", Log10Out)
 
-  m.impl("floor", &Floor);
-  m.impl("floor_", &Floor_);
-  m.impl("floor.out", &FloorOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "floor", Floor)
+ADVANCED_REGISTER(aten, PrivateUse1, "floor_", Floor_)
+ADVANCED_REGISTER(aten, PrivateUse1, "floor.out", FloorOut)
 
-  m.impl("elu", &Elu);
-  m.impl("elu_", &Elu_);
-  m.impl("elu.out", &EluOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "elu", Elu)
+ADVANCED_REGISTER(aten, PrivateUse1, "elu_", Elu_)
+ADVANCED_REGISTER(aten, PrivateUse1, "elu.out", EluOut)
 
-  m.impl("hardtanh", &HardTanh);
-  m.impl("hardtanh_", &HardTanh_);
-  m.impl("hardtanh.out", &HardTanhOut);
-  m.impl("hardtanh_backward", &HardTanhBackward);
-  m.impl("hardtanh_backward.grad_input", &HardTanhBackwardOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "hardtanh", HardTanh)
+ADVANCED_REGISTER(aten, PrivateUse1, "hardtanh_", HardTanh_)
+ADVANCED_REGISTER(aten, PrivateUse1, "hardtanh.out", HardTanhOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "hardtanh_backward", HardTanhBackward)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "hardtanh_backward.grad_input",
+    HardTanhBackwardOut)
 
-  m.impl("_prelu_kernel", &PRelu);
-  m.impl("_prelu_kernel_backward", &PReluBackward);
+ADVANCED_REGISTER(aten, PrivateUse1, "_prelu_kernel", PRelu)
+ADVANCED_REGISTER(aten, PrivateUse1, "_prelu_kernel_backward", PReluBackward)
 
-  m.impl("softplus", &SoftPlus);
-  m.impl("softplus.out", &SoftPlusOut);
-  m.impl("softplus_backward", &wrapper_MUSA_softplus_backward);
-  m.impl(
-      "softplus_backward.grad_input",
-      &wrapper_MUSA_softplus_backward_out_grad_input);
+ADVANCED_REGISTER(aten, PrivateUse1, "softplus", SoftPlus)
+ADVANCED_REGISTER(aten, PrivateUse1, "softplus.out", SoftPlusOut)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "softplus_backward",
+    wrapper_MUSA_softplus_backward)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "softplus_backward.grad_input",
+    wrapper_MUSA_softplus_backward_out_grad_input)
 
-  m.impl("isnan", &IsNan);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "isnan", IsNan)
 
 } // namespace musa
 } // namespace at

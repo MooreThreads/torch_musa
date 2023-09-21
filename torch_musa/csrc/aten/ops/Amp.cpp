@@ -4,6 +4,8 @@
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 
 #include "torch_musa/csrc/aten/ops/Amp.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
+
 namespace at {
 namespace musa {
 
@@ -66,12 +68,12 @@ at::Tensor& AmpUpdateScale(
       growth_interval);
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl(
-      "_amp_foreach_non_finite_check_and_unscale_",
-      &AmpForeachNonFiniteCheckAndUnscale);
-  m.impl("_amp_update_scale_", &AmpUpdateScale);
-}
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "_amp_foreach_non_finite_check_and_unscale_",
+    AmpForeachNonFiniteCheckAndUnscale)
+ADVANCED_REGISTER(aten, PrivateUse1, "_amp_update_scale_", AmpUpdateScale)
 
 } // namespace musa
 } // namespace at

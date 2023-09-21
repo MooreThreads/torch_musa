@@ -2,6 +2,7 @@
 #include <torch/library.h>
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #ifndef AT_PER_OPERATOR_HEADERS
 #include <ATen/Functions.h>
@@ -232,15 +233,13 @@ Tensor& TrilOut(const Tensor& self, int64_t diagonal, Tensor& output) {
   return output;
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("triu", &Triu);
-  m.impl("triu_", &Triu_);
-  m.impl("triu.out", &TriuOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "triu", Triu)
+ADVANCED_REGISTER(aten, PrivateUse1, "triu_", Triu_)
+ADVANCED_REGISTER(aten, PrivateUse1, "triu.out", TriuOut)
 
-  m.impl("tril_", Tril_);
-  m.impl("tril.out", TrilOut);
-  m.impl("tril", Tril);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "tril_", Tril_)
+ADVANCED_REGISTER(aten, PrivateUse1, "tril.out", TrilOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "tril", Tril)
 
 } // namespace musa
 } // namespace at

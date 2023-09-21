@@ -107,6 +107,7 @@
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/utils/musa_lazy_init.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -973,52 +974,50 @@ std::tuple<at::Tensor, at::Tensor> VarMeanCorrection(
   return at::native::var_mean(self, dim, correction, keepdim);
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("mean", &Mean);
-  m.impl("mean.dim", &MeanDim);
-  m.impl("mean.out", &MeanOut);
-  m.impl("mean.names_dim", &MeanNamesDim);
-  m.impl("mean.names_out", &MeanNamesDimOut);
-  m.impl("sum", &Sum);
-  m.impl("sum.IntList_out", &SumIntListOut);
-  m.impl("sum.dim_DimnameList", &SumDimnameList);
-  m.impl("sum.DimnameList_out", &SumDimnameListOut);
-  m.impl("sum.dim_IntList", &SumIntList);
+ADVANCED_REGISTER(aten, PrivateUse1, "mean", Mean)
+ADVANCED_REGISTER(aten, PrivateUse1, "mean.dim", MeanDim)
+ADVANCED_REGISTER(aten, PrivateUse1, "mean.out", MeanOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "mean.names_dim", MeanNamesDim)
+ADVANCED_REGISTER(aten, PrivateUse1, "mean.names_out", MeanNamesDimOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "sum", Sum)
+ADVANCED_REGISTER(aten, PrivateUse1, "sum.IntList_out", SumIntListOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "sum.dim_DimnameList", SumDimnameList)
+ADVANCED_REGISTER(aten, PrivateUse1, "sum.DimnameList_out", SumDimnameListOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "sum.dim_IntList", SumIntList)
 
-  m.impl("prod", &Prod);
-  m.impl("prod.int_out", &ProdIntOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "prod", Prod)
+ADVANCED_REGISTER(aten, PrivateUse1, "prod.int_out", ProdIntOut)
 
-  m.impl("norm.out", &NormOut);
-  m.impl("norm.dtype_out", &NormDtypeOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "norm.out", NormOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "norm.dtype_out", NormDtypeOut)
 
-  m.impl("cumsum", &Cumsum);
-  m.impl("cumsum_", &Cumsum_);
-  m.impl("cumsum.out", &Cumsum_Out);
+ADVANCED_REGISTER(aten, PrivateUse1, "cumsum", Cumsum)
+ADVANCED_REGISTER(aten, PrivateUse1, "cumsum_", Cumsum_)
+ADVANCED_REGISTER(aten, PrivateUse1, "cumsum.out", Cumsum_Out)
 
-  m.impl("any", &Any);
-  m.impl("any.all_out", &AnyOut);
-  m.impl("any.dim", &AnyDim);
-  m.impl("any.out", &AnyDimOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "any", Any)
+ADVANCED_REGISTER(aten, PrivateUse1, "any.all_out", AnyOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "any.dim", AnyDim)
+ADVANCED_REGISTER(aten, PrivateUse1, "any.out", AnyDimOut)
 
-  m.impl("max", &MaxAll);
-  m.impl("max.dim", &MaxDim);
-  m.impl("max.dim_max", &MaxDimMax);
-  m.impl("max.names_dim", &MaxNamesDim);
-  m.impl("max.names_dim_max", &MaxNamesDimMax);
+ADVANCED_REGISTER(aten, PrivateUse1, "max", MaxAll)
+ADVANCED_REGISTER(aten, PrivateUse1, "max.dim", MaxDim)
+ADVANCED_REGISTER(aten, PrivateUse1, "max.dim_max", MaxDimMax)
+ADVANCED_REGISTER(aten, PrivateUse1, "max.names_dim", MaxNamesDim)
+ADVANCED_REGISTER(aten, PrivateUse1, "max.names_dim_max", MaxNamesDimMax)
 
-  m.impl("min", &MinAll);
-  m.impl("min.dim", &MinDim);
-  m.impl("min.dim_min", &MinDimMin);
-  m.impl("min.names_dim", &MinNamesDim);
-  m.impl("min.names_dim_min", &MinNamesDimMin);
+ADVANCED_REGISTER(aten, PrivateUse1, "min", MinAll)
+ADVANCED_REGISTER(aten, PrivateUse1, "min.dim", MinDim)
+ADVANCED_REGISTER(aten, PrivateUse1, "min.dim_min", MinDimMin)
+ADVANCED_REGISTER(aten, PrivateUse1, "min.names_dim", MinNamesDim)
+ADVANCED_REGISTER(aten, PrivateUse1, "min.names_dim_min", MinNamesDimMin)
 
-  m.impl("all", &All);
-  m.impl("all.dim", &AllDim);
-  m.impl("all.out", &AllDimOut);
-  m.impl("argmax.out", &ArgmaxOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "all", All)
+ADVANCED_REGISTER(aten, PrivateUse1, "all.dim", AllDim)
+ADVANCED_REGISTER(aten, PrivateUse1, "all.out", AllDimOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "argmax.out", ArgmaxOut)
 
-  m.impl("var_mean.correction", &VarMeanCorrection);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "var_mean.correction", VarMeanCorrection)
 
 } // namespace musa
 } // namespace at

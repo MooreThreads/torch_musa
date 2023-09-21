@@ -18,6 +18,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -74,9 +75,11 @@ Tensor EmbeddingDenseBwd(
   return grad_input;
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("embedding_dense_backward", &EmbeddingDenseBwd);
-}
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "embedding_dense_backward",
+    EmbeddingDenseBwd)
 
 } // namespace musa
 } // namespace at

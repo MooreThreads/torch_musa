@@ -5,6 +5,7 @@
 #include <ATen/NamedTensorUtils.h>
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -72,11 +73,9 @@ Tensor Cat(const at::ITensorListRef& tensors, int64_t dim = 0) {
   return output;
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("cat", &Cat);
-  m.impl("_cat", &Cat);
-  m.impl("cat.out", &CatOut);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "cat", Cat)
+REDEFINE_REGISTER(aten, PrivateUse1, "_cat", Cat)
+ADVANCED_REGISTER(aten, PrivateUse1, "cat.out", CatOut)
 
 } // namespace musa
 } // namespace at

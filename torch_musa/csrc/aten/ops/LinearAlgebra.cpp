@@ -6,6 +6,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
@@ -85,10 +86,7 @@ namespace musa {
   ;
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  // It requires mublas geqrfBatched function which is not implemented, so use
-  // cpu to make workaround
-  m.impl("linalg_lstsq.out", &LinalgLstsqOut);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "linalg_lstsq.out", LinalgLstsqOut)
+
 } // namespace musa
 } // namespace at

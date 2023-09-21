@@ -6,6 +6,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -810,31 +811,72 @@ at::Tensor& AvgPool3dOut(
   return out;
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("_adaptive_avg_pool2d", &AdaptiveAvgPool2d);
-  m.impl("adaptive_avg_pool2d.out", &AdaptiveAvgPool2dOut);
-  m.impl("_adaptive_avg_pool2d_backward", &AdaptiveAvgPool2dBwd);
+ADVANCED_REGISTER(aten, PrivateUse1, "_adaptive_avg_pool2d", AdaptiveAvgPool2d)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "adaptive_avg_pool2d.out",
+    AdaptiveAvgPool2dOut)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "_adaptive_avg_pool2d_backward",
+    AdaptiveAvgPool2dBwd)
 
-  m.impl("avg_pool2d", &AvgPool2d);
-  m.impl("avg_pool2d.out", &AvgPool2dOut);
-  m.impl("avg_pool2d_backward", AvgPool2dBwd);
-  m.impl("avg_pool2d_backward.grad_input", AvgPool2dOutBwd);
+ADVANCED_REGISTER(aten, PrivateUse1, "avg_pool2d", AvgPool2d)
+ADVANCED_REGISTER(aten, PrivateUse1, "avg_pool2d.out", AvgPool2dOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "avg_pool2d_backward", AvgPool2dBwd)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "avg_pool2d_backward.grad_input",
+    AvgPool2dOutBwd)
 
-  m.impl("avg_pool3d.out", &AvgPool3dOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "avg_pool3d.out", AvgPool3dOut)
 
-  m.impl("max_pool2d_with_indices", &MaxPool2dIndices);
-  m.impl("max_pool2d_with_indices_backward", &MaxPool2dIndicesBwd);
-  m.impl("max_pool2d_with_indices.out", &MaxPool2dIndicesOut);
-  m.impl("max_pool2d_with_indices_backward_out", &MaxPool2dIndicesBwdOut);
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "max_pool2d_with_indices",
+    MaxPool2dIndices)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "max_pool2d_with_indices_backward",
+    MaxPool2dIndicesBwd)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "max_pool2d_with_indices.out",
+    MaxPool2dIndicesOut)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "max_pool2d_with_indices_backward_out",
+    MaxPool2dIndicesBwdOut)
 
-  // For max_pooling, muDNN only support max_pool2d for now, we use porting
-  // here.
-  m.impl("max_pool3d_with_indices", &MaxPool3dIndices);
-  m.impl("max_pool3d_with_indices_backward", &MaxPool3dIndicesBwd);
-  m.impl("max_pool3d_with_indices.out", &MaxPool3dIndicesOut);
-  m.impl(
-      "max_pool3d_with_indices_backward.grad_input", &MaxPool3dIndicesBwdOut);
-}
+// For max_pooling, muDNN only support max_pool2d for now, we use porting
+// here.
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "max_pool3d_with_indices",
+    MaxPool3dIndices)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "max_pool3d_with_indices_backward",
+    MaxPool3dIndicesBwd)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "max_pool3d_with_indices.out",
+    MaxPool3dIndicesOut)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "max_pool3d_with_indices_backward.grad_input",
+    MaxPool3dIndicesBwdOut)
 
 } // namespace musa
 } // namespace at

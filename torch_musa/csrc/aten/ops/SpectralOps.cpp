@@ -18,6 +18,7 @@
 #include <torch/library.h>
 
 #include "ComplexHelper.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
@@ -255,10 +256,8 @@ Tensor Stft(
       return_complexOpt);
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("stft", &Stft);
-  m.impl("stft.center", &StftCenter);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "stft", Stft)
+ADVANCED_REGISTER(aten, PrivateUse1, "stft.center", StftCenter)
 
 } // namespace musa
 } // namespace at

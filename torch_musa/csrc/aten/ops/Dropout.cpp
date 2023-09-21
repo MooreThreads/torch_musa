@@ -11,6 +11,7 @@
 #endif
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
@@ -110,10 +111,12 @@ Tensor NativeDropoutBackward(
   return output;
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("native_dropout", &NativeDropout);
-  m.impl("native_dropout_backward", &NativeDropoutBackward);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "native_dropout", NativeDropout)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "native_dropout_backward",
+    NativeDropoutBackward)
 
 } // namespace musa
 } // namespace at

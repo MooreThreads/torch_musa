@@ -10,6 +10,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
@@ -284,11 +285,9 @@ at::Tensor& FracOut(const at::Tensor& self, at::Tensor& out) {
 
 } // namespace
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("frac", &Frac);
-  m.impl("frac_", &Frac_);
-  m.impl("frac.out", &FracOut);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "frac", Frac)
+ADVANCED_REGISTER(aten, PrivateUse1, "frac_", Frac_)
+ADVANCED_REGISTER(aten, PrivateUse1, "frac.out", FracOut)
 
 } // namespace musa
 } // namespace at

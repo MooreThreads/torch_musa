@@ -194,6 +194,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 
@@ -719,16 +720,24 @@ Tensor& IndexPut(
   return self;
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("as_strided", &at::native::as_strided_tensorimpl);
-  m.impl("view", &at::native::view);
-  m.impl("_reshape_alias", &at::native::_reshape_alias);
-  m.impl("index_select", &IndexSelect);
-  m.impl("index_select.out", &IndexSelectOut);
-  m.impl("index.Tensor", &IndexTensor);
-  m.impl("_index_put_impl_", &IndexPut);
-  m.impl("unfold", &at::native::unfold);
-}
+REGISTER_IMPL(
+    aten,
+    PrivateUse1,
+    "as_strided",
+    at::native::as_strided_tensorimpl,
+    at_native_as_strided_tensorimpl)
+REGISTER_IMPL(aten, PrivateUse1, "view", at::native::view, at_native_view)
+REGISTER_IMPL(
+    aten,
+    PrivateUse1,
+    "_reshape_alias",
+    at::native::_reshape_alias,
+    at_native__reshape_alias)
+ADVANCED_REGISTER(aten, PrivateUse1, "index_select", IndexSelect)
+ADVANCED_REGISTER(aten, PrivateUse1, "index_select.out", IndexSelectOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "index.Tensor", IndexTensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "_index_put_impl_", IndexPut)
+REGISTER_IMPL(aten, PrivateUse1, "unfold", at::native::unfold, at_native_unfold)
 
 } // namespace musa
 } // namespace at

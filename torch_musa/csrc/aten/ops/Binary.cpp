@@ -79,6 +79,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -1049,117 +1050,157 @@ bool MUSAEqual(const at::Tensor& self, const at::Tensor& other) {
   return at::musa::EqualTensor(self, other).all().item().to<bool>();
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("add.Tensor", &AddTensor);
-  m.impl("add_.Tensor", &Add_Tensor);
-  m.impl("add.out", &Add_out);
+ADVANCED_REGISTER(aten, PrivateUse1, "add.Tensor", AddTensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "add_.Tensor", Add_Tensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "add.out", Add_out)
 
-  m.impl("div.Tensor", &DivTensor);
-  m.impl("div.Tensor_mode", &DivTensor_mode);
-  m.impl("div_.Tensor_mode", &Div_Tensor_mode);
-  m.impl("div_.Tensor", &Div_Tensor);
-  m.impl("div.out", &Div_out);
-  m.impl("div.out_mode", &Div_out_mode);
+ADVANCED_REGISTER(aten, PrivateUse1, "div.Tensor", DivTensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "div.Tensor_mode", DivTensor_mode)
+ADVANCED_REGISTER(aten, PrivateUse1, "div_.Tensor_mode", Div_Tensor_mode)
+ADVANCED_REGISTER(aten, PrivateUse1, "div_.Tensor", Div_Tensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "div.out", Div_out)
+ADVANCED_REGISTER(aten, PrivateUse1, "div.out_mode", Div_out_mode)
 
-  m.impl("eq.Tensor", &EqualTensor);
-  m.impl("eq_.Tensor", &Equal_Tensor);
-  m.impl("eq.Tensor_out", &Equal_out);
+ADVANCED_REGISTER(aten, PrivateUse1, "eq.Tensor", EqualTensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "eq_.Tensor", Equal_Tensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "eq.Tensor_out", Equal_out)
 
-  m.impl("equal", &MUSAEqual);
+ADVANCED_REGISTER(aten, PrivateUse1, "equal", MUSAEqual)
 
-  m.impl("ge.Tensor", &GreaterEqualTensor);
-  m.impl("ge_.Tensor", &GreaterEqual_Tensor);
-  m.impl("ge.Tensor_out", &GreaterEqual_out);
+ADVANCED_REGISTER(aten, PrivateUse1, "ge.Tensor", GreaterEqualTensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "ge_.Tensor", GreaterEqual_Tensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "ge.Tensor_out", GreaterEqual_out)
 
-  m.impl("gt.Tensor", &GreaterTensor);
-  m.impl("gt_.Tensor", &Greater_Tensor);
-  m.impl("gt.Tensor_out", &Greater_out);
+ADVANCED_REGISTER(aten, PrivateUse1, "gt.Tensor", GreaterTensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "gt_.Tensor", Greater_Tensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "gt.Tensor_out", Greater_out)
 
-  m.impl("mul.Tensor", &MulTensor);
-  m.impl("mul_.Tensor", &Mul_Tensor);
-  m.impl("mul.out", &Mul_out);
+ADVANCED_REGISTER(aten, PrivateUse1, "mul.Tensor", MulTensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "mul_.Tensor", Mul_Tensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "mul.out", Mul_out)
 
-  m.impl("minimum.out", &Minimum_out);
-  m.impl("minimum.Tensor", &MinimumTensor);
-  m.impl("minimum_.Tensor", &Minimum_Tensor);
+ADVANCED_REGISTER(aten, PrivateUse1, "minimum.out", Minimum_out)
+ADVANCED_REGISTER(aten, PrivateUse1, "minimum.Tensor", MinimumTensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "minimum_.Tensor", Minimum_Tensor)
 
-  m.impl("maximum.out", &Maximum_out);
-  m.impl("maximum.Tensor", &MaximumTensor);
-  m.impl("maximum._Tensor", &Maximum_Tensor);
+ADVANCED_REGISTER(aten, PrivateUse1, "maximum.out", Maximum_out)
+ADVANCED_REGISTER(aten, PrivateUse1, "maximum.Tensor", MaximumTensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "maximum._Tensor", Maximum_Tensor)
 
-  m.impl("bitwise_xor.Tensor", &Bitwise_xor_tensor);
-  m.impl("bitwise_xor_.Tensor", &Bitwise_xor_tensor_inplace);
-  m.impl("bitwise_xor.Tensor_out", &Bitwise_xor_tensor_out);
+ADVANCED_REGISTER(aten, PrivateUse1, "bitwise_xor.Tensor", Bitwise_xor_tensor)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "bitwise_xor_.Tensor",
+    Bitwise_xor_tensor_inplace)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "bitwise_xor.Tensor_out",
+    Bitwise_xor_tensor_out)
 
-  m.impl("bitwise_and.Tensor", &Bitwise_and_tensor);
-  m.impl("bitwise_and_.Tensor", &Bitwise_and_tensor_inplace);
-  m.impl("bitwise_and.Tensor_out", &Bitwise_and_tensor_out);
+ADVANCED_REGISTER(aten, PrivateUse1, "bitwise_and.Tensor", Bitwise_and_tensor)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "bitwise_and_.Tensor",
+    Bitwise_and_tensor_inplace)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "bitwise_and.Tensor_out",
+    Bitwise_and_tensor_out)
 
-  m.impl("bitwise_or.Tensor", &Bitwise_or_tensor);
-  m.impl("bitwise_or_.Tensor", &Bitwise_or_tensor_inplace);
-  m.impl("bitwise_or.Tensor_out", &Bitwise_or_tensor_out);
+ADVANCED_REGISTER(aten, PrivateUse1, "bitwise_or.Tensor", Bitwise_or_tensor)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "bitwise_or_.Tensor",
+    Bitwise_or_tensor_inplace)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "bitwise_or.Tensor_out",
+    Bitwise_or_tensor_out)
 
-  m.impl("ne.Tensor", &NotEqualTensor);
-  m.impl("ne_.Tensor", &NotEqual_Tensor);
-  m.impl("ne.Tensor_out", &NotEqual_out);
-  // not_equal, alias for torch.ne
-  m.impl("not_equal.Tensor", &NotEqualTensor);
-  m.impl("not_equal_.Tensor", &NotEqual_Tensor);
-  m.impl("not_equal.Tensor_out", &NotEqual_out);
+ADVANCED_REGISTER(aten, PrivateUse1, "ne.Tensor", NotEqualTensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "ne_.Tensor", NotEqual_Tensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "ne.Tensor_out", NotEqual_out)
+// not_equal, alias for torch.ne
+REDEFINE_REGISTER(aten, PrivateUse1, "not_equal.Tensor", NotEqualTensor)
+REDEFINE_REGISTER(aten, PrivateUse1, "not_equal_.Tensor", NotEqual_Tensor)
+REDEFINE_REGISTER(aten, PrivateUse1, "not_equal.Tensor_out", NotEqual_out)
 
-  m.impl("sub.Tensor", &SubTensor);
-  m.impl("sub_.Tensor", &Sub_Tensor);
-  m.impl("sub.out", &Sub_out);
+ADVANCED_REGISTER(aten, PrivateUse1, "sub.Tensor", SubTensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "sub_.Tensor", Sub_Tensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "sub.out", Sub_out)
 
-  m.impl("remainder.Tensor", &RemainderTensor);
-  m.impl("remainder_.Tensor", &Remainder_Tensor);
-  m.impl("remainder.Tensor_out", &Remainder_out);
-  m.impl("remainder.Scalar_Tensor", &RemainderScalarTensor);
+ADVANCED_REGISTER(aten, PrivateUse1, "remainder.Tensor", RemainderTensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "remainder_.Tensor", Remainder_Tensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "remainder.Tensor_out", Remainder_out)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "remainder.Scalar_Tensor",
+    RemainderScalarTensor)
 
-  m.impl("le.Tensor", &LessEqualTensor);
-  m.impl("le_.Tensor", &LessEqual_Tensor);
-  m.impl("le.Tensor_out", &LessEqual_out);
+ADVANCED_REGISTER(aten, PrivateUse1, "le.Tensor", LessEqualTensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "le_.Tensor", LessEqual_Tensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "le.Tensor_out", LessEqual_out)
 
-  m.impl("lt.Tensor", &LessTensor);
-  m.impl("lt_.Tensor", &Less_Tensor);
-  m.impl("lt.Tensor_out", &Less_out);
-  m.impl("less.Tensor", &LessTensor);
-  m.impl("less_.Tensor", &Less_Tensor);
-  m.impl("less.Tensor_out", &Less_out);
-  m.impl("silu_backward", &SiluBwd);
-  m.impl("silu_backward.grad_input", &SiluBwd_out);
+ADVANCED_REGISTER(aten, PrivateUse1, "lt.Tensor", LessTensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "lt_.Tensor", Less_Tensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "lt.Tensor_out", Less_out)
 
-  m.impl("sigmoid_backward", &SigmoidBwd);
-  m.impl("sigmoid_backward.grad_input", &SigmoidBwd_out);
+REDEFINE_REGISTER(aten, PrivateUse1, "less.Tensor", LessTensor)
+REDEFINE_REGISTER(aten, PrivateUse1, "less_.Tensor", Less_Tensor)
+REDEFINE_REGISTER(aten, PrivateUse1, "less.Tensor_out", Less_out)
 
-  m.impl("tanh_backward", &TanhBwd);
-  m.impl("tanh_backward.grad_input", &TanhBwd_out);
+ADVANCED_REGISTER(aten, PrivateUse1, "silu_backward", SiluBwd)
+ADVANCED_REGISTER(aten, PrivateUse1, "silu_backward.grad_input", SiluBwd_out)
 
-  m.impl("threshold_backward", &ThresholdBwd);
-  m.impl("threshold_backward.grad_input", &ThresholdBwd_out);
+ADVANCED_REGISTER(aten, PrivateUse1, "sigmoid_backward", SigmoidBwd)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "sigmoid_backward.grad_input",
+    SigmoidBwd_out)
 
-  m.impl("gelu_backward", &GELUBwd);
-  m.impl("gelu_backward.grad_input", &GELUBwd_out);
+ADVANCED_REGISTER(aten, PrivateUse1, "tanh_backward", TanhBwd)
+ADVANCED_REGISTER(aten, PrivateUse1, "tanh_backward.grad_input", TanhBwd_out)
 
-  m.impl("logical_and", &LogicalAndTensor);
-  m.impl("logical_and_", &LogicalAnd_Tensor);
-  m.impl("logical_and.out", &LogicalAnd_out);
+ADVANCED_REGISTER(aten, PrivateUse1, "threshold_backward", ThresholdBwd)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "threshold_backward.grad_input",
+    ThresholdBwd_out)
 
-  m.impl("xlogy.Tensor", &xlogy_Tensor);
-  m.impl("xlogy_.Tensor", &xlogy__Tensor);
-  m.impl("xlogy.OutTensor", &xlogy_out_OutTensor);
+ADVANCED_REGISTER(aten, PrivateUse1, "gelu_backward", GELUBwd)
+ADVANCED_REGISTER(aten, PrivateUse1, "gelu_backward.grad_input", GELUBwd_out)
 
-  m.impl("pow.Tensor_Tensor_out", &Pow_out);
+ADVANCED_REGISTER(aten, PrivateUse1, "logical_and", LogicalAndTensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "logical_and_", LogicalAnd_Tensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "logical_and.out", LogicalAnd_out)
 
-  m.impl("hardswish_backward", &HardSwishBwd);
+ADVANCED_REGISTER(aten, PrivateUse1, "xlogy.Tensor", xlogy_Tensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "xlogy_.Tensor", xlogy__Tensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "xlogy.OutTensor", xlogy_out_OutTensor)
 
-  m.impl("hardsigmoid_backward", &HardSigmoidBwd);
-  m.impl("hardsigmoid_backward.grad_input", &HardSigmoidBwd_out);
+ADVANCED_REGISTER(aten, PrivateUse1, "pow.Tensor_Tensor_out", Pow_out)
 
-  m.impl("floor_divide", &FloorDivideTensor);
-  m.impl("floor_divide_.Tensor", &FloorDivide_Tensor);
-  m.impl("floor_divide.out", &FloorDivide_out);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "hardswish_backward", HardSwishBwd)
+
+ADVANCED_REGISTER(aten, PrivateUse1, "hardsigmoid_backward", HardSigmoidBwd)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "hardsigmoid_backward.grad_input",
+    HardSigmoidBwd_out)
+
+ADVANCED_REGISTER(aten, PrivateUse1, "floor_divide", FloorDivideTensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "floor_divide_.Tensor", FloorDivide_Tensor)
+ADVANCED_REGISTER(aten, PrivateUse1, "floor_divide.out", FloorDivide_out)
 
 } // namespace musa
 } // namespace at

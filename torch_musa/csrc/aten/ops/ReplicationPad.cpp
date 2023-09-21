@@ -7,6 +7,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -85,9 +86,11 @@ at::Tensor& ReplicationPad1dOut(
   return out;
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("replication_pad1d.out", &ReplicationPad1dOut);
-}
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "replication_pad1d.out",
+    ReplicationPad1dOut)
 
 } // namespace musa
 } // namespace at

@@ -7,6 +7,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
@@ -23,9 +24,7 @@ namespace musa {
   return at::native::_unique2_cuda(self, sorted, return_inverse, return_counts);
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("_unique2", &Unique2);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "_unique2", Unique2)
 
 } // namespace musa
 } // namespace at

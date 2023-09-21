@@ -6,6 +6,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -130,12 +131,10 @@ std::tuple<Tensor&, Tensor&> SortStableOut(
   return std::forward_as_tuple(values, indices);
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("sort", &Sort);
-  m.impl("sort.values", &SortOut);
-  m.impl("sort.stable", &SortStable);
-  m.impl("sort.values_stable", &SortStableOut);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "sort", Sort)
+ADVANCED_REGISTER(aten, PrivateUse1, "sort.values", SortOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "sort.stable", SortStable)
+ADVANCED_REGISTER(aten, PrivateUse1, "sort.values_stable", SortStableOut)
 
 } // namespace musa
 } // namespace at

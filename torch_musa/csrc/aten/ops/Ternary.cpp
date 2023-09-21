@@ -17,6 +17,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -450,13 +451,11 @@ Tensor& AddcDivOut(
   return output;
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("where.self", &WhereSelf);
-  m.impl("where.self_out", &WhereSelfOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "where.self", WhereSelf)
+ADVANCED_REGISTER(aten, PrivateUse1, "where.self_out", WhereSelfOut)
 
-  m.impl("addcdiv.out", &AddcDivOut);
-  m.impl("addcmul.out", &AddcMulOut);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "addcdiv.out", AddcDivOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "addcmul.out", AddcMulOut)
 
 } // namespace musa
 } // namespace at

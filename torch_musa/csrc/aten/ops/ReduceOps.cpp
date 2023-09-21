@@ -38,6 +38,7 @@
 
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace native {
@@ -223,10 +224,8 @@ std::tuple<at::Tensor&, at::Tensor&> AMinMaxOut(
   return std::forward_as_tuple(min, max);
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("amax.out", &AMaxOut);
-  m.impl("aminmax.out", &AMinMaxOut);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "amax.out", AMaxOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "aminmax.out", AMinMaxOut)
 
 } // namespace musa
 } // namespace at

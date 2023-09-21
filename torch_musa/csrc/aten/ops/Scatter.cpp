@@ -11,6 +11,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
@@ -180,13 +181,11 @@ at::Tensor& ScatterValueOut(
   return out;
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("scatter.src_out", &musaScatterOut);
-  m.impl("scatter.src", &musaScatter);
-  m.impl("scatter.value_out", &ScatterValueOut);
-  m.impl("scatter_add.out", &ScatterAddOut);
-  m.impl("scatter_add_", &ScatterAddU);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "scatter.src_out", musaScatterOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "scatter.src", musaScatter)
+ADVANCED_REGISTER(aten, PrivateUse1, "scatter.value_out", ScatterValueOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "scatter_add.out", ScatterAddOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "scatter_add_", ScatterAddU)
 
 } // namespace musa
 } // namespace at

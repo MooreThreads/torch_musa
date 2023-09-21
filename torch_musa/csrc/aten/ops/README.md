@@ -26,7 +26,7 @@ Tensor NativeDropoutBackward(const Tensor& grad_output, const Tensor& mask, doub
   muHandle& h = GetMudnnHandle();
 }
 
-  m.impl("native_dropout", &NativeDropout);
+  m.impl("native_dropout", &NativeDropout);  // or ADVANCED_REGISTER(...), see torch_musa/csrc/utils/register_wrapper.h
 ```
 Note: set device guard in `NativeDropout` then substack will in `input.device()` context.
 

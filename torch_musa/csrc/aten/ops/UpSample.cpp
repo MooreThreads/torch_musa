@@ -8,6 +8,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -812,20 +813,58 @@ at::Tensor& UpSampleNearest1dOut(
   return out;
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("upsample_nearest2d", &UpSampleNearest2d);
-  m.impl("upsample_nearest2d.out", &UpSampleNearest2dOut);
-  m.impl("upsample_nearest2d_backward", &UpSampleNearest2dBwd);
-  m.impl("upsample_nearest2d_backward.grad_input", &UpSampleNearest2dBwdOut);
-  m.impl("upsample_bilinear2d", &UpSampleBilinear2d);
-  m.impl("upsample_bilinear2d.out", &UpSampleBilinear2dOut);
-  m.impl("upsample_bilinear2d_backward", &UpSampleBilinear2dBwd);
-  m.impl("upsample_bilinear2d_backward.grad_input", &UpSampleBilinear2dBwdOut);
-  m.impl("upsample_bicubic2d.out", &UpSampleBicubic2dOut);
-  m.impl("upsample_linear1d.out", &UpSampleLinear1dOut);
-  m.impl("upsample_nearest3d.out", &UpSampleNearest3dOut);
-  m.impl("upsample_nearest1d.out", &UpSampleNearest1dOut);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "upsample_nearest2d", UpSampleNearest2d)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "upsample_nearest2d.out",
+    UpSampleNearest2dOut)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "upsample_nearest2d_backward",
+    UpSampleNearest2dBwd)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "upsample_nearest2d_backward.grad_input",
+    UpSampleNearest2dBwdOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "upsample_bilinear2d", UpSampleBilinear2d)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "upsample_bilinear2d.out",
+    UpSampleBilinear2dOut)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "upsample_bilinear2d_backward",
+    UpSampleBilinear2dBwd)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "upsample_bilinear2d_backward.grad_input",
+    UpSampleBilinear2dBwdOut)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "upsample_bicubic2d.out",
+    UpSampleBicubic2dOut)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "upsample_linear1d.out",
+    UpSampleLinear1dOut)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "upsample_nearest3d.out",
+    UpSampleNearest3dOut)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "upsample_nearest1d.out",
+    UpSampleNearest1dOut)
 
 } // namespace musa
 } // namespace at

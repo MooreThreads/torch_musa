@@ -8,6 +8,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -259,20 +260,30 @@ Tensor LogSoftmaxDataBwd(
   return result;
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("log_softmax.Dimname", &LogSoftmaxDimname);
-  m.impl("_log_softmax", &LogSoftmax);
-  m.impl("_log_softmax.out", &LogSoftmaxOut);
-  m.impl("_log_softmax_backward_data", &LogSoftmaxDataBwd);
-  m.impl("_log_softmax_backward_data.out", &LogSoftmaxDataOutBwd);
+ADVANCED_REGISTER(aten, PrivateUse1, "log_softmax.Dimname", LogSoftmaxDimname)
+ADVANCED_REGISTER(aten, PrivateUse1, "_log_softmax", LogSoftmax)
+ADVANCED_REGISTER(aten, PrivateUse1, "_log_softmax.out", LogSoftmaxOut)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "_log_softmax_backward_data",
+    LogSoftmaxDataBwd)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "_log_softmax_backward_data.out",
+    LogSoftmaxDataOutBwd)
 
-  m.impl("softmax.Dimname", &SoftmaxDimname);
-  m.impl("_softmax", &Softmax);
-  m.impl("_softmax.out", &SoftmaxOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "softmax.Dimname", SoftmaxDimname)
+ADVANCED_REGISTER(aten, PrivateUse1, "_softmax", Softmax)
+ADVANCED_REGISTER(aten, PrivateUse1, "_softmax.out", SoftmaxOut)
 
-  m.impl("_softmax_backward_data.out", &SoftmaxOutBwd);
-  m.impl("_softmax_backward_data", &SoftmaxBwd);
-}
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "_softmax_backward_data.out",
+    SoftmaxOutBwd)
+ADVANCED_REGISTER(aten, PrivateUse1, "_softmax_backward_data", SoftmaxBwd)
 
 } // namespace musa
 } // namespace at

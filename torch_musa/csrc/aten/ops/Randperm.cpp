@@ -14,6 +14,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
@@ -34,9 +35,11 @@ at::Tensor& RandpermGeneratorOut(
 
 } // anonymous namespace
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("randperm.generator_out", &RandpermGeneratorOut);
-}
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "randperm.generator_out",
+    RandpermGeneratorOut)
 
 } // namespace musa
 } // namespace at

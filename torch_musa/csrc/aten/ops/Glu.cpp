@@ -6,6 +6,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -53,11 +54,9 @@ Tensor GluBackward(const Tensor& grad_output, const Tensor& self, int64_t dim) {
   return at::native::glu_backward_cuda(grad_output, self, dim);
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("glu", &Glu);
-  m.impl("glu.out", &GluOut);
-  m.impl("glu_backward", &GluBackward);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "glu", Glu)
+ADVANCED_REGISTER(aten, PrivateUse1, "glu.out", GluOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "glu_backward", GluBackward)
 
 } // namespace musa
 } // namespace at

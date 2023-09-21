@@ -4,6 +4,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -17,9 +18,11 @@ namespace musa {
   return at::native::weight_norm_cuda(v, g, dim);
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("_weight_norm_interface", &_WeightNormInterface);
-}
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "_weight_norm_interface",
+    _WeightNormInterface)
 
 } // namespace musa
 } // namespace at

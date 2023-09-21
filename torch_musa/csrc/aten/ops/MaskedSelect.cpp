@@ -7,6 +7,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -224,13 +225,11 @@ at::Tensor& MaskedScatter(
   return self;
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("masked_select", &MaskedSelect);
-  m.impl("masked_select.out", &MaskedSelectOut);
-  m.impl("nonzero", &Nonzero);
-  m.impl("nonzero.out", &NonzeroOut);
-  m.impl("masked_scatter_", &MaskedScatter);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "masked_select", MaskedSelect)
+ADVANCED_REGISTER(aten, PrivateUse1, "masked_select.out", MaskedSelectOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "nonzero", Nonzero)
+ADVANCED_REGISTER(aten, PrivateUse1, "nonzero.out", NonzeroOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "masked_scatter_", MaskedScatter)
 
 } // namespace musa
 } // namespace at

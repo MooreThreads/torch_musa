@@ -4,6 +4,7 @@
 
 #include "torch_musa/csrc/core/Allocator.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
@@ -17,8 +18,6 @@ void record_stream(at::Tensor& self, at::Stream s) {
           data.stream_id, data.device_index, data.device_type));
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("record_stream", &record_stream);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "record_stream", record_stream)
 } // namespace musa
 } // namespace at

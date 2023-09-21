@@ -5,6 +5,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
@@ -248,11 +249,9 @@ at::Tensor& IndexAdd_(
   return self;
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("index_add", &IndexAdd);
-  m.impl("index_add_", &IndexAdd_);
-  m.impl("index_add.out", &IndexAddOut);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "index_add", IndexAdd)
+ADVANCED_REGISTER(aten, PrivateUse1, "index_add_", IndexAdd_)
+ADVANCED_REGISTER(aten, PrivateUse1, "index_add.out", IndexAddOut)
 
 } // namespace musa
 } // namespace at

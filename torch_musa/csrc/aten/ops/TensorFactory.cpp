@@ -18,6 +18,7 @@
 #include "torch_musa/csrc/core/MUSAGuard.h"
 #include "torch_musa/csrc/core/PeerToPeerAccess.h"
 #include "torch_musa/csrc/utils/musa_lazy_init.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -391,16 +392,18 @@ Tensor& EyeOut(int64_t n, Tensor& result) {
   return at::musa::EyeMOut(n, n, result);
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("empty.memory_format", &empty_musa);
-  m.impl("empty_strided", &empty_strided_musa);
-  m.impl("resize_", &resize_musa_);
-  m.impl("set_", &set_musa_);
-  m.impl("set_.source_Storage_storage_offset", &set_storage_musa_);
-  m.impl("set_.source_Storage", &set_source_);
-  m.impl("set_.source_Tensor", &set_tensor_);
-  m.impl("eye.m_out", &EyeMOut);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "empty.memory_format", empty_musa)
+ADVANCED_REGISTER(aten, PrivateUse1, "empty_strided", empty_strided_musa)
+ADVANCED_REGISTER(aten, PrivateUse1, "resize_", resize_musa_)
+ADVANCED_REGISTER(aten, PrivateUse1, "set_", set_musa_)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "set_.source_Storage_storage_offset",
+    set_storage_musa_)
+ADVANCED_REGISTER(aten, PrivateUse1, "set_.source_Storage", set_source_)
+ADVANCED_REGISTER(aten, PrivateUse1, "set_.source_Tensor", set_tensor_)
+ADVANCED_REGISTER(aten, PrivateUse1, "eye.m_out", EyeMOut)
 
 } // namespace musa
 } // namespace at

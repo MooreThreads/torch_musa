@@ -6,6 +6,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -89,10 +90,8 @@ std::tuple<Tensor, Tensor> Topk(
   return std::forward_as_tuple(values, indices);
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("topk", &Topk);
-  m.impl("topk.values", &TopkOut);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "topk", Topk)
+ADVANCED_REGISTER(aten, PrivateUse1, "topk.values", TopkOut)
 
 } // namespace musa
 } // namespace at

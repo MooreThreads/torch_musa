@@ -9,6 +9,7 @@
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 namespace at {
@@ -49,11 +50,9 @@ at::Tensor& LinspaceOut(
   return at::native::linspace_cuda_out(start, end, steps, out);
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("arange.start_out", &ArangeStartOut);
-  m.impl("linspace.out", &LinspaceOut);
-  m.impl("range.out", &range_out);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "arange.start_out", ArangeStartOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "linspace.out", LinspaceOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "range.out", range_out)
 
 } // namespace musa
 } // namespace at

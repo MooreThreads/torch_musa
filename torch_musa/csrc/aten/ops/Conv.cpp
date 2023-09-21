@@ -51,10 +51,10 @@
 #include <ATen/ops/zeros.h>
 #include <ATen/ops/zeros_like.h>
 #endif
+#include <mudnn.h>
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-
-#include <mudnn.h>
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
@@ -814,10 +814,12 @@ Tensor Conv1dWeightBwd(
       output_mask);
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("convolution_overrideable", &Convolution);
-  m.impl("convolution_backward_overrideable", &ConvolutionBwd);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "convolution_overrideable", Convolution)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "convolution_backward_overrideable",
+    ConvolutionBwd)
 
 } // namespace musa
 } // namespace at

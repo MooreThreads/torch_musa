@@ -4,6 +4,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -26,11 +27,9 @@ Tensor& MaskedFill(Tensor& self, const Tensor& mask, const Scalar& value) {
   return at::native::masked_fill__cuda(self, mask, value);
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("fill_.Scalar", &Fill);
-  m.impl("zero_", &Zero_);
-  m.impl("masked_fill_.Scalar", &MaskedFill);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "fill_.Scalar", Fill)
+ADVANCED_REGISTER(aten, PrivateUse1, "zero_", Zero_)
+ADVANCED_REGISTER(aten, PrivateUse1, "masked_fill_.Scalar", MaskedFill)
 
 } // namespace musa
 } // namespace at

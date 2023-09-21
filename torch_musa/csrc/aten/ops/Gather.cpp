@@ -7,6 +7,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -82,10 +83,8 @@ at::Tensor Gather(
   return result;
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("gather.out", &GatherOut);
-  m.impl("gather", &Gather);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "gather.out", GatherOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "gather", Gather)
 
 } // namespace musa
 } // namespace at

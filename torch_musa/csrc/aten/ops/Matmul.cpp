@@ -7,6 +7,8 @@
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/ops/musa/musa_ops.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
+
 namespace at {
 namespace musa {
 
@@ -177,17 +179,15 @@ Tensor Bmm(const Tensor& self, const Tensor& mat2) {
   return result;
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("dot", &Dot);
-  m.impl("addmv.out", &AddMvOut);
-  m.impl("addmm.out", &AddMmOut);
-  m.impl("addmm", &AddMm);
-  m.impl("mm", &Mm);
-  m.impl("mm.out", &MmOut);
-  m.impl("bmm", &Bmm);
-  m.impl("bmm.out", &BmmOut);
-  m.impl("baddbmm", &Baddbmm);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "dot", Dot)
+ADVANCED_REGISTER(aten, PrivateUse1, "addmv.out", AddMvOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "addmm.out", AddMmOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "addmm", AddMm)
+ADVANCED_REGISTER(aten, PrivateUse1, "mm", Mm)
+ADVANCED_REGISTER(aten, PrivateUse1, "mm.out", MmOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "bmm", Bmm)
+ADVANCED_REGISTER(aten, PrivateUse1, "bmm.out", BmmOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "baddbmm", Baddbmm)
 
 } // namespace musa
 } // namespace at

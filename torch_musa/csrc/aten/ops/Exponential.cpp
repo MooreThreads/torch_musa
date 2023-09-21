@@ -2,6 +2,7 @@
 #include <torch/library.h>
 
 #include "torch_musa/csrc/core/MUSAGuard.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
@@ -13,9 +14,7 @@ Tensor& Exponential_(
   return at::native::exponential_(self, lambd, generator);
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("exponential_", Exponential_);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "exponential_", Exponential_)
 
 } // namespace musa
 } // namespace at

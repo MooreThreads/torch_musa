@@ -14,6 +14,7 @@
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/utils/musa_lazy_init.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
@@ -43,11 +44,9 @@ at::Tensor& Random(at::Tensor& self, c10::optional<at::Generator> generator) {
   return at::native::random_(self, generator);
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("random_.from", &RandomFrom);
-  m.impl("random_.to", &RandomTo);
-  m.impl("random_", &Random);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "random_.from", RandomFrom)
+ADVANCED_REGISTER(aten, PrivateUse1, "random_.to", RandomTo)
+ADVANCED_REGISTER(aten, PrivateUse1, "random_", Random)
 
 } // namespace musa
 } // namespace at

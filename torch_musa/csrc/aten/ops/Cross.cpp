@@ -20,6 +20,8 @@
 #include "torch_musa/csrc/core/MUSAGuard.h"
 #include "torch_musa/csrc/core/MUSAStream.h"
 #include "torch_musa/csrc/core/PeerToPeerAccess.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
+
 namespace at {
 namespace musa {
 
@@ -169,10 +171,8 @@ at::Tensor& linalg_cross_out_out(
   return out;
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("linalg_cross", &linalg_cross);
-  m.impl("linalg_cross.out", &linalg_cross_out_out);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "linalg_cross", linalg_cross)
+ADVANCED_REGISTER(aten, PrivateUse1, "linalg_cross.out", linalg_cross_out_out)
 
 } // namespace musa
 } // namespace at

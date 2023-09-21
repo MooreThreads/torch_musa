@@ -7,6 +7,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -54,9 +55,7 @@ Tensor Bucketize(
   return out_int32 ? out.to(at::kInt) : out;
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("bucketize.Tensor", &Bucketize);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "bucketize.Tensor", Bucketize)
 
 } // namespace musa
 } // namespace at
