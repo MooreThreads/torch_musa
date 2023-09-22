@@ -19,10 +19,6 @@ namespace musa {
     const c10::optional<Tensor>& bias_opt /* optional */,
     double eps) {
   TORCH_CHECK(
-      input.device().type() == kMUSA,
-      "Device of input tensor of NativeLayerNorm must be MUSA, but now is ",
-      input.device());
-  TORCH_CHECK(
       input.scalar_type() == at::ScalarType::Float ||
           input.scalar_type() == at::ScalarType::Half,
       "Dtype of input tensor of LayerNorm only support Float32,Half, but now it is ",
@@ -43,7 +39,6 @@ namespace musa {
   auto output = at::empty_like(contiguous_input);
 
   muHandle& h = GetMudnnHandle();
-  ::musa::dnn::LayerNorm op;
   auto mt_input = CreateMUTensor(contiguous_input);
   auto mt_output = CreateMUTensor(output);
   muTensor mt_gamma;
@@ -52,10 +47,6 @@ namespace musa {
   if (weight.defined()) {
     gamma = weight.contiguous();
     mt_gamma = CreateMUTensor(gamma);
-    TORCH_CHECK(
-        weight.device().type() == kMUSA,
-        "Device of weight tensor of NativeLayerNorm must be MUSA, but now is ",
-        weight.device());
     TORCH_CHECK(
         weight.scalar_type() == at::ScalarType::Float ||
             weight.scalar_type() == at::ScalarType::Half,
@@ -66,10 +57,6 @@ namespace musa {
   if (bias.defined()) {
     auto beta = bias.contiguous();
     mt_beta = CreateMUTensor(beta);
-    TORCH_CHECK(
-        bias.device().type() == kMUSA,
-        "Device of bias tensor of NativeLayerNorm must be MUSA, but now is ",
-        bias.device());
     TORCH_CHECK(
         bias.scalar_type() == at::ScalarType::Float ||
             bias.scalar_type() == at::ScalarType::Half,
@@ -85,17 +72,13 @@ namespace musa {
       norm_axis.push_back(diff + i);
     }
   }
+  ::musa::dnn::LayerNorm op;
   CHECK_MUDNN_STATUS(op.SetAxis(norm_axis.size(), norm_axis.data()), "SetAxis");
   CHECK_MUDNN_STATUS(op.SetEpsilon(eps), "SetEpsilon");
 
   const auto input_shape = input.sizes();
   const int32_t axis = input.dim() - normalized_shape.size();
   at::TensorOptions options = input.options();
-  bool set_mean_rstd_fp32 = (input.scalar_type() == at::ScalarType::Half);
-  if (set_mean_rstd_fp32) {
-    // TODO(@fan.mo): Mudnn does not support fp16 mean && rstd
-    options = options.dtype(at::ScalarType::Float);
-  }
   auto mean = at::empty({M}, options);
   auto rstd = at::empty({M}, options);
   if (M > 0) {
@@ -128,23 +111,6 @@ namespace musa {
     const c10::optional<at::Tensor>& bias_opt,
     ::std::array<bool, 3> grad_input_mask) {
   TORCH_CHECK(
-      grad_out.device().type() == kMUSA,
-      "Device of grad_output tensor of LayerNormBackward must be MUSA, ",
-      "but now is ",
-      grad_out.device());
-  TORCH_CHECK(
-      input.device().type() == kMUSA,
-      "Device of input tensor of LayerNormBackward must be MUSA, but now is ",
-      input.device());
-  TORCH_CHECK(
-      mean.device().type() == kMUSA,
-      "Device of mean tensor of LayerNormBackward must be MUSA, but now is ",
-      mean.device());
-  TORCH_CHECK(
-      rstd.device().type() == kMUSA,
-      "Device of rstd tensor of LayerNormBackward must be MUSA, but now is ",
-      rstd.device());
-  TORCH_CHECK(
       grad_out.scalar_type() == at::ScalarType::Float ||
           grad_out.scalar_type() == at::ScalarType::Half,
       "Dtype of grad_out tensor of LayerNormBackward only support Float32/Half, ",
@@ -157,13 +123,15 @@ namespace musa {
       "but now it is ",
       input.scalar_type());
   TORCH_CHECK(
-      mean.scalar_type() == at::ScalarType::Float,
-      "Dtype of mean tensor of LayerNormBackward only support Float32, ",
+      mean.scalar_type() == at::ScalarType::Float ||
+          mean.scalar_type() == at::ScalarType::Half,
+      "Dtype of mean tensor of LayerNormBackward only support Float32/Half, ",
       "but now it is ",
       mean.scalar_type());
   TORCH_CHECK(
-      rstd.scalar_type() == at::ScalarType::Float,
-      "Dtype of rstd tensor of LayerNormBackward only support Float32, ",
+      rstd.scalar_type() == at::ScalarType::Float ||
+          rstd.scalar_type() == at::ScalarType::Half,
+      "Dtype of rstd tensor of LayerNormBackward only support Float32/Half, ",
       "but now it is ",
       rstd.scalar_type());
   c10::musa::MUSAGuard device_guard(input.device());
@@ -242,11 +210,6 @@ namespace musa {
     muTensor mt_weight;
     if (weight.defined()) {
       mt_weight = CreateMUTensor(gamma);
-      TORCH_CHECK(
-          weight.device().type() == kMUSA,
-          "Device of weight tensor of LayerNormBackward must be MUSA, ",
-          "but now is ",
-          weight.device());
       TORCH_CHECK(
           weight.scalar_type() == at::ScalarType::Float ||
               weight.scalar_type() == at::ScalarType::Half,
