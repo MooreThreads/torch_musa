@@ -53,6 +53,13 @@ def test_prod(input_data, dtype):
 def test_norm(input_data, dtype):
     function(input_data, dtype, torch.norm)
 
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_data)
+def test_norm_fp16(input_data):
+    input_data["input"] = input_data["input"].to(torch.float16).to(torch.float32)
+    test = testing.OpTest(func=torch.norm, input_args=input_data,
+                          comparators=testing.DefaultComparator(abs_diff=1e-2))
+    test.check_musafp16_vs_musafp32()
 
 extra_data_for_cumsum = [
         {"input": torch.rand(3, 4) < 0.5, "dim": 1},

@@ -346,16 +346,13 @@ Tensor& NormDtypeOut(
     at::ScalarType dtype,
     at::Tensor& out) {
   TORCH_CHECK(
-      self.device().type() == kMUSA,
-      "Device of input tensor of Norm.out must be MUSA, but now is ",
-      self.device());
-  TORCH_CHECK(
-      self.scalar_type() == at::ScalarType::Float,
+      self.scalar_type() == at::ScalarType::Float ||
+          self.scalar_type() == at::ScalarType::Half,
       "Dtype of input tensor of Norm.out only support Float32, ",
       "but now it is ",
       self.scalar_type());
   TORCH_CHECK(
-      dtype == at::ScalarType::Float,
+      dtype == at::ScalarType::Float || dtype == at::ScalarType::Half,
       "Dtype of input tensor of Norm.out only support Float32, ",
       "but now it is ",
       self.scalar_type());
