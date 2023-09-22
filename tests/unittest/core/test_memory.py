@@ -161,6 +161,7 @@ def test_pin_memory_dataloader_non_zero_device():
         assert sample["another_dict"]["a_number"].is_pinned("musa:1")
 
 
+@pytest.mark.skipif(True, reason="waiting musa toolkit fix")
 def test_set_per_process_memory_fraction():
     # test invalid fraction value.
     with pytest.raises(TypeError, match="Invalid type"):
