@@ -200,29 +200,26 @@ Tensor Conv2d(
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Convolution c;
   ConfigConv(c, stride, padding, dilation, groups);
-  ::musa::dnn::Convolution::Algorithm algo;
+
+  ::musa::dnn::Convolution::FusedActivationDesc act;
+  act.SetMode(::musa::dnn::Convolution::FusedActivationDesc::Mode::IDENTITY);
+
+  ::musa::dnn::Convolution::Algorithm algo =
+      static_cast<::musa::dnn::Convolution::Algorithm>(0);
   c.GetRecommendForwardAlgorithm(h, algo, out, in, ke);
+
+  at::musa::muTensor bias;
   if (bias_opt.has_value() && bias_opt.value().numel() != 0) {
-#ifdef ENABLE_FUSION
-    ::musa::dnn::Convolution::FusedActivationDesc fused_desc;
-    muTensor temp_add;
-    auto contiguous_bias = bias_opt.value().contiguous();
-    auto bias = CreateMUTensor(contiguous_bias);
-    CHECK_MUDNN_STATUS(
-        c.RunFusion(
-            h, out, in, ke, bias, temp_add, fused_desc, algo, InternalMemAlloc),
-        "RunFusion");
-#else
-    CHECK_MUDNN_STATUS(
-        c.Run(h, out, in, ke, algo, InternalMemAlloc), "RUNConv");
-    if (bias_opt.has_value()) {
-      AddBias(output, *bias_opt);
-    }
-#endif
+    bias = CreateMUTensor(bias_opt.value().contiguous());
   } else {
-    // conv2d
-    CHECK_MUDNN_STATUS(c.Run(h, out, in, ke, algo, InternalMemAlloc), "Run");
+    bias = CreateEmptyMUTensor();
   }
+
+  muTensor add = at::musa::CreateEmptyMUTensor();
+
+  CHECK_MUDNN_STATUS(
+      c.RunFusion(h, out, in, ke, bias, add, act, algo, InternalMemAlloc),
+      "RunFusion");
   return output;
 }
 
