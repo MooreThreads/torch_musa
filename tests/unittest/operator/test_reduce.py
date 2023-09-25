@@ -42,6 +42,17 @@ def test_sum(input_data, dtype):
     function(input_data, dtype, torch.sum)
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("config",
+    [[(15000,), (0)],
+     [(182403,), (0)],
+     [(242, 342, 52, 2), (3)],
+    ]
+)
+def test_sum_bool(config):
+    input_data = {"input": torch.randint(low=0, high=2, size=config[0]), "dim": config[1]}
+    function(input_data, torch.bool, torch.sum)
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_prod(input_data, dtype):

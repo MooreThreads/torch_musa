@@ -125,7 +125,7 @@ docker run -it --privileged --pull always --network=host --name=torch_musa_dev -
 
 | Docker Tag | Description |
 | ---- | --- |
-| [**latest/v0.1.18**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | musatoolkits daily20230913 (ddk 0821 or newer)<br> mudnn daily20230913; mccl dev1.2.2 <br> libomp-11-dev <br> muAlg_dev-0.3.0  <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.3.0 |
+| [**latest/v0.1.18**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | musatoolkits daily20230913 (ddk musa_2.3.1)<br> mudnn daily20230913; mccl dev1.2.2 <br> libomp-11-dev <br> muAlg_dev-0.3.0  <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.3.0 |
 | [**v0.1.17**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | musatoolkits dev1.4.2 (ddk musa_2.2.0)<br> mudnn daily20230822; mccl dev1.2.2 <br> libomp-11-dev <br> muAlg_dev-0.3.0 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.3.0 |
 | [**v0.1.16**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | build and install torchvision from source code [a6dea86] <br> other components are the same with v0.1.15 |
 | [**v0.1.15**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | musatoolkits rc1.4.0 (ddk musa_2.1.1)<br> mudnn rtm_2.1.1; mccl 20230627 <br> libomp-11-dev <br> muAlg _dev-0.1.1 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.1.1 |
