@@ -245,9 +245,115 @@ namespace musa {
   return std::make_tuple(std::move(dX), std::move(dgamma), std::move(dbeta));
 }
 
+at::Tensor RMSNorm(
+    const Tensor& input,
+    IntArrayRef normalized_shape,
+    const c10::optional<Tensor>& weight_opt /* optional */,
+    double eps) {
+  // Check
+  const int normalized_ndim = normalized_shape.size();
+  const auto input_shape = input.sizes();
+  const auto input_ndim = input.dim();
+  c10::MaybeOwned<Tensor> weight_maybe_owned =
+      at::borrow_from_optional_tensor(weight_opt);
+  const Tensor& weight = *weight_maybe_owned;
+  TORCH_CHECK(
+      input.device().type() == kMUSA,
+      "Device of input tensor of RMSNorm must be MUSA, but now is ",
+      input.device());
+  TORCH_CHECK(
+      input.scalar_type() == at::ScalarType::Float ||
+          input.scalar_type() == at::ScalarType::Half,
+      "Dtype of input tensor of RMSNorm only support Float32,Half, but now it is ",
+      input.scalar_type());
+  TORCH_CHECK(
+      normalized_ndim >= 1,
+      "Expected normalized_shape to be at least 1-dimensional, i.e., ",
+      "containing at least one element, but got normalized_shape = ",
+      normalized_shape);
+  TORCH_CHECK(
+      !weight.defined() || weight.sizes().equals(normalized_shape),
+      "Expected weight to be of same shape as normalized_shape, but got ",
+      "weight of shape ",
+      weight.sizes(),
+      " and normalized_shape = ",
+      normalized_shape);
+  TORCH_CHECK(
+      !weight.defined() ||
+          (weight.scalar_type() == at::ScalarType::Float ||
+           weight.scalar_type() == at::ScalarType::Half),
+      "Dtype of weight tensor of LayerNorm only support Float32, Half",
+      "but now it is ",
+      weight.scalar_type());
+
+  if (input_ndim < normalized_ndim ||
+      !input_shape.slice(input_ndim - normalized_ndim)
+           .equals(normalized_shape)) {
+    std::stringstream ss;
+    ss << "Given normalized_shape=" << normalized_shape
+       << ", expected input with shape [*";
+    for (auto size : normalized_shape) {
+      ss << ", " << size;
+    }
+    ss << "], but got input of size" << input_shape;
+    AT_ERROR(ss.str());
+  }
+  // Device guard
+  c10::musa::MUSAGuard device_guard(input.device());
+  // Generate ouput && square
+  Tensor contiguous_input = input.contiguous();
+  auto output = at::empty_like(contiguous_input);
+
+  const int axis = input_ndim - normalized_ndim;
+  const int64_t M =
+      c10::multiply_integers(input_shape.cbegin(), input_shape.cbegin() + axis);
+
+  at::TensorOptions options = input.options();
+  auto square = at::empty({M}, options);
+  if (M > 0) {
+    std::vector<int64_t> stat_shape;
+    for (int32_t idx = 0; idx < axis; ++idx) {
+      stat_shape.push_back(input_shape[idx]);
+    }
+    for (int32_t idx = axis; idx < input.dim(); ++idx) {
+      stat_shape.push_back(1);
+    }
+    square = square.view(stat_shape);
+  }
+
+  // Prepare mudnn input
+  auto mt_input = CreateMUTensor(contiguous_input);
+  auto mt_output = CreateMUTensor(output);
+  auto mt_square = CreateMUTensor(square);
+  muTensor mt_gamma;
+  Tensor gamma;
+  if (weight.defined()) {
+    gamma = weight.contiguous();
+    mt_gamma = CreateMUTensor(gamma);
+  }
+
+  std::vector<int32_t> norm_axis;
+  const int32_t diff = input.dim() - normalized_shape.size();
+  for (size_t i = 0; i != normalized_shape.size(); ++i) {
+    if (input.size(diff + i) == normalized_shape[i]) {
+      norm_axis.push_back(diff + i);
+    }
+  }
+
+  // Call mudnn
+  muHandle& h = GetMudnnHandle();
+  ::musa::dnn::RMSNorm op;
+  CHECK_MUDNN_STATUS(op.SetAxis(norm_axis.size(), norm_axis.data()), "SetAxis");
+  CHECK_MUDNN_STATUS(op.SetEpsilon(eps), "SetEpsilon");
+  CHECK_MUDNN_STATUS(
+      op.Run(h, mt_output, mt_square, mt_input, mt_gamma), "Run");
+  return output;
+}
+
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("native_layer_norm", &NativeLayerNorm);
   m.impl("native_layer_norm_backward", &NativeLayerNormBwd);
+  m.impl("rms_norm", &RMSNorm);
 }
 
 } // namespace musa

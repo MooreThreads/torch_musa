@@ -1,12 +1,11 @@
 diff --git a/aten/src/ATen/native/native_functions.yaml b/aten/src/ATen/native/native_functions.yaml
-index 6464615..8498b65 100644
+index 6464615..adfc83d 100644
 --- a/aten/src/ATen/native/native_functions.yaml
 +++ b/aten/src/ATen/native/native_functions.yaml
-@@ -13820,6 +13820,17 @@
-     Meta: _fused_sdp_choice_meta
+@@ -13821,6 +13821,17 @@
      CPU, NestedTensorCPU: _fused_sdp_choice_cpp
      CUDA, NestedTensorCUDA: _fused_sdp_choice_cuda
-+  
+
 +- func: _scaled_dot_product_attention_musa(Tensor query, Tensor key, Tensor value, Tensor? attn_mask=None, float dropout_p=0.0, bool is_causal=False) -> (Tensor output, Tensor attn_weights, Tensor bwd_reserve)
 +  variants: function
 +  dispatch:
@@ -17,6 +16,21 @@ index 6464615..8498b65 100644
 +  dispatch:
 +    CPU: _scaled_dot_product_attention_musa_cpu_backward
 +
- 
++
  - func: _scaled_dot_product_attention_math(Tensor query, Tensor key, Tensor value, Tensor? attn_mask=None, float dropout_p=0.0, bool is_causal=False, Tensor? dropout_mask=None) -> (Tensor, Tensor)
    variants: function
+
+@@ -14609,3 +14620,13 @@
+   dispatch:
+     CUDA: _fused_adamw_kernel_cuda_
+   autogen: _fused_adamw, _fused_adamw.out
++
++- func: rms_norm(Tensor input, SymInt[] normalized_shape, Tensor? weight=None, float eps=1e-05) -> Tensor
++  variants: function
++  dispatch:
++    CUDA: rms_norm
++
++- func: gated_silu(Tensor input) -> Tensor
++  variants: function
++  dispatch:
++    CUDA: gated_silu

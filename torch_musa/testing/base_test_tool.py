@@ -253,6 +253,8 @@ class OpTest:
     """Infrastructure used for handling with op test.
     Args:
         func (function): Function used to invoke op.
+        refer_func (function, optional): Refer function used to invoke op.
+            make sure the parameter names of func and refer_func be identical.
         input_args (list): Input arguments for op.
         comparators (list): Comparator used to compare results.
         ignored_result_indices (list): Indices of results which will be ignored when comparing.
@@ -262,6 +264,7 @@ class OpTest:
     def __init__(
         self,
         func=None,
+        refer_func=None,
         input_args=None,
         comparators=DefaultComparator(equal_nan=True),
         ignored_result_indices=None,
@@ -270,6 +273,7 @@ class OpTest:
         assert func is not None, "no function defined."
         self._func = func
         self._input_args = input_args
+        self._refer_func = refer_func
         self._comparators = [comparators]
         self._ignored_result_indices = ignored_result_indices
         self._seed = seed
@@ -286,6 +290,7 @@ class OpTest:
         train: bool = False,
         test_out: bool = False,
         fp16: bool = False,
+        refer: bool = False,
     ):
         """Run op on specific device.
         Args:
@@ -293,9 +298,13 @@ class OpTest:
             device (str): Device where op will be ran.
             train (bool): Whether to test backward.
             test_out (bool): Whether to test op in out-of-place.
+            refer (bool): Whether it is in a reference scenario.
         Returns:
             Computing result in numpy format.
         """
+        cur_func = self._func
+        if refer and self._refer_func is not None:
+            cur_func = self._refer_func
 
         res = []
         grad = []
@@ -338,7 +347,7 @@ class OpTest:
                         input_args[k].grad.zero_()
 
             if inputs is None:
-                reduce = self._func(**input_args)
+                reduce = cur_func(**input_args)
                 if train:
                     if isinstance(reduce, (list, tuple)):
                         reduce = reduce[0]
@@ -353,7 +362,7 @@ class OpTest:
                         inputs_list.append(tensor)
                     else:
                         inputs_list.append(value)
-                reduce = self._func(*inputs_list)
+                reduce = cur_func(*inputs_list)
             elif isinstance(inputs, dict):
                 for k in inputs:
                     if isinstance(inputs[k], torch.Tensor):
@@ -368,7 +377,7 @@ class OpTest:
                 # ensure that the model's parameters are consistent when performing calculations
                 # on CPU and MUSA respectively, so we use same seed here.
                 self.set_random_seed()
-                func = self._func(**input_args)
+                func = cur_func(**input_args)
                 func.to(device)
                 reduce = func(**inputs)
                 if train:
@@ -383,7 +392,7 @@ class OpTest:
                     inputs = inputs.to(device)
                 if isinstance(inputs, np.ndarray):
                     inputs = torch.from_numpy(inputs).to(device)
-                reduce = self._func(inputs)
+                reduce = cur_func(inputs)
 
             for k in input_args:
                 if (
@@ -430,7 +439,7 @@ class OpTest:
                 assert comparator(c_r, m_r)
 
     def check_musafp16_vs_musafp32(self, inputs=None, train=False, test_out=False):
-        fp32_res = self._call_func(inputs, "musa", train, test_out)
+        fp32_res = self._call_func(inputs, "musa", train, test_out, refer=True)
         fp16_res = self._call_func(inputs, "musa", train, test_out, True)
         self.compare_res(fp32_res, fp16_res)
 
@@ -443,6 +452,6 @@ class OpTest:
         Returns:
             None.
         """
-        cpu_res = self._call_func(inputs, "cpu", train, test_out)
+        cpu_res = self._call_func(inputs, "cpu", train, test_out, refer=True)
         mtgpu_res = self._call_func(inputs, "musa", train, test_out)
         self.compare_res(cpu_res, mtgpu_res)
