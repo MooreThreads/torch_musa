@@ -148,7 +148,16 @@ def configure_extension_build():
         library_dirs=[os.path.join(BASE_DIR, "torch_musa/lib")],
         extra_link_args=extra_link_args + ["-Wl,-rpath,$ORIGIN/lib"],
     )
-    return cpp_extension
+    ext_extension = CppExtension(
+        name="torch_musa._ext",
+        sources=glob.glob("torch_musa/csrc/extension/C_frontend.cpp"),
+        libraries=["musa_python", "_ext_musa_kernels"],
+        include_dirs=[],
+        extra_compile_args={"cxx": ['-std=c++17']},
+        library_dirs=[os.path.join(BASE_DIR, "torch_musa/lib")],
+        extra_link_args=extra_link_args + ["-Wl,-rpath,$ORIGIN/lib"],
+    )
+    return [cpp_extension, ext_extension]
 
 
 install_requires = ["packaging"]
@@ -172,9 +181,7 @@ setup(
     url="https://github.mthreads.com/mthreads/torch_musa",
     author="Moore Threads PyTorch AI Dev Team",
     packages=find_packages(exclude=["build"]),
-    ext_modules=[
-        configure_extension_build(),
-    ],
+    ext_modules=configure_extension_build(),
     package_dir={"": os.path.relpath(BASE_DIR)},
     package_data={
         "torch_musa": [

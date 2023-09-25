@@ -283,6 +283,11 @@ endif()
 target_link_libraries(${PLUGIN_NAME} PUBLIC ${DEPENDENT_LIBRARIES})
 target_link_libraries(${PLUGIN_NAME} PUBLIC ${MUSA_KERNELS_LIB})
 
+# compile musa_kernel of the extension
+set(EXT_MUSA_KERNEL_LIB "_ext_musa_kernels")
+add_subdirectory(${PROJECT_SOURCE_DIR}/torch_musa/csrc/extension)
+# target_link_libraries(${EXT_NAME} PRIVATE ${EXT_MUSA_KERNEL_LIB} ${PLUGIN_NAME} ${_EXT_LINKING_LIBS})
+
 set(INSTALL_BIN_DIR "bin")
 set(INSTALL_LIB_DIR "lib64")
 set(INSTALL_INC_DIR "include")
