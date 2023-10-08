@@ -320,3 +320,18 @@ configure_file(
 install(FILES
   ${PROJECT_BINARY_DIR}/TorchMusaConfig.cmake
   DESTINATION share/cmake/)
+
+install(FILES
+${PROJECT_SOURCE_DIR}/cmake/modules/FindMUDNN.cmake
+${PROJECT_SOURCE_DIR}/cmake/modules/FindMUSAToolkits.cmake
+DESTINATION share/cmake/modules/)
+
+install(FILES
+  ${PROJECT_SOURCE_DIR}/cmake/cpu_flags.cmake
+  ${PROJECT_SOURCE_DIR}/cmake/utils.cmake
+  ${PROJECT_SOURCE_DIR}/cmake/summary.cmake
+  DESTINATION share/cmake)
+
+install(DIRECTORY
+  ${PROJECT_SOURCE_DIR}/build/generated_cuda_compatible
+  DESTINATION share/)

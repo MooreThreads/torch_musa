@@ -152,3 +152,6 @@ daily_musa_toolkits_*/
 daily_mublas_*/
 daily_mualg_*/
 download/
+
+release_mudnn_*/
+torch_musa/version.py

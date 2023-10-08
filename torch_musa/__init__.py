@@ -3,14 +3,14 @@
 
 import warnings
 import sys
-import os
-import threading
 from typing import Set, Type
-import pkg_resources
 from packaging.version import Version
 import torch
+try:
+    from .version import __version__
+except ImportError:
+    pass
 
-__version__ = pkg_resources.get_distribution("torch_musa").version
 TORCH_MIN_VERSION = Version("2.0.0")
 TORCH_VERSION = Version(torch.__version__).base_version
 if Version(TORCH_VERSION) < TORCH_MIN_VERSION:

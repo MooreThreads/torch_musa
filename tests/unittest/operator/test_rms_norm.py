@@ -31,11 +31,12 @@ def ref_rms_norm(input, normalized_shape, weight, eps):  # pylint: disable=W0622
 @pytest.mark.parametrize("batch", [1, 2, 8])
 @pytest.mark.parametrize("sequence_length", [1, 32, 128])
 def test_rms_norm_nlp(embedding_dim, batch, sequence_length):
+    input_shape = (batch, sequence_length, embedding_dim)
     normalized_shape = (embedding_dim,)
     input_data = {
-        "input": torch.randn(batch, sequence_length, embedding_dim),
+        "input": torch.randn(input_shape, dtype=torch.float16).to(torch.float32),
         "normalized_shape": normalized_shape,
-        "weight": torch.randn(normalized_shape),
+        "weight": torch.randn(normalized_shape, dtype=torch.float16).to(torch.float32),
         "eps": 1e-8,
     }
     test = testing.OpTest(
@@ -60,9 +61,9 @@ cv_test_data = [2, 4, 8, 16]
 def test_rms_norm_cv(N, C, W, H):
     normalized_shape = (C, H, W)
     input_data = {
-        "input": torch.randn(N, C, H, W),
+        "input": torch.randn((N, C, H, W), dtype=torch.float16).to(torch.float32),
         "normalized_shape": normalized_shape,
-        "weight": torch.randn(normalized_shape),
+        "weight": torch.randn(normalized_shape, dtype=torch.float16).to(torch.float32),
         "eps": 1e-8,
     }
     test = testing.OpTest(

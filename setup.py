@@ -7,7 +7,7 @@ import distutils.command.clean
 
 from os.path import dirname, join
 from setuptools import setup, find_packages
-from setuptools.command.install import install as Install
+import setuptools.command.install
 
 from torch.utils.cpp_extension import CppExtension  # pylint: disable=C0411
 from torch.utils.cpp_extension import BuildExtension as Build  # pylint: disable=C0411
@@ -33,10 +33,15 @@ if not CLEAN_MODE:
     from setup_helpers.cmake import CMake
 
 version_file = open("version.txt", "r")
-version = version_file.readlines()[0]
+version = version_file.readlines()[0].strip()
 version_file.close()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RERUN_CMAKE = False
+
+
+class Install(setuptools.command.install.install):
+    def run(self):
+        super().run()
 
 
 class Clean(distutils.command.clean.clean):
@@ -162,10 +167,6 @@ def configure_extension_build():
 
 install_requires = ["packaging"]
 
-version = version.strip() + "+git" + \
-    subprocess.check_output(["git", "rev-parse", "HEAD"]
-                            ).decode("ascii").strip()[:7]
-
 def package_files(directory):
     paths = []
     for root, dirs, files in os.walk(directory):
@@ -173,36 +174,31 @@ def package_files(directory):
             paths.append(os.path.join("..", root, file))
     return paths
 
+
+def dump_version():
+    global BASE_DIR, version
+    here = BASE_DIR
+    version_file_path = os.path.join(here, "torch_musa", "version.py")
+    sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=here).decode("ascii").strip()
+    __version__ = version + f"+{sha[:7]}"    
+    with open(version_file_path, "w") as f:
+        f.write(f"__version__ = '{__version__}'\n")
+        f.write(f"git_version = {repr(sha)}\n")
+
 # Setup
-setup(
-    name="torch_musa",
-    version=version,
-    description="A PyTorch backend extension for Moore Threads MUSA",
-    url="https://github.mthreads.com/mthreads/torch_musa",
-    author="Moore Threads PyTorch AI Dev Team",
-    packages=find_packages(exclude=["build"]),
-    ext_modules=configure_extension_build(),
-    package_dir={"": os.path.relpath(BASE_DIR)},
-    package_data={
-        "torch_musa": [
-            "lib/*.so*",
-            "csrc/core/*.h",
-            "csrc/core/*.muh",
-            "csrc/utils/*.h",
-            "csrc/aten/mudnn/*.h",
-            "csrc/aten/musa/*.h",
-            "csrc/aten/ops/*.h",
-            "csrc/aten/ops/musa/*.h",
-            "csrc/aten/utils/*.h",
-            "share/cmake/*.cmake",
-            "setup_helpers/*.py",
-            "utils/*.py",
-            "utils/mapping/*.json",
-            "../cmake/*.cmake",
-            "../cmake/modules/*.cmake"
-        ] + package_files("build/generated_cuda_compatible"),
-    },
-    install_requires=install_requires,
-    extras_require={},
-    cmdclass={"build_ext": Build, "clean": Clean, "install": Install},
-)
+if __name__ == "__main__":
+    dump_version()
+
+    setup(
+        name="torch_musa",
+        version=version,
+        description="A PyTorch backend extension for Moore Threads MUSA",
+        url="https://github.mthreads.com/mthreads/torch_musa",
+        author="Moore Threads PyTorch AI Dev Team",
+        packages=find_packages(exclude=["tools", "tools*"]),
+        ext_modules=configure_extension_build(),
+        include_package_data=True,
+        install_requires=install_requires,
+        extras_require={},
+        cmdclass={"build_ext": Build, "clean": Clean, "install": Install},
+    )

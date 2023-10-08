@@ -19,8 +19,9 @@ def ref_gated_silu(input):  # pylint: disable=W0622
 @pytest.mark.parametrize("batch", [1, 2, 4])
 @pytest.mark.parametrize("sequence_length", [1, 32, 128])
 def test_gated_silu(embedding_dim, batch, sequence_length):
+    input_shape = (batch, sequence_length, embedding_dim * 2)
     input_data = {
-        "input": torch.randn(batch, sequence_length, embedding_dim * 2),
+        "input": torch.randn(input_shape, dtype=torch.float16).to(torch.float32),
     }
     test = testing.OpTest(
         func=torch.gated_silu,

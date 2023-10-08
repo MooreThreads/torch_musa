@@ -27,7 +27,7 @@ class CMakeListsGenerator:
     def fill_in_cmake_lists_template(self):
         """Filling in customized values for cmake lists template"""
         if self.cmake_lists is None:
-            torch_musa_dir_path = dirname(dirname(dirname(__file__)))
+            torch_musa_path = dirname(dirname(__file__))
             sources_paths = "\n".join([realpath(source) for source in self.sources])
             if not sources_paths:
                 raise RuntimeError("Please provide sources.")
@@ -106,7 +106,7 @@ if(USE_CCACHE)
 endif() 
                 """,
                 f"""
-include({torch_musa_dir_path}/cmake/utils.cmake)
+include({torch_musa_path}/share/cmake/utils.cmake)
                 """,
                 """
 if(NOT CMAKE_BUILD_TYPE)
@@ -211,7 +211,7 @@ set(PLUGIN_NAME "{self.plugin_name}")
                 """,
                 f"""
 set(MUSA_CSRCS)
-set(CMAKE_MODULE_PATH {torch_musa_dir_path}/cmake/modules)
+set(CMAKE_MODULE_PATH {torch_musa_path}/share/cmake/modules)
 set(DEPENDENT_LIBRARIES "")
 set(DEPENDENT_INCLUDE_DIRS "")
 find_package(MUDNN)
@@ -316,13 +316,13 @@ target_link_libraries({self.plugin_name}
                 f"target_link_libraries({self.plugin_name}" + " ${CUBLAS_LIB})",
                 "\n",
                 f"""
-target_link_libraries({self.plugin_name} "{join(torch_musa_dir_path, 
-"torch_musa/lib/libmusa_python.so")}")
+target_link_libraries({self.plugin_name} "{join(torch_musa_path, 
+"lib/libmusa_python.so")}")
 
 install(TARGETS {self.plugin_name})
                 """,
                 f"""
-include({torch_musa_dir_path}/cmake/summary.cmake)
+include({torch_musa_path}/share/cmake/summary.cmake)
 torch_musa_build_configuration_summary()
 """
             ])

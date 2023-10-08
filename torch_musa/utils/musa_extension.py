@@ -46,10 +46,10 @@ def MUSAExtension(name, sources, *args, **kwargs):
 
     # define include dirs
     include_dirs = [join(torch_musa_dir_path, path) for path in [
-        "/usr/local/musa/include",
-        "build/generated_cuda_compatible/aten/src",
-        "build/generated_cuda_compatible/include",
-        "build/generated_cuda_compatible/include/torch/csrc/api/include",
+        "/usr/local/musa/include", 
+        "torch_musa/share/generated_cuda_compatible/aten/src",
+        "torch_musa/share/generated_cuda_compatible/include",
+        "torch_musa/share/generated_cuda_compatible/include/torch/csrc/api/include",
     ]] + [torch_musa_dir_path] + kwargs.get('include_dirs', [])
     kwargs['include_dirs'] = include_dirs
 
