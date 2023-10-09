@@ -1,14 +1,13 @@
 #include <ATen/ATen.h>
 #include <torch/library.h>
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
 
 at::Tensor gated_silu(const at::Tensor& input);
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("gated_silu", &gated_silu);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "gated_silu", gated_silu)
 
 } // namespace musa
 } // namespace at

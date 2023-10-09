@@ -10,6 +10,7 @@
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/Device.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
@@ -224,10 +225,16 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> MuDNNNativeMHASDPABwd(
   return std::make_tuple(grad_query, grad_key, grad_value);
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("_scaled_dot_product_attention_musa", &MuDNNNativeMHASDPA);
-  m.impl("_scaled_dot_product_attention_musa_backward", &MuDNNNativeMHASDPABwd);
-}
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "_scaled_dot_product_attention_musa",
+    MuDNNNativeMHASDPA)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "_scaled_dot_product_attention_musa_backward",
+    MuDNNNativeMHASDPABwd)
 
 } // namespace musa
 } // namespace at

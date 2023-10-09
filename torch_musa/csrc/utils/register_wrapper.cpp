@@ -452,6 +452,9 @@ void Config::CreateKernelStream(const char* yaml, const char* name) {
   arg_stream << "Operator name : " << name << " Yaml: " << yaml << std::endl;
   arg_stream.close();
   std::ofstream log_stream(base_log, std::ios::app);
+  if (dir_numbers_.size() == 2) { // Highest level op
+    log_stream << dir_numbers_[0] << ":"; // Add index for highest level op
+  }
   log_stream << std::setfill(' ') << std::setw(split_dirs_.size() * 2 - 2) << ""
              << "Operator : " << name << std::endl;
   log_stream.close();

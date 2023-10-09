@@ -6,6 +6,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -129,10 +130,12 @@ std::tuple<Tensor, Tensor, Tensor> NativeGroupNormBwd(
       output_mask);
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("native_group_norm", &NativeGroupNorm);
-  m.impl("native_group_norm_backward", &NativeGroupNormBwd);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "native_group_norm", NativeGroupNorm)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "native_group_norm_backward",
+    NativeGroupNormBwd)
 
 } // namespace musa
 } // namespace at

@@ -8,6 +8,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
@@ -199,12 +200,17 @@ at::Tensor& grad_input_smooth_l1_loss_backward_out(
 }
 } // anonymous namespace
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("smooth_l1_loss", smooth_l1_loss);
-  m.impl("smooth_l1_loss.out", smooth_l1_loss_out_out);
-  m.impl(
-      "smooth_l1_loss_backward.grad_input",
-      grad_input_smooth_l1_loss_backward_out);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "smooth_l1_loss", smooth_l1_loss)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "smooth_l1_loss.out",
+    smooth_l1_loss_out_out)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "smooth_l1_loss_backward.grad_input",
+    grad_input_smooth_l1_loss_backward_out)
+
 } // namespace musa
 } // namespace at

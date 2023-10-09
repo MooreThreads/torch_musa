@@ -38,12 +38,12 @@ Usage:
     1. Normal case:
     at::Tensor Abs(...);
     ...
-    ADAVANCED_REGISTER(aten, PrivateUse1, "abs", Abs);
+    ADVANCED_REGISTER(aten, PrivateUse1, "abs", Abs);
 
     2. Not name function case:
     using at::native::unfold;
     ...
-    REGISTER_IMPL(aten, PrivatedUse1, "unfold", at::native::unfold,
+    REGISTER_IMPL(aten, PrivateUse1, "unfold", at::native::unfold,
 at_native_unfold)
 
     3. Alias case:
@@ -198,6 +198,20 @@ struct TensorSignature {
 };
 
 /*
+Helper Templates for iterators.
+*/
+
+template <typename, typename = void>
+constexpr bool is_iterable{false};
+
+template <typename T>
+constexpr bool is_iterable<
+    T,
+    std::void_t<
+        decltype(std::declval<T>().begin()),
+        decltype(std::declval<T>().end())>> = true;
+
+/*
 General Templates.
 
 Attension: only inline template functions can be defined in head file.
@@ -208,7 +222,15 @@ Attension: Primary Template must be put before specified.
 template <typename T>
 inline void ProcessArgs(T& item) {
   std::ofstream arg_stream(GlobalConfig.arg_log_name, std::ios::app);
-  arg_stream << "Data : " << item << std::endl;
+  if constexpr (is_iterable<T>) {
+    arg_stream << "Iterable data : " << std::endl;
+    for (auto i : item) {
+      ProcessArgs(i);
+    }
+    arg_stream << "End of Iterable data." << std::endl;
+  } else {
+    arg_stream << "Data : " << item << std::endl;
+  }
   arg_stream.close();
 }
 

@@ -6,6 +6,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -257,10 +258,12 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
   return std::make_tuple(grad_input, grad_weight, grad_bias);
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("native_batch_norm", &NativeBatchNorm);
-  m.impl("native_batch_norm_backward", &NativeBatchNormBwd);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "native_batch_norm", NativeBatchNorm)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "native_batch_norm_backward",
+    NativeBatchNormBwd)
 
 } // namespace musa
 } // namespace at
