@@ -44,4 +44,4 @@ def test_embedding_fp16(input_data):
     test = testing.OpTest(func=torch.nn.Embedding,
                           input_args=embedding_args,
                           comparators=testing.DefaultComparator(abs_diff=1e-6))
-    test.check_musafp16_vs_musafp32({"input": input_data["input"]}, train=False)
+    test.check_musafp16_vs_musafp32({"input": input_data["input"]}, train=True)

@@ -1,10 +1,9 @@
-"""Test addmm operators."""
+"""Test dropout operators."""
 # pylint: disable=missing-function-docstring, missing-module-docstring, unused-import
 import torch as pt
 import numpy as np
 import pytest
 
-import torch_musa
 from torch_musa import testing
 
 inputdata = [
@@ -39,3 +38,32 @@ def test_dropout_train(input_data, p_value, inplace_value):
 
     assert (np.count_nonzero(output_array) <= np.count_nonzero(input_data))
     assert (np.count_nonzero(output_array) == np.count_nonzero(input_grad_array))
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("shape",
+    [
+        (128, 128),
+        (20, 20, 20, 20),
+        (4, 128, 20, 20, 2),
+        (2, 2, 3, 4, 5, 6),
+        (2, 3, 1, 8, 7, 6, 2),
+        (2, 3, 1, 8, 7, 1, 6, 2)
+    ]
+)
+@pytest.mark.parametrize("p_value", p)
+@pytest.mark.parametrize("inplace_value", inplace)
+def test_dropout_fp16_train(shape, p_value, inplace_value):
+    # the output of dropout is nondetermistic though seeded
+    device = "musa"
+    t_fp16 = pt.randn(shape, dtype=pt.float16, requires_grad=True, device="musa")
+    module = pt.nn.Dropout(p=p_value, inplace=inplace_value)
+    module.train()
+    out = module(t_fp16)
+    out.backward(pt.ones(t_fp16.shape, dtype=pt.float16, device=device))
+    out_fp16_array = out.to("cpu").detach().numpy()
+    t_fp16_array = t_fp16.to("cpu").detach().numpy()
+    t_fp16_grad_array = t_fp16.grad.to("cpu").detach().numpy()
+
+    assert (np.count_nonzero(out_fp16_array) <= np.count_nonzero(t_fp16_array))
+    assert (np.count_nonzero(out_fp16_array) == np.count_nonzero(t_fp16_grad_array))

@@ -42,10 +42,11 @@ Tensor EmbeddingDenseBwd(
       "MUSA, but now is ",
       indices.device());
   TORCH_CHECK(
-      grad_output.scalar_type() == at::ScalarType::Float,
+      grad_output.scalar_type() == at::ScalarType::Float ||
+          grad_output.scalar_type() == at::ScalarType::Half,
       "Dtype of grad_output tensor of embedding_dense_backward only "
-      "support Float32, but now is ",
-      indices.scalar_type());
+      "support Float32 and Float16, but now is ",
+      grad_output.scalar_type());
   TORCH_CHECK(
       indices.scalar_type() == at::ScalarType::Int ||
           indices.scalar_type() == at::ScalarType::Long,
