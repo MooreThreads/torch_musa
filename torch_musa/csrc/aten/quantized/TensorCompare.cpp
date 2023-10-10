@@ -6,6 +6,7 @@
 
 #include "torch_musa/csrc/aten/quantized/TensorFactories.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {

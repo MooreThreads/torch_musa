@@ -9,12 +9,11 @@
 #include <c10/util/MaybeOwned.h>
 #include <torch/library.h>
 
+#include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/quantized/QTensor.h"
 #include "torch_musa/csrc/aten/quantized/mudnn/Linear.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
-// mudnn currently doesn't support quantization linear (matmul), so we have to
-// dequantize weight and activation, run matmul with FP32 dtype
 template <bool kReluFused>
 void PackedLinearWeightMudnn::apply_impl_helper(
     at::Tensor& quantized_output,
@@ -24,54 +23,45 @@ void PackedLinearWeightMudnn::apply_impl_helper(
   if (quantized_output.numel() == 0) {
     return;
   }
-
-  // we only support per-tensor quantization for linear operation
-  TORCH_CHECK(
-      input.qscheme() == at::kPerTensorAffine ||
-          input.qscheme() == at::kPerTensorSymmetric,
-      "Linear only supports per-tensor quantized activation");
-  TORCH_CHECK(
-      orig_weight.qscheme() == at::kPerTensorAffine ||
-          orig_weight.qscheme() == at::kPerTensorSymmetric,
-      "Linear only supports per-tensor quantized weight");
-
-  // dequantize activation and weight to float
-  at::Tensor input_ = input.dequantize();
-  at::Tensor weight_ = orig_weight.dequantize();
-  at::Tensor result_;
+  double input_scale = input.q_scale();
+  double weight_scale = orig_weight.q_scale();
+  int64_t input_zp = input.q_zero_point();
+  int64_t weight_zp = orig_weight.q_zero_point();
 
   auto bias = bias_.has_value()
       ? c10::MaybeOwned<at::Tensor>::borrowed(*bias_)
       : c10::MaybeOwned<at::Tensor>::owned(c10::in_place);
 
-  if (bias->defined() && input_.is_contiguous()) {
-    const auto input_sizes = input_.sym_sizes();
-    result_ = at::addmm(
-        *bias,
-        input_.view_symint({input_sizes[0] * input_sizes[1], input_sizes[2]}),
-        weight_.t());
-    result_ = result_.view_symint(
-        {input_sizes[0], input_sizes[1], result_.sym_size(1)});
+  at::Tensor contig_input;
+  at::Tensor contig_weight;
+  at::musa::muTensor lmt =
+      at::musa::CreateMUTensor(at::musa::ContiguousRef(input, contig_input));
+  at::musa::muTensor rmt = at::musa::CreateMUTensor(
+      at::musa::ContiguousRef(orig_weight, contig_weight));
+  at::musa::muTensor rst = at::musa::CreateMUTensor(quantized_output);
+  at::musa::muTensor bmt = bias->defined() ? at::musa::CreateMUTensor(*bias)
+                                           : at::musa::CreateEmptyMUTensor();
+  at::musa::SetMudnnQuantizationInfo(lmt, input_scale, input_zp);
+  at::musa::SetMudnnQuantizationInfo(rmt, weight_scale, weight_zp);
+  at::musa::SetMudnnQuantizationInfo(rst, output_scale, output_zero_point);
+
+  at::musa::muHandle& h = at::GetMudnnHandle();
+  ::musa::dnn::MatMul mm;
+  // quantized linear always accept transpose weight
+  CHECK_MUDNN_STATUS(mm.SetTranspose(false, true), "SetTranspose");
+  if (bias->defined()) {
+    CHECK_MUDNN_STATUS(
+        mm.RunWithBiasAdd(h, rst, lmt, rmt, bmt, at::musa::InternalMemAlloc),
+        "RunWithBiasAdd");
   } else {
-    result_ = at::matmul(input_, weight_.t());
-    if (bias->defined()) {
-      if (isTensorSubclassLike(*bias) ||
-          bias->_fw_grad(/*level*/ 0).defined()) {
-        result_ = at::add(result_, *bias);
-      } else {
-        result_.add_(*bias);
-      }
-    }
-  }
-  // ReLU can also be fused into W8A8 kernel in the future
-  if (kReluFused) {
-    result_.relu_();
+    CHECK_MUDNN_STATUS(
+        mm.Run(h, rst, lmt, rmt, at::musa::InternalMemAlloc), "Run");
   }
 
-  // quantize result to QUInt8 format
-  result_ = at::musa::QuantizePerTensor(
-      result_, output_scale, output_zero_point, at::ScalarType::QUInt8);
-  quantized_output.copy_(result_);
+  // ReLU can also be fused into W8A8 kernel in the future
+  if (kReluFused) {
+    quantized_output.relu_();
+  }
   return;
 }
 
@@ -83,11 +73,15 @@ at::Tensor PackedLinearWeightMudnn::apply_impl(
     const at::Tensor& act,
     double output_scale,
     int64_t output_zero_point) {
-  // uint8 * int8 -> uint8
+  // int8 * int8 -> int8
   TORCH_CHECK(
-      act.scalar_type() == c10::kQUInt8,
+      act.qscheme() == c10::kPerTensorSymmetric ||
+          act.qscheme() == c10::kPerTensorAffine,
+      "Expect input data is symmetric quantized");
+  TORCH_CHECK(
+      act.scalar_type() == c10::kQInt8,
       "Expected input data dtype ",
-      toString(c10::kQUInt8),
+      toString(c10::kQInt8),
       " but got ",
       toString(act.scalar_type()));
   TORCH_CHECK(
@@ -97,22 +91,23 @@ at::Tensor PackedLinearWeightMudnn::apply_impl(
   std::vector<int64_t> original_output_shape{act.sizes().vec()};
   original_output_shape.back() = orig_weight.size(0); // output channels
   std::vector<int64_t> output_shape = original_output_shape;
-  // expects tensors to be at least 3D.
-  // if the tensors are 2D, insert the dummy dimension
-  if (output_shape.size() < 3) {
-    output_shape.insert(output_shape.begin(), 1);
+  // expects tensors to be 2D.
+  // if the tensors are 3D, reduce the 1st and 2nd dim
+  if (output_shape.size() == 3) {
+    output_shape[1] *= output_shape[0];
+    output_shape.erase(output_shape.begin());
   }
   at::Tensor quantized_output = at::_empty_affine_quantized(
       output_shape,
-      at::device(at::kPrivateUse1).dtype(at::ScalarType::QUInt8),
+      at::device(at::kPrivateUse1).dtype(at::ScalarType::QInt8),
       output_scale,
       output_zero_point);
-  // expect tensors to be at least 3D. act is currently 2D. we will create a 3D
-  // view
+  // expect tensors to be 2D, if act is a 3D tensor, we create a 2D view
   std::vector<int64_t> new_sizes(act.sizes().vec());
   // expect leading dimensions to be the dummy dimensions
-  if (new_sizes.size() < 3) {
-    new_sizes.insert(new_sizes.begin(), 1);
+  if (new_sizes.size() == 3) {
+    new_sizes[1] *= new_sizes[0];
+    new_sizes.erase(new_sizes.begin());
   }
   apply_impl_helper<kReluFused>(
       quantized_output, act.view(new_sizes), output_scale, output_zero_point);
@@ -146,8 +141,6 @@ class QLinearInt8 final {
       double output_scale,
       int64_t output_zero_point) {
     c10::musa::MUSAGuard device_guard(act.device());
-    // TODO(@fan.mo): check all zero_points are zero/all tensors are
-    // symmetrically quantized
     if (kReluFused) {
       return packed_weight->apply_relu(act, output_scale, output_zero_point);
     } else {
@@ -155,15 +148,6 @@ class QLinearInt8 final {
     }
   }
 };
-
-TORCH_LIBRARY_IMPL(quantized, AutogradPrivateUse1, m) {
-  m.impl(
-      TORCH_SELECTIVE_NAME("quantized::linear"),
-      TORCH_FN(QLinearInt8<false>::run));
-  m.impl(
-      TORCH_SELECTIVE_NAME("quantized::linear_relu"),
-      TORCH_FN(QLinearInt8<true>::run));
-}
 
 TORCH_LIBRARY_IMPL(quantized, QuantizedPrivateUse1, m) {
   m.impl(

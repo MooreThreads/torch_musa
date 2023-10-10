@@ -216,15 +216,6 @@ class QConv1dPackWeightInt8Mudnn final {
   }
 };
 
-TORCH_LIBRARY_IMPL(quantized, AutogradPrivateUse1, m) {
-  m.impl(
-      TORCH_SELECTIVE_NAME("quantized::conv1d_prepack"),
-      TORCH_FN(QConv1dPackWeightInt8Mudnn::run_conv));
-  m.impl(
-      TORCH_SELECTIVE_NAME("quantized::conv2d_prepack"),
-      TORCH_FN(QConvPackWeightInt8Mudnn<2>::run_conv));
-}
-
 TORCH_LIBRARY_IMPL(quantized, QuantizedPrivateUse1, m) {
   m.impl(
       TORCH_SELECTIVE_NAME("quantized::conv1d_prepack"),

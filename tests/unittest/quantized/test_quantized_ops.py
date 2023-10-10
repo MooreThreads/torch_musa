@@ -324,11 +324,7 @@ def test_unfold(input_data):
 
 
 input_pool = [
-    {
-        "input": torch.quantize_per_tensor(
-            torch.randn(1, 3, 8, 8), 0.01, 0, torch.qint8
-        )
-    },
+    {"input": torch.quantize_per_tensor(torch.randn(1, 3, 8, 8), 0.01, 0, torch.qint8)},
     {"input": torch.quantize_per_tensor(torch.randn(1, 3, 8, 8), 0.01, 0, torch.qint8)},
     {"input": torch.quantize_per_tensor(torch.randn(1, 3, 8, 8), 0.01, 0, torch.qint8)},
 ]

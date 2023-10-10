@@ -12,7 +12,7 @@ std::tuple<at::Tensor, c10::optional<at::Tensor>> PackedConvWeightMudnn<
   // weight is in NHWC format and shape to speed up inference, if we need to
   // fetch weight from outside, we should permute it to NCHW shape to keep
   // consistence with pytorch
-  at::Tensor rt_weight = weight_.permute({0, 3, 1, 2}).contiguous();
+  at::Tensor rt_weight = weight_.permute({0, 3, 1, 2});
   return std::tuple<at::Tensor, c10::optional<at::Tensor>>{rt_weight, bias_};
 }
 

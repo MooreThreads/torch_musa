@@ -11,10 +11,17 @@
 c10::intrusive_ptr<LinearPackedParamsBase> PackedLinearWeightMudnn::prepack(
     at::Tensor weight,
     c10::optional<at::Tensor> bias) {
+  // TODO(@fan.mo): mudnn now only supports sym quant int8 linear
   TORCH_CHECK(
-      weight.qscheme() == c10::kPerTensorAffine,
+      weight.qscheme() == c10::kPerTensorSymmetric ||
+          (weight.qscheme() == c10::kPerTensorAffine &&
+           weight.q_zero_point() == 0),
       "Unsupported qscheme: ",
       toString(weight.qscheme()));
+  TORCH_CHECK(
+      weight.scalar_type() == c10::kQInt8,
+      "Quantized Linear only supports QInt8 dtype");
+  TORCH_CHECK(weight.dim() == 2, "Quantized Linear weight must be 2D tensor");
   const int output_channels = weight.size(0);
   const auto qtype = weight.qscheme();
   if (bias.has_value()) {
@@ -39,18 +46,9 @@ class QLinearPackWeightInt8Mudnn final {
       at::Tensor weight,
       c10::optional<Tensor> bias) {
     c10::musa::MUSAGuard device_guard(weight.device());
-    if (bias.has_value()) {
-      bias.value().device();
-    }
     return PackedLinearWeightMudnn::prepack(std::move(weight), std::move(bias));
   }
 };
-
-TORCH_LIBRARY_IMPL(quantized, AutogradPrivateUse1, m) {
-  m.impl(
-      TORCH_SELECTIVE_NAME("quantized::linear_prepack"),
-      TORCH_FN(QLinearPackWeightInt8Mudnn::run));
-}
 
 TORCH_LIBRARY_IMPL(quantized, QuantizedPrivateUse1, m) {
   m.impl(

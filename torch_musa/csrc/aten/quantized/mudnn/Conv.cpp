@@ -32,7 +32,7 @@ at::SmallVector<int64_t, 4> MakeQConvOutputShape<2>(
       (H + 2 * padding[0] - dilation[0] * (kernel[0] - 1) - 1) / stride[0] + 1;
   const int64_t Y_W =
       (W + 2 * padding[1] - dilation[1] * (kernel[1] - 1) - 1) / stride[1] + 1;
-  return {N, Y_H, Y_W, M}; // create a NHWC shape
+  return {N, M, Y_H, Y_W, M}; // create a NCHW shape
 }
 
 template <int kSpatialDim>
@@ -70,9 +70,9 @@ void PackedConvWeightMudnn<kSpatialDim>::apply_impl_helper(
   CHECK_MUDNN_STATUS(
       ke.SetFormat(at::musa::muTensor::Format::NHWC),
       "Set weight muTensor format as NHWC");
-  SetMudnnQuantizationInfo(in, act_scale, act_zero_point);
-  SetMudnnQuantizationInfo(out, output_scale, output_zero_point);
-  SetMudnnQuantizationInfo(ke, weight_scale, weight_zero_point);
+  at::musa::SetMudnnQuantizationInfo(in, act_scale, act_zero_point);
+  at::musa::SetMudnnQuantizationInfo(out, output_scale, output_zero_point);
+  at::musa::SetMudnnQuantizationInfo(ke, weight_scale, weight_zero_point);
 
   // if bias is used, we should make a muTensor and broadcast it first
   at::musa::muTensor bias;
@@ -95,7 +95,7 @@ void PackedConvWeightMudnn<kSpatialDim>::apply_impl_helper(
     CHECK_MUDNN_STATUS(
         add.SetFormat(at::musa::muTensor::Format::NHWC),
         "Set add muTensor format as NHWC");
-    SetMudnnQuantizationInfo(
+    at::musa::SetMudnnQuantizationInfo(
         add, accum.value().q_scale(), accum.value().q_zero_point());
   }
 
@@ -115,8 +115,6 @@ void PackedConvWeightMudnn<kSpatialDim>::apply_impl_helper(
 
   ::musa::dnn::Convolution::Algorithm algorithm =
       static_cast<::musa::dnn::Convolution::Algorithm>(0);
-  size_t size_in_bytes = 0;
-  op.GetForwardWorkspaceSize(h, size_in_bytes, out, in, ke, algorithm);
   CHECK_MUDNN_STATUS(
       op.RunFusion(
           h,
@@ -185,7 +183,8 @@ at::Tensor PackedConvWeightMudnn<kSpatialDim>::apply_impl(
       at::device(at::kPrivateUse1).dtype(output_type),
       output_scale,
       output_zero_point,
-      c10::MemoryFormat::Contiguous);
+      c10::MemoryFormat::ChannelsLast);
+  quantized_output = quantized_output.permute({0, 2, 3, 1});
 
   apply_impl_helper<act_mode>(
       quantized_output,
@@ -271,22 +270,10 @@ class QConvInt8 final {
   }
 };
 
-TORCH_LIBRARY_IMPL(quantized, AutogradPrivateUse1, m) {
-  // this is inconsistent with what has been done for conv2d where new variants
-  // use packed weights, and old variant does not. we adopt this inconsistency
-  // for now to be consistent with QuantizedCPU's conv1d and will eventually
-  // deprecate the old variants
-  m.impl(
-      TORCH_SELECTIVE_NAME("quantized::conv2d.new"),
-      TORCH_FN(QConvInt8<ActMode::IDENTITY>::run));
-  m.impl(
-      TORCH_SELECTIVE_NAME("quantized::conv2d_relu.new"),
-      TORCH_FN(QConvInt8<ActMode::RELU>::run));
-  m.impl(
-      TORCH_SELECTIVE_NAME("quantized::conv2d_silu.new"),
-      TORCH_FN(QConvInt8<ActMode::SILU>::run));
-}
-
+// this is inconsistent with what has been done for conv2d where new variants
+// use packed weights, and old variant does not. we adopt this inconsistency
+// for now to be consistent with QuantizedCPU's conv1d and will eventually
+// deprecate the old variants
 TORCH_LIBRARY_IMPL(quantized, QuantizedPrivateUse1, m) {
   m.impl(
       TORCH_SELECTIVE_NAME("quantized::conv2d.new"),

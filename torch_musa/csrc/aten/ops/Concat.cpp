@@ -55,16 +55,10 @@ Tensor Cat(const at::ITensorListRef& tensors, int64_t dim = 0) {
   dim = dim < 0 ? dim + ref.dim() : dim;
   TORCH_CHECK(dim >= 0 && dim < ref.dim(), "Wrong Cat dim: ", dim);
 
-  // TODO(@fan.mo): could be implemented in a more elegant way
-  std::vector<int64_t> output_shape(ref.dim(), 0);
+  std::vector<int64_t> output_shape{ref.sizes().vec()};
+  output_shape[dim] = 0;
   for (const Tensor& tensor : materialized) {
-    for (int d = 0; d < ref.dim(); ++d) {
-      if (d == dim) {
-        output_shape[d] += tensor.size(d);
-      } else {
-        output_shape[d] = tensor.size(d);
-      }
-    }
+    output_shape[dim] += tensor.size(dim);
   }
   Tensor output = at::empty(
       output_shape, ref.options().memory_format(c10::MemoryFormat::Contiguous));

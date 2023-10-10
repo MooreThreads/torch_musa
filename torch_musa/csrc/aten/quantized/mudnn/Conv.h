@@ -14,6 +14,7 @@
 #endif
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 enum class ActMode { IDENTITY, RELU, SILU };
 
@@ -26,17 +27,6 @@ at::SmallVector<int64_t, kSpatialDim + 2> MakeQConvOutputShape(
     const torch::List<int64_t>& stride,
     const torch::List<int64_t>& padding,
     const torch::List<int64_t>& dilation);
-
-void inline SetMudnnQuantizationInfo(
-    at::musa::muTensor& self,
-    double scales,
-    int64_t zero_points) {
-  float scales_ = static_cast<float>(scales);
-  unsigned int zero_points_ = static_cast<unsigned int>(zero_points);
-  CHECK_MUDNN_STATUS(
-      self.SetQuantizationInfo(1, &scales_, &zero_points_),
-      "Set quantization info");
-}
 
 void inline ConfigConv(
     ::musa::dnn::Convolution& c,

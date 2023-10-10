@@ -9,6 +9,7 @@
 #include <torch/library.h>
 
 #include "torch_musa/csrc/aten/quantized/QTensor.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {

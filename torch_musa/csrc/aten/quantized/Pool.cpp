@@ -11,8 +11,8 @@
 
 #include "torch_musa/csrc/aten/mudnn/Handle.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
-#include "torch_musa/csrc/aten/quantized/mudnn/Conv.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <vector>
 
@@ -75,8 +75,8 @@ void QuantizedMaxPool2dImpl(
   at::musa::muTensor mu_inds = at::musa::CreateMUTensor(inds);
   at::musa::muTensor mu_input = at::musa::CreateMUTensor(input_);
   at::musa::muTensor mu_out = at::musa::CreateMUTensor(output);
-  SetMudnnQuantizationInfo(mu_input, scale, zero_point);
-  SetMudnnQuantizationInfo(mu_out, scale, zero_point);
+  at::musa::SetMudnnQuantizationInfo(mu_input, scale, zero_point);
+  at::musa::SetMudnnQuantizationInfo(mu_out, scale, zero_point);
   CHECK_MUDNN_STATUS(
       mu_input.SetFormat(at::musa::muTensor::Format::NHWC),
       "Set input muTensor format as NHWC");
@@ -111,8 +111,8 @@ void QuantizedAvgPool2dImpl(
   at::musa::muTensor mu_inds = at::musa::CreateMUTensor(inds);
   at::musa::muTensor mu_input = at::musa::CreateMUTensor(input_);
   at::musa::muTensor mu_out = at::musa::CreateMUTensor(output);
-  SetMudnnQuantizationInfo(mu_input, scale, zero_point);
-  SetMudnnQuantizationInfo(mu_out, scale, zero_point);
+  at::musa::SetMudnnQuantizationInfo(mu_input, scale, zero_point);
+  at::musa::SetMudnnQuantizationInfo(mu_out, scale, zero_point);
   CHECK_MUDNN_STATUS(
       mu_input.SetFormat(at::musa::muTensor::Format::NHWC),
       "Set input muTensor format as NHWC");

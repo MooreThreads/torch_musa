@@ -76,6 +76,18 @@ inline muTensor CreateEmptyMUTensor() {
 // tensor format, so need to pass tensor as reference
 void ConfigFormat(const Tensor& t, muTensor& mt);
 
+// Set quantized mudnn tensor info
+void inline SetMudnnQuantizationInfo(
+    at::musa::muTensor& self,
+    double scales,
+    int64_t zero_points) {
+  float scales_ = static_cast<float>(scales);
+  unsigned int zero_points_ = static_cast<unsigned int>(zero_points);
+  CHECK_MUDNN_STATUS(
+      self.SetQuantizationInfo(1, &scales_, &zero_points_),
+      "Set quantization info");
+}
+
 // use for memory handler
 void InternalMemFree(void* ptr);
 ::musa::dnn::MemoryHandler InternalMemAlloc(size_t s);

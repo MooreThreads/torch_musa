@@ -19,6 +19,7 @@
 #include <torch/library.h>
 
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
@@ -37,10 +38,12 @@ Tensor QIndexSelect(const Tensor& self, int64_t dim, const Tensor& index) {
   return at::native::index_select_quantized_cuda(self, dim, index);
 }
 
-TORCH_LIBRARY_IMPL(aten, QuantizedPrivateUse1, m) {
-  m.impl("index_select.out", &QIndexSelectOut);
-  m.impl("index_select", &QIndexSelect);
-}
+ADVANCED_REGISTER(
+    aten,
+    QuantizedPrivateUse1,
+    "index_select.out",
+    QIndexSelectOut)
+ADVANCED_REGISTER(aten, QuantizedPrivateUse1, "index_select", QIndexSelect)
 
 } // namespace musa
 } // namespace at

@@ -8,6 +8,7 @@
 #include <ATen/core/op_registration/adaption.h>
 #include "torch_musa/csrc/aten/quantized/Quantizer.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 inline std::tuple<int, int> QValueRangeHelper(c10::ScalarType dtype) {
   if (dtype == c10::ScalarType::QUInt8) {
@@ -293,12 +294,18 @@ Tensor& QTensorCopy(Tensor& self, const Tensor& src) {
   return self;
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("quantize_per_tensor", &QuantizePerTensor);
-  m.impl("quantize_per_tensor_dynamic", &QuantizePerTensorDynamic);
-  m.impl("quantize_per_channel", &QuantizePerChannel);
-  m.impl("quantize_per_tensor.tensor_qparams", &QuantizePerTensorTensorQParams);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "quantize_per_tensor", QuantizePerTensor)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "quantize_per_tensor_dynamic",
+    QuantizePerTensorDynamic)
+ADVANCED_REGISTER(aten, PrivateUse1, "quantize_per_channel", QuantizePerChannel)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "quantize_per_tensor.tensor_qparams",
+    QuantizePerTensorTensorQParams)
 
 TORCH_LIBRARY_IMPL(aten, QuantizedPrivateUse1, m) {
   m.impl("clone", TORCH_FN(QuantizedClone));
