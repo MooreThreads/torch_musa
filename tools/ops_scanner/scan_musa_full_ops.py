@@ -10,7 +10,7 @@ if __name__ == '__main__':
     parser.add_argument("--scan-dir", help="Specify directory to be scanned", default="/home/torch_musa/torch_musa/csrc/aten/ops")
     parser.add_argument("--file-ext", help="Specify file extension", default=".cpp")
     parser.add_argument("--regex", help="Specify search regular expression",
-                        default=r"m\.impl\(\"(.*?)\""
+                        default=r"m\.impl\(\"(.*?)\"|ADVANCED_REGISTER\(\s*?aten,\s*?PrivateUse1,\s*?\"(.*?)\","
                         )
     parser.add_argument("--output-path", help="Specify ops' scanning result location", default="./torch_musa_full_ops.xlsx")
 
