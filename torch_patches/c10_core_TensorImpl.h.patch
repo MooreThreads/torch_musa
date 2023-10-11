@@ -1,5 +1,5 @@
 diff --git a/c10/core/TensorImpl.h b/c10/core/TensorImpl.h
-index 0b35b2a..46f7769 100644
+index 0b35b2a4513..b9baac11d21 100644
 --- a/c10/core/TensorImpl.h
 +++ b/c10/core/TensorImpl.h
 @@ -1111,6 +1111,15 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
@@ -18,3 +18,13 @@ index 0b35b2a..46f7769 100644
    bool is_xpu() const {
      // NB: This method is not virtual and avoid dispatches for performance
      // reasons.
+@@ -1897,7 +1906,8 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
+            BackendComponent::MPSBit,
+            BackendComponent::HIPBit,
+            BackendComponent::XPUBit,
+-           BackendComponent::HPUBit});
++           BackendComponent::HPUBit,
++           BackendComponent::PrivateUse1Bit});
+       constexpr auto dense_k = DispatchKeySet(DispatchKey::Dense);
+       return ts.has_any(dense_k) && ts.has_any(dense_backends);
+     };
