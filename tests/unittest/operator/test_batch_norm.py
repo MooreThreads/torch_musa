@@ -43,3 +43,24 @@ def test_batch_norm_fp16(input_data, train):
     input_data = input_data.half()
     output_musa = m.to("musa")(input_data.to("musa"))
     assert testing.DefaultComparator(abs_diff=1e-2)(output, output_musa.cpu().float())
+
+input_data = [
+     torch.randn(4, 100, 4, 4),
+     torch.randn(8, 100, 8, 8),
+     torch.randn(16, 100, 16, 16),
+     torch.randn(64, 100, 16, 16)
+ ]
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_data)
+@pytest.mark.parametrize("train", [True])
+def test_batch_norm_bwd(input_data, train):
+    model = torch.nn.BatchNorm2d(100)
+    musa_model = torch.nn.BatchNorm2d(100).to('musa')
+    model.train(train)
+    musa_model.train(train)
+    output = model(input_data)
+    output_musa = musa_model(input_data.to("musa"))
+    output.sum().backward()
+    output_musa.sum().backward()
+    assert testing.DefaultComparator(abs_diff=1e-3)(model.weight.grad, musa_model.weight.grad.cpu())
+    assert testing.DefaultComparator(abs_diff=1e-3)(model.bias.grad, musa_model.bias.grad.cpu())
