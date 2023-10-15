@@ -104,6 +104,7 @@
 #include <ATen/ops/zeros_like.h>
 #endif
 
+#include "torch_musa/csrc/aten/ops/Reduce.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/utils/musa_lazy_init.h"
@@ -112,6 +113,16 @@
 #include <mudnn.h>
 
 namespace at {
+namespace native { // this namespace is used to define logsumexp stub only
+DEFINE_DISPATCH(logsumexp_stub);
+REGISTER_NO_CPU_DISPATCH(logsumexp_stub);
+
+Tensor& LogSumExpOutImpl(Tensor& result, const Tensor& self, IntArrayRef dims) {
+  logsumexp_stub(kMUSA, result, self, dims);
+  return result;
+}
+} // namespace native
+
 namespace musa {
 
 // Copy from ReduceOps.cpp
@@ -198,17 +209,18 @@ Tensor Reduction(
     const bool is_norm = false) {
   c10::musa::MUSAGuard device_guard(self.device());
   out_dtype = musa_infer_dtype_from_optional(self, out_dtype, Tensor());
-  DimVector dims_(dim);
-  maybe_wrap_dims(dims_, self.dim());
-  auto shape = at::meta::get_reduction_shape(self, dims_, keepdim);
+  DimVector dims_vec(dim);
+  maybe_wrap_dims(dims_vec, self.dim());
+  auto shape = at::meta::get_reduction_shape(self, dims_vec, keepdim);
 
   Tensor output = at::empty(shape, self.options().dtype(out_dtype));
-  namedinference::propagate_names_for_reduction(output, self, dims_, keepdim);
+  namedinference::propagate_names_for_reduction(
+      output, self, dims_vec, keepdim);
 
   if (self.numel() == 0) {
     output.zero_();
   } else {
-    ReduceCall(output, self, dims_, m, p, is_norm);
+    ReduceCall(output, self, dims_vec, m, p, is_norm);
   }
   return output;
 }
@@ -277,9 +289,9 @@ Tensor& SumIntListOut(
     optional<ScalarType> opt_dtype,
     Tensor& output) {
   c10::musa::MUSAGuard device_guard(self.device());
-  DimVector dims_(dim.value());
-  maybe_wrap_dims(dims_, self.dim());
-  auto shape = at::meta::get_reduction_shape(self, dims_, keepdim);
+  DimVector dims_vec(dim.value());
+  maybe_wrap_dims(dims_vec, self.dim());
+  auto shape = at::meta::get_reduction_shape(self, dims_vec, keepdim);
   output.resize_(shape);
   ReduceCall(output, self, dim.value(), ::musa::dnn::Reduce::Mode::ADD);
   return output;
@@ -630,15 +642,17 @@ std::tuple<Tensor, Tensor> ReductionIndices(
   dim = maybe_wrap_dim(dim, self.dim());
 
   IntArrayRef dims(dim);
-  DimVector dims_(dims);
-  maybe_wrap_dims(dims_, self.dim());
-  auto shape = at::meta::get_reduction_shape(self, dims_, keepdim);
+  DimVector dims_vec(dims);
+  maybe_wrap_dims(dims_vec, self.dim());
+  auto shape = at::meta::get_reduction_shape(self, dims_vec, keepdim);
 
   auto out_dtype = self.scalar_type();
   Tensor output = at::empty(shape, self.options().dtype(out_dtype));
   Tensor indices = at::empty(shape, self.options().dtype(kLong));
-  namedinference::propagate_names_for_reduction(output, self, dims_, keepdim);
-  namedinference::propagate_names_for_reduction(indices, self, dims_, keepdim);
+  namedinference::propagate_names_for_reduction(
+      output, self, dims_vec, keepdim);
+  namedinference::propagate_names_for_reduction(
+      indices, self, dims_vec, keepdim);
 
   ReduceIndicesCall(output, indices, self, dim, m);
   return std::make_tuple(output, indices);
@@ -648,11 +662,11 @@ Tensor MaxAllCall(const Tensor& self, ::musa::dnn::Reduce::Mode m) {
   auto out_dtype = self.scalar_type();
   // torch.max call reudce_all according to out.dim
   Tensor output = at::empty({}, self.options().dtype(out_dtype));
-  DimVector dims_(0);
+  DimVector dims_vec(0);
   if (self.numel() == 0) {
     output.zero_();
   } else {
-    ReduceCall(output, self, dims_, m);
+    ReduceCall(output, self, dims_vec, m);
   }
   return output;
 }
@@ -898,11 +912,11 @@ Tensor MinAllCall(const Tensor& self, ::musa::dnn::Reduce::Mode m) {
   auto out_dtype = self.scalar_type();
   // torch.min call reudce_all according to out.dim
   Tensor output = at::empty({}, self.options().dtype(out_dtype));
-  DimVector dims_(0);
+  DimVector dims_vec(0);
   if (self.numel() == 0) {
     output.zero_();
   } else {
-    ReduceCall(output, self, dims_, m);
+    ReduceCall(output, self, dims_vec, m);
   }
   return output;
 }
@@ -971,6 +985,46 @@ std::tuple<at::Tensor, at::Tensor> VarMeanCorrection(
   return at::native::var_mean(self, dim, correction, keepdim);
 }
 
+Tensor& LogSumExpOut(
+    const Tensor& self,
+    IntArrayRef dims,
+    bool keepdim,
+    Tensor& result) {
+  c10::musa::MUSAGuard device_guard(self.device());
+  TORCH_CHECK(
+      at::isFloatingType(result.scalar_type()),
+      "logsumexp(): Expected floating point type for result tensor, but got: ",
+      result.scalar_type());
+  namedinference::propagate_names_for_reduction(result, self, dims, keepdim);
+
+  if (at::isIntegralType(self.scalar_type(), /*includeBool=*/true)) {
+    // for integral inputs, promote input to default floating type.
+    auto default_dtype = at::typeMetaToScalarType(c10::get_default_dtype());
+    at::native::LogSumExpOutImpl(result, self.to(default_dtype), dims);
+  } else {
+    at::native::LogSumExpOutImpl(result, self, dims);
+  }
+
+  return result;
+}
+
+Tensor LogSumExp(const Tensor& self, IntArrayRef dims, bool keepdim) {
+  TensorOptions result_options;
+  DimVector dims_vec(dims);
+  maybe_wrap_dims(dims_vec, self.dim());
+  auto shape = at::meta::get_reduction_shape(self, dims_vec, keepdim);
+
+  if (at::isIntegralType(self.scalar_type(), /*includeBool=*/true)) {
+    // even for integral inputs, result is floating dtype
+    auto default_dtype = at::typeMetaToScalarType(c10::get_default_dtype());
+    result_options = self.options().dtype(default_dtype);
+  } else {
+    result_options = self.options();
+  }
+  auto result = at::empty(shape, result_options);
+  return LogSumExpOut(self, dims_vec, keepdim, result);
+}
+
 ADVANCED_REGISTER(aten, PrivateUse1, "mean", Mean)
 ADVANCED_REGISTER(aten, PrivateUse1, "mean.dim", MeanDim)
 ADVANCED_REGISTER(aten, PrivateUse1, "mean.out", MeanOut)
@@ -1015,6 +1069,9 @@ ADVANCED_REGISTER(aten, PrivateUse1, "all.out", AllDimOut)
 ADVANCED_REGISTER(aten, PrivateUse1, "argmax.out", ArgmaxOut)
 
 ADVANCED_REGISTER(aten, PrivateUse1, "var_mean.correction", VarMeanCorrection)
+
+ADVANCED_REGISTER(aten, PrivateUse1, "logsumexp", LogSumExp)
+ADVANCED_REGISTER(aten, PrivateUse1, "logsumexp.out", LogSumExpOut)
 
 } // namespace musa
 } // namespace at

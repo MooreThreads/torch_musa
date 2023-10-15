@@ -12,9 +12,20 @@
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/MUSAStream.h"
 
-#include <stdio.h>
-
 const int PARALLEL_NUM = 4;
+
+#define ACT_QUANT_CALL(dtype, act_mode)                       \
+  constexpr int64_t qmin = std::numeric_limits<dtype>::min(); \
+  constexpr int64_t qmax = std::numeric_limits<dtype>::max(); \
+  ActQuantizedKernel<dtype, act_mode>                         \
+    <<<grid_size, block_size, 0, stream>>>(                   \
+      static_cast<dtype*>(out.data_ptr()),                    \
+      static_cast<dtype*>(self.data_ptr()),                   \ 
+      scale,                                                  \
+      zero_point,                                             \
+      qmin,                                                   \
+      qmax,                                                   \
+      numel);
 
 namespace at {
 namespace musa {
@@ -33,15 +44,12 @@ __device__ int64_t SigmoidKernel(
     const int64_t qmin,
     const int64_t qmax) {
   float value = static_cast<float>(input - zero_point) * scale;
-  printf("input: %d %f, ", input, value);
   value = 1.f / (1.f + expf(-value));
-  printf("compute: %f, ", value);
   int64_t qvalue = std::max<int64_t>(
       std::min<int64_t>(
           static_cast<int64_t>(std::nearbyint(value / scale) + zero_point),
           qmax),
       qmin);
-  printf("qvalue: %d\n", qvalue);
   return qvalue;
 }
 
@@ -65,11 +73,15 @@ __device__ int64_t ReLUKernel(
     int64_t input,
     const double scale,
     const int64_t zero_point,
+    const int64_t qmin,
     const int64_t qmax) {
   float value =
       std::max<float>(static_cast<float>(input - zero_point) * scale, 0.f);
-  int64_t qvalue = std::min<int64_t>(
-      static_cast<int64_t>(std::nearbyint(value / scale) + zero_point), qmax);
+  int64_t qvalue = std::max<int64_t>(
+      std::min<int64_t>(
+          static_cast<int64_t>(std::nearbyint(value / scale) + zero_point),
+          qmax),
+      qmin);
   return qvalue;
 }
 
@@ -89,7 +101,11 @@ __global__ void ActQuantizedKernel(
 #pragma unroll
         for (int tid = 0; tid < PARALLEL_NUM; ++tid) {
           out[idx + tid] = ReLUKernel(
-              static_cast<int64_t>(in[idx + tid]), scale, zero_point, qmax);
+              static_cast<int64_t>(in[idx + tid]),
+              scale,
+              zero_point,
+              qmin,
+              qmax);
         }
         break;
       case ActMode::GELU:
@@ -135,27 +151,9 @@ void ActQuantizedImpl(
   dim3 grid_size{grid_x, 1, 1};
 
   if (self.scalar_type() == ScalarType::QInt8) {
-    constexpr int64_t qmin = std::numeric_limits<int8_t>::min();
-    constexpr int64_t qmax = std::numeric_limits<int8_t>::max();
-    ActQuantizedKernel<int8_t, mode><<<grid_size, block_size, 0, stream>>>(
-        static_cast<int8_t*>(out.data_ptr()),
-        static_cast<int8_t*>(self.data_ptr()),
-        scale,
-        zero_point,
-        qmin,
-        qmax,
-        numel);
+    ACT_QUANT_CALL(int8_t, mode)
   } else if (self.scalar_type() == ScalarType::QUInt8) {
-    constexpr int64_t qmin = std::numeric_limits<uint8_t>::min();
-    constexpr int64_t qmax = std::numeric_limits<uint8_t>::max();
-    ActQuantizedKernel<uint8_t, mode><<<grid_size, block_size, 0, stream>>>(
-        static_cast<uint8_t*>(out.data_ptr()),
-        static_cast<uint8_t*>(self.data_ptr()),
-        scale,
-        zero_point,
-        qmin,
-        qmax,
-        numel);
+    ACT_QUANT_CALL(uint8_t, mode)
   } else {
     TORCH_CHECK(false, "unsupported data type", self.scalar_type());
   }

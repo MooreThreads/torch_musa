@@ -494,7 +494,6 @@ TORCH_LIBRARY_IMPL(aten, AutocastPrivateUse1, m) {
   KERNEL_MUSA(pdist, fp32)
   KERNEL_MUSA(cdist, fp32)
   KERNEL_MUSA(renorm, fp32)
-  KERNEL_MUSA(logsumexp, fp32)
   // fp32_set_opt_dtype
   KERNEL_MUSA(prod, fp32_set_opt_dtype)
   KERNEL_MUSA_FOR_MULTIFORM(prod, dim_int, fp32_set_opt_dtype)

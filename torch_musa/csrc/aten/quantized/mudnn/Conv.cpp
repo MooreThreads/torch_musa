@@ -32,7 +32,7 @@ at::SmallVector<int64_t, 4> MakeQConvOutputShape<2>(
       (H + 2 * padding[0] - dilation[0] * (kernel[0] - 1) - 1) / stride[0] + 1;
   const int64_t Y_W =
       (W + 2 * padding[1] - dilation[1] * (kernel[1] - 1) - 1) / stride[1] + 1;
-  return {N, M, Y_H, Y_W, M}; // create a NCHW shape
+  return {N, M, Y_H, Y_W}; // create a NCHW shape
 }
 
 template <int kSpatialDim>

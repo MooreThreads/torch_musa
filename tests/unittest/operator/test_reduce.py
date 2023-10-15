@@ -55,6 +55,12 @@ def test_sum_bool(config):
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("dtype", [torch.float32])
+def test_logsumexp(input_data, dtype):
+    function(input_data, dtype, torch.logsumexp)
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_data)
+@pytest.mark.parametrize("dtype", [torch.float32])
 def test_prod(input_data, dtype):
     function(input_data, dtype, torch.prod)
 
