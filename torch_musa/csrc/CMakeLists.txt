@@ -105,6 +105,11 @@ FILE(GLOB MU_SRCS
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/IntReprQuant.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/MakePerTensorQuantizedTensor.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Nonzero.mu
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachBinaryOpList.mu
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachBinaryOpScalar.mu
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachBinaryOpScalarList.mu
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachPointwiseOp.mu
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachUnaryOp.mu
     aten/quantized/musa/*.mu
     aten/ops/torchvision/*.mu
     aten/ops/musa/*.mu
