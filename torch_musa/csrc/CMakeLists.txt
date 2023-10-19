@@ -86,6 +86,7 @@ FILE(GLOB MU_SRCS
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ReflectionPad.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Repeat.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ReplicationPadding.mu
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ScatterGatherKernel.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Shape.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TensorCompare.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TensorTransformations.mu
