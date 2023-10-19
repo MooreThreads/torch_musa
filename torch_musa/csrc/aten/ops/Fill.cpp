@@ -16,6 +16,10 @@ Tensor& Fill(Tensor& self, const Scalar& value) {
   return at::native::fill_(self, value);
 }
 
+Tensor& Fill_(Tensor& self, const Tensor& value) {
+  return at::native::fill_(self, value);
+}
+
 Tensor& Zero_(Tensor& self) {
   c10::musa::MUSAGuard device_guard(self.device());
   return at::native::zero_(self);
@@ -28,6 +32,7 @@ Tensor& MaskedFill(Tensor& self, const Tensor& mask, const Scalar& value) {
 }
 
 ADVANCED_REGISTER(aten, PrivateUse1, "fill_.Scalar", Fill)
+ADVANCED_REGISTER(aten, PrivateUse1, "fill_.Tensor", Fill_)
 ADVANCED_REGISTER(aten, PrivateUse1, "zero_", Zero_)
 ADVANCED_REGISTER(aten, PrivateUse1, "masked_fill_.Scalar", MaskedFill)
 
