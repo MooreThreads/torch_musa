@@ -693,7 +693,17 @@ std::tuple<Tensor&, Tensor&> MaxDimMax(
     bool keepdim,
     Tensor& output,
     Tensor& indices) {
-  UNUSED(keepdim);
+  dim = maybe_wrap_dim(dim, self.dim());
+  IntArrayRef dims(dim);
+  DimVector dims_vec(dims);
+  maybe_wrap_dims(dims_vec, self.dim());
+  auto shape = at::meta::get_reduction_shape(self, dims_vec, keepdim);
+  if (0 == output.numel()) {
+    at::native::resize_output(output, shape);
+  }
+  if (0 == indices.numel()) {
+    at::native::resize_output(indices, shape);
+  }
   ReduceIndicesCall(output, indices, self, dim, ::musa::dnn::Reduce::Mode::MAX);
   return std::tuple<Tensor&, Tensor&>(output, indices);
 }

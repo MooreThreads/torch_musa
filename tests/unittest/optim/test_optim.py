@@ -141,9 +141,8 @@ class TestOptim:
             (optim.Rprop, {"lr": 1e-2, "etas": (0.5, 1.2), "step_sizes": (1e-6, 50)}),
             (optim.ASGD, {"weight_decay": 0}),
             (optim.ASGD, {"weight_decay": 1}),
-            # GPU Fault occured for Adamax
-            # (optim.Adamax, {"weight_decay": 0}),
-            # (optim.Adamax, {"weight_decay": 1}),
+            (optim.Adamax, {"weight_decay": 0}),
+            (optim.Adamax, {"weight_decay": 1}),
             (optim.Adadelta, {"weight_decay": 0}),
             (optim.Adadelta, {"weight_decay": 1}),
             (optim.Adagrad, {"weight_decay": 0}),

@@ -108,6 +108,24 @@ def test_max(input_data, dtype):
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("dtype", [torch.float32])
+def test_max_out(input_data, dtype):
+    cmp = testing.DefaultComparator()
+    def max_fwd(device="cpu"):
+        x = input_data["input"].to(device).to(dtype)
+        max_values = torch.tensor([], device=device, dtype=dtype)
+        indices = torch.tensor([], device=device, dtype=torch.long)
+        torch.max(x, input_data["dim"], out=(max_values, indices))
+
+        return max_values, indices
+    max_values, indices = max_fwd("cpu")
+    max_values_musa, indices_musa = max_fwd("musa")
+
+    cmp(max_values, max_values_musa.cpu())
+    cmp(indices, indices_musa.cpu())
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_data)
+@pytest.mark.parametrize("dtype", [torch.float32])
 def test_min(input_data, dtype):
     function(input_data, dtype, torch.min)
 
