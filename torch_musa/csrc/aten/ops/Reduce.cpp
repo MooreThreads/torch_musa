@@ -4,6 +4,7 @@
 #include <ATen/native/ReduceOpsUtils.h>
 #include <ATen/ops/max.h>
 #include <torch/library.h>
+#include <sstream>
 
 #ifndef AT_PER_OPERATOR_HEADERS
 #include <ATen/Functions.h>
@@ -586,9 +587,23 @@ Tensor& AnyOut(const Tensor& self, Tensor& out) {
   return out;
 }
 
+std::string concatenate(
+    const std::string& str,
+    ScalarType scalaType,
+    const Tensor& self) {
+  std::ostringstream oss;
+  oss << str << scalaType << ": " << self;
+  return oss.str();
+}
+
 Tensor AnyDim(const Tensor& self, int64_t dim, bool keepdim) {
   TORCH_CHECK(
-      self.scalar_type() == ScalarType::Bool, "Now only support bool type");
+      self.scalar_type() == ScalarType::Bool || self.item<int>() == 0 ||
+          self.item<int>() == 1,
+      concatenate(
+          "Now only support bool type or 0/1 value, but got ",
+          self.scalar_type(),
+          self));
   IntArrayRef dims(dim);
   return Reduction(
       self, {dim}, keepdim, self.scalar_type(), ::musa::dnn::Reduce::Mode::OR);
@@ -597,7 +612,12 @@ Tensor AnyDim(const Tensor& self, int64_t dim, bool keepdim) {
 Tensor& AnyDimOut(const Tensor& self, int64_t dim, bool keepdim, Tensor& out) {
   UNUSED(keepdim);
   TORCH_CHECK(
-      self.scalar_type() == ScalarType::Bool, "Now only support bool type");
+      self.scalar_type() == ScalarType::Bool || self.item<int>() == 0 ||
+          self.item<int>() == 1,
+      concatenate(
+          "Now only support bool type or 0/1 value, but got ",
+          self.scalar_type(),
+          self));
   IntArrayRef dims(dim);
   ReduceCall(out, self, dims, ::musa::dnn::Reduce::Mode::OR);
   return out;
@@ -861,8 +881,12 @@ Tensor All(const Tensor& self) {
 Tensor AllDim(const Tensor& self, int64_t dim, bool keepdim) {
   TORCH_CHECK(
       self.scalar_type() == ScalarType::Bool ||
-          self.scalar_type() == ScalarType::Byte,
-      "Now only support bool/uint8 type");
+          self.scalar_type() == ScalarType::Byte || self.item<int>() == 0 ||
+          self.item<int>() == 1,
+      concatenate(
+          "Now only support bool/uint8 type or 0/1 value, but got ",
+          self.scalar_type(),
+          self));
   IntArrayRef dims(dim);
   if (self.scalar_type() == ScalarType::Byte) {
     Tensor self_;
@@ -887,8 +911,12 @@ Tensor& AllDimOut(const Tensor& self, int64_t dim, bool keepdim, Tensor& out) {
   UNUSED(keepdim);
   TORCH_CHECK(
       self.scalar_type() == ScalarType::Bool ||
-          self.scalar_type() == ScalarType::Byte,
-      "Now only support bool/uint8 type");
+          self.scalar_type() == ScalarType::Byte || self.item<int>() == 0 ||
+          self.item<int>() == 1,
+      concatenate(
+          "Now only support bool/uint8 type or 0/1 value, but got ",
+          self.scalar_type(),
+          self));
   IntArrayRef dims(dim);
   if (self.scalar_type() == ScalarType::Byte) {
     Tensor self_;

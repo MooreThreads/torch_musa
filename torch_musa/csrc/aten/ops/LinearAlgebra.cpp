@@ -1,9 +1,10 @@
 #include <ATen/Config.h>
 #include <ATen/core/op_registration/adaption.h>
 #include <ATen/native/Resize.h>
+
+#include <ATen/ops/linalg_inv_ex_ops.h>
 #include <ATen/ops/linalg_lstsq_native.h>
 #include <torch/library.h>
-
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/utils/register_wrapper.h"
@@ -86,7 +87,39 @@ namespace musa {
   ;
 }
 
+::std::tuple<at::Tensor&, at::Tensor&> LinalgInvExOutInverse(
+    const at::Tensor& A,
+    bool check_errors,
+    at::Tensor& inverse,
+    at::Tensor& info) {
+  auto cpu_inverse =
+      at::empty(inverse.sizes(), inverse.options().device(DeviceType::CPU));
+  auto cpu_info =
+      at::empty(info.sizes(), info.options().device(DeviceType::CPU));
+  auto cpu_A = at::empty(A.sizes(), A.options().device(DeviceType::CPU));
+
+  cpu_inverse.copy_(inverse);
+  cpu_info.copy_(info);
+  cpu_A.copy_(A);
+
+  at::_ops::linalg_inv_ex_inverse::call(
+      cpu_A, check_errors, cpu_inverse, cpu_info);
+  inverse = at::empty(
+      cpu_inverse.sizes(),
+      cpu_inverse.options().device(DeviceType::PrivateUse1));
+  inverse.copy_(cpu_inverse);
+  info = at::empty(
+      cpu_info.sizes(), cpu_info.options().device(DeviceType::PrivateUse1));
+  info.copy_(cpu_info);
+  return ::std::tuple<at::Tensor&, at::Tensor&>{inverse, info};
+}
+
 ADVANCED_REGISTER(aten, PrivateUse1, "linalg_lstsq.out", LinalgLstsqOut)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "linalg_inv_ex.inverse",
+    LinalgInvExOutInverse)
 
 } // namespace musa
 } // namespace at

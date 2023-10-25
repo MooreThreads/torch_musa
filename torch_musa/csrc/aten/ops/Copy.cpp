@@ -250,8 +250,6 @@ Tensor mtgpu_copy_from(
     const Tensor& src,
     const Tensor& self,
     bool non_blocking) {
-  // For all cases, the source and destination's sizes should be the same.
-  TORCH_INTERNAL_ASSERT(self.sizes() == src.sizes());
   // At least one of src and dst should be MUSA, otherwise it is impossible
   // to fall into this function!
   TORCH_INTERNAL_ASSERT(is_musa(self) || is_musa(src));
@@ -309,6 +307,8 @@ Tensor mtgpu_copy_from(
                 dst, src.scalar_type(), LEGACY_CONTIGUOUS_MEMORY_FORMAT);
       src_contig = src.expand_as(dst).contiguous();
     }
+    // expand_as will change sizes hence assert is moved here
+    TORCH_INTERNAL_ASSERT(dst_contig.sizes() == src_contig.sizes());
     dst_contig._set_conj(dst.is_conj());
     src_contig._set_conj(self.is_conj());
 

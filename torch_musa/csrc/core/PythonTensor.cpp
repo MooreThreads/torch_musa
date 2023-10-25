@@ -76,14 +76,19 @@ static const char* GetBackendName(at::Backend backend) {
   }
 }
 
+std::string replace_torch_musa(std::string str) {
+  if (str.find("torch_musa") != std::string::npos) {
+    // replace torch_musa with torch.musa
+    std::replace(str.begin(), str.begin() + 6, '_', '.');
+  }
+  return str;
+}
+
 std::string OptionsToString(const at::TensorOptions options) {
   std::ostringstream ss;
   ss << GetBackendName(options.backend()) << "."
      << toString(at::typeMetaToScalarType(options.dtype())) << "Tensor";
-  std::string ret = ss.str();
-  // replace torch_musa with torch.musa
-  std::replace(ret.begin(), ret.begin() + 6, '_', '.');
-  return ret;
+  return replace_torch_musa(ss.str());
 }
 
 std::string TypeToString(const at::DeprecatedTypeProperties& type) {
@@ -94,7 +99,6 @@ std::string TypeToString(const at::DeprecatedTypeProperties& type) {
 }
 
 at::TensorOptions OptionsFromString(const std::string& str) {
-  static std::string musa_prefix("torch_musa.");
   static std::once_flag cpu_once;
   static std::once_flag musa_once;
   static std::unordered_map<std::string, at::DeprecatedTypeProperties*> cpu_map;
@@ -111,12 +115,15 @@ at::TensorOptions OptionsFromString(const std::string& str) {
     return at::getDeprecatedTypeProperties(backend, scalar_type).options();
   }
 
-  if (std::mismatch(musa_prefix.begin(), musa_prefix.end(), str.begin())
-          .first == musa_prefix.end()) {
-    // torch.musa. is prefix of str
+  if ((str.find("torch_musa.") != std::string::npos) ||
+      (str.find("torch.musa.") != std::string::npos)) {
+    // torch.musa. or torch_musa. is prefix of str
     std::call_once(musa_once, []() {
       for (auto type : AllMusaTypes()) {
-        musa_map.emplace(TypeToString(*type), type);
+        std::string origStr = TypeToString(*type);
+        musa_map.emplace(origStr, type);
+        // hence torch.musa.xxx key is also included
+        musa_map.emplace(replace_torch_musa(origStr), type);
       }
     });
     type_map = &musa_map;

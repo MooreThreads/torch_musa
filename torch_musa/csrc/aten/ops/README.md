@@ -10,6 +10,7 @@ there ares some ops that implemented on CPU:
  - mul, div # double, bool
  - fill # double
  - linalg_lstsq.out
+ - linalg_inv_ex.inverse
  - stft, stft.center # _fft_r2c/_fft_c2c and complex tensor transpose
 
  need to compare mudnn uncontiguous Unay/Binary vs contiguous + contiguous Unary/Binary performance
