@@ -1,37 +1,10 @@
-ARG UBUNTU_VERSION
+ARG BASE_IMG
+FROM ${BASE_IMG}
 
-FROM ubuntu:${UBUNTU_VERSION}
-
-ARG UBUNTU_VERSION
 ARG MUSA_TOOLKITS_URL
 ARG MUDNN_URL
-ARG PYTHON_VERSION
 
-SHELL ["/bin/bash", "-c"]
-
-# setup time for system
-ENV LANG=C.UTF-8
-ENV DEBIAN_FRONTEND=noninteractive
-
-# using ubuntu official sources often fails to connect
-COPY ./common/change_ubuntu_mirror.sh change_ubuntu_mirror.sh
-RUN bash change_ubuntu_mirror.sh && \
-    rm -f change_ubuntu_mirror.sh
-
-# create render group
-# Only users in render group can use MooreThreads GPU
-RUN groupadd -o -g 109 render
-
-# install basic packages
-COPY ./common/install_base.sh install_base.sh
-RUN bash install_base.sh && \
-    rm -f install_base.sh
-
-# install gcc
-# TODO(mingyuan-wang)
-# placeholder parameter, no gcc update or installation will be performed,
-# cuz the torch_musa environment was successfully configured only on ubuntu20.04 
-# using default gcc9 currently.
+# maybe update gcc
 ARG GCC_VERSION
 COPY ./common/install_gcc.sh install_gcc.sh
 RUN bash install_gcc.sh && \
@@ -55,91 +28,43 @@ RUN wget --no-check-certificate ${MUDNN_URL} -O /home/mudnn.tar && \
     rm -rf /home/*mudnn* && \
     popd
 
-# install math libs
+# install math libs & mccl
 COPY ./common/install_math.sh install_math.sh
-RUN bash install_math.sh && \
-    rm -f install_math.sh
-
-# install mccl
 COPY ./common/install_mccl.sh install_mccl.sh
-RUN bash install_mccl.sh && \
-    rm -f install_mccl.sh
-
-# install static libraries of mkl
-COPY ./common/install_mkl.sh install_mkl.sh
-RUN bash install_mkl.sh && \
-    rm -f install_mkl.sh
+RUN bash install_math.sh && \
+    bash install_mccl.sh && \
+    rm -f install_math.sh install_mccl.sh
 
 # config git
-RUN git config --global http.sslverify false && \
-    git config --global https.sslverify false
+# RUN git config --global http.sslverify false && \
+#     git config --global https.sslverify false
 
-COPY ./pytorch /home/pytorch
+ENV MUSA_HOME=/usr/local/musa
+ENV LD_LIBRARY_PATH=$MUSA_HOME/lib:$LD_LIBRARY_PATH
+ENV PATH=${MUSA_HOME}/bin:$PATH
 COPY ./torch_musa /home/torch_musa
-
-# install conda
-COPY ./common/install_conda.sh install_conda.sh
-RUN bash install_conda.sh && \
-    rm -f install_conda.sh
-
-# setup conda virtual environment for torch_musa 
-ENV PATH=/opt/conda/bin:$PATH
 RUN pushd /home/torch_musa && \
-    ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
-    conda create -n ${ENV_NAME} python=${PYTHON_VERSION} --yes && \
-    source activate ${ENV_NAME} && \
-    pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
+    # if mkl was not installed via pip
+    # pytorch will look for it under /opt/intel/oneapi
     pip install -r requirements.txt && \
-    pip install numpy==1.23.1 pytest==7.2.2 protobuf==3.19.0 \
+    # install mkl librarie (for static linking)
+    bash docker/common/install_mkl.sh && \
+    # maybe create softlink for mkl libraries
+    bash docker/common/create_softlink4mkl.sh $(dirname $(dirname $(which python)))/lib && \
+    pip install pytest==7.2.2 protobuf==3.19.0 \
     googleapis-common-protos==1.56.4 importlib-metadata==4.11.3 \
     pillow==9.2.0 pylint==2.17.3 requests black && \
     # workaround for https://github.com/pytorch/pytorch/issues/99625
     conda install -y "llvm-openmp<16" && \
-    popd && \
-    source deactivate
-
-# create softlink for mkl libraries if needed
-COPY ./common/create_softlink4mkl.sh create_softlink4mkl.sh
-RUN ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
-    bash create_softlink4mkl.sh /opt/conda/envs/${ENV_NAME}/lib && \
-    rm -f create_softlink4mkl.sh
-
-# prepare some envs & build original pytorch from scratch
-ENV MUSA_HOME=/usr/local/musa
-ENV LD_LIBRARY_PATH=$MUSA_HOME/lib:$LD_LIBRARY_PATH
-ENV PATH=/usr/local/musa/bin:/opt/conda/bin:$PATH
-RUN ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
-    source activate && \
-    source deactivate && \
-    conda activate ${ENV_NAME} && \
     export CMAKE_PREFIX_PATH=${CONDA_PREFIX:-"$(dirname $(which conda))/../"} && \
-    pushd /home/torch_musa && \
     bash build.sh -t && \
-    popd && \
-    conda deactivate
+    popd
 
 WORKDIR /tmp
 COPY ./vision ./vision
 RUN pushd vision && \
-    ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
-    source activate ${ENV_NAME} && \
     python setup.py install && \
     popd && \
-    rm -rf /tmp
-
-# add variables to the beginning of ~/.bashrc
-# cause shell maybe termintated by this command [ -z "$PS1" ] && return
-RUN ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
-    sudo sed -i '1s|^|\. /opt/conda/etc/profile\.d/conda\.sh\n|' ~/.bashrc && \
-    sudo sed -i '2s|^|export MUSA_HOME=/usr/local/musa\n|' ~/.bashrc && \
-    LD_LIBRARY_PATH_STR=$(echo -e "export LD_LIBRARY_PATH=$LD_LIBRARY_PATH") && \
-    sudo sed -i "3s|^|${LD_LIBRARY_PATH_STR}\n|" ~/.bashrc && \
-    PATH_STR=$(echo -e "export PATH=$PATH\n") && \
-    sudo sed -i "4s|^|${PATH_STR}\n|" ~/.bashrc && \
-    PYTHON_ENV=$(echo -e "conda activate ${ENV_NAME}") && \
-    sudo sed -i "5s|^|${PYTHON_ENV}\n|" ~/.bashrc && \
-    CMAKE_PREFIX_PATH=$(echo -e "export CMAKE_PREFIX_PATH=\${CONDA_PREFIX:-\"\$(dirname \$(which conda))/../\"}""") && \
-    sudo sed -i "6s|^|${CMAKE_PREFIX_PATH}\n|" ~/.bashrc && \
-    sudo echo $PYTHON_ENV >> ~/.bashrc
+    rm -rf /tmp/vision
 
 WORKDIR /home

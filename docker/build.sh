@@ -1,23 +1,33 @@
 #!/bin/bash
+# Use this script to build docker image for torch_musa
+# example: DOCKER_BUILD_DIR=/data/torch_musa_docker_build \
+#          TORCH_VISION_REPO_ROOT_PATH=/tmp \
+#          bash docker/build.sh -i torch_musa_dev \
+#                               -b sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev:base-pytorch-v2.0.0 \
+#                               -f docker/ubuntu/dockerfile.dev \
+#                               -m https://oss.mthreads.com/release-rc/cuda_compatible/dev1.5.0/QY2/musa_toolkits_dev1.5.0-qy2.tar.gz \
+#                               -n https://oss.mthreads.com/release-rc/cuda_compatible/dev1.5.0/QY2/mudnn_dev2.3.0-qy2.tar
 set -e
 
-PYTORCH_TAG=v2.0.0
 IMAGE_DOCKER_NAME=NULL
 TAG=latest
 PYTHON_VERSION="3.8"
 RELEASE=0
-OS_NAME=NULL
+BASE_IMG=NULL
+DOCKER_FILE=""
 MUSA_TOOLKITS_URL=""
 MUDNN_URL=""
 TORCH_WHL_URL=""
 TORCH_MUSA_WHL_URL=""
+VISION_TAG="v0.16.0"
 
 usage() {
   echo -e "\033[1;32mThis script is used to build docker image for torch_musa. \033[0m"
   echo -e "\033[1;32mParameters usage: \033[0m"
   echo -e "\033[32m    -i/--image_docker_name     : Name of the docker image. \033[0m"
   echo -e "\033[32m    -t/--tag                   : Tag of the docker image. \033[0m"
-  echo -e "\033[32m    -s/--sys                   : The operating system, for example ubuntu:20.04 \033[0m"
+  echo -e "\033[32m    -b/--base_img              : The base docker image, for example ubuntu:20.04. \033[0m"
+  echo -e "\033[32m    -f/--docker_file           : The path of docker file. \033[0m"
   echo -e "\033[32m    -v/--python_version        : The python version used by torch_musa. \033[0m"
   echo -e "\033[32m    -m/--musa_toolkits_url     : The download link of MUSA ToolKit. \033[0m"
   echo -e "\033[32m    -n/--mudnn_url             : The download link of MUDNN. \033[0m"
@@ -28,7 +38,7 @@ usage() {
 }
 
 # parse parameters
-parameters=$(getopt -o ri:t:s:v:m:n:h:: --long image_docker_name:,tag:,sys:,python_verison:,musa_toolkits_url:,mudnn_url:,release,torch_whl_url:,torch_musa_whl_url:,help::, -n "$0" -- "$@")
+parameters=$(getopt -o ri:t:b:f:v:m:n:h:: --long image_docker_name:,tag:,base_img:,docker_file:,python_verison:,musa_toolkits_url:,mudnn_url:,release,torch_whl_url:,torch_musa_whl_url:,help::, -n "$0" -- "$@")
 [ $? -ne 0 ] && { echo -e "\033[34mTry '$0 --help' for more information. \033[0m"; exit 1; }
 
 eval set -- "$parameters"
@@ -37,7 +47,8 @@ while true;do
   case "$1" in
     -i|--image_docker_name) IMAGE_DOCKER_NAME=$2; shift 2;;
     -t|--tag) TAG=$2; shift 2;;
-    -s|--sys) OS_NAME=$2; shift 2;;
+    -b|--base_img) BASE_IMG=$2; shift 2;;
+    -f|--docker_file) DOCKER_FILE=$2; shift 2;;
     -v|--python_verison) PYTHON_VERSION=$2; shift 2;;
     -m|--musa_toolkits_url) MUSA_TOOLKITS_URL=$2; shift 2;;
     -n|--mudnn_url) MUDNN_URL=$2; shift 2;;
@@ -50,72 +61,45 @@ while true;do
   esac
 done
 
+function prepare_build_context() {
+  # preprare files will be used when building docker image
+  BUILD_DIR=${1:-$(pwd)/tmp}
+  if [ ${RELEASE} -eq 0 ]; then
+    # add projects here which needs to be installed after torch_musa installation done
+    TORCH_VISION_ROOT_DIR=${TORCH_VISION_REPO_ROOT_PATH:-${HOME}}
+    if [ ! -d "$TORCH_VISION_ROOT_DIR/vision" ]; then
+      echo "torchvision will be downloaded to ${TORCH_VISION_ROOT_DIR}"
+      git clone -b ${VISION_TAG}  https://github.com/pytorch/vision.git --depth=1 $TORCH_VISION_ROOT_DIR/vision
+    fi
+    sudo cp -r $TORCH_VISION_ROOT_DIR/vision $BUILD_DIR
+    sudo git clone https://github.mthreads.com/mthreads/torch_musa.git $BUILD_DIR/torch_musa
+  fi
+  CUR_ROOT=$(cd "$(dirname "$0")"; pwd)
+  sudo cp -r $CUR_ROOT/common $BUILD_DIR/
+}
 
-# parse dockerfile and os
-read OS VERSION_NUMBER <<< `echo $OS_NAME | awk -F: '{print $1, $2}'`
-OS=$(echo "$OS" | tr '[:upper:]' '[:lower:]')
-DOCKER_FILE="${OS}/dockerfile"
-if [ ${OS} == "ubuntu" ]
-then
-  UBUNTU_VERSION=$VERSION_NUMBER
-elif [ ${OS} == "centos" ]
-then
-  CENTOS_VERSION=$VERSION_NUMBER
-else
-  echo -e "\033[34mUnsupported operating system. \033[0m"
-  exit 1
-fi
+function build_dev_base_docker_image() {
+  echo "Please run bash build_base.sh "
+  exit 0
+}
 
-if [ ${RELEASE} -eq 1 ]
-then
-  DOCKER_FILE=$DOCKER_FILE".release"
-else
-  DOCKER_FILE=$DOCKER_FILE".dev"
-fi
+function build_docker_image() {
+  BUILD_CONTEXT_DIR=$1
+  build_docker_cmd_prefix="docker build --no-cache --network=host "
+  build_docker_cmd=${build_docker_cmd_prefix}"--build-arg BASE_IMG=${BASE_IMG}
+                                              --build-arg PYTHON_VERSION=${PYTHON_VERSION}                     \
+                                              --build-arg MUSA_TOOLKITS_URL=${MUSA_TOOLKITS_URL}               \
+                                              --build-arg MUDNN_URL=${MUDNN_URL}                               \
+                                              --build-arg TORCH_WHL_URL=${TORCH_WHL_URL}                       \
+                                              --build-arg TORCH_MUSA_WHL_URL=${TORCH_MUSA_WHL_URL}             \
+                                              -t ${IMAGE_DOCKER_NAME}:${TAG}                                   \
+                                              -f ${DOCKER_FILE} ${BUILD_CONTEXT_DIR}"
+  echo -e "\033[34mbuild_docker cmd: "$build_docker_cmd"\033[0m"
+  eval $build_docker_cmd
+}
 
-
-PYTORCH_ROOT_DIR=${PYTORCH_REPO_ROOT_PATH:-${HOME}}
-TORCH_VISION_ROOT_DIR=${TORCH_VISION_REPO_ROOT_PATH:-${HOME}}
-
-if [ ! -d "$PYTORCH_ROOT_DIR/pytorch" ]; then
-  # if pytorch repo not exists, download it firstly
-  echo "pytorch will be downloaded to ${PYTORCH_ROOT_DIR}"
-  git clone -b ${PYTORCH_TAG} https://github.com/pytorch/pytorch.git --depth=1 $PYTORCH_ROOT_DIR/pytorch
-  git submodule update --init --recursive
-fi
-
-if [ ! -d "$TORCH_VISION_ROOT_DIR/vision" ]; then
-  echo "torchvision will be downloaded to ${TORCH_VISION_ROOT_DIR}"
-  git clone https://github.com/pytorch/vision.git --depth=1 $TORCH_VISION_ROOT_DIR/vision
-fi
-
-BUILD_DIR=$(pwd)/tmp
-mkdir -p $BUILD_DIR
-CUR_ROOT=$(cd "$(dirname "$0")"; pwd)
-cp -r $CUR_ROOT/common $BUILD_DIR/
-cp -r $CUR_ROOT/ubuntu $BUILD_DIR
-cp $CUR_ROOT/../requirements.txt $BUILD_DIR
-
-
-pushd $BUILD_DIR
-if [ ${RELEASE} -eq 0 ]; then
-  # prepare pytorch, torchvision and torch_musa
-  cp -r $PYTORCH_ROOT_DIR/pytorch $BUILD_DIR
-  cp -r $TORCH_VISION_ROOT_DIR/vision $BUILD_DIR
-  git clone https://github.mthreads.com/mthreads/torch_musa.git
-fi
-
-# build docker image
-build_docker_cmd_prefix="docker build --no-cache --network=host "
-build_docker_cmd=${build_docker_cmd_prefix}"--build-arg UBUNTU_VERSION=${UBUNTU_VERSION}                     \
-                                            --build-arg CENTOS_VERSION=${CENTOS_VERSION}                     \
-                                            --build-arg PYTHON_VERSION=${PYTHON_VERSION}                     \
-                                            --build-arg MUSA_TOOLKITS_URL=${MUSA_TOOLKITS_URL}               \
-                                            --build-arg MUDNN_URL=${MUDNN_URL}                               \
-                                            --build-arg TORCH_WHL_URL=${TORCH_WHL_URL}                       \
-                                            --build-arg TORCH_MUSA_WHL_URL=${TORCH_MUSA_WHL_URL}             \
-                                            -t ${IMAGE_DOCKER_NAME}:${TAG}                                   \
-                                            -f ${DOCKER_FILE} ."
-echo -e "\033[34mbuild_docker cmd: "$build_docker_cmd"\033[0m"
-eval $build_docker_cmd
-popd
+BUILD_DIR=${DOCKER_BUILD_DIR:-$(pwd)/tmp}
+sudo mkdir -p $BUILD_DIR
+prepare_build_context ${BUILD_DIR}
+build_docker_image $BUILD_DIR
+sudo rm -rf $BUILD_DIR

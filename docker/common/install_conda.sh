@@ -1,13 +1,12 @@
 #!/bin/bash
 set -e
 
-MINICONDA_VERSION="latest"
-MINICONDA_URL="https://repo.anaconda.com/miniconda/Miniconda3-${MINICONDA_VERSION}-Linux-x86_64.sh"
+MINICONDA_FILE="Miniconda3-latest-Linux-x86_64.sh"
+MINICONDA_URL="https://repo.anaconda.com/miniconda/${MINICONDA_FILE}"
 
-pushd /tmp
-wget --no-check-certificate $MINICONDA_URL -O conda_install.sh
-mkdir -p /opt/conda
-sudo bash ./conda_install.sh -b -f -p "/opt/conda"
-sudo sed -e 's|PATH="\(.*\)"|PATH="/opt/conda/bin:\1"|g' -i /etc/environment
-rm -f ./conda_install.sh
-popd
+mkdir -p /opt
+cd /opt && \
+wget --no-check-certificate ${MINICONDA_URL} && \
+chmod +x ${MINICONDA_FILE} && \
+mkdir -p /opt/conda && ./${MINICONDA_FILE} -b -f -p "/opt/conda" && rm -rf ${MINICONDA_FILE}
+# sudo sed -e 's|PATH="\(.*\)"|PATH="/opt/conda/bin:\1"|g' -i /etc/environment
