@@ -1,5 +1,5 @@
 """
-This package adds support for MUAS common functions and class.
+This package adds support for MUSA common functions and class.
 """
 
 import os.path as _osp

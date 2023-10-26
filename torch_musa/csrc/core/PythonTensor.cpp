@@ -10,6 +10,7 @@
 #include "Device.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/utils/Logging.h"
+#include "torch_musa/csrc/utils/musa_lazy_init.h"
 
 namespace torch {
 namespace musa {
@@ -230,7 +231,7 @@ PyObject* GetTensorType(PyObject* self, PyObject* args, PyObject* kwargs) {
        "type(Tensor temp, PyObject* dtype=None, bool async=False, *, MemoryFormat? memory_format=None)|deprecated"});
 
   torch::ParsedArgs<4> parsed_args;
-  auto r = parser.parse(args, kwargs, parsed_args);
+  auto r = parser.parse(self, args, kwargs, parsed_args);
   auto self_ = r.tensor(0);
   if (r.has_torch_function()) {
     return torch::handle_torch_function(
@@ -270,7 +271,7 @@ PyObject* GetTensorType(PyObject* self, PyObject* args, PyObject* kwargs) {
     }
   }
   return THPVariable_Wrap(dispatch_to(
-      self_, device, scalar_type, r.toBool(1), false, opt_memory_format));
+      self_, device, scalar_type, r.toBool(2), false, opt_memory_format));
   END_HANDLE_TH_ERRORS
 }
 
@@ -279,7 +280,7 @@ static PyObject* TensorIsMusa(
     PyObject* args,
     PyObject* kwargs) {
   HANDLE_TH_ERRORS
-  static torch::PythonArgParser parser({"type(Tensor temp)"
+  static torch::PythonArgParser parser({"is_musa(Tensor temp)"
 
   });
   torch::ParsedArgs<1> parsed_args;
@@ -300,6 +301,39 @@ static PyObject* TensorInstancecheck(PyObject* _self, PyObject* arg) {
     }
   }
   Py_RETURN_FALSE;
+  END_HANDLE_TH_ERRORS
+}
+
+static PyObject* THPVariable_musa(
+    PyObject* self,
+    PyObject* args,
+    PyObject* kwargs) {
+  HANDLE_TH_ERRORS
+  // NOTE: it is different from `THPVariable_cuda` in
+  // `pytorch/tools/autograd/templates/python_variable_methods.cpp`
+  // because `THPVariable_cuda` binds to "cuda" method of `class _TensorBase`.
+  // and `THPVariable_musa` binds to "_musa" function which doesn't belong to
+  // any class. Hence we should place `Tensor temp` parameter to accept `self`
+  static PythonArgParser parser(
+      {"musa(Tensor temp, Device? device=None, bool non_blocking=False, *, MemoryFormat? memory_format=None)",
+       "musa(Tensor temp, Device? device=None, bool async=False, *, MemoryFormat? memory_format=None)|deprecated"});
+  ParsedArgs<4> parsed_args;
+  auto r = parser.parse(self, args, kwargs, parsed_args);
+  auto self_ = r.tensor(0);
+  if (r.has_torch_function()) {
+    return handle_torch_function(
+        r, self, args, kwargs, THPVariableClass, "torch.Tensor");
+  }
+
+  auto device =
+      r.isNone(1) ? at::Device(at::DeviceType::PrivateUse1) : r.device(1);
+  auto opt_memory_format = r.memoryformatOptional(3);
+  TORCH_CHECK(
+      device.type() == at::DeviceType::PrivateUse1,
+      "Invalid device, must be musa device");
+  torch::utils::musa_lazy_init();
+  return THPVariable_Wrap(
+      dispatch_to(self_, device, r.toBool(2), false, opt_memory_format));
   END_HANDLE_TH_ERRORS
 }
 
@@ -487,6 +521,10 @@ static void PyBindTensorTypes(const std::vector<PyTensorType>& tensor_types) {
 }
 
 static PyMethodDef MusaTensorMethods[] = {
+    {"_musa",
+     castPyCFunctionWithKeywords(THPVariable_musa),
+     METH_VARARGS | METH_KEYWORDS,
+     nullptr},
     {"_type",
      castPyCFunctionWithKeywords(GetTensorType),
      METH_VARARGS | METH_KEYWORDS,
