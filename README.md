@@ -183,6 +183,7 @@ The following two key changes are required when using **torch_musa**:
 
    a = torch.tensor([1.2, 2.3], dtype=torch.float32, device='musa')
    b = torch.tensor([1.2, 2.3], dtype=torch.float32, device='cpu').to('musa')
+   c = torch.tensor([1.2, 2.3], dtype=torch.float32).musa()
    ```
 **torch musa** has integrated torchvision ops in the musa backend. Please do the following if torchvision is not installed:
 - Install torchvision package via building from source
