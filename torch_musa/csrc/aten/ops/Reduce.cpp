@@ -361,12 +361,12 @@ Tensor& NormDtypeOut(
   TORCH_CHECK(
       self.scalar_type() == at::ScalarType::Float ||
           self.scalar_type() == at::ScalarType::Half,
-      "Dtype of input tensor of Norm.out only support Float32, ",
+      "Dtype of input tensor of Norm.out only support Float32/Half, ",
       "but now it is ",
       self.scalar_type());
   TORCH_CHECK(
       dtype == at::ScalarType::Float || dtype == at::ScalarType::Half,
-      "Dtype of input tensor of Norm.out only support Float32, ",
+      "Dtype of input tensor of Norm.out only support Float32/Half, ",
       "but now it is ",
       self.scalar_type());
   auto out_dtype = out.scalar_type();

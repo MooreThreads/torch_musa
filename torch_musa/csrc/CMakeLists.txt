@@ -73,6 +73,7 @@ FILE(GLOB MU_SRCS
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/IndexKernel.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/LegacyThrustHelpers.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/LossCTC.mu
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Loss.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/MultinomialKernel.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/NLLLoss2d.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/PointwiseOpsKernel.mu

@@ -616,15 +616,6 @@ ADVANCED_REGISTER(
     "mse_loss_backward.grad_input",
     MseLossBwdGradInput)
 
-ADVANCED_REGISTER(aten, PrivateUse1, "nll_loss_forward.output", NllLossOut)
-ADVANCED_REGISTER(aten, PrivateUse1, "nll_loss_forward", NllLoss)
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "nll_loss_backward.grad_input",
-    NllLossBwdGradInput)
-ADVANCED_REGISTER(aten, PrivateUse1, "nll_loss_backward", NllLossBwd)
-
 ADVANCED_REGISTER(aten, PrivateUse1, "nll_loss2d_forward.output", NllLoss2dOut)
 ADVANCED_REGISTER(aten, PrivateUse1, "nll_loss2d_forward", NllLoss2d)
 ADVANCED_REGISTER(
