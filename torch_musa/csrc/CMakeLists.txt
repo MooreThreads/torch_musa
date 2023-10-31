@@ -35,7 +35,9 @@ FILE(GLOB ATEN_MUSA_CSRCS
 
 FILE(GLOB PORTING_CPP_CSRCS
     aten/ops/musa/*.cpp
-    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Activation.cpp)
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Activation.cpp
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/musa/EmptyTensor.cpp
+    )
 
 FILE(GLOB MU_SRCS
     ${GENERATED_PORTING_DIR}/aten/src/ATen/musa/cub.mu
@@ -54,6 +56,7 @@ FILE(GLOB MU_SRCS
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/AmpKernels.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/AveragePool3d.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/BinaryMiscBackwardOpsKernels.mu
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/BinaryGeometricKernels.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/BinaryMiscOpsKernels.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/BinaryBitwiseOpsKernels.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/CompareKernels.mu
@@ -90,6 +93,7 @@ FILE(GLOB MU_SRCS
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ScatterGatherKernel.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Shape.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TensorCompare.mu
+    ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TensorFactories.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TensorTransformations.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TriangularOps.mu
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryFractionKernels.mu

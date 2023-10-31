@@ -17,6 +17,7 @@ for data in testing.get_raw_data():
     input_datas.append({"input": data, "other": data})
 
 all_funcs_except_div = [
+    torch.atan2,
     torch.add,
     torch.sub,
     torch.mul,

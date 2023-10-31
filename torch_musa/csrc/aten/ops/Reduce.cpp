@@ -1063,6 +1063,27 @@ Tensor LogSumExp(const Tensor& self, IntArrayRef dims, bool keepdim) {
   return LogSumExpOut(self, dims_vec, keepdim, result);
 }
 
+at::Tensor VarCorrection(
+    const at::Tensor& self,
+    at::OptionalIntArrayRef dim,
+    c10::optional<int64_t> correction,
+    bool keepdim) {
+  // No device check
+  const OptionalDeviceGuard device_guard(device_of(self));
+  return at::native::var(self, dim, correction, keepdim);
+}
+
+at::Tensor& VarOutCorrection(
+    const at::Tensor& self,
+    at::OptionalIntArrayRef dim,
+    c10::optional<int64_t> correction,
+    bool keepdim,
+    at::Tensor& out) {
+  // No device check
+  const OptionalDeviceGuard device_guard(device_of(self));
+  return at::native::var_out(self, dim, correction, keepdim, out);
+}
+
 ADVANCED_REGISTER(aten, PrivateUse1, "mean", Mean)
 ADVANCED_REGISTER(aten, PrivateUse1, "mean.dim", MeanDim)
 ADVANCED_REGISTER(aten, PrivateUse1, "mean.out", MeanOut)
@@ -1107,6 +1128,8 @@ ADVANCED_REGISTER(aten, PrivateUse1, "all.out", AllDimOut)
 ADVANCED_REGISTER(aten, PrivateUse1, "argmax.out", ArgmaxOut)
 
 ADVANCED_REGISTER(aten, PrivateUse1, "var_mean.correction", VarMeanCorrection)
+ADVANCED_REGISTER(aten, PrivateUse1, "var.correction", VarCorrection)
+ADVANCED_REGISTER(aten, PrivateUse1, "var.correction_out", VarOutCorrection)
 
 ADVANCED_REGISTER(aten, PrivateUse1, "logsumexp", LogSumExp)
 ADVANCED_REGISTER(aten, PrivateUse1, "logsumexp.out", LogSumExpOut)

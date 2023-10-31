@@ -3,6 +3,7 @@
 #include <ATen/NativeFunctions.h>
 #include <ATen/TensorUtils.h>
 #include <ATen/Utils.h>
+#include <ATen/core/op_registration/adaption.h>
 #include <ATen/native/Resize.h>
 #include <ATen/native/ResizeCommon.h>
 #include <ATen/native/TensorFactories.h>
@@ -372,24 +373,20 @@ Tensor ContiguousRef(
   return ref;
 }
 
-Tensor& EyeMOut(int64_t n, int64_t m, Tensor& result) {
-  TORCH_CHECK(n >= 0, "n must be greater or equal to 0, got ", n);
-  TORCH_CHECK(m >= 0, "m must be greater or equal to 0, got ", m);
-
-  result.resize_({n, m});
-  result.zero_();
-
-  int64_t sz = std::min<int64_t>(n, m);
-  int64_t stride = result.stride(0) + result.stride(1);
-
-  Tensor diag = result.as_strided({sz}, {stride});
-  diag.fill_(1);
-  return result;
+at::Tensor& EyeOut(int64_t n, at::Tensor& out) {
+  c10::optional<Device> common_device = nullopt;
+  c10::impl::check_and_update_common_device(
+      common_device, out, "EyeOut", "out");
+  const OptionalDeviceGuard device_guard(device_of(out));
+  return at::native::eye_out_cuda(n, out);
 }
 
-Tensor& EyeOut(int64_t n, Tensor& result) {
-  // the default value of `m` equals to `n`
-  return at::musa::EyeMOut(n, n, result);
+at::Tensor& EyeMOut(int64_t n, int64_t m, at::Tensor& out) {
+  c10::optional<Device> common_device = nullopt;
+  c10::impl::check_and_update_common_device(
+      common_device, out, "EyeMOut", "out");
+  const OptionalDeviceGuard device_guard(device_of(out));
+  return at::native::eye_out_cuda(n, m, out);
 }
 
 ADVANCED_REGISTER(aten, PrivateUse1, "empty.memory_format", empty_musa)
@@ -403,6 +400,7 @@ ADVANCED_REGISTER(
     set_storage_musa_)
 ADVANCED_REGISTER(aten, PrivateUse1, "set_.source_Storage", set_source_)
 ADVANCED_REGISTER(aten, PrivateUse1, "set_.source_Tensor", set_tensor_)
+ADVANCED_REGISTER(aten, PrivateUse1, "eye.out", EyeOut)
 ADVANCED_REGISTER(aten, PrivateUse1, "eye.m_out", EyeMOut)
 
 } // namespace musa

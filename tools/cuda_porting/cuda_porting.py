@@ -82,6 +82,7 @@ def port_cuda(
     # The following map will be used for regular expressions. The key is the pattern,
     # and the value is the target string.
     extra_replace_map = {
+        "OptionalCUDAGuard": "OptionalMUSAGuard",
         "getCUDADeviceAllocator": "getMUSADeviceAllocator",
         "cudaOccupancy": "musaOccupancy",
         "empty_cuda": "empty_musa",
