@@ -115,11 +115,29 @@
 
 namespace at {
 namespace native { // this namespace is used to define logsumexp stub only
+
 DEFINE_DISPATCH(logsumexp_stub);
 REGISTER_NO_CPU_DISPATCH(logsumexp_stub);
 
 Tensor& LogSumExpOutImpl(Tensor& result, const Tensor& self, IntArrayRef dims) {
-  logsumexp_stub(kMUSA, result, self, dims);
+  // For multi-dim reduction, we iteratively run musa kernel
+  // TODO(@fan.mo): optimize and speedup
+  if (dims.size() > 1) {
+    Tensor cur_self = self;
+    Tensor cur_result;
+    for (int i = 0; i < dims.size(); ++i) {
+      DimVector cur_dim({dims[i]});
+      maybe_wrap_dims(cur_dim, self.dim());
+      auto cur_shape =
+          at::meta::get_reduction_shape(cur_self, cur_dim, /*keepdim=*/true);
+      cur_result = at::empty(cur_shape, result.options());
+      logsumexp_stub(kMUSA, cur_result, cur_self, cur_dim[0]);
+      cur_self = cur_result;
+    }
+    result.copy_(cur_self);
+  } else {
+    logsumexp_stub(kMUSA, result, self, dims[0]);
+  }
   return result;
 }
 } // namespace native

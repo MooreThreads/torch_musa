@@ -8,8 +8,7 @@
 namespace at {
 namespace native { // this namespace is used to declare logsumexp stub only
 
-DECLARE_DISPATCH(void (*)(Tensor&, const Tensor&, IntArrayRef), logsumexp_stub);
-
+DECLARE_DISPATCH(void (*)(Tensor&, const Tensor&, int64_t), logsumexp_stub);
 }
 } // namespace at
 
