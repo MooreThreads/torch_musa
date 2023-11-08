@@ -1,4 +1,5 @@
-#pragma once
+#ifndef _TORCH_MUSA_CSRC_ATEN_QUANTIZED_MUDNN_CONV_H_
+#define _TORCH_MUSA_CSRC_ATEN_QUANTIZED_MUDNN_CONV_H_
 
 #include <ATen/Tensor.h>
 #include <ATen/native/quantized/PackedParams.h>
@@ -14,6 +15,7 @@
 #endif
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
+#include "torch_musa/csrc/aten/utils/Context.h"
 #include "torch_musa/csrc/utils/register_wrapper.h"
 
 enum class ActMode { IDENTITY, RELU, SILU };
@@ -30,13 +32,14 @@ at::SmallVector<int64_t, kSpatialDim + 2> MakeQConvOutputShape(
 
 void inline ConfigConv(
     ::musa::dnn::Convolution& c,
-    torch::List<int64_t> padding,
-    torch::List<int64_t> stride,
-    torch::List<int64_t> dilation,
+    const at::ScalarType& dtype,
+    const torch::List<int64_t>& padding,
+    const torch::List<int64_t>& stride,
+    const torch::List<int64_t>& dilation,
     int64_t groups) {
   CHECK_MUDNN_STATUS(c.SetGroups(groups), "SetGroups");
   CHECK_MUDNN_STATUS(
-      c.SetComputeMode(::musa::dnn::Convolution::ComputeMode::TENSOR),
+      c.SetComputeMode(at::musa::GetComputeModeFromCtx(dtype)),
       "SetComputeMode");
 
   int sizes = padding.size();
@@ -185,3 +188,5 @@ struct TORCH_API PackedConvWeightMudnn
       double output_scale,
       int64_t output_zero_point);
 };
+
+#endif // _TORCH_MUSA_CSRC_ATEN_QUANTIZED_MUDNN_CONV_H_

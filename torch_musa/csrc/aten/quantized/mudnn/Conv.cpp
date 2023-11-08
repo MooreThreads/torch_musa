@@ -101,7 +101,8 @@ void PackedConvWeightMudnn<kSpatialDim>::apply_impl_helper(
 
   at::musa::muHandle& h = at::GetMudnnHandle();
   ::musa::dnn::Convolution op;
-  ConfigConv(op, padding(), stride(), dilation(), groups());
+  ConfigConv(
+      op, input.scalar_type(), padding(), stride(), dilation(), groups());
 
   // from mudnn, 2 stands for RELU and 0 stands for IDENTITY
   ::musa::dnn::Convolution::FusedActivationDesc act;

@@ -27,8 +27,7 @@
 #ifdef USE_MCCL
 #include "torch_musa/csrc/distributed/Register.h"
 #endif
-#include "torch_musa/csrc/utils/musa_lazy_init.h"
-
+#include "torch_musa/csrc/aten/utils/Context.h"
 #include "torch_musa/csrc/utils/Logging.h"
 #include "torch_musa/csrc/utils/musa_lazy_init.h"
 
@@ -478,6 +477,7 @@ PyObject* InitMusaModule() {
   AddPyMethodDefs(methods, MusaStreamMethods);
   AddPyMethodDefs(methods, MusaMemoryMethods);
   AddPyMethodDefs(methods, at::musa::autocast::GetAutocastMethods());
+  AddPyMethodDefs(methods, at::musa::GetContextMethods());
 
   static struct PyModuleDef musa_module = {
       PyModuleDef_HEAD_INIT, "torch_musa._MUSAC", nullptr, -1, methods.data()};

@@ -22,3 +22,19 @@ def test_musa_print(input_data, dtype):
     print(input_data.to(dtype).to("musa"))
     sys.stdout = sys.__stdout__
     assert captured_out.getvalue() == str(input_data.to(dtype).to("musa")) + "\n"
+
+
+def test_allow_tf32_get_set_with():
+    with torch.backends.mudnn.flags(allow_tf32=False):
+        assert torch.backends.mudnn.allow_tf32 is False
+    with torch.backends.cudnn.flags(allow_tf32=True):
+        assert torch.backends.cudnn.allow_tf32
+
+
+def test_allow_tf32_get_set():
+    orig = torch.backends.mudnn.allow_tf32
+    assert torch_musa._MUSAC._get_allow_tf32() == orig
+
+    torch.backends.mudnn.allow_tf32 = not orig
+    assert torch_musa._MUSAC._get_allow_tf32() == (not orig)
+    torch.backends.mudnn.allow_tf32 = orig

@@ -99,6 +99,12 @@ from .core._lazy_init import _lazy_init
 
 from .core.random import *
 
+from .core.mudnn import *
+
+# A hack to get `torch.backends.mudnn` functions/attributes. This allows users to use cudnn
+# equivalent functions like `torch.backends.mudnn.allow_tf32 = True`
+torch.backends.__setattr__("mudnn", sys.modules["torch_musa.core.mudnn"])  # pylint: disable=C2801
+
 register_deserialization()
 
 
@@ -106,12 +112,6 @@ def _sleep(cycles):
     torch_musa._MUSAC._musa_sleep(cycles)
 
 
-def _get_mudnn_version():
-    return torch_musa._MUSAC._mudnn_version()
-
-
-setattr(torch.backends, "mudnn", type("mudnn", (object,), {}))
-setattr(torch.backends.mudnn, "version", _get_mudnn_version)
 setattr(torch.version, "musa", torch_musa._MUSAC._musa_version)
 
 from .core.tensor_attrs import set_torch_attributes

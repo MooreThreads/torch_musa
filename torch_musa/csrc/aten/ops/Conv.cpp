@@ -53,6 +53,7 @@
 #endif
 #include <mudnn.h>
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
+#include "torch_musa/csrc/aten/utils/Context.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/utils/register_wrapper.h"
 
@@ -117,6 +118,7 @@ void Conv3dShapeCheck(
 
 void ConfigConv(
     ::musa::dnn::Convolution& c,
+    const at::ScalarType& dtype,
     IntArrayRef str,
     IntArrayRef pad,
     IntArrayRef dil,
@@ -144,13 +146,8 @@ void ConfigConv(
              static_cast<int>(dil[2])}),
         "SetNdInfo");
   }
-  // TODO(kang.chen): At present, there is no tensor core on the s3000 hardware.
-  // Setting it to tensor will also go to the no tensor core calculation,
-  // so the actual implementation is also fp32, which will not affect the
-  // accuracy. When the allow_tf32 switch is added, the logic needs to be
-  // updated according its value.
   CHECK_MUDNN_STATUS(
-      c.SetComputeMode(::musa::dnn::Convolution::ComputeMode::TENSOR),
+      c.SetComputeMode(at::musa::GetComputeModeFromCtx(dtype)),
       "SetComputeMode");
   CHECK_MUDNN_STATUS(c.SetGroups(groups), "SetGroups");
 }
@@ -199,7 +196,7 @@ Tensor Conv2d(
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Convolution c;
-  ConfigConv(c, stride, padding, dilation, groups);
+  ConfigConv(c, input.scalar_type(), stride, padding, dilation, groups);
 
   ::musa::dnn::Convolution::FusedActivationDesc act;
   act.SetMode(::musa::dnn::Convolution::FusedActivationDesc::Mode::IDENTITY);
@@ -252,7 +249,7 @@ Tensor Conv2dTranspose(
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Convolution c;
-  ConfigConv(c, stride, padding, dilation, groups);
+  ConfigConv(c, weight.scalar_type(), stride, padding, dilation, groups);
   ::musa::dnn::Convolution::AlgorithmBwdData algo;
   c.GetRecommendBackwardDataAlgorithm(h, algo, gin, gout, w);
   CHECK_MUDNN_STATUS(
@@ -306,7 +303,7 @@ Tensor Conv3d(
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Convolution c;
-  ConfigConv(c, stride, padding, dilation, groups);
+  ConfigConv(c, input.scalar_type(), stride, padding, dilation, groups);
   ::musa::dnn::Convolution::Algorithm algo;
   c.GetRecommendForwardAlgorithm(h, algo, out, in, ke);
   if (bias_opt.has_value() && bias_opt.value().numel() != 0) {
@@ -425,7 +422,7 @@ Tensor Conv3dDataBwd(
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Convolution c;
-  ConfigConv(c, stride, padding, dilation, groups);
+  ConfigConv(c, input.scalar_type(), stride, padding, dilation, groups);
   ::musa::dnn::Convolution::AlgorithmBwdData algo;
   c.GetRecommendBackwardDataAlgorithm(h, algo, gin, gout, w);
   CHECK_MUDNN_STATUS(
@@ -455,7 +452,7 @@ Tensor Conv2dDataBwd(
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Convolution c;
-  ConfigConv(c, stride, padding, dilation, groups);
+  ConfigConv(c, input.scalar_type(), stride, padding, dilation, groups);
   ::musa::dnn::Convolution::AlgorithmBwdData algo;
   c.GetRecommendBackwardDataAlgorithm(h, algo, gin, gout, w);
   CHECK_MUDNN_STATUS(
@@ -513,7 +510,7 @@ Tensor Conv3dWeightBwd(
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Convolution c;
-  ConfigConv(c, stride, padding, dilation, groups);
+  ConfigConv(c, input.scalar_type(), stride, padding, dilation, groups);
   ::musa::dnn::Convolution::AlgorithmBwdFilter algo;
   c.GetRecommendBackwardFilterAlgorithm(h, algo, gw, in, gout);
   CHECK_MUDNN_STATUS(
@@ -543,7 +540,7 @@ Tensor Conv2dWeightBwd(
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Convolution c;
-  ConfigConv(c, stride, padding, dilation, groups);
+  ConfigConv(c, input.scalar_type(), stride, padding, dilation, groups);
   ::musa::dnn::Convolution::AlgorithmBwdFilter algo;
   c.GetRecommendBackwardFilterAlgorithm(h, algo, gw, in, gout);
   CHECK_MUDNN_STATUS(

@@ -6,6 +6,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/ops/musa/musa_ops.h"
+#include "torch_musa/csrc/aten/utils/Context.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/utils/register_wrapper.h"
 
@@ -26,7 +27,7 @@ at::Tensor Dot(const at::Tensor& l, const at::Tensor& r) {
   auto rmt = CreateMUTensor(contiguous_r);
 
   ::musa::dnn::Dot op;
-  op.SetComputeMode(::musa::dnn::Dot::ComputeMode::TENSOR);
+  op.SetComputeMode(at::musa::GetComputeModeFromCtx(l.scalar_type()));
   CHECK_MUDNN_STATUS(op.Run(h, rst, lmt, rmt, InternalMemAlloc), "Run")
   return out.squeeze();
 }
