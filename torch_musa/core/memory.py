@@ -6,7 +6,7 @@ import torch
 from torch.types import Device
 import torch_musa
 from torch_musa.core.device import _get_musa_device_index
-from ._lazy_init import _lazy_init
+from ._lazy_init import _lazy_init, is_initialized
 from ._utils import _get_musa_device_index
 
 
@@ -46,9 +46,8 @@ def empty_cache():
         memory available for PyTorch. However, it may help reduce fragmentation
         of GPU memory in certain cases.
     """
-    # TODO(mt-ai) We should (lazily) initialize memory first and save the status, then we should
-    # check if memory is initialized before cleaning.
-    torch_musa._MUSAC._musa_emptyCache()
+    if is_initialized():
+        torch_musa._MUSAC._musa_emptyCache()
 
 
 def reset_peak_stats():
@@ -138,6 +137,8 @@ def memory_stats(device=None):
 
 def memory_stats_as_nested_dict(device=None):
     """Returns the result of :func:`~torch_musa.memory_stats` as a nested dictionary."""
+    if not is_initialized():
+        return {}
     device = _get_musa_device_index(device, optional=True)
     return torch_musa._MUSAC._musa_memoryStats(device)
 
