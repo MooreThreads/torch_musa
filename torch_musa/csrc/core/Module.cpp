@@ -25,6 +25,7 @@
 #include "torch_musa/csrc/core/Sleep.h"
 #include "torch_musa/csrc/core/Stream.h"
 #ifdef USE_MCCL
+#include "torch_musa/csrc/core/PythonComm.h"
 #include "torch_musa/csrc/distributed/Register.h"
 #endif
 #include "torch_musa/csrc/aten/utils/Context.h"
@@ -485,6 +486,7 @@ PyObject* InitMusaModule() {
 
   THMPStream_init(module);
   THMPEvent_init(module);
+  torch::musa::python::InitCommMethods(module);
 
 #ifdef USE_MCCL
   AddMusaProcessGroupMethods(module);

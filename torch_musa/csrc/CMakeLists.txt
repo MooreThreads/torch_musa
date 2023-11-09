@@ -37,7 +37,8 @@ FILE(GLOB PORTING_CPP_CSRCS
     aten/ops/musa/*.cpp
     ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Activation.cpp
     ${GENERATED_PORTING_DIR}/aten/src/ATen/musa/EmptyTensor.cpp
-    )
+    ${GENERATED_PORTING_DIR}/torch/csrc/musa/comm.cpp
+    ${GENERATED_PORTING_DIR}/torch/csrc/musa/Stream.cpp)
 
 FILE(GLOB MU_SRCS
     ${GENERATED_PORTING_DIR}/aten/src/ATen/musa/cub.mu

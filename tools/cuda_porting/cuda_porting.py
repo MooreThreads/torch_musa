@@ -36,6 +36,7 @@ PORT_FILES = [
     PortingFile("include", True, True),
     PortingFile("c10/core/impl", True, True),
     PortingFile("aten/src/ATen/cuda", True, True),
+    PortingFile("torch/csrc/cuda", True, False),
 ]
 
 
@@ -126,6 +127,7 @@ def port_cuda(
         "<ATen/musa/detail/PhiloxCudaStateRaw\.muh>": "\"torch_musa/csrc/aten/musa/PhiloxCudaStateRaw.muh\"",
         "<ATen/musa/detail/UnpackRaw\.muh>": "\"torch_musa/csrc/aten/musa/UnpackRaw.muh\"",
         "<ATen/musa/CUDAGraphsUtils\.muh>": "\"torch_musa/csrc/aten/musa/MUSAGraphsUtils.muh\"",
+        "OptionalCUDAStreamGuard": "OptionalMUSAStreamGuard",
     }
 
     # 1. Copy and cuda-port files

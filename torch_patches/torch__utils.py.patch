@@ -1,0 +1,22 @@
+diff --git a/torch/_utils.py b/torch/_utils.py
+index cdfc9df..a9e8b08 100644
+--- a/torch/_utils.py
++++ b/torch/_utils.py
+@@ -650,6 +650,8 @@ def _get_available_device_type():
+     if hasattr(torch, "xpu") and torch.xpu.is_available():  # type: ignore[attr-defined]
+         return "xpu"
+     # add more available device types here
++    if hasattr(torch, "musa") and torch.musa.is_available():  # type: ignore[attr-defined]
++        return "musa"
+     return None
+ 
+ 
+@@ -659,6 +661,8 @@ def _get_device_attr(get_member):
+         return get_member(torch.cuda)
+     if device_type and device_type.lower() == "xpu":
+         return get_member(torch.xpu)  # type: ignore[attr-defined]
++    if device_type and device_type.lower() == "musa":
++        return get_member(torch.musa)  # type: ignore[attr-defined]
+     # add more available device types here
+     return None
+ 
