@@ -41,6 +41,20 @@ def test_cat(input_data):
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", inputdata)
+def test_cat_with_nhwc(input_data):
+    data = input_data["input"]
+    if data[0].dim == 4:
+        data = [x.permute(0, 3, 1, 2).contiguous().permute(0, 2, 3, 1) for x in data]
+    inputs = {"tensors": data, "dim": input_data["dim"]}
+    test = testing.OpTest(
+        func=torch.cat,
+        input_args=inputs,
+    )
+    test.check_result()
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize(
     "dtype", testing.get_all_types() + [torch.half, torch.int8, torch.int16]
 )
@@ -50,3 +64,38 @@ def test_cat_zero_shape(dtype):
     y_cpu = torch.cat([x0, x1], dim=0)
     y_musa = torch.cat([x0.to("musa"), x1.to("musa")], dim=0)
     testing.DefaultComparator(y_musa, y_cpu)
+
+
+inputdata = [
+    {
+        "input": [torch.randn(1), torch.randn(1).half()],
+        "dim": 0,
+    },
+    {
+        "input": [torch.randn(1, 2).half(), torch.randn(1, 2)],
+        "dim": 1,
+    },
+    {
+        "input": [torch.randn(1, 2, 3, 4), torch.randn(1, 2, 3, 4).half()],
+        "dim": 2,
+    },
+    {
+        "input": [
+            torch.randn(1, 2, 3, 4).half(),
+            torch.randn(1, 2, 3, 4),
+            torch.randn(1, 2, 3, 4).half(),
+        ],
+        "dim": 3,
+    },
+]
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", inputdata)
+def test_cat_with_different_dtype(input_data):
+    inputs = {"tensors": input_data["input"], "dim": input_data["dim"]}
+    test = testing.OpTest(
+        func=torch.cat,
+        input_args=inputs,
+    )
+    test.check_result()
