@@ -1110,8 +1110,8 @@ std::vector<std::shared_ptr<MCCLComm>>& ProcessGroupMCCL::getMCCLComm(
     mcclComms[i] = MCCLComm::create(numRanks, rank, mcclID);
 
     // Creates the MCCL streams
-    // FIXME(yueran.tang): Fix Default MUSA Stream in the future.
-    streamVal.push_back(c10::musa::getDefaultMUSAStream());
+    streamVal.push_back(
+        c10::musa::getStreamFromPool(options_->is_high_priority_stream));
   }
 
   // [Note 2 ]
