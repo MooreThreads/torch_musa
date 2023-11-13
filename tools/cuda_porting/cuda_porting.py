@@ -105,7 +105,12 @@ def port_cuda(
         "C10_CUDA_CHECK[(]": "TORCH_MUSA_CHECK(",
         "C10_CUDA_CHECK_WARN[(]": "TORCH_MUSA_WARN(",
         "CUDA_KERNEL_ASSERT(index >= -sizes[i] && index < sizes[i] && \"index out of bounds\");" : "",
-        "C10_CUDA_API ": "",
+        "C10_CUDA_API ": "C10_MUSA_API ",
+        "C10_CUDA_IMPORT": "C10_MUSA_IMPORT",
+        "C10_CUDA_EXPORT": "C10_MUSA_EXPORT",
+        "C10_CUDA_BUILD_MAIN_LIB": "C10_MUSA_BUILD_MAUN_LIB",
+        "C10_CUDA_BUILD_SHARED_LIBS": "C10_MUSA_BUILD_SHARED_LIBS",
+        "OptionalCUDAStreamGuard": "OptionalMUSAStreamGuard",
         "<ATen/CUDAFunctions\.h>" : "<ATen/MUSA_PORT_Functions.h>",
         "<c10/musa/CUDADeviceAssertionHost\.h>": "\"torch_musa/csrc/core/MUSADeviceAssertionHost.h\"",
         "<c10/musa/CUDAFunctions\.h>": "\"torch_musa/csrc/core/MUSAFunctions.h\"",
@@ -127,7 +132,6 @@ def port_cuda(
         "<ATen/musa/detail/PhiloxCudaStateRaw\.muh>": "\"torch_musa/csrc/aten/musa/PhiloxCudaStateRaw.muh\"",
         "<ATen/musa/detail/UnpackRaw\.muh>": "\"torch_musa/csrc/aten/musa/UnpackRaw.muh\"",
         "<ATen/musa/CUDAGraphsUtils\.muh>": "\"torch_musa/csrc/aten/musa/MUSAGraphsUtils.muh\"",
-        "OptionalCUDAStreamGuard": "OptionalMUSAStreamGuard",
     }
 
     # 1. Copy and cuda-port files
