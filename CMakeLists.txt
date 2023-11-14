@@ -185,6 +185,7 @@ endif()
 
 if(DEFINED ENV{MUSA_ARCH})
   set(MUSA_ARCH $ENV{MUSA_ARCH})
+  
   string(APPEND MUSA_MCC_FLAGS " --cuda-gpu-arch=mp_${MUSA_ARCH}")
 
   if(${MUSA_ARCH} EQUAL 21)

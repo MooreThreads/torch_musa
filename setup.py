@@ -13,6 +13,7 @@ from torch.utils.cpp_extension import CppExtension  # pylint: disable=C0411
 from torch.utils.cpp_extension import BuildExtension as Build  # pylint: disable=C0411
 from tools.cuda_porting.cuda_porting import port_cuda
 import subprocess
+from subprocess import PIPE, Popen
 import multiprocessing
 
 if os.getenv("MAX_JOBS") is None:
@@ -81,6 +82,38 @@ def get_pytorch_install_path():
             "Building error: import torch failed when building!")
     return pytorch_install_root
 
+def get_mtgpu_arch():
+    mthreads_gmi = "mthreads-gmi"
+    
+    # name and arch dict
+    name_arches={
+        "MTT S2000":"11",
+        "MTT S3000":"21",
+        "MTT S80":"21",
+        "MTT S4000":"22",
+        "MTT S90":"22",        
+    }
+    
+    # Get ID, processing and memory utilization for all GPUs
+    try:
+        p = Popen([mthreads_gmi,
+                   "-q -i 0"], stdout=PIPE)
+        stdout, stderror = p.communicate()
+    except:
+        raise RuntimeError("Unable to run the mthreads-gmi command")
+    output = stdout.decode('UTF-8')
+
+    lines = output.split(os.linesep)
+
+    for line in lines:
+        kvs = line.split(' : ')
+        if len(kvs) != 2:
+            continue
+        if kvs[0].strip().startswith("Product Name"):
+            name = kvs[1].strip()
+            return name_arches[name] 
+    raise RuntimeError("Can not find Product Name in the output of 'mthreads-gmi -q -i 0'")
+
 
 def build_musa_lib():
     # generate code for CUDA porting
@@ -90,7 +123,9 @@ def build_musa_lib():
     if not os.path.isdir(cuda_compatiable_path):
         port_cuda(pytorch_root, get_pytorch_install_path(),
                   cuda_compatiable_path)
-
+    
+    os.environ['MUSA_ARCH']=get_mtgpu_arch()
+    
     cmake = CMake(build_dir, install_dir_prefix="torch_musa")
     env = os.environ.copy()
     env["GENERATED_PORTING_DIR"] = cuda_compatiable_path
@@ -156,7 +191,7 @@ def configure_extension_build():
     ext_extension = CppExtension(
         name="torch_musa._ext",
         sources=glob.glob("torch_musa/csrc/extension/C_frontend.cpp"),
-        libraries=["musa_python", "_ext_musa_kernels"],
+        libraries=["_ext_musa_kernels", "musa_python"],
         include_dirs=[],
         extra_compile_args={"cxx": ['-std=c++17']},
         library_dirs=[os.path.join(BASE_DIR, "torch_musa/lib")],

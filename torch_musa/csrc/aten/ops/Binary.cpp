@@ -128,6 +128,10 @@ inline bool IsBoolMode(BINARY_MODE m) {
   }
 }
 
+inline bool is_scalar(const at::Tensor& tensor) {
+  return tensor.numel() == 1 && tensor.dim() == 0;
+}
+
 void UnaryCall(
     const Tensor& self,
     const Tensor& other,
@@ -203,6 +207,33 @@ void BinaryCall(
     Scalar const& alpha_scalar = 1) {
   Device device = is_musa(self) ? self.device() : other.device();
   c10::musa::MUSAGuard guard(device);
+
+  // There are only two types of inputs for the binary operator: musa tensor and
+  // CPU scalar, or two musa tensors. So when one of the Tensors is on the CPU
+  // and not a scalar, it means there is a problem
+  if ((!is_scalar(other) && other.device().is_cpu()) ||
+      (!is_scalar(self) && self.device().is_cpu())) {
+    TORCH_CHECK(
+        false,
+        "Expected all tensors to be on the same device, but "
+        "found at least two devices, ",
+        self.device().type(),
+        " and ",
+        other.device().type(),
+        "!")
+  };
+  if (is_musa(self) && is_musa(other) &&
+      self.device().index() != other.device().index()) {
+    TORCH_CHECK(
+        false,
+        "Expected all tensors to be on the same device, but "
+        "found at least two devices, ",
+        self.device(),
+        " and ",
+        other.device(),
+        "!")
+  };
+
   muHandle& h = GetMudnnHandle();
   if (self.numel() == 0 && other.numel() == 0) {
     Tensor out_tmp;

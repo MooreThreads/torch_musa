@@ -29,7 +29,7 @@ def test_uncontiguous_viewd_sin_():
 def test_uncontiguous_viewd_mul_():
     x = torch.tensor([[1,2,3], [4,5,6]]).to("musa")
     y = torch.tensor([[1,2,3], [4,5,6]])
-    x[:,2:] *= torch.tensor((2,))
+    x[:,2:] *= torch.tensor((2,)).to("musa")
     y[:,2:] *= torch.tensor((2,))
     assert testing.DefaultComparator()(x, y)
 

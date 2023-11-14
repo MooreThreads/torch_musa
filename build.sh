@@ -16,7 +16,6 @@ COMPILE_FP64=1
 PYTORCH_TAG=v2.0.0
 PYTORCH_BUILD_VERSION="${PYTORCH_TAG:1}"
 PYTORCH_BUILD_NUMBER=0 # This is used for official torch distribution.
-MUSA_ARCH=${MUSA_ARCH:-21}
 
 USE_STATIC_MKL=${USE_STATIC_MKL:-0}
 USE_MCCL=${USE_MCCL:-1}
@@ -152,12 +151,12 @@ build_torch_musa() {
   if [ $BUILD_WHEEL -eq 1 ]; then
     rm -rf dist build
     pip uninstall torch_musa -y
-    PYTORCH_REPO_PATH=${PYTORCH_PATH} DEBUG=${DEBUG_MODE} USE_ASAN=${ASAN_MODE} ENABLE_COMPILE_FP64=${COMPILE_FP64} MUSA_ARCH=${MUSA_ARCH} USE_MCCL=${USE_MCCL} python setup.py bdist_wheel
+    PYTORCH_REPO_PATH=${PYTORCH_PATH} DEBUG=${DEBUG_MODE} USE_ASAN=${ASAN_MODE} ENABLE_COMPILE_FP64=${COMPILE_FP64}  USE_MCCL=${USE_MCCL} python setup.py bdist_wheel
     status=$?
     rm -rf torch_musa.egg-info
     pip install dist/*.whl
   else
-    PYTORCH_REPO_PATH=${PYTORCH_PATH} DEBUG=${DEBUG_MODE} USE_ASAN=${ASAN_MODE} ENABLE_COMPILE_FP64=${COMPILE_FP64} MUSA_ARCH=${MUSA_ARCH} USE_MCCL=${USE_MCCL} python setup.py install
+    PYTORCH_REPO_PATH=${PYTORCH_PATH} DEBUG=${DEBUG_MODE} USE_ASAN=${ASAN_MODE} ENABLE_COMPILE_FP64=${COMPILE_FP64} USE_MCCL=${USE_MCCL} python setup.py install
     status=$?
   fi
   popd

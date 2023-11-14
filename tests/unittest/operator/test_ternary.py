@@ -105,6 +105,6 @@ def test_naive_where(dtype, shape):
     input = torch.randint(-5, 5, size=shape).to(dtype)
     output_cpu = torch.where(input)
     output_musa = torch.where(input.to("musa"))
-    comparator = lambda musa, cpu: (musa == cpu).all()
+    comparator = lambda musa, cpu: (musa.cpu() == cpu).all()
     for musa, cpu in zip(output_musa, output_cpu):
         assert comparator(musa, cpu)
