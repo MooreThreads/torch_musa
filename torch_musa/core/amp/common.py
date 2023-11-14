@@ -23,7 +23,7 @@ def amp_definitely_not_available():
 
 
 def get_amp_supported_dtype():
-    return [torch.float16]
+    return [torch.float16, torch.float32]
 
 
 def is_autocast_musa_enabled():

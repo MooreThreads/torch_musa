@@ -126,8 +126,8 @@ at::ScalarType get_autocast_musa_dtype() {
 
 void set_autocast_musa_dtype(at::ScalarType dtype) {
   TORCH_CHECK(
-      dtype == at::kHalf,
-      "Currently, AutoCastMusa only support float16 as the autocast_musa_dtype");
+      dtype == at::kHalf || dtype == at::kFloat,
+      "Currently, AutoCastMusa only support float16/float32 as the autocast_musa_dtype");
   autocast_musa_dtype = dtype;
 }
 
