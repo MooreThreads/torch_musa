@@ -1,5 +1,5 @@
 """Test uncontiguous sub_."""
-# pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
+# pylint: disable=missing-function-docstring, redefined-outer-name, unused-import, not-callable
 import torch
 import pytest
 import torch_musa
@@ -108,3 +108,14 @@ def test_uncontiguous_half_cast():
     y_m = x_m[...,:5].float()
     y = x[...,:5].float()
     assert testing.DefaultComparator()(y_m, y)
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_issue_538():
+    c_input = torch.rand((1, 128, 64, 64))
+    model = torch.nn.InstanceNorm2d(128, affine=True)
+    res = model(c_input)
+
+    musa_input = c_input.to("musa")
+    musamodel = model.to('musa')
+    musa_res = musamodel(musa_input)
+    assert testing.DefaultComparator(abs_diff=1e-5)(res, musa_res)

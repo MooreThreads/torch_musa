@@ -134,8 +134,9 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNorm(
         bn.RunPure(h, out, in, mean, variance, scale, bias_), "RunPure");
   } else {
     // mean/variance/cur_mean/cur_var dtype are consistent in mudnn.
-    auto options = contiguous_running_mean.options().dtype(
-        contiguous_running_mean.scalar_type());
+    if (running_mean.defined()) {
+      options = contiguous_running_mean.options();
+    }
     save_mean =
         at::empty({num_features}, options, at::MemoryFormat::Contiguous);
     save_invstd =
