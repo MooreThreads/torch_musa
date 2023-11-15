@@ -115,11 +115,11 @@ def _sleep(cycles):
 setattr(torch.version, "musa", torch_musa._MUSAC._musa_version)
 
 from .core.tensor_attrs import set_torch_attributes
-
+from .core.module_attrs import set_module_attributes
 
 def set_attributes():
     """Set attributes for torch."""
     set_torch_attributes()
-
+    set_module_attributes()
 
 set_attributes()
