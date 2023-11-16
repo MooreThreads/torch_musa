@@ -163,19 +163,6 @@ struct structured_addcmul_out_out final
 
 } // namespace
 
-Tensor& AddcDivOut_Float16(
-    const Tensor& self,
-    const Tensor& tensor1,
-    const Tensor& tensor2,
-    const Scalar& value,
-    Tensor& out) {
-  structured_addcdiv_out_out op(out);
-  op.meta(self, tensor1, tensor2, value);
-  op.impl(self, tensor1, tensor2, value, op.maybe_get_output(0));
-  if (op.proxy_outputs_[0].has_value())
-    op.outputs_[0].get().copy_(**op.proxy_outputs_[0]);
-  return out;
-}
 Tensor& AddcMulOut_Float16(
     const Tensor& self,
     const Tensor& tensor1,
@@ -425,26 +412,30 @@ Tensor& AddcDivOut(
       "Device of output tensor of addcdiv must be MUSA, but now it is ",
       output.device());
   c10::musa::MUSAGuard device_guard(self.device());
-  if (self.scalar_type() == at::ScalarType::Half &&
-      input1.scalar_type() == at::ScalarType::Half &&
-      input2.scalar_type() == at::ScalarType::Half) {
-    return AddcDivOut_Float16(self, input1, input2, alpha_scalar, output);
-  }
+
   TORCH_CHECK(
-      self.scalar_type() == at::ScalarType::Float,
-      "Dtype of input tensor of addcdiv only support Float32, but now it is ",
+      self.scalar_type() == at::ScalarType::Float ||
+          self.scalar_type() == at::ScalarType::Half ||
+          self.scalar_type() == at::ScalarType::BFloat16,
+      "Dtype of input tensor of addcdiv only support fp32/fp16/bf16, but now it is ",
       self.scalar_type());
   TORCH_CHECK(
-      input1.scalar_type() == at::ScalarType::Float,
-      "Dtype of input1 tensor of addcdiv only support Float32, but now it is ",
+      input1.scalar_type() == at::ScalarType::Float ||
+          input1.scalar_type() == at::ScalarType::Half ||
+          input1.scalar_type() == at::ScalarType::BFloat16,
+      "Dtype of input1 tensor of addcdiv only support fp32/fp16/bf16, but now it is ",
       input1.scalar_type());
   TORCH_CHECK(
-      input2.scalar_type() == at::ScalarType::Float,
-      "Dtype of input2 tensor of addcdiv only support Float32, but now it is ",
+      input2.scalar_type() == at::ScalarType::Float ||
+          input2.scalar_type() == at::ScalarType::Half ||
+          input2.scalar_type() == at::ScalarType::BFloat16,
+      "Dtype of input2 tensor of addcdiv only support fp32/fp16/bf16 but now it is ",
       input2.scalar_type());
   TORCH_CHECK(
-      output.dtype() == at::ScalarType::Float,
-      "Dtype of output tensor of addcdiv only support Float32, but now it is ",
+      output.dtype() == at::ScalarType::Float ||
+          output.dtype() == at::ScalarType::Half ||
+          output.dtype() == at::ScalarType::BFloat16,
+      "Dtype of output tensor of addcdiv only support fp32/fp16/bf16, but now it is ",
       output.dtype());
   TernarycommonDtypeCall(
       self, input1, input2, alpha_scalar, output, TERNARY_MODE::ADDCDIV);

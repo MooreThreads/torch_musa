@@ -60,12 +60,11 @@ def test_addcmul(input_data, dtype, value):
     test.check_result()
 
 
-# addcdiv only support float32
 @testing.test_on_nonzero_card_if_multiple_musa_device(0)
 @pytest.mark.parametrize("input_data", input_datas)
 @pytest.mark.parametrize("dtype", [torch.float32])
 @pytest.mark.parametrize("value", values)
-def test_addcdiv(input_data, dtype, value):
+def test_addcdiv_fp32(input_data, dtype, value):
     input_dict = {
         "input": input_data["input"].to(dtype),
         "tensor1": input_data["tensor1"].to(dtype),
@@ -73,6 +72,44 @@ def test_addcdiv(input_data, dtype, value):
         "value": transform_dtype(dtype, value),
     }
     comparator = testing.DefaultComparator(abs_diff=1e-5)
+    test = testing.OpTest(
+        func=torch.addcdiv, input_args=input_dict, comparators=comparator
+    )
+    test.check_result()
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(0)
+@pytest.mark.parametrize("input_data", input_datas)
+@pytest.mark.parametrize("value", values)
+def test_addcdiv_fp16(input_data, value):
+    input_dict = {
+        "input": input_data["input"].to(torch.float16).to(torch.float32),
+        "tensor1": input_data["tensor1"].to(torch.float16).to(torch.float32),
+        "tensor2": torch.abs(input_data["tensor2"].to(torch.float16).to(torch.float32)) + 0.001,
+        "value": transform_dtype(torch.float32, value),
+    }
+    comparator = testing.DefaultComparator(abs_diff=5e-3, rel_diff=5e-3)
+    test = testing.OpTest(
+        func=torch.addcdiv, input_args=input_dict, comparators=comparator
+    )
+    test.check_musafp16_vs_musafp32()
+
+
+@pytest.mark.skipif(
+    testing.get_musa_arch() < 22,
+    reason="bf16 is not supported on arch older than qy2"
+)
+@testing.test_on_nonzero_card_if_multiple_musa_device(0)
+@pytest.mark.parametrize("input_data", input_datas)
+@pytest.mark.parametrize("value", values)
+def test_addcdiv_bf16(input_data, value):
+    input_dict = {
+        "input": input_data["input"].to(torch.bfloat16),
+        "tensor1": input_data["tensor1"].to(torch.bfloat16),
+        "tensor2": torch.abs(input_data["tensor2"].to(torch.bfloat16)) + 0.001,
+        "value": transform_dtype(torch.float32, value),
+    }
+    comparator = testing.DefaultComparator(abs_diff=5e-3, rel_diff=5e-3)
     test = testing.OpTest(
         func=torch.addcdiv, input_args=input_dict, comparators=comparator
     )

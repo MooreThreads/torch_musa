@@ -26,8 +26,9 @@ namespace musa {
       input.device());
   TORCH_CHECK(
       input.scalar_type() == at::ScalarType::Float ||
-          input.scalar_type() == at::ScalarType::Half,
-      "Dtype of input tensor of NativeDropout only support Float32 and Float16, ",
+          input.scalar_type() == at::ScalarType::Half ||
+          input.scalar_type() == at::ScalarType::BFloat16,
+      "Dtype of input tensor of NativeDropout only support Float, Half and BFloat16, ",
       "but now it is ",
       input.scalar_type());
 
@@ -82,9 +83,10 @@ Tensor NativeDropoutBackward(
       grad_output.device());
   TORCH_CHECK(
       grad_output.scalar_type() == at::ScalarType::Float ||
-          grad_output.scalar_type() == at::ScalarType::Half,
+          grad_output.scalar_type() == at::ScalarType::Half ||
+          grad_output.scalar_type() == at::ScalarType::BFloat16,
       "Dtype of input tensor of NativeDropoutBackward only support",
-      " Float32 and Float16, but now it is ",
+      " Float, Half and BFloat16, but now it is ",
       grad_output.scalar_type());
   TORCH_CHECK(
       mask.device().type() == kMUSA,

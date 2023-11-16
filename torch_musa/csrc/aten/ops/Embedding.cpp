@@ -45,7 +45,7 @@ Tensor EmbeddingDenseBwd(
       grad_output.scalar_type() == at::ScalarType::Float ||
           grad_output.scalar_type() == at::ScalarType::Half,
       "Dtype of grad_output tensor of embedding_dense_backward only "
-      "support Float32 and Float16, but now is ",
+      "support Float and Half, but now is ",
       grad_output.scalar_type());
   TORCH_CHECK(
       indices.scalar_type() == at::ScalarType::Int ||

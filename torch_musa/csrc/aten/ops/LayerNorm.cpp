@@ -21,8 +21,9 @@ namespace musa {
     double eps) {
   TORCH_CHECK(
       input.scalar_type() == at::ScalarType::Float ||
-          input.scalar_type() == at::ScalarType::Half,
-      "Dtype of input tensor of LayerNorm only support Float32,Half, but now it is ",
+          input.scalar_type() == at::ScalarType::Half ||
+          input.scalar_type() == at::ScalarType::BFloat16,
+      "Dtype of input tensor of LayerNorm only support Float32, Half and BFloat16 but now it is ",
       input.scalar_type());
 
   c10::musa::MUSAGuard device_guard(input.device());
@@ -50,8 +51,9 @@ namespace musa {
     mt_gamma = CreateMUTensor(gamma);
     TORCH_CHECK(
         weight.scalar_type() == at::ScalarType::Float ||
-            weight.scalar_type() == at::ScalarType::Half,
-        "Dtype of weight tensor of LayerNorm only support Float32, Half",
+            weight.scalar_type() == at::ScalarType::Half ||
+            weight.scalar_type() == at::ScalarType::BFloat16,
+        "Dtype of weight tensor of LayerNorm only support Float32, Half and BFloat16",
         "but now it is ",
         weight.scalar_type());
   }
@@ -60,8 +62,9 @@ namespace musa {
     mt_beta = CreateMUTensor(beta);
     TORCH_CHECK(
         bias.scalar_type() == at::ScalarType::Float ||
-            bias.scalar_type() == at::ScalarType::Half,
-        "Dtype of bias tensor of LayerNorm only support Float32, Half",
+            bias.scalar_type() == at::ScalarType::Half ||
+            bias.scalar_type() == at::ScalarType::BFloat16,
+        "Dtype of bias tensor of LayerNorm only support Float32, Half and BFloat16",
         "but now it is ",
         bias.scalar_type());
   }
@@ -113,26 +116,30 @@ namespace musa {
     ::std::array<bool, 3> grad_input_mask) {
   TORCH_CHECK(
       grad_out.scalar_type() == at::ScalarType::Float ||
-          grad_out.scalar_type() == at::ScalarType::Half,
-      "Dtype of grad_out tensor of LayerNormBackward only support Float32/Half, ",
+          grad_out.scalar_type() == at::ScalarType::Half ||
+          grad_out.scalar_type() == at::ScalarType::BFloat16,
+      "Dtype of grad_out tensor of LayerNormBackward only support Float32/Half/BFloat16, ",
       "but now it is ",
       grad_out.scalar_type());
   TORCH_CHECK(
       input.scalar_type() == at::ScalarType::Float ||
-          input.scalar_type() == at::ScalarType::Half,
-      "Dtype of input tensor of LayerNormBackward only support Float32/Half, ",
+          input.scalar_type() == at::ScalarType::Half ||
+          input.scalar_type() == at::ScalarType::BFloat16,
+      "Dtype of input tensor of LayerNormBackward only support Float32/Half/BFloat16, ",
       "but now it is ",
       input.scalar_type());
   TORCH_CHECK(
       mean.scalar_type() == at::ScalarType::Float ||
-          mean.scalar_type() == at::ScalarType::Half,
-      "Dtype of mean tensor of LayerNormBackward only support Float32/Half, ",
+          mean.scalar_type() == at::ScalarType::Half ||
+          mean.scalar_type() == at::ScalarType::BFloat16,
+      "Dtype of mean tensor of LayerNormBackward only support Float32/Half/BFloat16, ",
       "but now it is ",
       mean.scalar_type());
   TORCH_CHECK(
       rstd.scalar_type() == at::ScalarType::Float ||
-          rstd.scalar_type() == at::ScalarType::Half,
-      "Dtype of rstd tensor of LayerNormBackward only support Float32/Half, ",
+          rstd.scalar_type() == at::ScalarType::Half ||
+          rstd.scalar_type() == at::ScalarType::BFloat16,
+      "Dtype of rstd tensor of LayerNormBackward only support Float32/Half/BFloat16, ",
       "but now it is ",
       rstd.scalar_type());
   c10::musa::MUSAGuard device_guard(input.device());
@@ -213,8 +220,9 @@ namespace musa {
       mt_weight = CreateMUTensor(gamma);
       TORCH_CHECK(
           weight.scalar_type() == at::ScalarType::Float ||
-              weight.scalar_type() == at::ScalarType::Half,
-          "Dtype of weight tensor of LayerNormBackward only support Float32/Half, ",
+              weight.scalar_type() == at::ScalarType::Half ||
+              weight.scalar_type() == at::ScalarType::BFloat16,
+          "Dtype of weight tensor of LayerNormBackward only support Float32/Half/BFloat16, ",
           "but now it is ",
           weight.scalar_type());
     }
@@ -264,8 +272,9 @@ at::Tensor RMSNorm(
       input.device());
   TORCH_CHECK(
       input.scalar_type() == at::ScalarType::Float ||
-          input.scalar_type() == at::ScalarType::Half,
-      "Dtype of input tensor of RMSNorm only support Float32,Half, but now it is ",
+          input.scalar_type() == at::ScalarType::Half ||
+          input.scalar_type() == at::ScalarType::BFloat16,
+      "Dtype of input tensor of RMSNorm only support Float32, Half and BFloat16, but now it is ",
       input.scalar_type());
   TORCH_CHECK(
       normalized_ndim >= 1,
@@ -282,8 +291,9 @@ at::Tensor RMSNorm(
   TORCH_CHECK(
       !weight.defined() ||
           (weight.scalar_type() == at::ScalarType::Float ||
-           weight.scalar_type() == at::ScalarType::Half),
-      "Dtype of weight tensor of LayerNorm only support Float32, Half",
+           weight.scalar_type() == at::ScalarType::Half ||
+           weight.scalar_type() == at::ScalarType::BFloat16),
+      "Dtype of weight tensor of LayerNorm only support Float32, Half and BFloat16",
       "but now it is ",
       weight.scalar_type());
 

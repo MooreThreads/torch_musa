@@ -51,13 +51,14 @@ constexpr c10::Backend kMUSABackend = c10::Backend::PrivateUse1;
 constexpr DeviceType kMUSA = DeviceType::PrivateUse1;
 constexpr c10::DispatchKey kMUSAKey = c10::DispatchKey::PrivateUse1;
 
-#define MUSA_TENSOR_TYPE_CHECK(self)                \
-  TORCH_CHECK(                                      \
-      ((self.scalar_type() == ScalarType::Float) || \
-       (self.scalar_type() == ScalarType::Half) ||  \
-       (self.scalar_type() == ScalarType::Int) ||   \
-       (self.scalar_type() == ScalarType::Long)),   \
-      "Now muDNN only support float32, half, int32, and int64");
+#define MUSA_TENSOR_TYPE_CHECK(self)                   \
+  TORCH_CHECK(                                         \
+      ((self.scalar_type() == ScalarType::Float) ||    \
+       (self.scalar_type() == ScalarType::Half) ||     \
+       (self.scalar_type() == ScalarType::BFloat16) || \
+       (self.scalar_type() == ScalarType::Int) ||      \
+       (self.scalar_type() == ScalarType::Long)),      \
+      "Now muDNN only support float32, half, bfloat16, int32, and int64");
 
 #define CHECK_MUDNN_STATUS(rst, msg)       \
   TORCH_CHECK(                             \
