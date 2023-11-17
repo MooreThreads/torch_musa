@@ -2,7 +2,7 @@
 # mccl will be integrated into musa_toolkits soon
 set -ex
 
-MCCL_URL="https://oss.mthreads.com/release-rc/cuda_compatible/dev1.4.2/mccl_dev1.2.2.tar.gz"
+MCCL_URL=
 WORK_DIR="${PWD}"
 DATE=$(date +%Y%m%d)
 

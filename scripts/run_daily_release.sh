@@ -20,6 +20,7 @@ build_artifacts() {
     mudnn_timestamp=$(find $mudnn_abs_dir -name "*.txt" | awk -F/ '{print $NF}' | awk -F_ '{print $1}')
     echo "mudnn:${mudnn_timestamp}" >> ${ARTIFACTS_DIR}README.txt
     cat $PWD/.musa_dependencies >> ${ARTIFACTS_DIR}README.txt
+    source activate base
 
     # Build wheel packages under python3.8, using the existing conda environment
     /opt/conda/condabin/conda run -n py38 --no-capture-output USE_STATIC_MKL=1 /bin/bash build.sh -c -w

@@ -10,12 +10,12 @@ PYTORCH_TAG=v2.0.0
 IMAGE_DOCKER_NAME=NULL
 TAG=latest
 PYTHON_VERSION="3.8"
-OS_NAME=NULL
+OS_NAME=ubuntu:20.04
 
 usage() {
   echo -e "\033[1;32mThis script is used to build base docker image which contains pytorch source code. \033[0m"
   echo -e "\033[1;32mParameters usage: \033[0m"
-  echo -e "\033[32m    -i/--image_docker_name     : Name of the docker image. \033[0m"
+  echo -e "\033[32m    -n/--name                  : Name of the docker image. \033[0m"
   echo -e "\033[32m    -t/--tag                   : Tag of the docker image. \033[0m"
   echo -e "\033[32m    -s/--sys                   : The operating system, for example ubuntu:20.04 \033[0m"
   echo -e "\033[32m    -v/--python_version        : The python version used by torch_musa. \033[0m"
@@ -23,14 +23,14 @@ usage() {
 }
 
 # parse parameters
-parameters=$(getopt -o i:t:s:v:h:: --long image_docker_name:,tag:,sys:,python_verison:,help::, -n "$0" -- "$@")
+parameters=$(getopt -o n:t:s:v:h:: --long name:,tag:,sys:,python_verison:,help::, -n "$0" -- "$@")
 [ $? -ne 0 ] && { echo -e "\033[34mTry '$0 --help' for more information. \033[0m"; exit 1; }
 
 eval set -- "$parameters"
 
 while true;do
   case "$1" in
-    -i|--image_docker_name) IMAGE_DOCKER_NAME=$2; shift 2;;
+    -n|--name) IMAGE_DOCKER_NAME=$2; shift 2;;
     -t|--tag) TAG=$2; shift 2;;
     -s|--sys) OS_NAME=$2; shift 2;;
     -v|--python_verison) PYTHON_VERSION=$2; shift 2;;

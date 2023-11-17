@@ -3,12 +3,15 @@ FROM ${BASE_IMG}
 
 ARG MUSA_TOOLKITS_URL
 ARG MUDNN_URL
+ARG MCCL_URL
 
 # maybe update gcc
 ARG GCC_VERSION
 COPY ./common/install_gcc.sh install_gcc.sh
 RUN bash install_gcc.sh && \
-    rm -f install_gcc.sh
+    rm -f install_gcc.sh && \
+    apt-get update && apt-get install -y clinfo
+
 
 # install musa_toolkit, which includes musa_runtime and mcc
 RUN wget --no-check-certificate ${MUSA_TOOLKITS_URL} -O /home/musa_toolkits_install.tar.gz
@@ -24,21 +27,25 @@ RUN wget --no-check-certificate ${MUDNN_URL} -O /home/mudnn.tar && \
     tar -xvf /home/mudnn.tar -C /home && \
     pushd /home/mudnn && \
     bash install_mudnn.sh && \
+    popd && \
     rm -f /home/mudnn.tar && \
-    rm -rf /home/*mudnn* && \
-    popd
+    rm -rf /home/*mudnn*  
 
-# install math libs & mccl
-COPY ./common/install_math.sh install_math.sh
+# install mccl
 COPY ./common/install_mccl.sh install_mccl.sh
+RUN bash install_mccl.sh --mccl_url ${MCCL_URL} && \
+    rm -f install_mccl.sh 
+
+# install math libs
+COPY ./common/install_math.sh install_math.sh
 RUN bash install_math.sh && \
-    bash install_mccl.sh && \
-    rm -f install_math.sh install_mccl.sh
+    rm -f install_math.sh 
 
 # config git
 # RUN git config --global http.sslverify false && \
 #     git config --global https.sslverify false
 
+ENV MTHREADS_VISIBLE_DEVICES=all
 ENV MUSA_HOME=/usr/local/musa
 ENV LD_LIBRARY_PATH=$MUSA_HOME/lib:$LD_LIBRARY_PATH
 ENV PATH=${MUSA_HOME}/bin:$PATH
@@ -67,4 +74,13 @@ RUN pushd vision && \
     popd && \
     rm -rf /tmp/vision
 
+COPY ./common/check_status.sh /home/check_status.sh
+COPY ./common/test_musa.mu /home/test_musa.mu
+
+RUN chmod 777 /home/check_status.sh
+
+RUN echo "exec /bin/bash" >> /home/check_status.sh
+
 WORKDIR /home
+ENTRYPOINT ["/home/check_status.sh"]
+

@@ -3,6 +3,7 @@ FROM ${BASE_IMG}
 
 ARG MUSA_TOOLKITS_URL
 ARG MUDNN_URL
+ARG MCCL_URL
 ARG PYTHON_VERSION
 
 SHELL ["/bin/bash", "-c"]
@@ -49,12 +50,15 @@ RUN wget --no-check-certificate ${MUDNN_URL} -O /home/mudnn.tar && \
     rm -rf /home/*muDNN* /home/*mudnn* && \
     popd
 
-# install math libs & mccl
-COPY ./common/install_math.sh install_math.sh
+# install mccl
 COPY ./common/install_mccl.sh install_mccl.sh
+RUN bash install_mccl.sh --mccl_url ${MCCL_URL} && \
+    rm -f install_mccl.sh 
+
+# install math libs
+COPY ./common/install_math.sh install_math.sh
 RUN bash install_math.sh && \
-    bash install_mccl.sh && \
-    rm -f install_math.sh install_mccl.sh
+    rm -f install_math.sh
 
 # install conda
 COPY ./common/install_conda.sh install_conda.sh
@@ -94,7 +98,16 @@ RUN ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
     sudo rm -rf /home/whls && \
     conda deactivate
 
+COPY ./common/check_status.sh /home/check_status.sh
+COPY ./common/test_musa.mu /home/test_musa.mu
+
+RUN chmod 777 /home/check_status.sh
 RUN line_number=$(grep -rn '[ -z "$PS1" ] && return'  ~/.bashrc | awk -F: '{print $1}') && \
     sed -i "${line_number}s/.*/#[ -z \"\$PS1\" ] \&\& return/" ~/.bashrc
 
+RUN echo "rm /home/test_musa.mu" >> /home/check_status.sh && \  
+    echo "rm /home/check_status.sh" >> /home/check_status.sh  && \
+    echo "exec /bin/bash" >> /home/check_status.sh
+
 WORKDIR /home
+ENTRYPOINT ["/home/check_status.sh"]

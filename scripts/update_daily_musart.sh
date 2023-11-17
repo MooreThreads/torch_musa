@@ -25,7 +25,7 @@ bash ${torch_musa_dir}/docker/common/install_math.sh
 ####### end
 
 ####### install mccl
-bash ${torch_musa_dir}/docker/common/install_mccl.sh
+bash ${torch_musa_dir}/docker/common/install_mccl.sh --mccl_url "https://oss.mthreads.com/release-ci/computeQA/mathX/newest/mccl.tar.gz"
 ####### end
 
 

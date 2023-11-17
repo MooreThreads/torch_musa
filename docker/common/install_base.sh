@@ -41,7 +41,8 @@ install_ubuntu() {
     libnuma-dev \
     libgoogle-glog-dev \
     libgflags-dev \
-    libomp-11-dev
+    libomp-11-dev \
+    clinfo
 
   # Cleanup package manager
   apt-get autoclean && apt-get clean

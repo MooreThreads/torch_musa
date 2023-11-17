@@ -2,32 +2,59 @@
 ### 1. build dev docker
 Follow the two steps below to build the dev docker image
 1. **build base docker:** the base docker image contains the pytorch source code and other basic packages, such as gdb, ccache.
-You can specify the path of the root directory of pytorch on your host via `PYTORCH_REPO_ROOT_PATH` if `pytorch` repo exists or where pytorch will be download to
+You can specify the path of the root directory of pytorch on your host via 
+`PYTORCH_REPO_ROOT_PATH` if `pytorch` repo exists or where pytorch will be downloaded to
+    #### Parameters  
+* `-n`/`--name`：Name of the docker image, default:NULL
+* `-t`/`--tag`：Tag of the docker image, default:latest
+* `-s`/`--sys`：The operating system, for example ubuntu:20.04, now only support ubuntu, defualt:ubuntu:20.04
+* `-v`/`--python_version`：The python version used by torch_musa, now only support 3.8, default:3.8
+* `-h`/`--help`：help information
+
     ```shell
     DOCKER_BUILD_DIR=/tmp/torch_musa_base_docker_build \
     PYTORCH_REPO_ROOT_PATH=~/tmp \
-    bash docker/build_base.sh -i pytorch2.0.0 -s ubuntu:20.04
+    bash docker/build_base.sh -n pytorch2.0.0 -s ubuntu:20.04
     ```
+
 2. **build dev docker:** the dev docker contains the torch_musa source code and other musa softwares, such as musatooklit, mudnn.
 You can specify the path of the root directory of pytorch on your host via `TORCH_VISION_REPO_ROOT_PATH` if `vision` repo exists or where torchvision will be download to
+    #### Parameters  
+* `-n`/`--name`：Name of the docker image, default:NULL
+* `-t`/`--tag`：Tag of the docker image, default:latest
+* `-b`/`--base_img`：The base docker image, for example ubuntu:20.04. When building the develop Doceker image, select the base Docker image you built in the previous step. If you are building the release Docker image, select the base image such as ubuntu:20.04. default:NULL
+* `-f`/`--docker_file`：The path of docker file, options are dockerfile.release and dockerfile.dev, default:""
+* `-v`/`--python_version`：The python version used by torch_musa, now only support 3.8, default:3.8. This option is only useful when building release dockers, and when building dev dockers, it defaults to the Python environment of the base docker
+* `-m`/`--musa_toolkits_url`：The download link of MUSA ToolKit, default:""
+* `--mudnn_url`：The download link of MUDNN, default:""
+* `--mccl_url`：The download link of MUSA MCCL, default:""
+* `-r`/`--release`：The build pattern, please set it when docker_file is dockerfile.release, default:develop.
+* `--torch_whl_url`：The download link of torch wheel, this option is only useful when building release Docker images, default:""
+* `--torch_musa_whl_url`：The download link of torch_musa wheel, this option is only useful when building release Docker images, default:""
+
     ```shell
     DOCKER_BUILD_DIR=/data/torch_musa_docker_build \
     TORCH_VISION_REPO_ROOT_PATH=/tmp \
-    bash docker/build.sh -i torch_musa_dev \
+    bash docker/build.sh -n torch_musa_dev \
                          -b sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev:base-pytorch-v2.0.0 \
                          -f docker/ubuntu/dockerfile.dev \
                          -m ${MUSA_TOOLKITS_URL} \
-                         -n ${MUDNN_URL}
+                         --mudnn_url ${MUDNN_URL} \
+                         --mccl_url ${MCCL_URL}
     ```
 You can explicit specify the context of `docker build` through `DOCKER_BUILD_DIR` 
 ### 2. build release docker
+Please refer to the previous section for the meaning of each parameter
+
+
 ```shell
-bash build.sh -i torch_musa_docker                       \
+bash build.sh -n torch_musa_docker                       \
               -b ubuntu:20.04                            \
               -f ./ubuntu/dockerfile.release             \
               -v 3.8                                     \
               -m ${MUSA_TOOLKITS_URL}                    \
-              -n ${MUDNN_URL}                            \
+              --mudnn_url ${MUDNN_URL}                            \
+              --mccl_url ${MCCL_URL}                     \
               --torch_whl_url ${TORCH_WHL_URL}           \
               --torch_musa_whl_url ${TORCH_MUSA_WHL_URL} \
               --release
@@ -59,6 +86,10 @@ If you want to install other python packages that rely on `pytorch` such as `tor
 ## Supported platform
 - Ubuntu20.04
 
+## Supported python version
+- py3.8
+
 ## Future work
 - support other ubuntu system
 - support centos
+- support other python version
