@@ -1,56 +1,94 @@
 #!/bin/bash
-set -ex
+set -e
 
 ARCH=GPU_ARCH_MP_21 # default to MP_21 arch for muBLAS
+
+WORK_DIR="${PWD}"
+DATE=$(date +%Y%m%d)
+
+do_install_mtopencv="false"
+do_install_murand="false"
+do_install_musparse="false"
+do_install_mualg="false"
+do_install_muthrust="false"
+do_install_mublas="false"
+
+echo_info() {
+  echo -e "\033[33m"$1"\033[0m"
+}
+
+echo_success() {
+  echo -e "\033[32m"$1"\033[0m"
+}
+
+help() {
+  echo_info "----------------------------------------------------------------"
+  name="$(basename "$(realpath "${BASH_SOURCE:-$0}")")"
+  echo_info "Description:"
+  echo_info "This script will install math libs of MUSA,"
+  echo_info "including muRand, muSparse, muAlg, muThrust, muBLAS."
+  echo_info "Usage:"
+  echo_info " ${name} [-w] [-c] [-r] [-s] [-a] [-t] [-b] [-m ARCH]"
+  echo_info "Details:"
+  echo_info " -w : install all the math libs"
+  echo_info " -c : only install mt-opencv"
+  echo_info " -r : only install muRand"
+  echo_info " -s : only install muSparse"
+  echo_info " -a : only install muAlg"
+  echo_info " -t : only install muThrust"
+  echo_info " -b : only install muBLAS"
+  echo_info " -m : specify the GPU arch. Available: {21, 22}"
+  echo_info " -h : print help message"
+  echo_info "----------------------------------------------------------------"
+  echo_info "e.g."
+  echo_info "${name} -c -m 21 # install mtOpenCV of GPU arch: 21"
+  exit 0
+}
+
+# parse parameters
+
+while getopts 'wcrsatbh:m:' OPT; do
+  case $OPT in
+  c)
+    do_install_mtopencv="true"
+    ;;
+  r)
+    do_install_murand="true"
+    ;;
+  s)
+    do_install_musparse="true"
+    ;;
+  a)
+    do_install_mualg="true"
+    ;;
+  t)
+    do_install_muthrust="true"
+    ;;
+  b)
+    do_install_mublas="true"
+    ;;
+  w)
+    do_install_mtopencv="true"
+    do_install_murand="true"
+    do_install_musparse="true"
+    do_install_mualg="true"
+    do_install_muthrust="true"
+    do_install_mublas="true"
+    ;;
+  m)
+    ARCH="GPU_ARCH_MP_${OPTARG}"
+    ;;
+  h) help ;;
+  ?) help ;;
+  esac
+done
+
 MT_OPENCV_URL="http://oss.mthreads.com/release-ci/Math-X/mt_opencv.tar.gz"
 MU_RAND_URL="https://oss.mthreads.com/release-ci/computeQA/mathX/newest/murand.tar.gz"
 MU_SPARSE_URL="http://oss.mthreads.com/release-ci/Math-X/muSPARSE_dev0.1.0.tar.gz"
 MU_ALG_URL="https://oss.mthreads.com/release-ci/computeQA/mathX/newest/mualg.tar"
 MU_THRUST_URL="https://oss.mthreads.com/release-ci/computeQA/mathX/newest/muthrust.tar"
 MU_BLAS_URL="https://oss.mthreads.com/release-ci/computeQA/mathX/newest/${ARCH}/mublas.tar.gz"
-
-WORK_DIR="${PWD}"
-DATE=$(date +%Y%m%d)
-
-# parse parameters
-parameters=$(getopt -o h:: --long mt_opencv_url:,mu_rand_url:,mu_sparse_url:,mu_alg_url:,mu_thrust_url:,mu_blas_url:,help, -n "$0" -- "$@")
-[ $? -ne 0 ] && exit 1
-
-eval set -- "$parameters"
-
-while true; do
-  case "$1" in
-  --mt_opencv_url)
-    MT_OPENCV_URL=$2
-    shift 2
-    ;;
-  --mu_rand_url)
-    MU_RAND_URL=$2
-    shift 2
-    ;;
-  --mu_sparse_url)
-    MU_SPARSE_URL=$2
-    shift 2
-    ;;
-  --mu_alg_url)
-    MU_ALG_URL=$2
-    shift 2
-    ;;
-  --mu_thrust_url)
-    MU_THRUST_URL=$2
-    shift 2
-    ;;
-  --mu_blas_url)
-    MU_BLAS_URL=$2
-    shift 2
-    ;;
-  --)
-    shift
-    break
-    ;;
-  *) exit 1 ;;
-  esac
-done
 
 install_mu_rand() {
   if [ -d $1 ]; then
@@ -147,18 +185,15 @@ install_blas() {
 }
 
 main() {
-  # Get all install function names
-  function_names=$(grep "^install" $0 | sed -nE 's/^([a-zA-Z0-9_]+)\(.*/\1/p')
-  excluded_libs=("install_blas" "install_mu_rand")
-  mkdir -p $WORK_DIR/$DATE
-  for fn_name in $function_names; do
-    if [[ ! "${excluded_libs[@]}" =~ "${fn_name}" ]]; then
-      eval $fn_name $WORK_DIR/$DATE
-    fi
-  done
-  pushd ~
+  echo_info "install math libs of arch: ${ARCH}"
+  [ ! -d "$WORK_DIR/$DATE" ] && mkdir -p "$WORK_DIR/$DATE"
+  # FIXME:(mingyuan.wang) mtOpenCV now doesn't included
+  [ "${do_install_murand}" = "true" ] && install_mu_rand "$WORK_DIR/$DATE"
+  [ "${do_install_musparse}" = "true" ] && install_mu_sparse "$WORK_DIR/$DATE"
+  [ "${do_install_mualg}" = "true" ] && install_mu_alg "$WORK_DIR/$DATE"
+  [ "${do_install_muthrust}" = "true" ] && install_thrust "$WORK_DIR/$DATE"
+  [ "${do_install_mublas}" = "true" ] && install_blas "$WORK_DIR/$DATE"
   rm -rf $WORK_DIR/$DATE
-  popd
 }
 
 main

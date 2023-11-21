@@ -57,7 +57,7 @@ RUN bash install_mccl.sh --mccl_url ${MCCL_URL} && \
 
 # install math libs
 COPY ./common/install_math.sh install_math.sh
-RUN bash install_math.sh && \
+RUN bash install_math.sh -sat && \
     rm -f install_math.sh
 
 # install conda

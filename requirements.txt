@@ -6,7 +6,7 @@ mkl==2023.0.0
 mkl-include==2023.0.0
 mkl-devel==2023.0.0
 openpyxl~=3.1.2
-setuptools~=60.2.0
+setuptools>=60.2.0
 pyahocorasick==2.0.0
 scipy==1.10.1
 packaging

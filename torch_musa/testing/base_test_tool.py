@@ -121,6 +121,9 @@ class Comparator:
 
     def __init__(self):
         self._comparator = None
+        self._atol = 1e-5
+        self._rtol = 1e-5
+        self._equal_nan = False
 
     def __call__(self, result, golden):
         """Compare MUSA results and CPU results.
@@ -131,12 +134,16 @@ class Comparator:
             A bool value indicating whether computing result is right.
         """
         if self._comparator is None:
-            raise NotImplementedError("Comparator is not implemented by a subclass")
+            raise NotImplementedError(
+                "Comparator is not implemented by a subclass")
 
         if not isinstance(self._comparator, (Callable, types.LambdaType)):
             raise TypeError("self._comparator must be a callable type")
 
         return self._comparator(result.cpu(), golden.cpu()) and result.shape == golden.shape
+
+    def get_tolerance(self):
+        return self._atol, self._rtol, self._equal_nan
 
 
 class DefaultComparator(Comparator):
@@ -147,6 +154,9 @@ class DefaultComparator(Comparator):
         Use both relative and absolute tolerance to compare the result and golden.
         """
         super().__init__()
+        self._atol = abs_diff
+        self._rtol = rel_diff
+        self._equal_nan = equal_nan
         self._comparator = lambda result, golden: torch.allclose(
             result, golden, rtol=rel_diff, atol=abs_diff, equal_nan=equal_nan
         )
@@ -436,7 +446,26 @@ class OpTest:
             for comparator in self._comparators:
                 assert c_r.shape == m_r.shape
                 assert c_r.dtype == m_r.dtype
-                assert comparator(c_r, m_r)
+                res = comparator(m_r, c_r)
+                info_str = ""
+                if not res:
+                    atol, rtol, equal_nan = comparator.get_tolerance()
+                    mask_t = ~torch.isclose(m_r, c_r, rtol, atol, equal_nan)
+                    selected = torch.abs(c_r[mask_t] - m_r[mask_t])
+                    info_str = f"Max abs error: {selected.max().item()}"
+
+                assert comparator(c_r, m_r), info_str
+
+    def check_musafp16_vs_musafp16(self, inputs=None, train=False, test_out=False):
+        '''
+        Compare results of ref_func and func. 
+        This are designed for some ops could be validated by compositing small ops like SDP. 
+        '''
+        fp16_ref_res = self._call_func(
+            inputs, "musa", train, test_out, refer=True, fp16=True)
+        fp16_comp_res = self._call_func(
+            inputs, "musa", train, test_out, fp16=True)
+        self.compare_res(fp16_ref_res, fp16_comp_res)
 
     def check_musafp16_vs_musafp32(self, inputs=None, train=False, test_out=False):
         fp32_res = self._call_func(inputs, "musa", train, test_out, refer=True)

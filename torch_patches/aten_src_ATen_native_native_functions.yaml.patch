@@ -1,26 +1,37 @@
 diff --git a/aten/src/ATen/native/native_functions.yaml b/aten/src/ATen/native/native_functions.yaml
-index 6464615..adfc83d 100644
+index 6464615..408ddee 100644
 --- a/aten/src/ATen/native/native_functions.yaml
 +++ b/aten/src/ATen/native/native_functions.yaml
-@@ -13821,6 +13821,17 @@
+@@ -13821,6 +13821,28 @@
      CPU, NestedTensorCPU: _fused_sdp_choice_cpp
      CUDA, NestedTensorCUDA: _fused_sdp_choice_cuda
-
-+- func: _scaled_dot_product_attention_musa(Tensor query, Tensor key, Tensor value, Tensor? attn_mask=None, float dropout_p=0.0, bool is_causal=False) -> (Tensor output, Tensor attn_weights, Tensor bwd_reserve)
+ 
++- func: _scaled_dot_product_attention_math_musa(Tensor query, Tensor key, Tensor value, Tensor? attn_mask=None, float dropout_p=0.0, bool is_causal=False) -> (Tensor output, Tensor attn_weights, Tensor bwd_reserve)
 +  variants: function
 +  dispatch:
-+    CPU: _scaled_dot_product_attention_cpu_musa
++    CPU: _scaled_dot_product_attention_math_cpu_musa
 +
-+- func: _scaled_dot_product_attention_musa_backward(Tensor grad_out, Tensor query, Tensor key, Tensor value, Tensor output, Tensor attn_weights, Tensor bwd_reserve) -> (Tensor grad_query, Tensor grad_key, Tensor grad_value)
++- func: _scaled_dot_product_attention_math_musa_backward(Tensor grad_out, Tensor query, Tensor key, Tensor value, Tensor output, Tensor attn_weights, Tensor bwd_reserve) -> (Tensor grad_query, Tensor grad_key, Tensor grad_value)
 +  variants: function
 +  dispatch:
-+    CPU: _scaled_dot_product_attention_musa_cpu_backward
++    CPU: _scaled_dot_product_attention_math_cpu_musa_backward
++
++
++- func: _scaled_dot_product_attention_flash_musa(Tensor query, Tensor key, Tensor value, Tensor? attn_mask=None, float dropout_p=0.0, bool is_causal=False) -> (Tensor output, Tensor dropout_mask)
++  variants: function
++  dispatch:
++    CPU: _scaled_dot_product_attention_flash_cpu_musa
++
++- func: _scaled_dot_product_attention_flash_musa_backward(Tensor grad_out, Tensor query, Tensor key, Tensor value, Tensor output, Tensor dropout_mask) -> (Tensor grad_query, Tensor grad_key, Tensor grad_value)
++  variants: function
++  dispatch:
++    CPU: _scaled_dot_product_attention_flash_cpu_musa_backward
 +
 +
  - func: _scaled_dot_product_attention_math(Tensor query, Tensor key, Tensor value, Tensor? attn_mask=None, float dropout_p=0.0, bool is_causal=False, Tensor? dropout_mask=None) -> (Tensor, Tensor)
    variants: function
-
-@@ -14609,3 +14620,13 @@
+ 
+@@ -14609,3 +14631,13 @@
    dispatch:
      CUDA: _fused_adamw_kernel_cuda_
    autogen: _fused_adamw, _fused_adamw.out

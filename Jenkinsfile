@@ -64,6 +64,8 @@ pipeline {
             stage('Build') {
               steps {
                 sh 'git config --global --add safe.directory \"*\"'
+                //TODO:(lms/mingyuan.wang) We should keep the proper released MUSA software stack installed to the released docker image.
+                sh '/bin/bash --login scripts/update_daily_musart.sh'
                 sh '/bin/bash --login scripts/update_release_mudnn.sh'
                 sh '/bin/bash --login -c "conda run -n py38 --no-capture-output /bin/bash build.sh"'
               }
