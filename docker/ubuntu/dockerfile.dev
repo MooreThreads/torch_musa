@@ -36,7 +36,7 @@ COPY ./common/install_mccl.sh install_mccl.sh
 RUN bash install_mccl.sh --mccl_url ${MCCL_URL} && \
     rm -f install_mccl.sh 
 
-# install math libs
+# install math libs, there are muSparse, muAlg and muThrust
 COPY ./common/install_math.sh install_math.sh
 RUN bash install_math.sh -sat && \
     rm -f install_math.sh 
@@ -65,14 +65,22 @@ RUN pushd /home/torch_musa && \
     conda install -y "llvm-openmp<16" && \
     export CMAKE_PREFIX_PATH=${CONDA_PREFIX:-"$(dirname $(which conda))/../"} && \
     bash build.sh -t && \
+    rm -rf /home/pytorch/build && \
     popd
 
-WORKDIR /tmp
+WORKDIR /home
 COPY ./vision ./vision
 RUN pushd vision && \
     python setup.py install && \
-    popd && \
-    rm -rf /tmp/vision
+    rm -rf build && \
+    popd
+
+RUN pushd /home/torch_musa && \
+    chmod +x scripts/run_unittest.sh && \
+    bash build.sh -m && \
+    bash scripts/run_unittest.sh > /home/ut_output.txt || true && \
+    bash scripts/run_integration_test.sh > /home/integration_test_output.txt || true && \
+    rm -rf build
 
 COPY ./common/check_status.sh /home/check_status.sh
 COPY ./common/test_musa.mu /home/test_musa.mu
@@ -81,6 +89,5 @@ RUN chmod 777 /home/check_status.sh
 
 RUN echo "exec /bin/bash" >> /home/check_status.sh
 
-WORKDIR /home
 ENTRYPOINT ["/home/check_status.sh"]
 

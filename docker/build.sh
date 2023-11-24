@@ -22,6 +22,8 @@ MCCL_URL=""
 TORCH_WHL_URL=""
 TORCH_MUSA_WHL_URL=""
 VISION_TAG="v0.16.0"
+NO_PREPARE=0
+TORCH_MUSA_TAG='dev1.5.1'
 
 usage() {
   echo -e "\033[1;32mThis script is used to build docker image for torch_musa. \033[0m"
@@ -37,11 +39,13 @@ usage() {
   echo -e "\033[32m    --mccl_url)                : The download link of MCCL. \033[0m"
   echo -e "\033[32m    --torch_whl_url)           : The download link of torch wheel. \033[0m"
   echo -e "\033[32m    --torch_musa_whl_url)      : The download link of torch_musa wheel. \033[0m"
+  echo -e "\033[32m    --torch_musa_tag)          : The tag of torch_musa to be installed \033[0m"
   echo -e "\033[32m    -h/--help                  : Help information. \033[0m"
+  echo -e "\033[32m    --no_prepare               : Whether to prepare build context, such as torch_musa. \033[0m"
 }
 
 # parse parameters
-parameters=$(getopt -o rn:t:b:f:v:m:h:: --long name:,tag:,base_img:,docker_file:,python_verison:,musa_toolkits_url:,mudnn_url:,release,mccl_url:,torch_whl_url:,torch_musa_whl_url:,help::, -n "$0" -- "$@")
+parameters=$(getopt -o rn:t:b:f:v:m:h:: --long name:,tag:,base_img:,docker_file:,python_verison:,musa_toolkits_url:,mudnn_url:,torch_musa_tag:,release,no_prepare,mccl_url:,torch_whl_url:,torch_musa_whl_url:,help::, -n "$0" -- "$@")
 [ $? -ne 0 ] && { echo -e "\033[34mTry '$0 --help' for more information. \033[0m"; exit 1; }
 
 eval set -- "$parameters"
@@ -56,9 +60,11 @@ while true;do
     -m|--musa_toolkits_url) MUSA_TOOLKITS_URL=$2; shift 2;;
     --mudnn_url) MUDNN_URL=$2; shift 2;;
     -r|--release) RELEASE=1; shift ;;
+    --no_prepare) NO_PREPARE=1; shift ;;
     --mccl_url) MCCL_URL=$2; shift 2;;
     --torch_whl_url) TORCH_WHL_URL=$2; shift 2;;
     --torch_musa_whl_url) TORCH_MUSA_WHL_URL=$2; shift 2;;
+    --torch_musa_tag) TORCH_MUSA_TAG=$2; shift 2;;
     -h|--help) usage; exit ;;
     --) shift ; break ;;
     *) usage; exit 1 ;;
@@ -76,7 +82,7 @@ function prepare_build_context() {
       git clone -b ${VISION_TAG}  https://github.com/pytorch/vision.git --depth=1 $TORCH_VISION_ROOT_DIR/vision
     fi
     sudo cp -r $TORCH_VISION_ROOT_DIR/vision $BUILD_DIR
-    sudo git clone https://github.mthreads.com/mthreads/torch_musa.git $BUILD_DIR/torch_musa
+    sudo git -b ${TORCH_MUSA_TAG} clone https://github.mthreads.com/mthreads/torch_musa.git $BUILD_DIR/torch_musa
   fi
   CUR_ROOT=$(cd "$(dirname "$0")"; pwd)
   sudo cp -r $CUR_ROOT/common $BUILD_DIR/
@@ -104,8 +110,12 @@ function build_docker_image() {
 }
 
 BUILD_DIR=${DOCKER_BUILD_DIR:-$(pwd)/tmp}
-sudo mkdir -p $BUILD_DIR
-prepare_build_context ${BUILD_DIR}
+if [ "$NO_PREPARE" -eq 0 ]; then
+  sudo mkdir -p $BUILD_DIR
+  prepare_build_context ${BUILD_DIR}
+fi
 build_docker_image $BUILD_DIR
-sudo rm -rf $BUILD_DIR
+if [ "$NO_PREPARE" -eq 0 ]; then
+  sudo rm -rf $BUILD_DIR
+fi
 

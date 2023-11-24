@@ -201,7 +201,7 @@ main() {
       echo -e "\033[32mIf cmd1 still failed, update torch_musa to newest and build: \033[0m"
       echo "cmd2: git fetch && git rebase origin/main && bash build.sh -c"
       echo -e "\033[32mIf cmd2 still failed, update libraries and build: \033[0m"
-      echo "cmd3: bash scripts/update_daily_musart.sh && bash scripts/update_daily_mudnn.sh && bash build.sh -c"
+      echo "cmd3: bash docker/common/daily/update_daily_musart.sh && bash docker/common/daily/update_daily_mudnn.sh && bash build.sh -c"
       echo -e "\033[32mIf cmd3 still failed, please check driver version on your host machine. \033[0m"
       exit 1
     fi

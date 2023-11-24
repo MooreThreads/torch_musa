@@ -50,8 +50,8 @@ def test_linalg_lstsq(input_data, dtype):
     m = torch.linalg.lstsq
     input_data["A"] = input_data["A"].to(dtype)
     input_data["B"] = input_data["B"].to(dtype)
-    output = m(input_data["A"], input_data["B"])
-    output_musa = m(input_data["A"].to('musa'), input_data["B"].to('musa'))
+    output = m(input_data["A"].clone(), input_data["B"].clone())
+    output_musa = m(input_data["A"].to('musa').clone(), input_data["B"].to('musa').clone())
     assert testing.DefaultComparator(abs_diff=1e-5)(output.solution, output_musa.solution.cpu())
     assert testing.DefaultComparator(abs_diff=1e-5)(output.residuals, output_musa.residuals.cpu())
     assert testing.DefaultComparator(abs_diff=1e-5)(output.rank, output_musa.rank.cpu())

@@ -55,7 +55,7 @@ COPY ./common/install_mccl.sh install_mccl.sh
 RUN bash install_mccl.sh --mccl_url ${MCCL_URL} && \
     rm -f install_mccl.sh 
 
-# install math libs
+# install math libs, there are muSparse, muAlg and muThrust
 COPY ./common/install_math.sh install_math.sh
 RUN bash install_math.sh -sat && \
     rm -f install_math.sh
@@ -84,6 +84,7 @@ ARG TORCH_MUSA_WHL_URL
 ENV MUSA_HOME=/usr/local/musa
 ENV LD_LIBRARY_PATH=$MUSA_HOME/lib:$LD_LIBRARY_PATH
 ENV PATH=/usr/local/musa/bin:$PATH
+ENV MTHREADS_VISIBLE_DEVICES=all
 RUN ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
     sudo echo -e ". /opt/conda/etc/profile.d/conda.sh"                            >> ~/.bashrc && \
     sudo echo "conda activate ${ENV_NAME}"                                        >> ~/.bashrc && \

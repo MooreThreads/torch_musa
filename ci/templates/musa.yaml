@@ -23,7 +23,7 @@ spec:
   containers:
   - name: main
     tty: true
-    image: sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev:latest
+    image: sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py38:latest
     imagePullPolicy: Always
     env:
     - name: TARGET_DEVICE

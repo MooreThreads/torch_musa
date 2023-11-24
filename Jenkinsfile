@@ -65,9 +65,9 @@ pipeline {
               steps {
                 sh 'git config --global --add safe.directory \"*\"'
                 //TODO:(lms/mingyuan.wang) We should keep the proper released MUSA software stack installed to the released docker image.
-                sh '/bin/bash --login scripts/update_daily_musart.sh'
-                sh '/bin/bash --login scripts/update_release_mudnn.sh'
-                sh '/bin/bash --login -c "conda run -n py38 --no-capture-output /bin/bash build.sh"'
+                sh '/bin/bash --login docker/common/daily/update_daily_musart.sh'
+                sh '/bin/bash --login docker/common/update_release_mudnn.sh'
+                sh '/bin/bash --login -c "conda run -n py38 --no-capture-output /bin/bash build.sh -c"'
               }
             }
             stage('Unit Test') {
@@ -100,9 +100,9 @@ pipeline {
                   script {
                     catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
                       sh 'git config --global --add safe.directory \"*\"'
-                      sh '/bin/bash --login scripts/update_daily_musart.sh'
-                      sh '/bin/bash --login scripts/update_daily_mudnn.sh'
-                      sh '/bin/bash --login -c "conda run -n py38 --no-capture-output /bin/bash build.sh"'
+                      sh '/bin/bash --login docker/common/daily/update_daily_musart.sh'
+                      sh '/bin/bash --login docker/common/daily/update_daily_mudnn.sh'
+                      sh '/bin/bash --login -c "conda run -n py38 --no-capture-output /bin/bash build.sh -c"'
                     }
                   }
                 }
@@ -185,7 +185,7 @@ pipeline {
       }
       steps {
         container('main') {
-          sh '/bin/bash --login -c "BUILD_ARTIFACTS=1 /bin/bash scripts/run_daily_release.sh"'
+          sh '/bin/bash --login -c "BUILD_ARTIFACTS=1 /bin/bash scripts/run_daily_release.sh"' 
         }
         container('release') {
           // Publish new release to oss (minio)

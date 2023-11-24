@@ -1,7 +1,16 @@
 #!/bin/bash
+# Please note: mublas and murand have been included in musa_toolkit
 set -e
 
-ARCH=GPU_ARCH_MP_21 # default to MP_21 arch for muBLAS
+GPU=$(mthreads-gmi -q -i 0 | grep "Product Name" | awk -F: '{print $2}' | tr -d '[:space:]')
+ARCH="GPU_ARCH_MP_21"
+if [ "$GPU" = "MTTS3000" ] || [ "$GPU" = "MTTS80" ]; then
+    ARCH="GPU_ARCH_MP_21"
+elif [ "$GPU" = "MTTS4000" ] || [ "$GPU" = "MTTS90" ]; then
+    ARCH="GPU_ARCH_MP_22"
+else
+    echo -e "\033[31mThe output of mthreads-gmi -q -i 0 | grep \"Product Name\" | awk -F: '{print \$2}' | tr -d '[:space:]' is not correct! Now GPU ARCH is set to qy1 by default! \033[0m"
+fi
 
 WORK_DIR="${PWD}"
 DATE=$(date +%Y%m%d)
@@ -12,6 +21,13 @@ do_install_musparse="false"
 do_install_mualg="false"
 do_install_muthrust="false"
 do_install_mublas="false"
+
+MT_OPENCV_URL="http://oss.mthreads.com/release-ci/Math-X/mt_opencv.tar.gz"
+MU_RAND_URL="https://oss.mthreads.com/release-ci/computeQA/mathX/newest/${ARCH}/murand.tar.gz"
+MU_SPARSE_URL="http://oss.mthreads.com/release-ci/Math-X/muSPARSE_dev0.1.0.tar.gz"
+MU_ALG_URL="https://oss.mthreads.com/release-ci/computeQA/mathX/newest/mualg.tar"
+MU_THRUST_URL="https://oss.mthreads.com/release-ci/computeQA/mathX/newest/muthrust.tar"
+MU_BLAS_URL="https://oss.mthreads.com/release-ci/computeQA/mathX/newest/${ARCH}/mublas.tar.gz"
 
 echo_info() {
   echo -e "\033[33m"$1"\033[0m"
@@ -27,8 +43,9 @@ help() {
   echo_info "Description:"
   echo_info "This script will install math libs of MUSA,"
   echo_info "including muRand, muSparse, muAlg, muThrust, muBLAS."
+  echo_info "Please note: mublas and murand have been included in musa_toolkit"
   echo_info "Usage:"
-  echo_info " ${name} [-w] [-c] [-r] [-s] [-a] [-t] [-b] [-m ARCH]"
+  echo_info " ${name} [-w] [-c] [-r] [-s] [-a] [-t] [-b]"
   echo_info "Details:"
   echo_info " -w : install all the math libs"
   echo_info " -c : only install mt-opencv"
@@ -37,17 +54,16 @@ help() {
   echo_info " -a : only install muAlg"
   echo_info " -t : only install muThrust"
   echo_info " -b : only install muBLAS"
-  echo_info " -m : specify the GPU arch. Available: {21, 22}"
   echo_info " -h : print help message"
   echo_info "----------------------------------------------------------------"
   echo_info "e.g."
-  echo_info "${name} -c -m 21 # install mtOpenCV of GPU arch: 21"
+  echo_info "${name} -c # install mtOpenCV"
   exit 0
 }
 
 # parse parameters
 
-while getopts 'wcrsatbh:m:' OPT; do
+while getopts 'wcrsatbh:' OPT; do
   case $OPT in
   c)
     do_install_mtopencv="true"
@@ -75,20 +91,10 @@ while getopts 'wcrsatbh:m:' OPT; do
     do_install_muthrust="true"
     do_install_mublas="true"
     ;;
-  m)
-    ARCH="GPU_ARCH_MP_${OPTARG}"
-    ;;
   h) help ;;
   ?) help ;;
   esac
 done
-
-MT_OPENCV_URL="http://oss.mthreads.com/release-ci/Math-X/mt_opencv.tar.gz"
-MU_RAND_URL="https://oss.mthreads.com/release-ci/computeQA/mathX/newest/murand.tar.gz"
-MU_SPARSE_URL="http://oss.mthreads.com/release-ci/Math-X/muSPARSE_dev0.1.0.tar.gz"
-MU_ALG_URL="https://oss.mthreads.com/release-ci/computeQA/mathX/newest/mualg.tar"
-MU_THRUST_URL="https://oss.mthreads.com/release-ci/computeQA/mathX/newest/muthrust.tar"
-MU_BLAS_URL="https://oss.mthreads.com/release-ci/computeQA/mathX/newest/${ARCH}/mublas.tar.gz"
 
 install_mu_rand() {
   if [ -d $1 ]; then

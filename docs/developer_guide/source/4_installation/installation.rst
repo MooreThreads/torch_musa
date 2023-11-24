@@ -59,7 +59,7 @@ torch_musa是在PyTorch v2.0.0基础上以插件的方式来支持摩尔线程�
 .. code-block:: bash
 
   cd torch_musa
-  bash scripts/update_daily_mudnn.sh # update daily mudnn lib if needed
+  bash docker/common/daily/update_daily_mudnn.sh # update daily mudnn lib if needed
   bash build.sh   # build original PyTorch and torch_musa from scratch
   
   # Some important parameters are as follows:

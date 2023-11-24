@@ -8,7 +8,6 @@ SHELL ["/bin/bash", "-c"]
 
 ENV LANG=C.UTF-8
 ENV DEBIAN_FRONTEND=noninteractive
-ARG UBUNTU_VERSION
 COPY ./common/change_ubuntu_mirror.sh change_ubuntu_mirror.sh
 COPY ./common/install_base.sh install_base.sh
 RUN UBUNTU_VERSION=${UBUNTU_VERSION} bash change_ubuntu_mirror.sh && \
@@ -18,6 +17,7 @@ RUN UBUNTU_VERSION=${UBUNTU_VERSION} bash change_ubuntu_mirror.sh && \
 
 # install conda
 ARG ENV_NAME="py38"
+ARG PYTHON_VERSION="3.8"
 # ARG CONDA_FILE="Miniconda3-py38_4.12.0-Linux-x86_64.sh"
 COPY ./common/install_conda.sh install_conda.sh
 RUN bash install_conda.sh && \
@@ -26,7 +26,7 @@ ENV PATH=/opt/conda/bin:${PATH}
 RUN conda init bash
 
 RUN source $(conda info --base)/etc/profile.d/conda.sh && \
-    conda create -n ${ENV_NAME} python=3.8 --yes && \
+    conda create -n ${ENV_NAME} python=${PYTHON_VERSION} --yes && \
     conda activate ${ENV_NAME} && \
     pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
     pip install numpy==1.23.1 && \

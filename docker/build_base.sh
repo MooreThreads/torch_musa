@@ -79,6 +79,7 @@ build_docker_cmd_prefix="docker build --no-cache --network=host "
 build_docker_cmd=${build_docker_cmd_prefix}"--build-arg UBUNTU_VERSION=${UBUNTU_VERSION}         \
                                             --build-arg CENTOS_VERSION=${CENTOS_VERSION}         \
                                             --build-arg ENV_NAME=${ENV_NAME}                     \
+                                            --build-arg PYTHON_VERSION=${PYTHON_VERSION}         \
                                             -t ${IMAGE_DOCKER_NAME}:${TAG}                       \
                                             -f ${DOCKER_FILE} ."
 echo -e "\033[34mbuild_docker cmd: "$build_docker_cmd"\033[0m"

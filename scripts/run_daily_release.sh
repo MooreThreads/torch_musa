@@ -24,23 +24,26 @@ build_artifacts() {
 
     # Build wheel packages under python3.8, using the existing conda environment
     /opt/conda/condabin/conda run -n py38 --no-capture-output USE_STATIC_MKL=1 /bin/bash build.sh -c -w
-    # Copy built wheel packages to shared directory ${ARTIFACTS_DIR}
-    cp dist/*.whl ${ARTIFACTS_DIR} && cp ${PYTORCH_REPO_PATH}/dist/*.whl ${ARTIFACTS_DIR}
+
+    # Move built wheel packages to shared directory ${ARTIFACTS_DIR}
+    mv dist/*.whl ${ARTIFACTS_DIR} && mv ${PYTORCH_REPO_PATH}/dist/*.whl ${ARTIFACTS_DIR}
+
+    # The py38 build cache needs to be cleaned
     /opt/conda/condabin/conda remove -y --name py38 --all
 
     # Build wheel packages under python3.9, create a new conda environment
     /opt/conda/condabin/conda env create -f docker/common/conda-env-torch_musa-py39.yaml
     /opt/conda/condabin/conda run -n py39 --no-capture-output pip install -r docker/common/requirements-py39.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
-    # The py38 build cache needs to be cleaned
     /opt/conda/condabin/conda run -n py39 --no-capture-output USE_STATIC_MKL=1 /bin/bash build.sh -c -w
-    cp dist/*.whl ${ARTIFACTS_DIR} && cp ${PYTORCH_REPO_PATH}/dist/*.whl ${ARTIFACTS_DIR}
+
+    mv dist/*.whl ${ARTIFACTS_DIR} && mv ${PYTORCH_REPO_PATH}/dist/*.whl ${ARTIFACTS_DIR}
     /opt/conda/condabin/conda remove -y --name py39 --all
 
     # Build wheel packages under python3.10, create a new conda environment
     /opt/conda/condabin/conda create -y -n py310 python==3.10
     # The py39 build cache needs to be cleaned
     /opt/conda/condabin/conda run -n py310 --no-capture-output USE_STATIC_MKL=1 /bin/bash build.sh -c -w
-    cp dist/*.whl ${ARTIFACTS_DIR} && cp ${PYTORCH_REPO_PATH}/dist/*.whl ${ARTIFACTS_DIR}
+    mv dist/*.whl ${ARTIFACTS_DIR} && mv ${PYTORCH_REPO_PATH}/dist/*.whl ${ARTIFACTS_DIR}
 
     
 }
