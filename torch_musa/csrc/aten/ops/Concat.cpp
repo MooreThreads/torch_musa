@@ -47,9 +47,8 @@ Tensor& CatOut(const at::ITensorListRef& tensors, int64_t dim, Tensor& out) {
     return out;
   }
   const auto& materialized = tensors.materialize();
-  const Tensor& ref = materialized[0].get();
-  const OptionalDeviceGuard device_guard(device_of(ref));
-  auto ref_type = at::native::result_type(ref);
+  const OptionalDeviceGuard device_guard(device_of(materialized[0].get()));
+  auto ref_type = at::native::result_type(materialized);
   auto memory_format = CatComputeOutputMemoryFormat(materialized);
   TORCH_CHECK(
       out.suggest_memory_format() == memory_format,
