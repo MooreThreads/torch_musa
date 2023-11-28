@@ -44,8 +44,8 @@ musa_newest_path="http://oss.mthreads.com/release-ci/computeQA/musa/newest"
 # pdump_flag="release-pdump_off"
 # murt_pkg="MUSA-Runtime_use_armory.tar.gz"
 
-tool_pkg_release="musa_toolkits_install.tar.gz"
-mtcc_pkg_release="mtcc-nightly-x86_64-linux-gnu-ubuntu-20.04.tar.gz"
+tool_pkg_release="20231125musa_toolkit6b27b102ccompute_musa_pkg7543/musa_toolkits_install.tar.gz"
+mtcc_pkg_release="20231125mtccce3915698compute_musa_pkg7549/mtcc-nightly-x86_64-linux-gnu-ubuntu-20.04.tar.gz"
 
 kmd_pkg_vps="kmd-vps_x86-mtgpu_linux-xorg-release-pdump_off.tar"
 kmd_newest_pkg_release="kmd-sudi_x86-mtgpu_linux-xorg-release-pdump_off.tar"
@@ -59,7 +59,8 @@ murt_pkg_pdump="MUSA-Runtime_debug_pdump.tar.gz"
 
 # in defualt : the newest release version without pdump
 ddk_path=${ddk_newest_path}
-musa_path=${musa_newest_path}
+# musa_path=${musa_newest_path}
+musa_path=${musa_history_path}
 kmd_pkg=${kmd_newest_pkg_release}
 umd_pkg=${umd_pkg_release}
 murt_pkg=${murt_pkg_release}
@@ -273,57 +274,29 @@ install_murt() {
     popd
 }
 
-install_mtcc() {
-    #install mtcc
-    [ ! -d "${musa_install_dir}" ] && mkdir -p "${musa_install_dir}"
-    mtcc_dir="mtcc"
-    mkdir -p "${download_dir}/${mtcc_dir}"
-    pushd "${download_dir}/${mtcc_dir}"
-    echo_info "${mtcc_pkg} installing..."
-    if [ "${do_download_pkg}"x = "true"x ]; then
-        [ -d "${mtcc_dir}" ] && rm -rf "${mtcc_dir}"
-        [ -f "${mtcc_pkg}" ] && rm -rf "${mtcc_pkg}"
-        rm -rf *.txt
-        wget -P ./ "${musa_path}/${mtcc_pkg}" --no-check-certificate
+install_mtcc(){
+    wget -P ./ "${musa_path}/${mtcc_pkg}" --no-check-certificate
+    mkdir -p mtcc
+    tar -xvf mtcc-nightly-x86_64-linux-gnu-ubuntu-20.04.tar.gz -C mtcc
+    pushd ./mtcc
+    bash install.sh
+    if [ $? -eq 0 ]; then
+        echo -e "\033[31minstall mtcc success!! \033[0m"
+    else
+        echo -e "\033[31minstall mtcc failed!! \033[0m"
     fi
-    if [ ! -f "${mtcc_pkg}" ]; then
-        echo_error "${download_dir}/${mtcc_pkg} does not exist, please check!"
-        exit 1
-    fi
-    [ ! -d "${mtcc_dir}" ] && tar -xvf "${mtcc_pkg}"
-    ./install.sh
-    check_success $? "${mtcc_pkg} install"
-    echo_info "$(cat *.txt)"
     popd
 }
-
 install_tool() {
-    #install musa_toolkits cmake
-    [ -d "${musa_install_dir}" ] && rm -rf "${musa_install_dir}"
-    tool_dir="musa_toolkits_install"
-    mkdir -p "${download_dir}/${tool_dir}"
-    pushd "${download_dir}/${tool_dir}"
-    echo_info "${tool_pkg} installing..."
-    if [ "${do_download_pkg}"x = "true"x ]; then
-        [ -d "${tool_dir}" ] && rm -rf "${tool_dir}"
-        [ -f "${tool_pkg}" ] && rm -rf "${tool_pkg}"
-        rm -rf *.txt
-        # wget -P ./ "${daily_path}/${tool_pkg}" --no-check-certificate
-        wget -P ./ "${musa_path}/${tool_pkg}" --no-check-certificate
+    wget -P ./ "${musa_path}/${tool_pkg}" --no-check-certificate
+    tar -zxvf musa_toolkits_install.tar.gz
+    bash ./musa_toolkits_install/install.sh 
+    if [ $? -eq 0 ]; then
+        echo -e "\033[31minstall musa toolkits success!! \033[0m"
+    else
+        echo -e "\033[31minstall musa toolkits failed!! \033[0m"
     fi
-    if [ ! -f "${tool_pkg}" ]; then
-        echo_error "${download_dir}/${tool_pkg} does not exist, please check!"
-        exit 1
-    fi
-    [ ! -d "${tool_dir}" ] && tar -zxvf "${tool_pkg}"
-    # something wrong when install mtcc runtime through toolkit
-    ${download_dir}/${tool_dir}/${tool_dir}/install.sh
-    # cp -r ${download_dir}/${tool_dir}/${tool_dir}/cmake/ ${musa_install_dir}/
-    check_success $? "${tool_pkg} install"
-    echo_info "$(cat *.txt)"
-    popd
 }
-
 
 main() {
     #[ "${do_install_murt}" = "true" ] || [ "${do_install_mtcc}" = "true" ] && clean_musa_install_dir
