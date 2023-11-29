@@ -1,5 +1,5 @@
-#ifndef ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUUTILS_H_
-#define ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUUTILS_H_
+#ifndef TORCH_MUSA_CSRC_ATEN_UTILS_UTILS_H_
+#define TORCH_MUSA_CSRC_ATEN_UTILS_UTILS_H_
 
 #include <ATen/Dispatch.h>
 #include <c10/core/Backend.h>
@@ -128,10 +128,21 @@ Tensor FormatContiguous(const Tensor& t, at::MemoryFormat memory_format);
 
 size_t DTypeSize(c10::ScalarType type);
 
+/**
+ * @brief There is a buggy check for zero strides. We should change the
+ *        zero stride to 1 to keep the mudnn to get right data format.
+ * @todo TODO: (lms) Actually we should make this func inline, but inline
+ *       this func in Utils.h will cause compilation-chain broken, so just
+ *       keep the declaration and definition separate temporarily.
+ * @param t Tensor to change stride from zero to 1
+ * @return at::Tensor output tensor of this func.
+ */
+at::Tensor ContiguousIfZeroInStrides(const at::Tensor& t);
+
 } // namespace musa
 
 using musa::kMUSA;
 
 } // namespace at
 
-#endif // ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUUTILS_H_
+#endif // TORCH_MUSA_CSRC_ATEN_UTILS_UTILS_H_

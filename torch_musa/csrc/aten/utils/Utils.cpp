@@ -222,5 +222,14 @@ size_t DTypeSize(c10::ScalarType type) {
   return size;
 }
 
+at::Tensor ContiguousIfZeroInStrides(const at::Tensor& t) {
+  for (auto s : t.strides()) {
+    if (s == 0) {
+      return t.contiguous();
+    }
+  }
+  return t;
+}
+
 } // namespace musa
 } // namespace at

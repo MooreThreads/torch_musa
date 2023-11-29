@@ -376,8 +376,10 @@ Tensor BinarycommonDtype(
   }
   ScalarType common_dtype = at::result_type(self, other);
   at::native::alpha_check(common_dtype, alpha_scalar);
-  Tensor common_self = self.to(common_dtype);
-  Tensor common_other = other.to(common_dtype);
+  Tensor common_self =
+      at::musa::ContiguousIfZeroInStrides(self.to(common_dtype));
+  Tensor common_other =
+      at::musa::ContiguousIfZeroInStrides(other.to(common_dtype));
   return Binary(op_name, common_self, common_other, m, alpha_scalar);
 }
 
