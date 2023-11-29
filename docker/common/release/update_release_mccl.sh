@@ -18,3 +18,5 @@ else
 fi
 
 bash ${torch_musa_dir}/install_mccl.sh --mccl_url "https://oss.mthreads.com/release-rc/cuda_compatible/dev1.5.1/${ARCH}/mccl_dev1.3.0.tar"
+
+echo -e "\033[31mmccl update to version dev1.3.0! \033[0m"

@@ -41,3 +41,5 @@ tar -zxf ${musa_toolkit_path}/musa_toolkits_dev1.5.1-${ARCH}.tar.gz -C ${musa_to
 pushd ${musa_toolkit_path}/musa_toolkits_install
 bash ./install.sh 
 popd
+
+echo -e "\033[31musa toolkits update to version dev1.5.1! \033[0m"

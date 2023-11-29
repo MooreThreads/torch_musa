@@ -121,6 +121,7 @@ python setup.py install
 
 #### Docker Image for Developer
 ```bash
+#To run the Docker for qy2, simply replace 'qy1' with 'qy2' in the following command.
 #Python3.8
 docker run -it --privileged --pull always --network=host --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py38:dev1.5.1-qy1 /bin/bash
 
@@ -135,7 +136,7 @@ docker run -it --privileged --pull always --network=host --name=torch_musa_dev -
 
 | Docker Tag | Description |
 | ---- | --- |
-| **latest/dev1.5.1-qy1/musa-2.3.2** <br>[ **Python3.8** ](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev-py38/artifacts-tab) <br> [ **Python3.9** ](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev-py39/artifacts-tab) <br> [ **Python3.10** ](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev-py310/artifacts-tab)| musatoolkits dev1.5.1 <br> mudnn dev1.5.1 <br> mccl dev1.5.1 <br> muAlg_dev-0.3.0  <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.3.0 <br> torch_musa tag-dev1.5.1 |
+| **dev1.5.1-qy1/dev1.5.1-qy2** <br>[ **Python3.8** ](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev-py38/artifacts-tab) <br> [ **Python3.9** ](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev-py39/artifacts-tab) <br> [ **Python3.10** ](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev-py310/artifacts-tab)| musatoolkits dev1.5.1 <br> mudnn dev1.5.1 <br> mccl dev1.5.1 <br> muAlg_dev-0.3.0  <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.3.0 <br> torch_musa tag-dev1.5.1 |
 | [**v0.1.18**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | musatoolkits daily20230913 (ddk musa_2.3.1)<br> mudnn daily20230913; mccl dev1.2.2 <br> libomp-11-dev <br> muAlg_dev-0.3.0  <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.3.0 <br> Python3.8 |
 | [**v0.1.17**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | musatoolkits dev1.4.2 (ddk musa_2.2.0)<br> mudnn daily20230822; mccl dev1.2.2 <br> libomp-11-dev <br> muAlg_dev-0.3.0 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.3.0 <br> Python3.8 |
 | [**v0.1.16**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | build and install torchvision from source code [a6dea86] <br> other components are the same with v0.1.15 <br> Python3.8 |
@@ -146,6 +147,7 @@ docker run -it --privileged --pull always --network=host --name=torch_musa_dev -
 
 #### Docker Image for User
 ```bash
+#To run the Docker for qy2, simply replace 'qy1' with 'qy2' in the following command.
 #python3.8
 docker run -it --privileged --pull always --network=host --name=torch_musa_release --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-release-py38:dev1.5.1-qy1 /bin/bash
 
@@ -160,7 +162,7 @@ docker run -it --privileged --pull always --network=host --name=torch_musa_relea
 
 | Docker Tag | Description |
 | ---- | --- |
-| **latest/dev1.5.1-qy1**  <br> [ **Python3.8** ](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-release-py38/artifacts-tab) <br> [ **Python3.9** ](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-release-py39/artifacts-tab) <br> [ **Python3.10** ](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-release-py310/artifacts-tab)| musatoolkits dev1.5.1 <br> mudnn dev1.5.1 <br> mccl dev1.5.1 <br> muAlg_dev-0.3.0  <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.3.0 <br> torch_musa daily 20231118 |
+|**dev1.5.1-qy1/dev1.5.1-qy2**  <br> [ **Python3.8** ](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-release-py38/artifacts-tab) <br> [ **Python3.9** ](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-release-py39/artifacts-tab) <br> [ **Python3.10** ](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-release-py310/artifacts-tab)| musatoolkits dev1.5.1 <br> mudnn dev1.5.1 <br> mccl dev1.5.1 <br> muAlg_dev-0.3.0  <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.3.0 <br> torch_musa tag-dev1.5.1 |
 | [**v0.1.15**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-release/artifacts-tab) | musatoolkits-rc1.4.0 (ddk_musa_2.1.1)<br> mudnn_rtm_2.1.1; mccl_20230627 <br> muAlg _dev-0.1.1 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.1.1 |
 | [**v0.1.12**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-release/artifacts-tab) | musatoolkits-20230605 (ddk_20230604 develop or newer)<br> mudnn 20230605; mccl_rc1.1.0 <br> muAlg _dev-0.1.1 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.1.1 |
 

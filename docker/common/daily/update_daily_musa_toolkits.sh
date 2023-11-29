@@ -41,3 +41,4 @@ tar -zxf ${musa_toolkit_path}/musa_toolkits_install_full.tar.gz -C ${musa_toolki
 pushd ${musa_toolkit_path}/musa_toolkits_install
 bash ./install.sh 
 popd
+echo -e "\033[31mmusa toolkits update to the newest version! \033[0m"

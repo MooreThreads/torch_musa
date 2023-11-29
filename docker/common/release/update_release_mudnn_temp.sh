@@ -20,3 +20,4 @@ tar -xf ${mudnn_path}/mudnn_rtm2.3.0-${ARCH}.tar -C ${mudnn_path}
 pushd ${mudnn_path}/mudnn
 bash install_mudnn.sh
 popd
+echo -e "\033[31mmudnn update to version rtm2.3.0! \033[0m"

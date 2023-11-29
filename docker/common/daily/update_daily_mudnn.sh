@@ -24,3 +24,4 @@ tar -xvf ${mudnn_path}/mudnn.tar -C ${mudnn_path}
 pushd ${mudnn_path}/mudnn
 bash install_mudnn.sh
 popd
+echo -e "\033[31mmudnn update to the newest version! \033[0m"
