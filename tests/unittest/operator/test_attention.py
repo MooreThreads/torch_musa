@@ -10,6 +10,7 @@ from torch_musa import testing
 from torch_musa.testing.base_test_tool import DefaultComparator
 
 
+# MASK_TYPES = [-1]
 MASK_TYPES = [1, 0, -1]
 # ============ Below are only for ScaledDotProductAttention Tests. ===========
 

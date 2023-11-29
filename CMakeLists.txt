@@ -222,6 +222,7 @@ endif()
 
 if(USE_MCCL)
   find_package(MCCL)
+
   if(MCCL_FOUND)
     list(APPEND DEPENDENT_INCLUDE_DIRS ${MCCL_INCLUDE_DIRS})
     list(APPEND DEPENDENT_LIBRARIES ${MCCL_LIBRARIES})
@@ -232,6 +233,7 @@ if(USE_MCCL)
     set(MCCL_PATH "/usr/local/musa")
     set(MCCL_LIBRARIES "/usr/local/musa/lib/libmccl.so")
   endif()
+
   add_definitions(-DUSE_MCCL)
 endif()
 
@@ -287,7 +289,7 @@ target_link_libraries(${PLUGIN_NAME} PUBLIC ${MUSA_KERNELS_LIB})
 # compile musa_kernel of the extension
 set(EXT_MUSA_KERNEL_LIB "_ext_musa_kernels")
 add_subdirectory(${PROJECT_SOURCE_DIR}/torch_musa/csrc/extension)
-# target_link_libraries(${EXT_NAME} PRIVATE ${EXT_MUSA_KERNEL_LIB} ${PLUGIN_NAME} ${_EXT_LINKING_LIBS})
+target_link_libraries(${EXT_MUSA_KERNEL_LIB} PUBLIC ${PLUGIN_NAME})
 
 set(INSTALL_BIN_DIR "bin")
 set(INSTALL_LIB_DIR "lib64")
@@ -323,9 +325,9 @@ install(FILES
   DESTINATION share/cmake/)
 
 install(FILES
-${PROJECT_SOURCE_DIR}/cmake/modules/FindMUDNN.cmake
-${PROJECT_SOURCE_DIR}/cmake/modules/FindMUSAToolkits.cmake
-DESTINATION share/cmake/modules/)
+  ${PROJECT_SOURCE_DIR}/cmake/modules/FindMUDNN.cmake
+  ${PROJECT_SOURCE_DIR}/cmake/modules/FindMUSAToolkits.cmake
+  DESTINATION share/cmake/modules/)
 
 install(FILES
   ${PROJECT_SOURCE_DIR}/cmake/cpu_flags.cmake

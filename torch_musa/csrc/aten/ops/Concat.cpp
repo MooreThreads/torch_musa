@@ -12,6 +12,7 @@
 
 namespace at {
 namespace musa {
+
 // these two utilities are borrowed from
 // pytorch/aten/src/ATen/native/TensorShape.cpp
 inline void CatCheckNoZeroDim(const MaterializedITensorListRef& tensors) {
@@ -72,7 +73,8 @@ Tensor& CatOut(const at::ITensorListRef& tensors, int64_t dim, Tensor& out) {
   for (int idx = 0; idx < materialized.size(); ++idx) {
     if (materialized[idx].get().numel() > 0) {
       rt_tensors.emplace_back(
-          materialized[idx].get().contiguous(memory_format).to(ref_type));
+          FormatContiguous(materialized[idx].get(), memory_format)
+              .to(ref_type));
       elements++;
     }
   }
@@ -87,7 +89,11 @@ Tensor& CatOut(const at::ITensorListRef& tensors, int64_t dim, Tensor& out) {
   at::musa::muTensor out_ = at::musa::CreateMUTensor(out);
   at::musa::muHandle& h = at::GetMudnnHandle();
   ::musa::dnn::Concat op;
-  CHECK_MUDNN_STATUS(op.SetAxis(dim), "Set concat axis");
+  if (dim == 1 && memory_format == at::MemoryFormat::ChannelsLast) {
+    CHECK_MUDNN_STATUS(op.SetAxis(3), "Set concat axis");
+  } else {
+    CHECK_MUDNN_STATUS(op.SetAxis(dim), "Set concat axis");
+  }
   CHECK_MUDNN_STATUS(
       op.Run(h, out_, elements, mu_tensors.data()), "Run Concat");
 

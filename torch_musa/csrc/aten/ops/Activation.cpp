@@ -22,6 +22,7 @@
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/utils/register_wrapper.h"
+
 namespace at {
 namespace musa {
 
@@ -84,17 +85,17 @@ void UnaryCall(
     Tensor& o,
     const Tensor& i,
     std::function<void(::musa::dnn::Unary&)> func) {
-  c10::musa::MUSAGuard device_guard(i.device());
-  muHandle& h = GetMudnnHandle();
   auto in = CreateMUTensor(i);
   auto out = CreateMUTensor(o);
 
   ::musa::dnn::Unary op;
   func(op);
+
+  muHandle& h = GetMudnnHandle();
   CHECK_MUDNN_STATUS(op.Run(h, out, in), "Run " + op_name);
 }
 
-void UnaryBoolOut(
+void UnaryBoolCall(
     const std::string& op_name,
     Tensor& output,
     const Tensor& input,
@@ -119,25 +120,63 @@ Tensor UnaryBool(
     const Tensor& input,
     const Scalar& value,
     UNARY_MODE mode) {
-  c10::musa::MUSAGuard device_guard(input.device());
-  // as le/lt/ne/eq/gt/ge... ops return bool type
-
   Tensor input_tmp;
-  if (IsTranspose(input)) {
+  const bool is_input_transpose_contig = IsTranspose(input, false);
+  if (is_input_transpose_contig) {
     input_tmp = input.transpose(-1, -2);
   } else {
-    input_tmp = input.contiguous();
+    input_tmp = input;
   }
   Tensor output = at::empty_like(
       input_tmp,
       input_tmp.options()
           .dtype(ScalarType::Bool)
-          .memory_format(at::MemoryFormat::Contiguous));
-  UnaryBoolOut(op_name, output, input_tmp, value, mode);
-  if (IsTranspose(input)) {
-    return output.transpose(-1, -2);
+          .memory_format(input_tmp.suggest_memory_format()));
+  UnaryBoolCall(op_name, output, input_tmp, value, mode);
+  if (is_input_transpose_contig) {
+    output.transpose_(-1, -2);
+  }
+  return output;
+}
+
+void UnaryBool_(
+    const std::string& op_name,
+    Tensor& input,
+    const Scalar& value,
+    UNARY_MODE mode) {
+  const bool is_transpose_contig = IsTranspose(input, false);
+  if (is_transpose_contig) {
+    input.transpose_(-1, -2);
+  }
+  UnaryBoolCall(op_name, input, input, value, mode);
+  if (is_transpose_contig) {
+    input.transpose_(-1, -2);
+  }
+}
+
+void UnaryBoolOut(
+    const std::string& op_name,
+    Tensor& output,
+    const Tensor& input,
+    const Scalar& value,
+    UNARY_MODE mode) {
+  const bool is_transpose_contig =
+      IsTranspose(input, false) && IsTranspose(output, false);
+  Tensor input_tmp;
+  at::MemoryFormat output_memory_format;
+  if (is_transpose_contig) {
+    output.transpose_(-1, -2);
+    output_memory_format = output.suggest_memory_format();
+    input_tmp = input.transpose(-1, -2);
   } else {
-    return output;
+    output_memory_format = output.suggest_memory_format();
+    input_tmp = input.suggest_memory_format() == output_memory_format
+        ? input
+        : FormatContiguous(input, output_memory_format);
+  }
+  UnaryBoolCall(op_name, output, input_tmp, value, mode);
+  if (is_transpose_contig) {
+    output.transpose_(-1, -2);
   }
 }
 
@@ -145,8 +184,6 @@ Tensor Unary(
     const std::string& op_name,
     const Tensor& input,
     std::function<void(::musa::dnn::Unary&)> func) {
-  c10::musa::MUSAGuard device_guard(input.device());
-
   if (C10_UNLIKELY(input.is_complex())) {
     if (op_name == "Abs") {
       return MusaAbsWithKernelComplex2Float(input);
@@ -155,27 +192,34 @@ Tensor Unary(
 
   MUSA_TENSOR_TYPE_CHECK(input);
   Tensor input_tmp;
-  if (IsTranspose(input)) {
+  const bool is_input_transpose_contig = IsTranspose(input, false);
+  if (is_input_transpose_contig) {
     input_tmp = input.transpose(-1, -2);
   } else {
-    input_tmp = input.contiguous();
+    input_tmp = input;
   }
   Tensor output = at::empty_like(
       input_tmp,
-      input_tmp.options().memory_format(at::MemoryFormat::Contiguous));
+      input_tmp.options().memory_format(input_tmp.suggest_memory_format()));
   UnaryCall(op_name, output, input_tmp, func);
-  if (IsTranspose(input)) {
-    return output.transpose(-1, -2);
-  } else {
-    return output;
+  if (is_input_transpose_contig) {
+    output.transpose_(-1, -2);
   }
+  return output;
 }
 
 void Unary_(
     const std::string& op_name,
     Tensor& input,
     std::function<void(::musa::dnn::Unary&)> func) {
+  const bool is_transpose_contig = IsTranspose(input, false);
+  if (is_transpose_contig) {
+    input.transpose_(-1, -2);
+  }
   UnaryCall(op_name, input, input, func);
+  if (is_transpose_contig) {
+    input.transpose_(-1, -2);
+  }
 }
 
 void UnaryOut(
@@ -184,17 +228,36 @@ void UnaryOut(
     const Tensor& input,
     std::function<void(::musa::dnn::Unary&)> func) {
   output.resize_as_(input);
-  UnaryCall(op_name, output, input, func);
+  at::MemoryFormat output_memory_format;
+  const bool is_transpose_contig =
+      IsTranspose(input, false) && IsTranspose(output, false);
+  Tensor input_tmp;
+  if (is_transpose_contig) {
+    output.transpose_(-1, -2);
+    output_memory_format = output.suggest_memory_format();
+    input_tmp = input.transpose(-1, -2);
+  } else {
+    output_memory_format = output.suggest_memory_format();
+    input_tmp = input.suggest_memory_format() == output_memory_format
+        ? input
+        : FormatContiguous(input, output_memory_format);
+  }
+  UnaryCall(op_name, output, input_tmp, func);
+  if (is_transpose_contig) {
+    output.transpose_(-1, -2);
+  }
 }
 
 #define DEFINE_ACTIVATE_OP(op_name, mode)                          \
   Tensor op_name(const Tensor& input) {                            \
+    const c10::musa::MUSAGuard device_guard(input.device());       \
     return Unary(__func__, input, [](::musa::dnn::Unary& op) {     \
       CHECK_MUDNN_STATUS(op.SetMode(mode), "SetMode");             \
     });                                                            \
   }                                                                \
                                                                    \
   Tensor& op_name##_(Tensor& input) {                              \
+    const c10::musa::MUSAGuard device_guard(input.device());       \
     Unary_(__func__, input, [](::musa::dnn::Unary& op) {           \
       CHECK_MUDNN_STATUS(op.SetMode(mode), "SetMode");             \
     });                                                            \
@@ -202,6 +265,7 @@ void UnaryOut(
   }                                                                \
                                                                    \
   Tensor& op_name##Out(const Tensor& input, Tensor& output) {      \
+    const c10::musa::MUSAGuard device_guard(input.device());       \
     UnaryOut(__func__, output, input, [](::musa::dnn::Unary& op) { \
       CHECK_MUDNN_STATUS(op.SetMode(mode), "SetMode");             \
     });                                                            \
@@ -231,28 +295,23 @@ DEFINE_ACTIVATE_OP(Log10, ::musa::dnn::Unary::Mode::LOG10)
 DEFINE_ACTIVATE_OP(Log2, ::musa::dnn::Unary::Mode::LOG2)
 DEFINE_ACTIVATE_OP(Floor, ::musa::dnn::Unary::Mode::FLOOR)
 
-#define SCALAR_COMPARISON(op_name, mode)                                   \
-  Tensor& op_name##Out(                                                    \
-      const Tensor& self, const Scalar& value, Tensor& output) {           \
-    if (IsTranspose(self) && IsTranspose(output)) {                        \
-      output.transpose_(-1, -2);                                           \
-      UnaryBoolOut(__func__, output, self.transpose(-1, -2), value, mode); \
-      output.transpose_(-1, -2);                                           \
-    } else {                                                               \
-      auto contiguous_self = self.contiguous();                            \
-      UnaryBoolOut(__func__, output, contiguous_self, value, mode);        \
-    }                                                                      \
-    return output;                                                         \
-  }                                                                        \
-                                                                           \
-  Tensor op_name(const Tensor& self, const Scalar& value) {                \
-    return UnaryBool(__func__, self, value, mode);                         \
-  }                                                                        \
-                                                                           \
-  Tensor& op_name##_(Tensor& self, const Scalar& value) {                  \
-    auto out_tmp = UnaryBool(__func__, self, value, mode);                 \
-    self.copy_(out_tmp);                                                   \
-    return self;                                                           \
+#define SCALAR_COMPARISON(op_name, mode)                         \
+  Tensor& op_name##Out(                                          \
+      const Tensor& self, const Scalar& value, Tensor& output) { \
+    const c10::musa::MUSAGuard device_guard(self.device());      \
+    UnaryBoolOut(__func__, output, self, value, mode);           \
+    return output;                                               \
+  }                                                              \
+                                                                 \
+  Tensor op_name(const Tensor& self, const Scalar& value) {      \
+    const c10::musa::MUSAGuard device_guard(self.device());      \
+    return UnaryBool(__func__, self, value, mode);               \
+  }                                                              \
+                                                                 \
+  Tensor& op_name##_(Tensor& self, const Scalar& value) {        \
+    const c10::musa::MUSAGuard device_guard(self.device());      \
+    UnaryBool_(__func__, self, value, mode);                     \
+    return self;                                                 \
   }
 
 SCALAR_COMPARISON(LeScalar, UNARY_MODE::LE)
@@ -277,6 +336,7 @@ at::Tensor Elu(
     const c10::Scalar& alpha,
     const c10::Scalar& scale,
     const c10::Scalar& input_scale) {
+  const c10::musa::MUSAGuard device_guard(self.device());
   return Unary(__func__, self, [&](::musa::dnn::Unary& op) {
     auto negcoef = alpha.to<float>() * scale.to<float>();
     op.SetAlpha(negcoef);
@@ -288,6 +348,7 @@ at::Tensor& Elu_(
     const c10::Scalar& alpha,
     const c10::Scalar& scale,
     const c10::Scalar& input_scale) {
+  const c10::musa::MUSAGuard device_guard(self.device());
   Unary_(__func__, self, [&](::musa::dnn::Unary& op) {
     auto negcoef = alpha.to<float>() * scale.to<float>();
     op.SetAlpha(negcoef);
@@ -302,6 +363,7 @@ at::Tensor& EluOut(
     const c10::Scalar& scale,
     const c10::Scalar& input_scale,
     at::Tensor& result) {
+  const c10::musa::MUSAGuard device_guard(self.device());
   UnaryOut(__func__, result, self, [&](::musa::dnn::Unary& op) {
     auto negcoef = alpha.to<float>() * scale.to<float>();
     op.SetAlpha(negcoef);
@@ -315,6 +377,8 @@ Tensor GELU(const Tensor& self, c10::string_view approximate) {
   TORCH_CHECK(
       approximate_type == at::native::GeluType::None,
       "Musa GELU op only support approximate is None now!");
+  MUSA_TENSOR_TYPE_CHECK(self);
+  const c10::musa::MUSAGuard device_guard(self.device());
   return Unary(__func__, self, [&](::musa::dnn::Unary& op) {
     CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::GELU), "SetMode");
   });
@@ -328,6 +392,7 @@ Tensor& GELUOut(
   TORCH_CHECK(
       approximate_type == at::native::GeluType::None,
       "Musa GELU op only support approximate is None now!");
+  const c10::musa::MUSAGuard device_guard(self.device());
   UnaryOut(__func__, output, self, [&](::musa::dnn::Unary& op) {
     CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::GELU), "SetMode");
   });
@@ -342,8 +407,7 @@ void ClampCall(
     const c10::optional<Scalar>& min,
     bool has_max,
     const c10::optional<Scalar>& max) {
-  auto t_type = self.scalar_type();
-
+  const auto t_type = self.scalar_type();
   switch (t_type) {
     case ScalarType::Float: {
       // DBL_MIN = 2.22507e-308 which is positive, so we must use lowest or
@@ -395,7 +459,6 @@ void ClampCall(
       out = out_.to(ScalarType::Int);
       break;
     }
-
     default:
       TORCH_CHECK(false, "Unsupported tensor dtype: ", t_type);
       throw;
@@ -411,19 +474,26 @@ Tensor Clamp(
   TORCH_CHECK(
       has_min || has_max,
       "torch.clamp: either min, max or both scalars must be defined")
-
+  const c10::musa::MUSAGuard device_guard(self.device());
   // TODO(jing.li): eliminate fp32 conversion workaround after muDNN supports
   // fp16 calculation.
   const bool self_fp16 = (self.scalar_type() == ScalarType::Half);
-  const Tensor input = self_fp16 ? self.to(ScalarType::Float) : self;
+  Tensor input = self_fp16 ? self.to(ScalarType::Float) : self;
+  const bool is_transpose_contig = IsTranspose(input, false);
+  if (is_transpose_contig) {
+    input.transpose_(-1, -2);
+  }
   Tensor output = at::empty_like(
       self,
-      c10::TensorOptions(at::MemoryFormat::Contiguous)
+      c10::TensorOptions(input.suggest_memory_format())
           .dtype(input.scalar_type()));
 
   MUSA_TENSOR_TYPE_CHECK(self);
   ClampCall(__func__, output, input, has_min, min, has_max, max);
 
+  if (is_transpose_contig) {
+    output.transpose_(-1, -2);
+  }
   if (self_fp16) {
     return output.to(ScalarType::Half);
   }
@@ -440,6 +510,7 @@ Tensor& MudnnClamp_(
       has_min || has_max,
       "torch.clamp: either min, max or both scalars must be defined")
   MUSA_TENSOR_TYPE_CHECK(self);
+  const c10::musa::MUSAGuard device_guard(self.device());
   ClampCall(__func__, self, self, has_min, min, has_max, max);
   return self;
 }
@@ -547,8 +618,26 @@ Tensor& ClampOut(
       has_min || has_max,
       "torch.clamp: either min, max or both scalars must be defined")
   MUSA_TENSOR_TYPE_CHECK(self);
+  const c10::musa::MUSAGuard device_guard(self.device());
   out.resize_as_(self);
-  ClampCall(__func__, out, self, has_min, min, has_max, max);
+  at::MemoryFormat output_memory_format;
+  const bool is_transpose_contig =
+      IsTranspose(self, false) && IsTranspose(out, false);
+  Tensor input;
+  if (is_transpose_contig) {
+    out.transpose_(-1, -2);
+    output_memory_format = out.suggest_memory_format();
+    input = self.transpose(-1, -2);
+  } else {
+    output_memory_format = out.suggest_memory_format();
+    input = self.suggest_memory_format() == output_memory_format
+        ? self
+        : FormatContiguous(self, output_memory_format);
+  }
+  ClampCall(__func__, out, input, has_min, min, has_max, max);
+  if (is_transpose_contig) {
+    out.transpose_(-1, -2);
+  }
   return out;
 }
 
@@ -565,9 +654,9 @@ Tensor& ClampTensorOut(
       out.device().type() == kMUSA,
       "Device of output tensor of Clamp.TensorOut must be MUSA, but now is ",
       out.device());
-  c10::musa::MUSAGuard device_guard(self.device());
   auto has_min = min.has_value() && min->defined();
   auto has_max = max.has_value() && max->defined();
+  const c10::musa::MUSAGuard device_guard(self.device());
   Tensor cpu_min;
   Tensor cpu_max;
   if (has_min) {
@@ -599,6 +688,7 @@ Tensor& ClampTensorOut(
 }
 
 Tensor Reciprocal(const Tensor& self) {
+  const c10::musa::MUSAGuard device_guard(self.device());
   return Unary(__func__, self, [&](::musa::dnn::Unary& op) {
     CHECK_MUDNN_STATUS(op.SetAlpha(-1.), "SetAlpha");
     CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::POW), "SetMode");
@@ -606,6 +696,7 @@ Tensor Reciprocal(const Tensor& self) {
 }
 
 Tensor& Reciprocal_(Tensor& self) {
+  const c10::musa::MUSAGuard device_guard(self.device());
   Unary_(__func__, self, [&](::musa::dnn::Unary& op) {
     CHECK_MUDNN_STATUS(op.SetAlpha(-1.), "SetAlpha");
     CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::POW), "SetMode");
@@ -614,6 +705,7 @@ Tensor& Reciprocal_(Tensor& self) {
 }
 
 Tensor& ReciprocalOut(const Tensor& self, Tensor& output) {
+  const c10::musa::MUSAGuard device_guard(self.device());
   UnaryOut(__func__, output, self, [&](::musa::dnn::Unary& op) {
     CHECK_MUDNN_STATUS(op.SetAlpha(-1.), "SetAlpha");
     CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::POW), "SetMode");
@@ -946,25 +1038,34 @@ at::Tensor wrapper_MUSA_softplus_backward(
   op.impl(grad_output, self, beta, threshold, *op.outputs_[0]);
   return std::move(op.outputs_[0]).take();
 }
+
 void NegCall(
     const std::string& op_name,
     Tensor& out,
     const Tensor& self,
-    const c10::optional<Scalar>& val) {
-  auto t_type = self.scalar_type();
-  Tensor contiguous_self;
-  bool isT = false;
-  if (IsTranspose(self) && IsTranspose(out)) {
-    contiguous_self = self.transpose(-1, -2);
+    const c10::optional<Scalar>& val,
+    bool self_output = false) {
+  const auto t_type = self.scalar_type();
+  Tensor input;
+  const bool isT =
+      IsTranspose(self, false) && (self_output || IsTranspose(out, false));
+  at::MemoryFormat output_memory_format;
+
+  if (isT) {
     out.transpose_(-1, -2);
-    isT = true;
+    input = self_output ? self : self.transpose(-1, -2);
+    output_memory_format = out.suggest_memory_format();
   } else {
-    contiguous_self = self.contiguous();
+    output_memory_format = out.suggest_memory_format();
+    input =
+        (self_output || (self.suggest_memory_format() == output_memory_format))
+        ? self
+        : FormatContiguous(self, output_memory_format);
   }
   switch (t_type) {
     case ScalarType::Float: {
       const double alpha = val.value().to<double>();
-      UnaryCall(op_name, out, contiguous_self, [&](::musa::dnn::Unary& op) {
+      UnaryCall(op_name, out, input, [&](::musa::dnn::Unary& op) {
         CHECK_MUDNN_STATUS(op.SetAlpha(alpha), "SetAlpha");
         CHECK_MUDNN_STATUS(
             op.SetMode(::musa::dnn::Unary::Mode::MUL), "SetMode");
@@ -973,7 +1074,7 @@ void NegCall(
     }
     case ScalarType::Half: {
       const double alpha = val.value().to<double>();
-      UnaryCall(op_name, out, contiguous_self, [&](::musa::dnn::Unary& op) {
+      UnaryCall(op_name, out, input, [&](::musa::dnn::Unary& op) {
         CHECK_MUDNN_STATUS(op.SetAlpha(alpha), "SetAlpha");
         CHECK_MUDNN_STATUS(
             op.SetMode(::musa::dnn::Unary::Mode::MUL), "SetMode");
@@ -982,7 +1083,7 @@ void NegCall(
     }
     case ScalarType::Int: {
       const int64_t alpha = val.value().to<int64_t>();
-      UnaryCall(op_name, out, contiguous_self, [&](::musa::dnn::Unary& op) {
+      UnaryCall(op_name, out, input, [&](::musa::dnn::Unary& op) {
         CHECK_MUDNN_STATUS(op.SetAlpha(alpha), "SetAlpha");
         CHECK_MUDNN_STATUS(
             op.SetMode(::musa::dnn::Unary::Mode::MUL), "SetMode");
@@ -991,7 +1092,7 @@ void NegCall(
     }
     case ScalarType::Long: {
       const int64_t alpha = val.value().to<int64_t>();
-      UnaryCall(op_name, out, contiguous_self, [&](::musa::dnn::Unary& op) {
+      UnaryCall(op_name, out, input, [&](::musa::dnn::Unary& op) {
         CHECK_MUDNN_STATUS(op.SetAlpha(alpha), "SetAlpha");
         CHECK_MUDNN_STATUS(
             op.SetMode(::musa::dnn::Unary::Mode::MUL), "SetMode");
@@ -1000,7 +1101,6 @@ void NegCall(
     }
     default:
       TORCH_CHECK(false, "Unsupported tensor dtype in Neg: ", t_type);
-      throw;
   }
   if (isT) {
     out.transpose_(-1, -2);
@@ -1008,21 +1108,25 @@ void NegCall(
 }
 
 Tensor Neg(const Tensor& self) {
-  Tensor output = at::empty_like(self, at::MemoryFormat::Contiguous);
+  const c10::musa::MUSAGuard device_guard(self.device());
   MUSA_TENSOR_TYPE_CHECK(self);
+  Tensor output =
+      at::empty_like(self, self.options(), self.suggest_memory_format());
   Scalar val = -1;
   NegCall(__func__, output, self, val);
   return output;
 }
 
 Tensor& Neg_(Tensor& self) {
+  const c10::musa::MUSAGuard device_guard(self.device());
   MUSA_TENSOR_TYPE_CHECK(self);
   Scalar val = -1;
-  NegCall(__func__, self, self, val);
+  NegCall(__func__, self, self, val, true);
   return self;
 }
 
 Tensor& NegOut(const Tensor& self, Tensor& out) {
+  const c10::musa::MUSAGuard device_guard(self.device());
   MUSA_TENSOR_TYPE_CHECK(self);
   Scalar val = -1;
   out.resize_as_(self);
@@ -1048,6 +1152,7 @@ Tensor& LogicalNotOut(const Tensor& self, Tensor& out) {
   return out;
 }
 Tensor PowScalar(const Tensor& self, const Scalar& value) {
+  const c10::musa::MUSAGuard device_guard(self.device());
   return Unary(__func__, self, [&](::musa::dnn::Unary& op) {
     CHECK_MUDNN_STATUS(op.SetAlpha(value.to<double>()), "SetAlpha");
     CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::POW), "SetMode");
@@ -1055,6 +1160,7 @@ Tensor PowScalar(const Tensor& self, const Scalar& value) {
 }
 
 Tensor& PowScalar_(Tensor& self, const Scalar& value) {
+  const c10::musa::MUSAGuard device_guard(self.device());
   Unary_("pow_.Scalar", self, [&](::musa::dnn::Unary& op) {
     CHECK_MUDNN_STATUS(op.SetAlpha(value.to<double>()), "SetAlpha");
     CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::POW), "SetMode");
@@ -1063,6 +1169,7 @@ Tensor& PowScalar_(Tensor& self, const Scalar& value) {
 }
 
 Tensor& PowScalarOut(const Tensor& self, const Scalar& value, Tensor& output) {
+  const c10::musa::MUSAGuard device_guard(self.device());
   UnaryOut("pow.Tensor_Scalar_out", output, self, [&](::musa::dnn::Unary& op) {
     CHECK_MUDNN_STATUS(op.SetAlpha(value.to<double>()), "SetAlpha");
     CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::POW), "SetMode");
@@ -1071,6 +1178,7 @@ Tensor& PowScalarOut(const Tensor& self, const Scalar& value, Tensor& output) {
 }
 
 Tensor LeakyRelu(const Tensor& input, const Scalar& neg_slope = 0.01) {
+  const c10::musa::MUSAGuard device_guard(input.device());
   return Unary(__func__, input, [&](::musa::dnn::Unary& op) {
     CHECK_MUDNN_STATUS(op.SetAlpha(neg_slope.to<double>()), "SetAlpha");
     CHECK_MUDNN_STATUS(
@@ -1079,6 +1187,7 @@ Tensor LeakyRelu(const Tensor& input, const Scalar& neg_slope = 0.01) {
 }
 
 Tensor& LeakyRelu_(Tensor& input, const Scalar& neg_slope = 0.01) {
+  const c10::musa::MUSAGuard device_guard(input.device());
   Unary_("leaky_relu_", input, [&](::musa::dnn::Unary& op) {
     CHECK_MUDNN_STATUS(op.SetAlpha(neg_slope.to<double>()), "SetAlpha");
     CHECK_MUDNN_STATUS(
@@ -1091,6 +1200,7 @@ Tensor& LeakyReluOut(
     const Tensor& input,
     const Scalar& neg_slope,
     Tensor& output) {
+  const c10::musa::MUSAGuard device_guard(input.device());
   UnaryOut("leaky_relu.out", output, input, [&](::musa::dnn::Unary& op) {
     CHECK_MUDNN_STATUS(op.SetAlpha(neg_slope.to<double>()), "SetAlpha");
     CHECK_MUDNN_STATUS(
@@ -2107,6 +2217,7 @@ ADVANCED_REGISTER(aten, PrivateUse1, "ge_.Scalar", GeScalar_)
 ADVANCED_REGISTER(aten, PrivateUse1, "ge.Scalar_out", GeScalarOut)
 
 ADVANCED_REGISTER(aten, PrivateUse1, "sqrt", Sqrt)
+ADVANCED_REGISTER(aten, PrivateUse1, "sqrt_", Sqrt_)
 ADVANCED_REGISTER(aten, PrivateUse1, "sqrt.out", SqrtOut)
 
 ADVANCED_REGISTER(aten, PrivateUse1, "round", Round)
@@ -2114,6 +2225,7 @@ ADVANCED_REGISTER(aten, PrivateUse1, "round_", Round_)
 ADVANCED_REGISTER(aten, PrivateUse1, "round.out", RoundOut)
 
 ADVANCED_REGISTER(aten, PrivateUse1, "rsqrt", Rsqrt)
+ADVANCED_REGISTER(aten, PrivateUse1, "rsqrt_", Rsqrt_)
 ADVANCED_REGISTER(aten, PrivateUse1, "rsqrt.out", RsqrtOut)
 
 ADVANCED_REGISTER(aten, PrivateUse1, "hardswish", HardSwish)

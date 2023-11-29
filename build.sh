@@ -1,6 +1,9 @@
 #!/bin/bash
 
-CUR_DIR=$(cd $(dirname $0);pwd)
+CUR_DIR=$(
+  cd $(dirname $0)
+  pwd
+)
 TORCH_MUSA_HOME=$CUR_DIR
 PYTORCH_PATH=${PYTORCH_REPO_PATH:-${TORCH_MUSA_HOME}/../pytorch}
 PATCHES_DIR=${TORCH_MUSA_HOME}/torch_patches/
@@ -36,27 +39,68 @@ usage() {
 }
 
 # parse paremters
-parameters=`getopt -o +mtdacpwh --long all,fp64,musa,torch,debug,asan,clean,patch,wheel,help, -n "$0" -- "$@"`
-[ $? -ne 0 ] && { echo -e "\033[34mTry '$0 --help' for more information. \033[0m"; exit 1; }
+parameters=$(getopt -o +mtdacpwh --long all,fp64,musa,torch,debug,asan,clean,patch,wheel,help, -n "$0" -- "$@")
+[ $? -ne 0 ] && {
+  echo -e "\033[34mTry '$0 --help' for more information. \033[0m"
+  exit 1
+}
 
 eval set -- "$parameters"
 
-while true;do
-    case "$1" in
-        --all) BUILD_TORCH=1; BUILD_TORCH_MUSA=1; shift ;;
-        --fp64) COMPILE_FP64=1; shift ;;
-        -m|--musa) BUILD_TORCH_MUSA=1; BUILD_TORCH=0; shift ;;
-        -t|--torch) BUILD_TORCH_MUSA=0; BUILD_TORCH=1; shift ;;
-        -d|--debug) DEBUG_MODE=1; shift ;;
-        -a|--asan) ASAN_MODE=1; shift ;;
-        -c|--clean) CLEAN=1; shift ;;
-        -w|--wheel) BUILD_WHEEL=1; shift ;;
-        -p|--patch) ONLY_PATCH=1; shift ;;
-        -h|--help) usage;exit ;;
-        --)
-            shift ; break ;;
-        *) usage;exit 1;;
-    esac
+while true; do
+  case "$1" in
+  --all)
+    BUILD_TORCH=1
+    BUILD_TORCH_MUSA=1
+    shift
+    ;;
+  --fp64)
+    COMPILE_FP64=1
+    shift
+    ;;
+  -m | --musa)
+    BUILD_TORCH_MUSA=1
+    BUILD_TORCH=0
+    shift
+    ;;
+  -t | --torch)
+    BUILD_TORCH_MUSA=0
+    BUILD_TORCH=1
+    shift
+    ;;
+  -d | --debug)
+    DEBUG_MODE=1
+    shift
+    ;;
+  -a | --asan)
+    ASAN_MODE=1
+    shift
+    ;;
+  -c | --clean)
+    CLEAN=1
+    shift
+    ;;
+  -w | --wheel)
+    BUILD_WHEEL=1
+    shift
+    ;;
+  -p | --patch)
+    ONLY_PATCH=1
+    shift
+    ;;
+  -h | --help)
+    usage
+    exit
+    ;;
+  --)
+    shift
+    break
+    ;;
+  *)
+    usage
+    exit 1
+    ;;
+  esac
 done
 
 clone_pytorch() {
@@ -68,13 +112,13 @@ clone_pytorch() {
     echo -e "\033[34m Switch the Pytorch repo to tag ${PYTORCH_TAG} \033[0m"
     popd
   else
-    ABSOLUTE_PATH=`cd $(dirname ${PYTORCH_PATH}) && pwd`"/pytorch"
+    ABSOLUTE_PATH=$(cd $(dirname ${PYTORCH_PATH}) && pwd)"/pytorch"
     echo -e "\033[34mUsing default pytorch repo path: ${ABSOLUTE_PATH}\033[0m"
     if [ ! -d "${PYTORCH_PATH}" ]; then
       pushd ${TORCH_MUSA_HOME}/..
       echo -e "\033[34mPyTorch repo does not exist, now git clone PyTorch to ${ABSOLUTE_PATH} ...\033[0m"
       git clone -b ${PYTORCH_TAG} https://github.com/pytorch/pytorch.git --depth=1
-      popd 
+      popd
     fi
   fi
 }
@@ -91,8 +135,7 @@ apply_patches() {
     popd
   fi
 
-  for file in $(find ${PATCHES_DIR} -type f -print)
-  do
+  for file in $(find ${PATCHES_DIR} -type f -print); do
     if [ "${file##*.}"x = "patch"x ]; then
       echo -e "\033[34mapplying patch: $file \033[0m"
       pushd $PYTORCH_PATH
@@ -113,7 +156,7 @@ build_pytorch() {
 
   pushd ${PYTORCH_PATH}
   pip install -r requirements.txt
-  pip install -r ${TORCH_MUSA_HOME}/requirements.txt  # extra requirements
+  pip install -r ${TORCH_MUSA_HOME}/requirements.txt # extra requirements
   if [ $BUILD_WHEEL -eq 1 ]; then
     rm -rf dist
     pip uninstall torch -y
@@ -164,7 +207,7 @@ build_torch_musa() {
 }
 
 main() {
-  if [[ ${CLEAN} -eq 1 ]] && [[ ${BUILD_TORCH} -ne 1 ]] && [[ ${BUILD_TORCH_MUSA} -ne 1 ]] ; then
+  if [[ ${CLEAN} -eq 1 ]] && [[ ${BUILD_TORCH} -ne 1 ]] && [[ ${BUILD_TORCH_MUSA} -ne 1 ]]; then
     clean_pytorch
     clean_torch_musa
     exit 0
@@ -188,7 +231,7 @@ main() {
       exit 1
     fi
   fi
-  if [ ${BUILD_TORCH_MUSA} -eq 1 ]; then  
+  if [ ${BUILD_TORCH_MUSA} -eq 1 ]; then
     if [ ${CLEAN} -eq 1 ]; then
       clean_torch_musa
     fi

@@ -29,14 +29,15 @@ void PoolCall(
     Tensor& output,
     Tensor* indices = nullptr) {
   c10::musa::MUSAGuard device_guard(input.device());
+  const auto output_memory_format = output.suggest_memory_format();
+  auto contiguous_input = FormatContiguous(input, output_memory_format);
   auto out = CreateMUTensor(output);
-  auto contiguous_input = input.contiguous();
   auto in = CreateMUTensor(contiguous_input);
   muTensor inds;
   if (indices != nullptr) {
-    inds = CreateMUTensor(*indices);
+    auto contiguous_indices = FormatContiguous(*indices, output_memory_format);
+    inds = CreateMUTensor(contiguous_indices);
   }
-
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Pooling pool;
   CHECK_MUDNN_STATUS(pool.SetMode(p.mode), "SetMode");
@@ -62,14 +63,17 @@ void PoolCallBwd(
     Tensor& grad_input,
     const Tensor* indices = nullptr) {
   c10::musa::MUSAGuard device_guard(grad_output.device());
-  auto contiguous_grad_output = grad_output.contiguous();
+  const auto grad_input_memory_format = grad_input.suggest_memory_format();
+  auto contiguous_grad_output =
+      FormatContiguous(grad_output, grad_input_memory_format);
   auto in = CreateMUTensor(contiguous_grad_output);
   auto out = CreateMUTensor(grad_input);
   muTensor inds;
   Tensor contiguous_indices;
   if (indices) {
-    contiguous_indices = indices->contiguous();
-    inds = CreateMUTensor(*indices);
+    auto contiguous_indices =
+        FormatContiguous(*indices, grad_input_memory_format);
+    inds = CreateMUTensor(contiguous_indices);
   }
 
   muHandle& h = GetMudnnHandle();
@@ -317,7 +321,7 @@ void MaxPool2dInternal(
       inW, p.k[1], p.pad[1], p.d[1], p.dil[1], ceil_mode);
 
   // Our own code
-  const auto memory_format = input.suggest_memory_format();
+  const auto memory_format = contiguous_input.suggest_memory_format();
   auto options = contiguous_input.options()
                      .dtype(contiguous_input.scalar_type())
                      .memory_format(memory_format);

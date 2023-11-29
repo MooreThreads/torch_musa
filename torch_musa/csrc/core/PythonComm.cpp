@@ -4,7 +4,7 @@
 #include <torch/csrc/utils/auto_gil.h>
 #include <torch/csrc/utils/pybind.h>
 
-#include "torch_musa/csrc/core/utils.h"
+#include "torch_musa/csrc/core/StreamUtils.h"
 
 #include <cstddef>
 #include <vector>

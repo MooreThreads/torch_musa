@@ -40,7 +40,7 @@ FILE(GLOB PORTING_CPP_CSRCS
   ${GENERATED_PORTING_DIR}/torch/csrc/musa/comm.cpp
   ${GENERATED_PORTING_DIR}/torch/csrc/musa/Stream.cpp)
 
-FILE(GLOB MU_SRCS
+FILE(GLOB_RECURSE MU_SRCS
   ${GENERATED_PORTING_DIR}/aten/src/ATen/musa/cub.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/musa/cub-RadixSortKeys.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/musa/cub-RadixSortPairs.mu
@@ -120,10 +120,8 @@ FILE(GLOB MU_SRCS
   aten/quantized/musa/*.mu
   aten/ops/torchvision/*.mu
   aten/ops/musa/*.mu
+  aten/ops/attention/mudnn/*.mu
   core/*.mu
-
-  # Temporarily add BackendsSelect.mu here
-  aten/ops/attention/mudnn/SDPBackendSelect.mu
 )
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/utils.cmake)

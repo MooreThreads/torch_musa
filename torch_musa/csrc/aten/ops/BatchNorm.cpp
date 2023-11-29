@@ -1,6 +1,7 @@
 #include <ATen/ATen.h>
 #include <ATen/Config.h>
 #include <ATen/NativeFunctions.h>
+#include <ATen/core/op_registration/adaption.h>
 #include <ATen/native/layer_norm.h>
 #include <torch/library.h>
 
@@ -41,7 +42,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNorm(
       "batch_norm supports Float or Half tensor dtype, now got: ",
       input.scalar_type());
 
-  c10::musa::MUSAGuard device_guard(input.device());
+  const c10::musa::MUSAGuard device_guard(input.device());
   const Tensor& weight =
       c10::value_or_else(weight_opt, [] { return Tensor(); });
   const Tensor& bias = c10::value_or_else(bias_opt, [] { return Tensor(); });
@@ -67,9 +68,10 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNorm(
   const Tensor& running_var =
       c10::value_or_else(running_var_opt, [] { return Tensor(); });
 
-  // input and output dtype are consistent in mudnn.
+  const auto input_memory_format = input.suggest_memory_format();
+  Tensor contiguous_input = FormatContiguous(input, input_memory_format);
   auto options = input.options().dtype(input.scalar_type());
-  Tensor contiguous_input = input.contiguous();
+
   Tensor output = at::empty_like(contiguous_input);
   Tensor contiguous_weight;
   Tensor contiguous_bias;
@@ -190,19 +192,13 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
       "but now it is ",
       grad_out.scalar_type());
   TORCH_CHECK(
-      input.scalar_type() == at::ScalarType::Float ||
-          input.scalar_type() == at::ScalarType::Half,
-      "Dtype of input tensor of BatchNormBackward only support Float32/Half, ",
-      "but now it is ",
-      input.scalar_type());
-  TORCH_CHECK(
       grad_out.scalar_type() == input.scalar_type(),
       "Dtype of grad_out and input tensor of BatchNormBackward must be same, ",
       "but now it is ",
       grad_out.scalar_type(),
       input.scalar_type());
 
-  c10::musa::MUSAGuard device_guard(input.device());
+  const c10::musa::MUSAGuard device_guard(input.device());
   c10::MaybeOwned<Tensor> weight_maybe_owned =
       at::borrow_from_optional_tensor(weight_opt);
   const Tensor& weight = *weight_maybe_owned;
@@ -258,6 +254,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
   }
 
   auto num_features = input.size(1);
+
   grad_input = at::empty_like(input);
   auto grad_mean = at::empty_like(mean);
   auto grad_var = at::empty_like(invstd);
@@ -272,9 +269,12 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
   auto dv = CreateMUTensor(grad_var);
   auto dg = CreateMUTensor(grad_weight);
   auto db = CreateMUTensor(grad_bias);
-  auto contiguous_input = input.contiguous();
+
+  const auto input_memory_format = input.suggest_memory_format();
+  auto contiguous_input = FormatContiguous(input, input_memory_format);
   auto x = CreateMUTensor(contiguous_input);
-  auto contiguous_grad_out = grad_out.contiguous();
+
+  auto contiguous_grad_out = FormatContiguous(grad_out, input_memory_format);
   auto dy = CreateMUTensor(contiguous_grad_out);
 
   auto m = CreateMUTensor(mean);

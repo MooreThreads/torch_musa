@@ -24,6 +24,7 @@ namespace musa {
       "Device of input tensor of NativeDropout must be MUSA, ",
       "but now is ",
       input.device());
+
   TORCH_CHECK(
       input.scalar_type() == at::ScalarType::Float ||
           input.scalar_type() == at::ScalarType::Half ||

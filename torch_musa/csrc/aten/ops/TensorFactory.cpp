@@ -46,6 +46,10 @@ Tensor empty_musa(
 
   auto dtype = dtype_or_default(dtype_opt);
   constexpr c10::DispatchKeySet musa_ks(at::musa::kMUSAKey);
+  if (size.size() != 4 && size.size() != 5) {
+    return empty_generic(
+        size, allocator, musa_ks, dtype, at::MemoryFormat::Contiguous);
+  }
   return empty_generic(size, allocator, musa_ks, dtype, memory_format_opt);
 }
 

@@ -73,8 +73,10 @@ std::tuple<Tensor, Tensor, Tensor> NativeGroupNorm(
 
   check_group_norm_inputs(X, gamma_ref, beta_ref, C, group);
 
-  Tensor contiguous_X = X.contiguous();
-  Tensor contiguous_Y = at::native::empty_like(contiguous_X);
+  const auto memory_format = X.suggest_memory_format();
+  auto contiguous_X = FormatContiguous(X, memory_format);
+  Tensor contiguous_Y =
+      at::empty_like(contiguous_X, contiguous_X.options(), memory_format);
   Tensor contiguous_mean = at::empty({N, group}, contiguous_X.options());
   Tensor contiguous_rstd = at::empty({N, group}, contiguous_X.options());
   Tensor contiguous_gamma;
@@ -98,7 +100,9 @@ std::tuple<Tensor, Tensor, Tensor> NativeGroupNorm(
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::GroupNorm op;
   CHECK_MUDNN_STATUS(op.SetEpsilon(eps), "SetEpsilon");
-  CHECK_MUDNN_STATUS(op.SetAxis(1), "SetAxis");
+  CHECK_MUDNN_STATUS(
+      op.SetAxis(memory_format == at::MemoryFormat::ChannelsLast ? 3 : 1),
+      "SetAxis");
   CHECK_MUDNN_STATUS(op.SetGroup(static_cast<int>(group)), "SetGroup");
   CHECK_MUDNN_STATUS(op.Run(h, out, mean, rstd, in, gamma, beta), "RunOp");
 

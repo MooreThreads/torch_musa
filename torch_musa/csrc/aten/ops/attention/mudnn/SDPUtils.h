@@ -14,17 +14,17 @@ namespace sdp {
 
 inline bool check_musa_arch(sdp_params params, bool is_debug) {
   // Check that the gpu is capable of running flash attention
-  auto dprops = at::musa::getCurrentDeviceProperties();
-  bool is_arch_greater_than_qy2 =
-      dprops->major == 2 && dprops->minor >= 2; // QY2:  major:2 minor:2
-  if (!is_arch_greater_than_qy2) {
+  auto device_properties = at::musa::getCurrentDeviceProperties();
+  bool is_arch_greater_than_22 =
+      device_properties->major == 2 && device_properties->minor >= 2;
+  if (!is_arch_greater_than_22) {
     if (is_debug) {
       TORCH_WARN(
-          "Flash attention only supports QY2 architecture with mp version 2.2. "
+          "Flash attention only supports architecture with mp version 2.2. "
           "But now attempts to run on a mp ",
-          dprops->major,
+          device_properties->major,
           ".",
-          dprops->minor,
+          device_properties->minor,
           " gpu.");
     }
     return false;

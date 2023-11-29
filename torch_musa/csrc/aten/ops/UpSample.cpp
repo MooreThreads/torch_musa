@@ -61,6 +61,7 @@ Tensor& UpSampleNearest2dOut(
   Tensor out_;
   at::musa::muTensor in;
   at::musa::muTensor out;
+  bool result_out = false;
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Interpolate op;
@@ -69,35 +70,39 @@ Tensor& UpSampleNearest2dOut(
   CHECK_MUDNN_STATUS(
       op.SetScaleInfo({height_scale, width_scale}), "SetScaleInfo");
 
-  if (self.suggest_memory_format() == at::MemoryFormat::ChannelsLast) {
+  const auto input_memory_format = self.suggest_memory_format();
+  const bool is_input_nhwc =
+      (input_memory_format == at::MemoryFormat::ChannelsLast);
+  in_ = FormatContiguous(self, input_memory_format);
+  if (is_input_nhwc) {
     // if result tensor comes from UpSampleNearest2d, then it already has the
     // same format as input, otherwise we should make both of them the same
     // format
     if (result.suggest_memory_format() != at::MemoryFormat::ChannelsLast) {
-      out_ = result.to(at::MemoryFormat::ChannelsLast).permute({0, 2, 3, 1});
+      out_ = result.to(input_memory_format);
     } else {
-      out_ = result.permute({0, 2, 3, 1});
+      out_ = result;
+      result_out = true;
     }
-    in_ = self.permute({0, 2, 3, 1});
-    in = CreateMUTensor(in_);
-    out = CreateMUTensor(out_);
-    CHECK_MUDNN_STATUS(
-        in.SetFormat(at::musa::muTensor::Format::NHWC),
-        "Set input to NHWC format");
-    CHECK_MUDNN_STATUS(
-        out.SetFormat(at::musa::muTensor::Format::NHWC),
-        "Set output to NHWC format");
-    CHECK_MUDNN_STATUS(op.Run(h, out, in), "Run");
-    out_ = out_.permute({0, 3, 1, 2});
   } else {
-    in_ = self.contiguous();
-    out_ = result;
-    in = CreateMUTensor(in_);
-    out = CreateMUTensor(out_);
-    CHECK_MUDNN_STATUS(op.Run(h, out, in), "Run");
+    if (!result.is_contiguous()) {
+      out_ = FormatContiguous(result, input_memory_format);
+    } else {
+      out_ = result;
+      result_out = true;
+    }
   }
 
-  result.copy_(out_);
+  in = CreateMUTensor(in_);
+  out = CreateMUTensor(out_);
+  CHECK_MUDNN_STATUS(op.Run(h, out, in), "Run");
+  if (is_input_nhwc) {
+    out_ = out_.permute({0, 3, 1, 2});
+  }
+
+  if (!result_out) {
+    result.copy_(out_);
+  }
   return result;
 }
 
@@ -133,16 +138,14 @@ Tensor& UpSampleNearest2dBwdOut(
       scales_h, contiguous_inputheight, output_height);
   float width_scale = at::native::compute_scales_value<float>(
       scales_w, contiguous_inputwidth, output_width);
-
-  if (grad_output.suggest_memory_format() == at::MemoryFormat::ChannelsLast) {
-    TORCH_CHECK(false, "Now not supported NHWC");
-  }
+  const auto grad_input_memory_format = grad_input.suggest_memory_format();
 
   // mtDNN use the reverse scale in bwd.
   const float h_scale = 1. / height_scale;
   const float w_scale = 1. / width_scale;
 
-  Tensor contiguous_grad_output = grad_output.contiguous();
+  Tensor contiguous_grad_output =
+      FormatContiguous(grad_output, grad_input_memory_format);
 
   muHandle& h = GetMudnnHandle();
   auto in = CreateMUTensor(contiguous_grad_output);
@@ -357,15 +360,13 @@ Tensor& UpSampleBilinear2dOut(
   const float width_scale = at::native::compute_scales_value<float>(
       scales_w, contiguous_inputwidth, output_width);
 
-  if (self.suggest_memory_format() == at::MemoryFormat::ChannelsLast) {
-    TORCH_CHECK(false, "Now not supported NHWC");
-  }
+  const auto output_memory_format = result.suggest_memory_format();
 
   // if shapes are the same, just copy and return.
   if (self.sizes() == result.sizes()) {
     result.copy_(self);
   } else if (self.numel() > 0) { // else result should be empty to return
-    Tensor contiguous_input = self.contiguous();
+    Tensor contiguous_input = FormatContiguous(self, output_memory_format);
 
     muHandle& h = GetMudnnHandle();
     auto in = CreateMUTensor(contiguous_input);
@@ -431,15 +432,14 @@ Tensor& UpSampleBilinear2dBwdOut(
   float width_scale = at::native::compute_scales_value<float>(
       scales_w, contiguous_inputwidth, output_width);
 
-  if (grad_output.suggest_memory_format() == at::MemoryFormat::ChannelsLast) {
-    TORCH_CHECK(false, "Now not supported NHWC");
-  }
+  const auto grad_input_memory_format = grad_input.suggest_memory_format();
 
   // mtDNN use the reverse scale in bwd.
   const float h_scale = 1. / height_scale;
   const float w_scale = 1. / width_scale;
 
-  Tensor contiguous_grad_output = grad_output.contiguous();
+  Tensor contiguous_grad_output =
+      FormatContiguous(grad_output, grad_input_memory_format);
 
   muHandle& h = GetMudnnHandle();
   auto in = CreateMUTensor(contiguous_grad_output);

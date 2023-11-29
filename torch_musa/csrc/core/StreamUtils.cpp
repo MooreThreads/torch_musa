@@ -38,7 +38,7 @@ THPUtils_PySequence_to_MUSAStreamList(PyObject* obj) {
     } else {
       // NOLINTNEXTLINE(bugprone-throw-keyword-missing)
       std::runtime_error(
-          "Unknown data type found in stream list. Need torch.cuda.Stream or None");
+          "Unknown data type found in stream list. Need torch.musa.Stream or None");
     }
   }
   return streams;

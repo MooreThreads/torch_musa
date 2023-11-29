@@ -143,8 +143,8 @@ bool require_copy_backup(const Tensor& src, const Tensor& self) {
 void permute_to_contiguous(const Tensor& self, const Tensor& src) {
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Permute op;
-  auto contiguous_out = CreateMUTensor(self);
-  auto contiguous_in = CreateMUTensor(src);
+  auto contiguous_out = CreateMUTensor(self, false);
+  auto contiguous_in = CreateMUTensor(src, false);
   CHECK_MUDNN_STATUS(op.Run(h, contiguous_out, contiguous_in), "Run");
 }
 
@@ -162,7 +162,12 @@ void mtgpu_impl_copy_d2d(
   bool same_type = tensor_self.dtype() == tensor_src.dtype();
   bool same_conj = tensor_self.is_conj() == tensor_src.is_conj();
   bool same_neg = tensor_self.is_neg() == tensor_src.is_neg();
-  bool is_contig = tensor_self.is_contiguous() && tensor_src.is_contiguous();
+  bool is_contig =
+      (tensor_self.is_contiguous() && tensor_src.is_contiguous()) ||
+      (tensor_self.is_contiguous(at::MemoryFormat::ChannelsLast) &&
+       tensor_src.is_contiguous(at::MemoryFormat::ChannelsLast)) ||
+      (tensor_self.is_contiguous(at::MemoryFormat::ChannelsLast3d) &&
+       tensor_src.is_contiguous(at::MemoryFormat::ChannelsLast3d));
   bool memcpy_eligible = same_type && same_conj && same_neg && is_contig;
 
   Device dst_device = tensor_self.device();
@@ -229,7 +234,8 @@ void mtgpu_impl_datacast(const Tensor& tensor_self, const Tensor& tensor_src) {
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Unary op;
 
-  auto contiguous_tensor_src = tensor_src.contiguous();
+  const auto self_memory_format = tensor_self.suggest_memory_format();
+  auto contiguous_tensor_src = FormatContiguous(tensor_src, self_memory_format);
   auto contiguous_in = CreateMUTensor(contiguous_tensor_src);
   auto contiguous_out = CreateMUTensor(tensor_self);
 

@@ -67,7 +67,7 @@ constexpr c10::DispatchKey kMUSAKey = c10::DispatchKey::PrivateUse1;
       " MUDNN failed in: ",                \
       msg);
 
-muTensor CreateMUTensor(const Tensor& t);
+muTensor CreateMUTensor(const Tensor& t, bool permute_if_not_contiguous = true);
 
 inline muTensor CreateEmptyMUTensor() {
   return muTensor();
@@ -75,7 +75,10 @@ inline muTensor CreateEmptyMUTensor() {
 
 // May need to contiguous the input pytorch tensor according the needed
 // tensor format, so need to pass tensor as reference
-void ConfigFormat(const Tensor& t, muTensor& mt);
+void ConfigFormat(
+    const Tensor& t,
+    muTensor& mt,
+    bool permute_if_not_contiguous = true);
 
 // Set quantized mudnn tensor info
 void inline SetMudnnQuantizationInfo(
@@ -119,7 +122,9 @@ c10::optional<Tensor> maybe_create_proxy(
 
 bool MatContiguous(const Tensor& mat);
 
-bool IsTranspose(const Tensor& mat);
+bool IsTranspose(const Tensor& mat, bool strict = true);
+
+Tensor FormatContiguous(const Tensor& t, at::MemoryFormat memory_format);
 
 } // namespace musa
 

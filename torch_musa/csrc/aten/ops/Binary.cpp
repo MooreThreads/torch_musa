@@ -169,22 +169,14 @@ void UnaryCall(
   } else {
     AT_ERROR("Invalid mode for broadcast in Binary");
   }
-  Tensor contiguous_self;
-  bool isT = false;
-  if (IsTranspose(self) && IsTranspose(output)) {
-    contiguous_self = self.transpose(-1, -2);
-    output.transpose_(-1, -2);
-    isT = true;
-  } else {
-    contiguous_self = self.contiguous();
-  }
 
-  auto mt_input = CreateMUTensor(contiguous_self);
+  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(
+      output.suggest_memory_format() == self.suggest_memory_format());
+  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(
+      output.is_contiguous(self.suggest_memory_format()));
+  auto mt_input = CreateMUTensor(self);
   auto mt_output = CreateMUTensor(output);
   CHECK_MUDNN_STATUS(uop.Run(h, mt_output, mt_input), "Run " + op_name);
-  if (isT) {
-    output.transpose_(-1, -2);
-  }
 }
 
 /**
@@ -206,7 +198,7 @@ void BinaryCall(
     BINARY_MODE m = BINARY_MODE::ADD,
     Scalar const& alpha_scalar = 1) {
   Device device = is_musa(self) ? self.device() : other.device();
-  c10::musa::MUSAGuard guard(device);
+  const c10::musa::MUSAGuard guard(device);
 
   // There are only two types of inputs for the binary operator: musa tensor and
   // CPU scalar, or two musa tensors. So when one of the Tensors is on the CPU
@@ -238,10 +230,13 @@ void BinaryCall(
   if (self.numel() == 0 && other.numel() == 0) {
     Tensor out_tmp;
     if (IsComparisonOp(m)) {
-      out_tmp =
-          at::empty(output.sizes(), self.options().dtype(ScalarType::Bool));
+      out_tmp = at::empty(
+          output.sizes(),
+          self.options().dtype(ScalarType::Bool),
+          output.suggest_memory_format());
     } else {
-      out_tmp = at::empty(output.sizes(), self.options());
+      out_tmp = at::empty(
+          output.sizes(), self.options(), output.suggest_memory_format());
     }
     if (output.numel() > 0) {
       output.copy_(out_tmp);
@@ -276,16 +271,21 @@ void BinaryCall(
       alpha_scalar.equal(1) ? other_tmp : at::mul(other_tmp, alpha_scalar);
   Tensor self_;
   Tensor other_;
-  bool isT = false;
-  if (IsTranspose(self_tmp) && IsTranspose(other_tmp) && IsTranspose(output)) {
-    self_ = self_tmp.transpose(-1, -2);
-    other_ = other_tmp.transpose(-1, -2);
-    output.transpose_(-1, -2);
-    isT = true;
+
+  const auto out_memory_format = output.suggest_memory_format();
+  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(output.is_contiguous(out_memory_format));
+
+  if (self_tmp.suggest_memory_format() != out_memory_format) {
+    self_ = FormatContiguous(self_tmp, out_memory_format);
   } else {
-    self_ = self_tmp.contiguous();
-    other_ = other_tmp.contiguous();
+    self_ = self_tmp;
   }
+  if (other_tmp.suggest_memory_format() != out_memory_format) {
+    other_ = FormatContiguous(other_tmp, out_memory_format);
+  } else {
+    other_ = other_tmp;
+  }
+
   muTensor musa_self = CreateMUTensor(self_);
   muTensor musa_other = CreateMUTensor(other_);
   muTensor musa_out = CreateMUTensor(output);
@@ -294,9 +294,6 @@ void BinaryCall(
   CHECK_MUDNN_STATUS(bop.SetMode(m), "SetMode");
   CHECK_MUDNN_STATUS(
       bop.Run(h, musa_out, musa_self, musa_other), "Run " + op_name);
-  if (isT) {
-    output.transpose_(-1, -2);
-  }
 }
 
 extern Tensor create_out(
@@ -345,12 +342,16 @@ Tensor Binary(
   if (IsBoolMode(m)) {
     output_dtype = ScalarType::Bool;
   }
+  auto output_memory_format = self.suggest_memory_format();
+  if (output_memory_format == at::MemoryFormat::Contiguous) {
+    output_memory_format = other.suggest_memory_format();
+  }
   output = at::empty(
       output_sizes,
       self.options()
           .dtype(output_dtype)
           .device(device)
-          .memory_format(at::MemoryFormat::Contiguous));
+          .memory_format(output_memory_format));
   BinaryCall(op_name, output, self, other, m, alpha_scalar);
   return output;
 }
@@ -534,8 +535,10 @@ at::Tensor& GELUBwd_out(
     const at::Tensor& self,
     c10::string_view approximate,
     at::Tensor& grad_input) {
-  auto contiguous_grad_output = grad_output.contiguous();
-  auto contiguous_self = self.contiguous();
+  const c10::musa::MUSAGuard device_guard(self.device());
+  const auto memory_format = grad_input.suggest_memory_format();
+  Tensor contiguous_grad_output = FormatContiguous(grad_output, memory_format);
+  Tensor contiguous_self = FormatContiguous(self, memory_format);
 
   grad_input.resize_(self.sizes());
   auto approximate_type = at::native::get_gelutype_enum(approximate);
@@ -552,7 +555,9 @@ at::Tensor GELUBwd(
     const at::Tensor& grad_output,
     const at::Tensor& self,
     c10::string_view approximate) {
-  auto result = ::at::empty(self.sizes(), self.options());
+  const c10::musa::MUSAGuard device_guard(self.device());
+  auto result =
+      ::at::empty(self.sizes(), self.options(), self.suggest_memory_format());
   GELUBwd_out(grad_output, self, approximate, result);
   return result;
 }
@@ -564,9 +569,11 @@ Tensor& ThresholdBwd_out(
     const Tensor& self,
     const Scalar& threshold,
     Tensor& grad_input) {
-  c10::musa::MUSAGuard device_gaurd(self.device());
-  auto contiguous_grad_output = grad_output.contiguous();
-  auto contiguous_self = self.contiguous();
+  const c10::musa::MUSAGuard device_gaurd(self.device());
+  const auto grad_input_memory_format = grad_input.suggest_memory_format();
+  auto contiguous_grad_output =
+      FormatContiguous(grad_output, grad_input_memory_format);
+  auto contiguous_self = FormatContiguous(self, grad_input_memory_format);
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Binary binary_op;
@@ -600,7 +607,8 @@ Tensor ThresholdBwd(
     const Tensor& grad_output,
     const Tensor& self,
     const Scalar& threshold) {
-  auto grad_input = at::empty(self.sizes(), self.options());
+  Tensor grad_input =
+      at::empty(self.sizes(), self.options(), self.suggest_memory_format());
   ThresholdBwd_out(grad_output, self, threshold, grad_input);
   return grad_input;
 }
