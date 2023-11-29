@@ -1,6 +1,5 @@
 #include <ATen/Config.h>
 #include <torch/library.h>
-#include <iostream>
 
 #ifndef AT_PER_OPERATOR_HEADERS
 #include <ATen/Functions.h>

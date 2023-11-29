@@ -7,8 +7,6 @@
 
 #include <assert.h>
 
-// #include <iostream>
-
 // This header is the one-stop shop for all your multi-tensor apply needs.
 
 // TODO:  Kernel arg size limit may be <4KB for some other cards (ie Jetson)

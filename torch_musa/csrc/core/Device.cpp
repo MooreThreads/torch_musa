@@ -2,7 +2,6 @@
 #include <c10/util/CallOnce.h>
 #include <pybind11/embed.h>
 #include <deque>
-#include <iostream>
 #include "torch_musa/csrc/core/MUSAException.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 namespace py = pybind11;

@@ -126,6 +126,8 @@ bool IsTranspose(const Tensor& mat, bool strict = true);
 
 Tensor FormatContiguous(const Tensor& t, at::MemoryFormat memory_format);
 
+size_t DTypeSize(c10::ScalarType type);
+
 } // namespace musa
 
 using musa::kMUSA;

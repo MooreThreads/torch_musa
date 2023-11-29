@@ -193,5 +193,34 @@ Tensor FormatContiguous(const Tensor& t, at::MemoryFormat memory_format) {
   return contig_t;
 }
 
+size_t DTypeSize(c10::ScalarType type) {
+  size_t size;
+  switch (type) {
+    case at::ScalarType::Half:
+    case at::ScalarType::Bool:
+    case at::ScalarType::Char:
+    case at::ScalarType::Byte:
+    case at::ScalarType::QInt8:
+    case at::ScalarType::QUInt8:
+      size = 1;
+      break;
+    case at::ScalarType::Float:
+    case at::ScalarType::Short:
+      size = 2;
+      break;
+    case at::ScalarType::Int:
+    case at::ScalarType::QInt32:
+      size = 4;
+      break;
+    case at::ScalarType::Long:
+    case at::ScalarType::Double:
+      size = 8;
+      break;
+    default:
+      TORCH_CHECK(false, "Unsupported tensor dtype: ", type);
+  }
+  return size;
+}
+
 } // namespace musa
 } // namespace at
