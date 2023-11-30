@@ -83,8 +83,8 @@ at::Tensor& MaskedSelectOut(
   // First we malloc sufficient memory for output tensor;
   // Then MUDNN kernel will compute the actual output shape and sync.
   // Finally, wo need to reset actual output shape to out tensor.
-  std::vector<int> out_shape;
-  std::vector<int> out_stride;
+  std::vector<int64_t> out_shape;
+  std::vector<int64_t> out_stride;
   CHECK_MUDNN_STATUS(mt_result.GetNdInfo(out_shape, out_stride), "GetNdInfo");
   std::vector<int64_t> out_shape_int64;
   for (const auto i : out_shape) {
@@ -151,7 +151,7 @@ at::Tensor& NonzeroOut(const at::Tensor& self, at::Tensor& out) {
   // First we malloc sufficient memory for output tensor;
   // Then MUDNN kernel will compute the actual output shape and sync.
   // Finally, we need to reset actual output shape to out tensor.
-  std::vector<int32_t> out_shape;
+  std::vector<int64_t> out_shape;
   CHECK_MUDNN_STATUS(mt_out.GetNdInfo(out_shape), "GetNdInfo");
   std::vector<int64_t> out_shape_int64;
   for (const auto i : out_shape) {
