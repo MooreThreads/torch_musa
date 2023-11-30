@@ -55,7 +55,7 @@ murt_pkg_release="MUSA-Runtime_use_armory.tar.gz"
 
 kmd_pkg_pdump="kmd-sudi_x86-mtgpu_linux-xorg-debug-pdump_on.tar"
 umd_pkg_pdump="umd_x86-mtgpu_linux-xorg-debug-pdump_on.tar"
-murt_pkg_pdump="MUSA-Runtime_debug_pdump.tar.gz"
+# murt_pkg_pdump="MUSA-Runtime_debug_pdump.tar.gz"
 
 # in defualt : the newest release version without pdump
 ddk_path=${ddk_newest_path}
@@ -247,14 +247,12 @@ install_murt() {
     mkdir -p "${download_dir}/${murt_dir}"
     pushd "${download_dir}/${murt_dir}"
     echo_info "${murt_pkg} installing..."
-    #FIXME: (lms) this is a version workaround for Global Event object destructor SEGV of the latest MUSARuntime.
-    tmp_musart_path="https://oss.mthreads.com/release-ci/computeQA/musa/history/20231030MUSA-Runtime252780dd2compute_musa_pkg7029/MUSA-Runtime_use_armory.tar.gz"
     if [ "${do_download_pkg}"x = "true"x ]; then
         [ -d "${murt_dir}" ] && rm -rf "${murt_dir}"
         [ -f "${murt_pkg}" ] && rm -rf "${murt_pkg}"
         rm -rf *.txt
-        # wget -P ./ "${musa_path}/${murt_pkg}" --no-check-certificate
-        wget -P ./ ${tmp_musart_path} --no-check-certificate
+        tmp_musart_pkg_path="20231125MUSA-Runtime6d654d297compute_musa_pkg7542/MUSA-Runtime_use_armory.tar.gz"
+        wget -P ./ "${musa_path}/${tmp_musart_pkg_path}" --no-check-certificate
     fi
     if [ ! -f "${murt_pkg}" ]; then
         echo_error "${download_dir}/${murt_pkg} does not exist, please check!"

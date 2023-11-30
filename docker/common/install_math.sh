@@ -96,6 +96,7 @@ while getopts 'wcrsatbh:' OPT; do
   esac
 done
 
+
 install_mu_rand() {
   if [ -d $1 ]; then
     rm -rf $1/mu_rand*.tar.gz
