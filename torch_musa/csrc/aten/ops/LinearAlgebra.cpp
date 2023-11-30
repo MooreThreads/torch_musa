@@ -2,6 +2,8 @@
 #include <ATen/core/op_registration/adaption.h>
 #include <ATen/native/Resize.h>
 
+#include <ATen/ops/cholesky_inverse.h>
+#include <ATen/ops/linalg_cholesky_ex.h>
 #include <ATen/ops/linalg_inv_ex_ops.h>
 #include <ATen/ops/linalg_lstsq_native.h>
 #include <torch/library.h>
@@ -11,6 +13,13 @@
 
 namespace at {
 namespace musa {
+
+/* TODO(@mt-ai): linalg operators here are all walkarounded by moving tensors to
+ * CPU. To implement these ops on MUSA, some APIs from muBlas are requested,
+ * while many of them are missing. We already file an issue (on JIRA) to blas
+ * team of this feature request, check:
+ * https://jira.mthreads.com/browse/SW-30954
+ */
 
 ::std::tuple<at::Tensor&, at::Tensor&, at::Tensor&, at::Tensor&> LinalgLstsqOut(
     const at::Tensor& self,
@@ -114,7 +123,64 @@ namespace musa {
   return ::std::tuple<at::Tensor&, at::Tensor&>{inverse, info};
 }
 
+::std::tuple<at::Tensor, at::Tensor> LinalgCholeskyEx(
+    const at::Tensor& self,
+    bool upper,
+    bool check_errors) {
+  at::Tensor self_cpu = self.to(kCPU);
+  std::tuple<at::Tensor, at::Tensor> rst =
+      at::linalg_cholesky_ex(self_cpu, upper, check_errors);
+  at::Tensor& rst0 = std::get<0>(rst);
+  at::Tensor& rst1 = std::get<1>(rst);
+  rst0 = rst0.to(kMUSA);
+  rst1 = rst1.to(kMUSA);
+  return rst;
+}
+
+::std::tuple<at::Tensor&, at::Tensor&> LinalgCholeskyExOut(
+    const at::Tensor& self,
+    bool upper,
+    bool check_errors,
+    at::Tensor& L,
+    at::Tensor& info) {
+  at::Tensor L_cpu = L.to(kCPU);
+  at::Tensor info_cpu = info.to(kCPU);
+  at::Tensor self_cpu = self.to(kCPU);
+  std::tuple<at::Tensor&, at::Tensor&> rst = at::linalg_cholesky_ex_out(
+      L_cpu, info_cpu, self_cpu, upper, check_errors);
+  at::Tensor& rst0 = std::get<0>(rst);
+  at::Tensor& rst1 = std::get<1>(rst);
+  rst0 = rst0.to(kMUSA);
+  rst1 = rst1.to(kMUSA);
+  return rst;
+}
+
+at::Tensor& CholeskyInverseOut(
+    const at::Tensor& input,
+    bool upper,
+    at::Tensor& result) {
+  at::Tensor input_cpu = input.to(kCPU);
+  at::Tensor result_cpu = result.to(kCPU);
+  result_cpu = at::cholesky_inverse_out(result_cpu, input_cpu, upper);
+  result = result_cpu.to(kMUSA);
+  return result;
+}
+
+at::Tensor CholeskyInverse(const at::Tensor& input, bool upper) {
+  at::Tensor result = at::empty({0}, input.options());
+  result = CholeskyInverseOut(input, upper, result);
+  return result;
+}
+
 ADVANCED_REGISTER(aten, PrivateUse1, "linalg_lstsq.out", LinalgLstsqOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "linalg_cholesky_ex", LinalgCholeskyEx)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "linalg_cholesky_ex.L",
+    LinalgCholeskyExOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "cholesky_inverse", CholeskyInverse)
+ADVANCED_REGISTER(aten, PrivateUse1, "cholesky_inverse.out", CholeskyInverseOut)
 ADVANCED_REGISTER(
     aten,
     PrivateUse1,
