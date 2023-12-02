@@ -90,6 +90,7 @@ def get_mtgpu_arch():
         "MTT S2000":"11",
         "MTT S3000":"21",
         "MTT S80":"21",
+        "MTT S80ES":"21",
         "MTT S4000":"22",
         "MTT S90":"22",        
     }

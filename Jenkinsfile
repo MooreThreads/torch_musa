@@ -59,7 +59,7 @@ pipeline {
     }
     stage('Parallel Build & Test') {
       parallel {
-        stage('Stable Build & Test') {
+        stage('s3000 Stable Build & Test') {
           stages {
             stage('Build') {
               steps {
@@ -82,7 +82,37 @@ pipeline {
             }
           }
         }
-        stage('Daily Build & Test') {
+        stage('s80 Stable Build & Test') {
+          agent {
+            docker {
+              image 'sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py38:latest'
+              args '-u root:sudo -e MTHREADS_VISIBLE_DEVICES=all -e TARGET_DEVICE=musa -e MUSA_VISIBLE_DEVICES=0 -e PYTORCH_REPO_PATH=/home/pytorch --privileged'
+              label 'torch_musa_s80'
+            }
+          }
+          stages {
+            stage('Build') {
+              steps {
+                sh 'git config --global --add safe.directory \"*\"'
+                //TODO:(lms/mingyuan.wang) We should keep the proper released MUSA software stack installed to the released docker image.
+                sh '/bin/bash --login docker/common/daily/update_daily_musart.sh'
+                sh '/bin/bash --login docker/common/update_release_mudnn.sh'
+                sh '/bin/bash --login -c "conda run -n py38 --no-capture-output /bin/bash build.sh -c"'
+              }
+            }
+            stage('Unit Test') {
+              steps {
+                sh '/bin/bash --login scripts/run_unittest.sh'
+              }
+            }
+            stage('Integration Test') {
+              steps {
+                sh '/bin/bash --login scripts/run_integration_test.sh'
+              }
+            }
+          }
+        }
+        stage('s3000 Daily Build & Test') {
           agent {
             kubernetes {
               yamlFile 'ci/templates/musa.yaml'
