@@ -11,6 +11,21 @@ PYTORCH_REPO_PATH=${PYTORCH_REPO_PATH:-"/home/pytorch"}
 BUILD=${BUILD_ARTIFACTS:-0}
 PUBLISH=${PUBLISH_ARTIFACTS:-0}
 
+release_audio_and_vision() {
+  python_version="$1"
+  pushd /home/audio 
+  /opt/conda/condabin/conda run -n ${python_version} --no-capture-output USE_CUDA=0 python setup.py bdist_wheel
+  mv dist/*.whl ${ARTIFACTS_DIR}
+  rm -rf dist
+  popd
+  
+  pushd /home/vision 
+  /opt/conda/condabin/conda run -n ${python_version} --no-capture-output python setup.py bdist_wheel
+  mv dist/*.whl ${ARTIFACTS_DIR}
+  rm -rf dist
+  popd
+}
+
 
 build_artifacts() {
     git config --global --add safe.directory "*"
@@ -20,13 +35,16 @@ build_artifacts() {
     mudnn_timestamp=$(find $mudnn_abs_dir -name "*.txt" | awk -F/ '{print $NF}' | awk -F_ '{print $1}')
     echo "mudnn:${mudnn_timestamp}" >> ${ARTIFACTS_DIR}README.txt
     cat $PWD/.musa_dependencies >> ${ARTIFACTS_DIR}README.txt
-    source activate base
-
+	
+    source /opt/conda/etc/profile.d/conda.sh
+    conda activate base
+    
     # Build wheel packages under python3.8, using the existing conda environment
     /opt/conda/condabin/conda run -n py38 --no-capture-output USE_STATIC_MKL=1 /bin/bash build.sh -c -w
-
     # Move built wheel packages to shared directory ${ARTIFACTS_DIR}
     mv dist/*.whl ${ARTIFACTS_DIR} && mv ${PYTORCH_REPO_PATH}/dist/*.whl ${ARTIFACTS_DIR}
+    
+    release_audio_and_vision py38
 
     # The py38 build cache needs to be cleaned
     /opt/conda/condabin/conda remove -y --name py38 --all
@@ -35,8 +53,10 @@ build_artifacts() {
     /opt/conda/condabin/conda env create -f docker/common/conda-env-torch_musa-py39.yaml
     /opt/conda/condabin/conda run -n py39 --no-capture-output pip install -r docker/common/requirements-py39.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
     /opt/conda/condabin/conda run -n py39 --no-capture-output USE_STATIC_MKL=1 /bin/bash build.sh -c -w
-
     mv dist/*.whl ${ARTIFACTS_DIR} && mv ${PYTORCH_REPO_PATH}/dist/*.whl ${ARTIFACTS_DIR}
+
+    release_audio_and_vision py39
+
     /opt/conda/condabin/conda remove -y --name py39 --all
 
     # Build wheel packages under python3.10, create a new conda environment
@@ -45,7 +65,7 @@ build_artifacts() {
     /opt/conda/condabin/conda run -n py310 --no-capture-output USE_STATIC_MKL=1 /bin/bash build.sh -c -w
     mv dist/*.whl ${ARTIFACTS_DIR} && mv ${PYTORCH_REPO_PATH}/dist/*.whl ${ARTIFACTS_DIR}
 
-    
+    release_audio_and_vision py310
 }
 
 

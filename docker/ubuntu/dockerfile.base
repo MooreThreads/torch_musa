@@ -34,6 +34,8 @@ RUN source $(conda info --base)/etc/profile.d/conda.sh && \
 
 ENV PATH=/opt/conda/envs/${ENV_NAME}/bin:${PATH}
 COPY ./pytorch /home/pytorch
+COPY ./vision /home/vision
+COPY ./audio /home/audio
 
 RUN rm -rf ~/.bashrc && \
     echo -e ". /opt/conda/etc/profile.d/conda.sh" >> ~/.bashrc && \

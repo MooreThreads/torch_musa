@@ -10,7 +10,7 @@ ARG GCC_VERSION
 COPY ./common/install_gcc.sh install_gcc.sh
 RUN bash install_gcc.sh && \
     rm -f install_gcc.sh && \
-    apt-get update && apt-get install -y clinfo
+    apt-get update && apt-get install -y clinfo pkg-config
 
 
 # install musa_toolkit, which includes musa_runtime and mcc
@@ -56,6 +56,7 @@ RUN pushd /home/torch_musa && \
     pip install -r requirements.txt && \
     # install mkl librarie (for static linking)
     bash docker/common/install_mkl.sh && \
+    echo 'export LIBRARY_PATH="/opt/intel/oneapi/mkl/lib/intel64:${LIBRARY_PATH}"'>>~/.bashrc && \
     # maybe create softlink for mkl libraries
     bash docker/common/create_softlink4mkl.sh $(dirname $(dirname $(which python)))/lib && \
     pip install pytest==7.2.2 protobuf==3.19.0 \
@@ -69,12 +70,16 @@ RUN pushd /home/torch_musa && \
     popd
 
 WORKDIR /home
-COPY ./vision ./vision
 RUN pushd vision && \
     python setup.py install && \
     rm -rf build && \
     popd
 
+RUN pushd audio && \
+    USE_CUDA=0 python setup.py install && \
+    rm -rf build && \
+    popd
+    
 RUN pushd /home/torch_musa && \
     chmod +x scripts/run_unittest.sh && \
     bash build.sh -m && \

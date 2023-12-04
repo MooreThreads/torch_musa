@@ -12,7 +12,7 @@
 - [Supported Python Version](#Supported-Python-version)
 - [Future Work](#Future-work)
 ## Introduction
-There are two versions of **torch_musa** docker images: development, and release. For development docker image, **PyTorch** and **torch_musa** are installed from the source code, and the source code of both are in the /home directory. For release docker image, **PyTorch** and **torch_musa** are installed directly using the whl package in the Python virtual environment.
+There are two versions of **torch_musa** docker images: development, and release. For development docker image, **PyTorch**, **Torchvision**, **Torchaudio** and **torch_musa** are installed from the source code, and the source code of all are in the /home directory. For release docker image, **PyTorch** and **torch_musa** are installed directly using the whl package in the Python virtual environment.
 <br>Note:If you want to install other Python packages that rely on **PyTorch** such as **torchvision** via pip, you should run `pip install --no-deps torchvision`. Because it may uninstalled the **PyTorch** that already installed in the container  without the `--no-deps` option.
 
 ## Codebase Structure
@@ -26,8 +26,9 @@ There are two versions of **torch_musa** docker images: development, and release
 ### Build Development Docker Image
 Follow the two steps below to build the development docker image.
 #### Step1: Build Base Docker Image
-Use docker/build_base.sh to build the base docker image and the base docker image contains the **PyTorch** source code and other basic packages, such as gdb, ccache. You can specify the path of the root directory of **PyTorch** on your host machine via 
-**PYTORCH_REPO_ROOT_PATH** if **PyTorch** repo exists or where **PyTorch** will be downloaded to.
+Use docker/build_base.sh to build the base docker image and the base docker image contains the **PyTorch**, **Torchvision**, **Torchaudio**  source code and other basic packages, such as gdb, ccache. You can specify the path of the root directory of **PyTorch**, **Torchvision**, **Torchaudio**  on your host machine via 
+**PYTORCH_REPO_ROOT_PATH** if **PyTorch**, **Torchvision**, **Torchaudio** repo exists or where **PyTorch**, **Torchvision**, **Torchaudio** will be downloaded to. Please make sure that PYTORCH_TAG, VISION_TAG and AUDIO_TAG are mutually compatible, you can find compatibility information in https://github.com/pytorch/vision and https://pytorch.org/audio/main/installation.html.
+
 #### Parameters of build_base.sh
 * `-n`/`--name`：Name of the docker image, default:NULL.
 * `-t`/`--tag`：Tag of the docker image, default:latest.
@@ -50,8 +51,7 @@ Use docker/build_base.sh to build the base docker image and the base docker imag
     ```
 
 #### Step2: Build Development Docker Image
-After using the docker/build_base.sh script to construct the base docker image, specified within the dockerfile.dev, the musa_toolkit, muDNN, and mccl will be installed upon the base docker image. Then **PyTorch** and **torchvision** will be installed. Lastly, **torch_musa** will be installed and subsequently tested, with the test results saved in /home/integration_test_output.txt and /home/ut_output.txt.
-You can specify the path of the root directory of **PyTorch** on your host machine via **TORCH_VISION_REPO_ROOT_PATH** if **vision** repo exists or where **torchvision** will be download to. The dockerfile.dev installs **PyTorch** using torch_musa/build.sh -t, so please make sure that the **PYTORCH_TAG** in build_bash.sh matches the **PYTORCH_TAG** in torch_musa/build.sh. Also, ensure that the **VISION_TAG** in build.sh is compatible with **PyTorch**.
+After using the docker/build_base.sh script to construct the base docker image, specified within the dockerfile.dev, the musa_toolkit, muDNN, and mccl will be installed upon the base docker image. Then **PyTorch**, **Torchvision**, **Torchaudio** will be installed. Lastly, **torch_musa** will be installed and subsequently tested, with the test results saved in /home/integration_test_output.txt and /home/ut_output.txt.
 #### Parameters of build.sh
 * `-n`/`--name`：Name of the docker image, default:NULL.
 * `-t`/`--tag`：Tag of the docker image, default:latest.

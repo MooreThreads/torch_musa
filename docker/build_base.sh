@@ -6,7 +6,11 @@
 #          bash docker/build_base.sh -i pytorch2.0.0 -s ubuntu:20.04
 set -e
 
-PYTORCH_TAG=v2.0.0
+# Please check https://github.com/pytorch/vision and https://pytorch.org/audio/main/installation.html for the version compatibility
+PYTORCH_TAG="v2.0.0"
+VISION_TAG="v0.15.2"
+AUDIO_TAG="v2.0.1"
+
 IMAGE_DOCKER_NAME=NULL
 TAG=latest
 PYTHON_VERSION="3.8"
@@ -63,6 +67,18 @@ if [ ! -d "$PYTORCH_ROOT_DIR/pytorch" ]; then
   git clone -b ${PYTORCH_TAG} https://github.com/pytorch/pytorch.git --depth=1 $PYTORCH_ROOT_DIR/pytorch
   git submodule update --init --recursive
 fi
+if [ ! -d "$PYTORCH_ROOT_DIR/vision" ]; then
+  # if torchvision repo not exists, download it firstly
+  echo "torchvision will be downloaded to ${cd}"
+  git clone -b ${VISION_TAG} https://github.com/pytorch/vision.git --depth=1 $PYTORCH_ROOT_DIR/vision
+  git submodule update --init --recursive
+fi
+if [ ! -d "$PYTORCH_ROOT_DIR/audio" ]; then
+  # if torchaudio repo not exists, download it firstly
+  echo "torchaudio will be downloaded to ${PYTORCH_ROOT_DIR}"
+  git clone -b ${AUDIO_TAG} https://github.com/pytorch/audio.git --depth=1 $PYTORCH_ROOT_DIR/audio
+  git submodule update --init --recursive
+fi
 
 # BUILD_DIR is docker build context
 BUILD_DIR=${DOCKER_BUILD_DIR:-$(pwd)/tmp}
@@ -71,6 +87,8 @@ CUR_ROOT=$(cd "$(dirname "$0")"; pwd)
 DOCKER_FILE=$CUR_ROOT/$DOCKER_FILE
 sudo cp -r $CUR_ROOT/common $BUILD_DIR/
 sudo cp -r $PYTORCH_ROOT_DIR/pytorch $BUILD_DIR
+sudo cp -r $PYTORCH_ROOT_DIR/vision $BUILD_DIR
+sudo cp -r $PYTORCH_ROOT_DIR/audio $BUILD_DIR
 
 pushd $BUILD_DIR
 ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.')
