@@ -19,15 +19,25 @@ input_data = [
     {"input": torch.rand(5, 3, 3, 6, 5, 5, 3, 4), "diagonal": -2},
 ]
 
+
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("data_type", data_type)
 def test_triu(input_data, data_type):
+    comparator = testing.DefaultComparator(abs_diff=1e-2)
     test = testing.OpTest(
         func=torch.triu,
-        input_args={"input":input_data["input"].to(data_type), "diagonal":input_data["diagonal"]}
+        input_args={
+            "input": input_data["input"].to(data_type),
+            "diagonal": input_data["diagonal"],
+        },
+        comparators=comparator,
     )
     test.check_result()
+    test.check_musafp16_vs_musafp32()
+    if input_data["input"].dim() == 2 and testing.get_musa_arch() >= 22:
+        test.check_musabf16_vs_musafp16()
+
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
@@ -49,11 +59,15 @@ def test_triu_(input_data, data_type):
 @pytest.mark.parametrize("data_type", data_type)
 def test_triu_out(input_data, data_type):
     cpu_result = torch.zeros(input_data["input"].shape, dtype=data_type)
-    torch.triu(input_data["input"].to(data_type), input_data["diagonal"], out=cpu_result)
+    torch.triu(
+        input_data["input"].to(data_type), input_data["diagonal"], out=cpu_result
+    )
     musa_result = torch.rand(input_data["input"].shape).to(data_type).to("musa")
-    torch.triu(input_data["input"].to(data_type).to("musa"),
-               input_data["diagonal"],
-               out=musa_result)
+    torch.triu(
+        input_data["input"].to(data_type).to("musa"),
+        input_data["diagonal"],
+        out=musa_result,
+    )
 
     assert testing.DefaultComparator()(cpu_result, musa_result.cpu())
     assert cpu_result.shape == musa_result.shape
@@ -64,14 +78,20 @@ def test_triu_out(input_data, data_type):
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("data_type", data_type)
 def test_tril(input_data, data_type):
+    comparator = testing.DefaultComparator(abs_diff=1e-2)
     test = testing.OpTest(
         func=torch.tril,
         input_args={
             "input": input_data["input"].to(data_type),
             "diagonal": input_data["diagonal"],
         },
+        comparators=comparator,
     )
     test.check_result()
+    test.check_musafp16_vs_musafp32()
+    if input_data["input"].dim() == 2 and testing.get_musa_arch() >= 22:
+        test.check_musabf16_vs_musafp16()
+
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
@@ -87,16 +107,21 @@ def test_tril_(input_data, data_type):
     assert cpu_result.shape == musa_result.shape
     assert cpu_result.dtype == musa_result.dtype
 
+
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("data_type", data_type)
 def test_tril_out(input_data, data_type):
     cpu_result = torch.zeros(input_data["input"].shape, dtype=data_type)
-    torch.tril(input_data["input"].to(data_type), input_data["diagonal"], out=cpu_result)
+    torch.tril(
+        input_data["input"].to(data_type), input_data["diagonal"], out=cpu_result
+    )
     musa_result = torch.rand(input_data["input"].shape).to(data_type).to("musa")
-    torch.tril(input_data["input"].to(data_type).to("musa"),
-               input_data["diagonal"],
-               out=musa_result)
+    torch.tril(
+        input_data["input"].to(data_type).to("musa"),
+        input_data["diagonal"],
+        out=musa_result,
+    )
 
     assert testing.DefaultComparator()(cpu_result, musa_result.cpu())
     assert cpu_result.shape == musa_result.shape

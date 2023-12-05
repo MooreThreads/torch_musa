@@ -80,8 +80,8 @@ conv_input_data = [
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@pytest.mark.skip(
-    # testing.get_musa_arch() < 22,  # uncomment when CI uses QY2
+@pytest.mark.skipif(
+    testing.get_musa_arch() < 22,
     reason="Quantized conv supported in QY2 or later",
 )
 @pytest.mark.parametrize("input_data", conv_input_data)
@@ -150,8 +150,8 @@ def test_qconv2d(input_data):
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@pytest.mark.skip(
-    # testing.get_musa_arch() < 22,  # uncomment when CI uses QY2
+@pytest.mark.skipif(
+    testing.get_musa_arch() < 22,
     reason="Quantized conv supported in QY2 or later",
 )
 @pytest.mark.parametrize("input_data", conv_input_data)
@@ -227,8 +227,8 @@ def test_qconv2d_add(input_data):
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@pytest.mark.skip(
-    # testing.get_musa_arch() < 22,  # uncomment when CI uses QY2
+@pytest.mark.skipif(
+    testing.get_musa_arch() < 22,
     reason="Quantized conv supported in QY2 or later",
 )
 @pytest.mark.parametrize("input_data", conv_input_data)
@@ -292,8 +292,8 @@ def test_qconv2d_silu(input_data):
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@pytest.mark.skip(
-    # testing.get_musa_arch() < 22,  # uncomment when CI uses QY2
+@pytest.mark.skipif(
+    testing.get_musa_arch() < 22,
     reason="Quantized conv supported in QY2 or later",
 )
 @pytest.mark.parametrize("input_data", conv_input_data)
