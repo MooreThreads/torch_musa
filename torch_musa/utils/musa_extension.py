@@ -45,36 +45,43 @@ def MUSAExtension(name, sources, *args, **kwargs):
             cpp_srcs.append(src)
 
     # define include dirs
-    include_dirs = [join(torch_musa_dir_path, path) for path in [
-        "/usr/local/musa/include", 
-        "torch_musa/share/generated_cuda_compatible/aten/src",
-        "torch_musa/share/generated_cuda_compatible/include",
-        "torch_musa/share/generated_cuda_compatible/include/torch/csrc/api/include",
-    ]] + [torch_musa_dir_path] + kwargs.get('include_dirs', [])
-    kwargs['include_dirs'] = include_dirs
+    include_dirs = (
+        [
+            join(torch_musa_dir_path, path)
+            for path in [
+                "/usr/local/musa/include",
+                "torch_musa/share/generated_cuda_compatible/aten/src",
+                "torch_musa/share/generated_cuda_compatible/include",
+                "torch_musa/share/generated_cuda_compatible/include/torch/csrc/api/include",
+            ]
+        ]
+        + [torch_musa_dir_path]
+        + kwargs.get("include_dirs", [])
+    )
+    kwargs["include_dirs"] = include_dirs
 
     # define library_dirs
-    library_dirs = kwargs.get('library_dirs', [])
+    library_dirs = kwargs.get("library_dirs", [])
     torch_lib_path = join(dirname(torch.__file__), "lib")
     torch_musa_lib_path = join(dirname(torch_musa.__file__), "lib")
     library_dirs.append(torch_lib_path)
     library_dirs.append(torch_musa_lib_path)
-    kwargs['library_dirs'] = library_dirs
+    kwargs["library_dirs"] = library_dirs
 
     # define libraries
-    libraries = kwargs.get('libraries', [])
-    libraries.append('c10')
-    libraries.append('torch')
-    libraries.append('torch_cpu')
-    libraries.append('torch_python')
-    libraries.append('musa_python')
-    kwargs['libraries'] = libraries
+    libraries = kwargs.get("libraries", [])
+    libraries.append("c10")
+    libraries.append("torch")
+    libraries.append("torch_cpu")
+    libraries.append("torch_python")
+    libraries.append("musa_python")
 
-    kwargs['language'] = 'c++'
+    kwargs["libraries"] = libraries
+    kwargs["language"] = "c++"
 
     # utilize CMakeLists.txt to compile mu files
     musa_link_libraries = kwargs.get("musa_link_libraries", [])
-    name_splits = name.split('.')
+    name_splits = name.split(".")
 
     if len(name_splits) > 1:
         package_name = name_splits[0]
@@ -87,30 +94,37 @@ def MUSAExtension(name, sources, *args, **kwargs):
 
     project_name = kwargs.get("project_name", package_name.upper())
     plugin_name = kwargs.get("plugin_name", ext_name)
-    CMakeListsGenerator(sources=mu_srcs, include_dirs=include_dirs,
-                        link_libraries=musa_link_libraries,
-                        define_macros=kwargs.get("define_macros", []),
-                        project_name=project_name,
-                        plugin_name=plugin_name).generate()
-    cmake = CMake(build_dir="build", install_dir_prefix=package_name)
+    CMakeListsGenerator(
+        sources=mu_srcs,
+        include_dirs=include_dirs,
+        link_libraries=musa_link_libraries,
+        define_macros=kwargs.get("define_macros", []),
+        project_name=project_name,
+        plugin_name=plugin_name,
+    ).generate()
+    build_dir = os.path.join("build", project_name)
+    install_dir_prefix = os.path.join("build", project_name)
+    cmake = CMake(build_dir=build_dir, install_dir_prefix=install_dir_prefix)
     env = os.environ.copy()
     build_test = not check_negative_env_flag("BUILD_TEST")
-    cmake_python_library = f"{sysconfig.get_config_var('LIBDIR')}/" \
-                           f"{sysconfig.get_config_var('INSTSONAME')}"
+    cmake_python_library = (
+        f"{sysconfig.get_config_var('LIBDIR')}/"
+        f"{sysconfig.get_config_var('INSTSONAME')}"
+    )
     cmake.generate(version, cmake_python_library, True, build_test, env, RERUN_CMAKE)
     cmake.build(env)
 
     # define extra_compile_args
-    user_extra_compile_args = kwargs.get('extra_compile_args', [])
+    user_extra_compile_args = kwargs.get("extra_compile_args", [])
     if isinstance(user_extra_compile_args, dict):
         user_extra_compile_args = []
     extra_compile_args = [
-                             "-std=c++14",
-                             "-Wall",
-                             "-Wextra",
-                             "-fno-strict-aliasing",
-                             "-fstack-protector-all",
-                         ] + user_extra_compile_args
+        "-std=c++14",
+        "-Wall",
+        "-Wextra",
+        "-fno-strict-aliasing",
+        "-fstack-protector-all",
+    ] + user_extra_compile_args
     extra_link_args = []
 
     if build_type.is_debug():
@@ -133,12 +147,16 @@ def MUSAExtension(name, sources, *args, **kwargs):
         extra_compile_args += ["-fsanitize=address"]
         extra_link_args += ["-fsanitize=address"]
 
-    extra_link_args = extra_link_args + ["-Wl,-rpath,$ORIGIN/lib"] + \
-                      [f"-Wl,-rpath,{torch_lib_path}"] + [f"-Wl,-rpath,{torch_musa_lib_path}"]
+    extra_link_args = (
+        extra_link_args
+        + ["-Wl,-rpath,$ORIGIN/lib"]
+        + [f"-Wl,-rpath,{torch_lib_path}"]
+        + [f"-Wl,-rpath,{torch_musa_lib_path}"]
+    )
 
-    library_dirs.append(f"{package_name}" + "/lib")
+    library_dirs.append(f"{install_dir_prefix}" + "/lib")
     libraries.append(f"{plugin_name}")
 
-    kwargs['extra_compile_args'] = extra_compile_args
-    kwargs['extra_link_args'] = extra_link_args
+    kwargs["extra_compile_args"] = extra_compile_args
+    kwargs["extra_link_args"] = extra_link_args
     return CppExtension(name, cpp_srcs, *args, **kwargs)

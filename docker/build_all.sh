@@ -13,14 +13,6 @@ function prepare_build_context() {
   # preprare files will be used when building docker image
   BUILD_DIR=${1:-$(pwd)/tmp}
   sudo mkdir -p $BUILD_DIR
-  
-  # add projects here which needs to be installed after torch_musa installation done
-  TORCH_VISION_ROOT_DIR=${TORCH_VISION_REPO_ROOT_PATH:-${HOME}}
-  if [ ! -d "$TORCH_VISION_ROOT_DIR/vision" ]; then
-    echo "torchvision will be downloaded to ${TORCH_VISION_ROOT_DIR}"
-    git clone -b ${VISION_TAG}  https://github.com/pytorch/vision.git --depth=1 $TORCH_VISION_ROOT_DIR/vision
-  fi
-  sudo cp -r $TORCH_VISION_ROOT_DIR/vision $BUILD_DIR
   sudo git clone -b ${TORCH_MUSA_TAG} https://github.mthreads.com/mthreads/torch_musa.git $BUILD_DIR/torch_musa
   CUR_ROOT=$(cd "$(dirname "$0")"; pwd)
   sudo cp -r $CUR_ROOT/common $BUILD_DIR/

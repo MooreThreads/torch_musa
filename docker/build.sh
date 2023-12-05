@@ -1,7 +1,6 @@
 #!/bin/bash
 # Use this script to build docker image for torch_musa
 # example: DOCKER_BUILD_DIR=/data/torch_musa_docker_build \
-#          TORCH_VISION_REPO_ROOT_PATH=/tmp \
 #          bash docker/build.sh -i torch_musa_dev \
 #                               -b sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev:base-pytorch-v2.0.0 \
 #                               -f docker/ubuntu/dockerfile.dev \
@@ -21,7 +20,7 @@ MUDNN_URL=""
 MCCL_URL=""
 TORCH_WHL_URL=""
 TORCH_MUSA_WHL_URL=""
-VISION_TAG="v0.16.0"
+VISION_TAG="v0.15.2"
 NO_PREPARE=0
 TORCH_MUSA_TAG='dev1.5.1'
 
@@ -75,13 +74,6 @@ function prepare_build_context() {
   # preprare files will be used when building docker image
   BUILD_DIR=${1:-$(pwd)/tmp}
   if [ ${RELEASE} -eq 0 ]; then
-    # add projects here which needs to be installed after torch_musa installation done
-    TORCH_VISION_ROOT_DIR=${TORCH_VISION_REPO_ROOT_PATH:-${HOME}}
-    if [ ! -d "$TORCH_VISION_ROOT_DIR/vision" ]; then
-      echo "torchvision will be downloaded to ${TORCH_VISION_ROOT_DIR}"
-      git clone -b ${VISION_TAG}  https://github.com/pytorch/vision.git --depth=1 $TORCH_VISION_ROOT_DIR/vision
-    fi
-    sudo cp -r $TORCH_VISION_ROOT_DIR/vision $BUILD_DIR
     sudo git -b ${TORCH_MUSA_TAG} clone https://github.mthreads.com/mthreads/torch_musa.git $BUILD_DIR/torch_musa
   fi
   CUR_ROOT=$(cd "$(dirname "$0")"; pwd)

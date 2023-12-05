@@ -6,8 +6,8 @@
 #include <torch/library.h>
 
 #include "torch_musa/csrc/aten/ops/Bucketize.h"
-#include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/core/MUSAGuard.h"
 #include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
