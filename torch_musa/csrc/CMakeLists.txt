@@ -102,7 +102,6 @@ FILE(GLOB_RECURSE MU_SRCS
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TensorCompare.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TensorFactories.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TensorTransformations.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TriangularOps.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryFractionKernels.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnarySignKernels.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Unique.mu

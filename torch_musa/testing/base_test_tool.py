@@ -300,6 +300,7 @@ class OpTest:
         train: bool = False,
         test_out: bool = False,
         fp16: bool = False,
+        bf16: bool = False,
         refer: bool = False,
     ):
         """Run op on specific device.
@@ -309,12 +310,16 @@ class OpTest:
             train (bool): Whether to test backward.
             test_out (bool): Whether to test op in out-of-place.
             refer (bool): Whether it is in a reference scenario.
+            fp16 (bool): Whether to set inputs to fp16 dtype
+            bf16 (bool): Whether to set inputs to bf16 dtype
+                Note: either fp16 or bf16 can be true.
         Returns:
             Computing result in numpy format.
         """
         cur_func = self._func
         if refer and self._refer_func is not None:
             cur_func = self._refer_func
+        assert int(fp16) + int(bf16) <= 1, "either bf16 and fp16 can be True"
 
         res = []
         grad = []
@@ -328,6 +333,8 @@ class OpTest:
                         input_args[k] = self._input_args[k].to(device).clone()
                         if fp16 and input_args[k].dtype == torch.float32:
                             input_args[k] = input_args[k].to(torch.float16)
+                        elif bf16 and input_args[k].dtype == torch.float32:
+                            input_args[k] = input_args[k].to(torch.bfloat16)
                     else:
                         str_input_device = str(self._input_args[k].device)
                         if str_input_device.startswith("musa") and device.startswith(
@@ -441,7 +448,11 @@ class OpTest:
                 continue
             if c_r.dtype == torch.float16:
                 c_r = c_r.float()
+            if c_r.dtype == torch.bfloat16:
+                c_r = c_r.float()
             if m_r.dtype == torch.float16:
+                m_r = m_r.float()
+            if m_r.dtype == torch.bfloat16:
                 m_r = m_r.float()
             for comparator in self._comparators:
                 assert c_r.shape == m_r.shape
@@ -471,6 +482,11 @@ class OpTest:
         fp32_res = self._call_func(inputs, "musa", train, test_out, refer=True)
         fp16_res = self._call_func(inputs, "musa", train, test_out, True)
         self.compare_res(fp32_res, fp16_res)
+
+    def check_musabf16_vs_musafp16(self, inputs=None, train=False, test_out=False):
+        fp16_res = self._call_func(inputs, "musa", train, test_out, refer=True, fp16=True)
+        bf16_res = self._call_func(inputs, "musa", train, test_out, bf16=True)
+        self.compare_res(fp16_res, bf16_res)
 
     def check_result(self, inputs=None, train=False, test_out=False):
         """Run op and compare computing results.

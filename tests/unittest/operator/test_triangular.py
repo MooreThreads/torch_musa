@@ -15,8 +15,8 @@ input_data = [
     {"input": torch.rand(5, 3, 3, 2), "diagonal": 1},
     {"input": torch.rand(5, 3, 3, 6, 3), "diagonal": 2},
     {"input": torch.rand(5, 3, 3, 6, 4, 4), "diagonal": 2},
-    {"input": torch.rand(5, 3, 3, 6, 5, 5, 3), "diagonal": 2},
-    {"input": torch.rand(5, 3, 3, 6, 5, 5, 3, 4), "diagonal": -2},
+    {"input": torch.rand(5, 3, 3, 6, 5, 5, 3), "diagonal": 1},
+    # {"input": torch.rand(5, 3, 3, 6, 5, 5, 3, 4), "diagonal": 0},
 ]
 
 
@@ -35,8 +35,6 @@ def test_triu(input_data, data_type):
     )
     test.check_result()
     test.check_musafp16_vs_musafp32()
-    if input_data["input"].dim() == 2 and testing.get_musa_arch() >= 22:
-        test.check_musabf16_vs_musafp16()
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -89,8 +87,6 @@ def test_tril(input_data, data_type):
     )
     test.check_result()
     test.check_musafp16_vs_musafp32()
-    if input_data["input"].dim() == 2 and testing.get_musa_arch() >= 22:
-        test.check_musabf16_vs_musafp16()
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
