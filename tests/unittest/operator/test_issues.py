@@ -148,3 +148,18 @@ def test_issue_538():
     musamodel = model.to("musa")
     musa_res = musamodel(musa_input)
     assert testing.DefaultComparator(abs_diff=1e-5)(res, musa_res)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_issue_610():
+    c_input = torch.randn(20)
+    m_input = c_input.musa()
+    mask = torch.zeros_like(c_input).bool()
+    c_input[mask] = 1
+    m_input[mask] = 1
+    assert testing.DefaultComparator(abs_diff=1e-7)(c_input, m_input)
+    c_input = torch.randn(10, 12)
+    m_input = c_input.musa()
+    c_input[:] = 2
+    m_input[:] = 2
+    assert testing.DefaultComparator(abs_diff=1e-7)(c_input, m_input)

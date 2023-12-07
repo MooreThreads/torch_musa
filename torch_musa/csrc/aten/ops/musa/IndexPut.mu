@@ -293,7 +293,7 @@ void IndexPutRun(
       out.copy_(value);
       return;
     } else {
-      out = at::empty_like(out, out.options().device(kMUSA)).fill_(value);
+      out = at::empty({0}, out.options().device(kMUSA));
       return;
     }
   }
