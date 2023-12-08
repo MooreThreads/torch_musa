@@ -116,7 +116,9 @@ FILE(GLOB_RECURSE MU_SRCS
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/Activation.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/IntReprQuant.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/MakePerTensorQuantizedTensor.mu
-  aten/quantized/musa/*.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/linalg/BatchLinearAlgebra.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationLeakyReluKernel.mu
+    aten/quantized/musa/*.mu
   aten/ops/torchvision/*.mu
   aten/ops/musa/*.mu
   aten/ops/attention/mudnn/*.mu

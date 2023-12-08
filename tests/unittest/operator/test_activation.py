@@ -473,6 +473,21 @@ def test_softplus_backward(value):
     testing.DefaultComparator()(cpu_input.grad, m_input.grad)
 # test SoftPlus_backward end
 
+@pytest.mark.parametrize("value", testing.get_raw_data())
+def test_leaky_relu_backward(value):
+    """
+    LeakyReLu_backward tests.
+    """
+    cpu_input =value
+    m_input = cpu_input.clone().detach().to('musa')
+    cpu_input.requires_grad = True
+    m_input.requires_grad = True
+    func = torch.nn.LeakyReLU(0.1)
+    func(cpu_input).sum().backward()
+    func(m_input).sum().backward()
+    testing.DefaultComparator()(cpu_input.grad, m_input.grad)
+# test test_leaky_relu_backward end
+
 
 # ============================== Test complex abs kernel func begin ============================== #
 
