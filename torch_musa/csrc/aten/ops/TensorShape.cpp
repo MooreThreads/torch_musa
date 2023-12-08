@@ -363,6 +363,7 @@ Tensor& IndexSelectOut(
           self.scalar_type() == at::ScalarType::Float ||
           self.scalar_type() == at::ScalarType::Double ||
           self.scalar_type() == at::ScalarType::Int ||
+          self.scalar_type() == at::ScalarType::Char ||
           self.scalar_type() == at::ScalarType::Long ||
           self.scalar_type() == at::ScalarType::BFloat16,
       "Unsupported IndexSelect input dtype: ",

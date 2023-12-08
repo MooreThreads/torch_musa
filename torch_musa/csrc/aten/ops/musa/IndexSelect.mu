@@ -150,6 +150,7 @@ struct KernelTable {
     REGISTER_KERNEL(at::ScalarType::Double, double);
     REGISTER_KERNEL(at::ScalarType::Int, int32_t);
     REGISTER_KERNEL(at::ScalarType::Long, int64_t);
+    REGISTER_KERNEL(at::ScalarType::Char, int8_t);
   }
 
   void launch(
@@ -200,6 +201,7 @@ void IndexSelectRun(
       (in.scalar_type() == at::ScalarType::Float) ||
           (in.scalar_type() == at::ScalarType::Long) ||
           (in.scalar_type() == at::ScalarType::Int) ||
+          (in.scalar_type() == at::ScalarType::Char) ||
           (in.scalar_type() == at::ScalarType::Half) ||
           (in.scalar_type() == at::ScalarType::Double),
       "Index only support input dtype float16/32/64, int32/64, but got ",
