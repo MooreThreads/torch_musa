@@ -60,6 +60,7 @@ FILE(GLOB_RECURSE MU_SRCS
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/BinaryGeometricKernels.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/BinaryMiscOpsKernels.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/BinaryBitwiseOpsKernels.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/BinaryShiftOpsKernels.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/CompareKernels.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/CrossKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistributionUniform.mu
@@ -68,8 +69,6 @@ FILE(GLOB_RECURSE MU_SRCS
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistributionRandomKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DilatedMaxPool3d.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistributionExponentialKernel.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Embedding.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/EmbeddingBackwardKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/FillKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachBinaryOpList.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachBinaryOpScalar.mu
