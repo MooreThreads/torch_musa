@@ -159,6 +159,7 @@ struct KernelTable {
   REGISTER_KERNEL(at::ScalarType::BFloat16, _MODE, bfloat16_t) \
   REGISTER_KERNEL(at::ScalarType::Float, _MODE, float)         \
   REGISTER_KERNEL(at::ScalarType::Double, _MODE, double)       \
+  REGISTER_KERNEL(at::ScalarType::Char, _MODE, int8_t)         \
   REGISTER_KERNEL(at::ScalarType::Int, _MODE, int32_t)         \
   REGISTER_KERNEL(at::ScalarType::Long, _MODE, int64_t)
 

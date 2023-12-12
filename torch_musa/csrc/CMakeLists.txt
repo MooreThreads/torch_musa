@@ -48,6 +48,7 @@ FILE(GLOB_RECURSE MU_SRCS
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/AbsKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationHardswishKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationHardsigmoidKernel.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationLeakyReluKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationLogSigmoidKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationGeluKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationPreluKernel.mu
@@ -112,12 +113,11 @@ FILE(GLOB_RECURSE MU_SRCS
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleNearest3d.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryOpsKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/WeightNorm.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/linalg/BatchLinearAlgebra.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/Activation.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/IntReprQuant.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/MakePerTensorQuantizedTensor.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/linalg/BatchLinearAlgebra.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationLeakyReluKernel.mu
-    aten/quantized/musa/*.mu
+  aten/quantized/musa/*.mu
   aten/ops/torchvision/*.mu
   aten/ops/musa/*.mu
   aten/ops/attention/mudnn/*.mu

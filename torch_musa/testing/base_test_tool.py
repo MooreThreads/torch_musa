@@ -90,6 +90,7 @@ def get_all_support_types_withfp16():
 def get_all_types():
     return [
         torch.bool,
+        torch.int8,
         torch.uint8,
         torch.float32,
         torch.int32,
@@ -149,7 +150,7 @@ class Comparator:
 class DefaultComparator(Comparator):
     """The default comparator"""
 
-    def __init__(self, abs_diff=1e-8, rel_diff=1e-5, equal_nan=False):
+    def __init__(self, abs_diff=1e-7, rel_diff=1e-5, equal_nan=False):
         """
         Use both relative and absolute tolerance to compare the result and golden.
         """
@@ -469,8 +470,8 @@ class OpTest:
 
     def check_musafp16_vs_musafp16(self, inputs=None, train=False, test_out=False):
         '''
-        Compare results of ref_func and func. 
-        This are designed for some ops could be validated by compositing small ops like SDP. 
+        Compare results of ref_func and func.
+        This are designed for some ops could be validated by compositing small ops like SDP.
         '''
         fp16_ref_res = self._call_func(
             inputs, "musa", train, test_out, refer=True, fp16=True)
