@@ -1,4 +1,4 @@
-"""Test binary operators."""
+"""Test ternary operators."""
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import, C3001, W0622
 import random
 import torch

@@ -1,4 +1,4 @@
-"""Test index_put operators."""
+"""Test index operators."""
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
 import pytest
 import torch

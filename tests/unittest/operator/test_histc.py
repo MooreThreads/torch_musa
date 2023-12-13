@@ -1,4 +1,4 @@
-"""Test prod operators."""
+"""Test histc operators."""
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
 import pytest
 import torch

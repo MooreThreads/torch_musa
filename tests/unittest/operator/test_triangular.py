@@ -1,4 +1,4 @@
-"""Test filp operator."""
+"""Test triangular operator."""
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
 import torch
 import pytest

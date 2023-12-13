@@ -1,4 +1,4 @@
-"""Test addmm operators."""
+"""Test dot operators."""
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
 import torch
 import pytest
