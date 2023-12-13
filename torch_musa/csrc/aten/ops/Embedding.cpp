@@ -23,13 +23,14 @@
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/utils/register_wrapper.h"
 
-#include <mudnn.h>
-
 namespace at {
 namespace native {
 
 DEFINE_DISPATCH(embedding_bag_stub);
+DEFINE_DISPATCH(embedding_dense_backward_stub);
+
 REGISTER_NO_CPU_DISPATCH(embedding_bag_stub);
+REGISTER_NO_CPU_DISPATCH(embedding_dense_backward_stub);
 } // namespace native
 
 namespace musa {
@@ -55,49 +56,14 @@ Tensor EmbeddingDenseBwd(
     int64_t num_weights,
     int64_t padding_idx,
     bool scale_grad_by_freq) {
-  TORCH_CHECK(
-      grad_output.device().type() == kMUSA,
-      "Device of grad_output tensor of embedding_dense_backward must "
-      "be MUSA, but now is ",
-      grad_output.device());
-  TORCH_CHECK(
-      indices.device().type() == kMUSA,
-      "Device of indices tensor of embedding_dense_backward must be "
-      "MUSA, but now is ",
-      indices.device());
-  TORCH_CHECK(
-      grad_output.scalar_type() == at::ScalarType::Float ||
-          grad_output.scalar_type() == at::ScalarType::Half,
-      "Dtype of grad_output tensor of embedding_dense_backward only "
-      "support Float and Half, but now is ",
-      grad_output.scalar_type());
-  TORCH_CHECK(
-      indices.scalar_type() == at::ScalarType::Int ||
-          indices.scalar_type() == at::ScalarType::Long,
-      "Dtype of indices tensor of embedding_dense_backward only "
-      "support Int/Long, but now is ",
-      indices.scalar_type());
-  // its not be used in muDNN so far.
-  UNUSED(scale_grad_by_freq);
   c10::musa::MUSAGuard device_guard(grad_output.device());
-
-  Tensor grad_input = at::empty(
-      {num_weights, grad_output.size(-1)},
-      grad_output.options().memory_format(at::MemoryFormat::Contiguous));
-  auto contiguous_grad_output = grad_output.contiguous();
-  auto contiguous_indices = indices.contiguous();
-
-  muHandle& h = GetMudnnHandle();
-  ::musa::dnn::Embedding embedding;
-  auto mt_grad_output = CreateMUTensor(contiguous_grad_output);
-  auto mt_indices = CreateMUTensor(contiguous_indices);
-  auto mt_grad_input = CreateMUTensor(grad_input);
-  CHECK_MUDNN_STATUS(embedding.SetPaddingIdx(padding_idx), "SetPaddingIdx");
-  CHECK_MUDNN_STATUS(
-      embedding.RunDenseBwd(
-          h, mt_grad_input, mt_grad_output, mt_indices, InternalMemAlloc),
-      "Run");
-  return grad_input;
+  return at::native::embedding_dense_backward_stub(
+      kMUSA,
+      grad_output,
+      indices,
+      num_weights,
+      padding_idx,
+      scale_grad_by_freq);
 }
 
 std::tuple<Tensor, Tensor, Tensor, Tensor> _EmbeddingBagImpl(
