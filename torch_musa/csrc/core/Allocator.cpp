@@ -1662,6 +1662,12 @@ void ResetPeakStats() {
   palloc->get_allocator_impl()->reset_peak_stats();
 }
 
+void ResetPeakStats(int64_t device) {
+  c10::musa::MusaCachingAllocator* palloc =
+      c10::musa::GetMusaCachingAllocator();
+  palloc->get_allocator_impl()->reset_peak_stats(device);
+}
+
 DeviceStats GetDeviceStats(int64_t device) {
   c10::musa::MusaCachingAllocator* palloc =
       c10::musa::GetMusaCachingAllocator();

@@ -209,6 +209,7 @@ void init(int device_count);
 void SetMemoryFraction(double fraction, int device);
 void EmptyCache();
 void ResetPeakStats();
+void ResetPeakStats(int64_t device);
 DeviceStats GetDeviceStats(int64_t device);
 std::vector<SegmentInfo> GetMemorySnapshot();
 void recordStream(const DataPtr& dataPtr, MUSAStream stream);

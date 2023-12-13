@@ -92,6 +92,7 @@ from .core.memory import (
     max_memory_allocated,
     max_memory_reserved,
     mem_get_info,
+    reset_peak_memory_stats
 )
 
 

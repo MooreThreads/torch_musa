@@ -197,6 +197,16 @@ PyObject* PyMusaSetMemoryFraction(PyObject* _unused, PyObject* args) {
   Py_RETURN_NONE;
 }
 
+PyObject* PyMusaresetPeakMemoryStats(PyObject* _unused, PyObject* arg) {
+  HANDLE_TH_ERRORS
+  THPUtils_assert(
+      THPUtils_checkLong(arg), "invalid argument to reset_peak_memory_stats");
+  const int device = (int)THPUtils_unpackLong(arg);
+  c10::musa::MUSACachingAllocator::ResetPeakStats(device);
+  END_HANDLE_TH_ERRORS
+  Py_RETURN_NONE;
+}
+
 static void BindGetDeviceProperties(PyObject* module) {
   // Add method to torch_musa
   auto m = py::handle(module).cast<py::module>();
@@ -437,6 +447,7 @@ static PyMethodDef MusaMemoryMethods[] = {
     {"_musa_resetPeakStats", PyMusaResetPeakStats, METH_NOARGS, nullptr},
     {"_musa_memorySnapshot", PyMusaMemorySnapshot, METH_NOARGS, nullptr},
     {"_musa_setMemoryFraction", PyMusaSetMemoryFraction, METH_VARARGS, nullptr},
+    {"_musa_resetPeakMemoryStats", PyMusaresetPeakMemoryStats, METH_O, nullptr},
     {nullptr}};
 
 static PyMethodDef MusaStreamMethods[] = {

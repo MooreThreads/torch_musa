@@ -4,11 +4,11 @@ import collections
 from typing import Any, Union,Tuple
 import torch
 from torch.types import Device
+from torch._utils import _get_device_index
 import torch_musa
 from torch_musa.core.device import _get_musa_device_index
 from ._lazy_init import _lazy_init, is_initialized
 from ._utils import _get_musa_device_index
-
 
 def set_per_process_memory_fraction(fraction, device: Union[Device, int] = None) -> None:
     """Set memory fraction for a process.
@@ -101,14 +101,14 @@ def memory_stats(device=None):
     - ``"num_ooms"``: number of out-of-memory errors thrown.
 
     The caching allocator can be configured via ENV to not split blocks larger than a
-    defined size (see Memory Management section of the Cuda Semantics documentation).
+    defined size (see Memory Management section of the MUSA Semantics documentation).
     This helps avoid memory framentation but may have a performance
     penalty. Additional outputs to assist with tuning and evaluating impact:
     - ``"max_split_size"``: blocks above this size will not be split.
     - ``"oversize_allocations.{current,peak,allocated,freed}"``:
       number of over-size allocation requests received by the memory allocator.
     - ``"oversize_segments.{current,peak,allocated,freed}"``:
-      number of over-size reserved segments from ``cudaMalloc()``.
+      number of over-size reserved segments from ``musaMalloc()``.
 
     Args:
         device (torch.device or int, optional): selected device. Returns
@@ -417,3 +417,21 @@ def mem_get_info(device: Union[Device, int] = None) -> Tuple[int, int]:
         device = torch.musa.current_device()
     device = _get_musa_device_index(device)
     return torch.musa._MUSAC._musart.musaMemGetInfo(device)
+
+def reset_peak_memory_stats(device: Union[Device, int] = None) -> None:
+    r"""Resets the "peak" stats tracked by the MUSA memory allocator.
+
+    See :func:`~torch.musa.memory_stats` for details. Peak stats correspond to the
+    `"peak"` key in each individual stat dict.
+
+    Args:
+        device (torch.device or int, optional): selected device. Returns
+            statistic for the current device, given by :func:`~torch.musa.current_device`,
+            if :attr:`device` is ``None`` (default).
+
+    .. note::
+        See :ref:`musa-memory-management` for more details about GPU memory
+        management.
+    """
+    device = _get_device_index(device, optional=True)
+    return torch.musa._MUSAC._musa_resetPeakMemoryStats(device)
