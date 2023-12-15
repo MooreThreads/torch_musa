@@ -23,9 +23,6 @@ DATE=$(date +%Y%m%d)
 GPU=$(mthreads-gmi -q -i 0 | grep "Product Name" | awk -F: '{print $2}' | tr -d '[:space:]')
 
 ARCH="qy1"
-pushd /usr/local
-rm -rf musa musa-*
-popd
 if [ "$GPU" = "MTTS3000" ] || [ "$GPU" = "MTTS80" ]; then
     ARCH="qy1"
 elif [ "$GPU" = "MTTS4000" ] || [ "$GPU" = "MTTS90" ]; then
