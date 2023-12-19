@@ -48,6 +48,7 @@ FILE(GLOB_RECURSE MU_SRCS
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/AbsKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationHardswishKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationHardsigmoidKernel.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationLeakyReluKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationLogSigmoidKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationGeluKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationPreluKernel.mu
@@ -60,6 +61,7 @@ FILE(GLOB_RECURSE MU_SRCS
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/BinaryGeometricKernels.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/BinaryMiscOpsKernels.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/BinaryBitwiseOpsKernels.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/BinaryShiftOpsKernels.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/CompareKernels.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/CrossKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistributionUniform.mu
@@ -68,8 +70,6 @@ FILE(GLOB_RECURSE MU_SRCS
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistributionRandomKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DilatedMaxPool3d.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistributionExponentialKernel.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Embedding.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/EmbeddingBackwardKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/FillKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachBinaryOpList.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachBinaryOpScalar.mu
@@ -102,7 +102,6 @@ FILE(GLOB_RECURSE MU_SRCS
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TensorCompare.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TensorFactories.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TensorTransformations.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TriangularOps.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryFractionKernels.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnarySignKernels.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Unique.mu
@@ -114,6 +113,7 @@ FILE(GLOB_RECURSE MU_SRCS
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleNearest3d.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryOpsKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/WeightNorm.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/linalg/BatchLinearAlgebra.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/Activation.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/IntReprQuant.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/MakePerTensorQuantizedTensor.mu

@@ -5,7 +5,6 @@
 #include <mudnn.h>
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
-#include "torch_musa/csrc/aten/ops/musa/musa_ops.h"
 #include "torch_musa/csrc/aten/utils/Context.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/utils/register_wrapper.h"
@@ -188,7 +187,6 @@ ADVANCED_REGISTER(aten, PrivateUse1, "mm", Mm)
 ADVANCED_REGISTER(aten, PrivateUse1, "mm.out", MmOut)
 ADVANCED_REGISTER(aten, PrivateUse1, "bmm", Bmm)
 ADVANCED_REGISTER(aten, PrivateUse1, "bmm.out", BmmOut)
-ADVANCED_REGISTER(aten, PrivateUse1, "baddbmm", Baddbmm)
 
 } // namespace musa
 } // namespace at

@@ -1,4 +1,4 @@
-"""Test glu forward & backward operator."""
+"""Test elu forward & backward operator."""
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
 import torch
 import pytest

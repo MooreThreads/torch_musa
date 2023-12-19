@@ -30,8 +30,8 @@ def test_batch_norm(input_data, train):
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
-@pytest.mark.skip(
-    # testing.get_musa_arch() < 22,  # uncomment when CI uses QY2
+@pytest.mark.skipif(
+    testing.get_musa_arch() < 22,
     reason="fp16 batch_norm supported in QY2 or later",
 )
 @pytest.mark.parametrize("train", train)

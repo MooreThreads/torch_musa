@@ -1,0 +1,51 @@
+#pragma once
+
+#include <float.h>
+#include <musa_fp16.h>
+#include <musa_runtime.h>
+#include <stdint.h>
+#include <algorithm>
+#include <numeric>
+
+namespace at {
+namespace native {
+
+enum class EmbeddingBagMode { SUM, MEAN, MAX };
+
+template <EmbeddingBagMode mode>
+struct ReduceOp;
+
+template <>
+struct ReduceOp<EmbeddingBagMode::SUM> {
+  float init_value = 0.f;
+  __device__ __forceinline__ void apply(float& x, float& y) {
+    x += y;
+  }
+
+  __device__ __forceinline__ void postOp(float& x, float param) {}
+};
+
+template <>
+struct ReduceOp<EmbeddingBagMode::MEAN> {
+  float init_value = 0.f;
+  __device__ __forceinline__ void apply(float& x, float& y) {
+    x += y;
+  }
+
+  __device__ __forceinline__ void postOp(float& x, float param) {
+    x *= param;
+  }
+};
+
+template <>
+struct ReduceOp<EmbeddingBagMode::MAX> {
+  float init_value = -FLT_MAX;
+  __device__ __forceinline__ void apply(float& x, float& y) {
+    x = (__isnanf(x) || __isnanf(y)) ? NAN : fmaxf(x, y);
+  }
+
+  __device__ __forceinline__ void postOp(float& x, float param) {}
+};
+
+} // namespace native
+} // namespace at

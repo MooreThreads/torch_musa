@@ -11,4 +11,3 @@ index f1a15cf..08d7744 100644
        input.contiguous(memory_format) : input.contiguous();
    const auto& gamma = weight.defined() ? weight.contiguous() : kEmpty;
    const auto& beta = bias.defined() ? bias.contiguous() : kEmpty;
-

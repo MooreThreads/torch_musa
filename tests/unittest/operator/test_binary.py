@@ -41,7 +41,7 @@ def function(input_data, dtype, other_dtype, func):
     if "other" in input_data.keys() and isinstance(input_data["other"], torch.Tensor):
         input_data["other"] = input_data["other"].to(other_dtype)
     if func in (torch.div, torch.remainder):
-        input_data["other"] = abs(input_data["other"]) + 0.0001
+        input_data["other"] = abs(input_data["other"])
     if func in (torch.pow,):
         input_data["exponent"] = input_data["exponent"].to(other_dtype)
     test = testing.OpTest(func=func, input_args=input_data)

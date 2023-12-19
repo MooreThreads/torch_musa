@@ -20,4 +20,3 @@ index 2f8f2fa..d574de0 100644
 -  static NoopPyInterpreterVTable noop_vtable;
    vtable_ = &noop_vtable;
  }
-

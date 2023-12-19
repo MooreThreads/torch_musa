@@ -31,7 +31,9 @@ def test_multiple_ops():
     """Test multiple ops"""
     torch.musa.empty_cache()
     torch.musa.reset_peak_stats()
-    input_data = torch.randn(1024 * 4, 1024 * 4).to("musa")  # 16 * 1024 * 1024 * 4 = 64MB
+    input_data = torch.randn(1024 * 4, 1024 * 4).to(
+        "musa"
+    )  # 16 * 1024 * 1024 * 4 = 64MB
     tensor_a = torch.matmul(input_data, input_data)
     torch.matmul(tensor_a, tensor_a)
     summary = torch.musa.memory_summary()
@@ -54,8 +56,12 @@ def test_single_device_ops():
     """Test memory stats ops when specify single device"""
     torch.musa.empty_cache()
     torch.musa.reset_peak_stats()
-    input_data_small = torch.randn(1024 * 4, 1024 * 4).to("musa:0")  # 16 * 1024 * 1024 * 4 = 64MB
-    input_data_large = torch.randn(1024 * 8, 1024 * 8).to("musa:0")  # 64 * 1024 * 1024 * 4 = 256MB
+    input_data_small = torch.randn(1024 * 4, 1024 * 4).to(
+        "musa:0"
+    )  # 16 * 1024 * 1024 * 4 = 64MB
+    input_data_large = torch.randn(1024 * 8, 1024 * 8).to(
+        "musa:0"
+    )  # 64 * 1024 * 1024 * 4 = 256MB
     del input_data_large  # free 256MB on device 0
     summary = torch.musa.memory_summary(0)
     assert "reserved" in summary
@@ -78,8 +84,12 @@ def test_all_devices_ops():
     """Test memory stats ops when specify all devices"""
     torch.musa.empty_cache()
     torch.musa.reset_peak_stats()
-    tensor_0 = torch.randn(1024 * 4, 1024 * 4).to("musa:0")  # 16 * 1024 * 1024 * 4 = 64MB
-    tensor_1 = torch.randn(1024 * 8, 1024 * 8).to("musa:1")  # 64 * 1024 * 1024 * 4 = 256MB
+    tensor_0 = torch.randn(1024 * 4, 1024 * 4).to(
+        "musa:0"
+    )  # 16 * 1024 * 1024 * 4 = 64MB
+    tensor_1 = torch.randn(1024 * 8, 1024 * 8).to(
+        "musa:1"
+    )  # 64 * 1024 * 1024 * 4 = 256MB
     summary = torch.musa.memory_summary(all_device=True)
     assert "reserved" in summary
     assert "[ALL]" in summary
@@ -130,6 +140,7 @@ def test_caching_pinned_memory():
 
 class DictDataset(Dataset):
     """Dictionary data loader."""
+
     def __len__(self):
         return 4
 
@@ -145,7 +156,9 @@ class DictDataset(Dataset):
 def test_pin_memory_dataloader():
     """Test dataloader with pin memory."""
     dataset = DictDataset()
-    loader = DataLoader(dataset, batch_size=2, pin_memory=True, pin_memory_device="musa")
+    loader = DataLoader(
+        dataset, batch_size=2, pin_memory=True, pin_memory_device="musa"
+    )
     for sample in loader:
         assert sample["a_tensor"].is_pinned("musa")
         assert sample["another_dict"]["a_number"].is_pinned("musa")
@@ -155,7 +168,9 @@ def test_pin_memory_dataloader():
 def test_pin_memory_dataloader_non_zero_device():
     """Test dataloader with pin memory on non-zero gpu."""
     dataset = DictDataset()
-    loader = DataLoader(dataset, batch_size=2, pin_memory=True, pin_memory_device="musa:1")
+    loader = DataLoader(
+        dataset, batch_size=2, pin_memory=True, pin_memory_device="musa:1"
+    )
     for sample in loader:
         assert sample["a_tensor"].is_pinned("musa:1")
         assert sample["another_dict"]["a_number"].is_pinned("musa:1")
@@ -171,23 +186,52 @@ def test_set_per_process_memory_fraction():
     with pytest.raises(ValueError, match="Invalid fraction value"):
         torch.musa.set_per_process_memory_fraction(2.0)
 
-    tensor = torch.zeros(1024, device='musa')
+    tensor = torch.zeros(1024, device="musa")
     torch.musa.empty_cache()
     total_memory = torch.musa.get_device_properties(0).total_memory
     torch.musa.set_per_process_memory_fraction(0.5, 0)
 
     # test 0.499 allocation is ok.
-    #TODO(Xiaokang Shang): Waitint for MUSA support contiguous virtual address.
+    # TODO(Xiaokang Shang): Waitint for MUSA support contiguous virtual address.
     application = int(total_memory * 0.499) - torch.musa.max_memory_reserved()
-    tmp_tensor = torch.empty(application, dtype=torch.int8, device='musa')
+    tmp_tensor = torch.empty(application, dtype=torch.int8, device="musa")
     del tmp_tensor
     torch.musa.empty_cache()
 
     application = int(total_memory * 0.5)
     # it will get OOM when try to allocate more than half memory.
     with pytest.raises(RuntimeError, match="out of memory"):
-        torch.empty(application, dtype=torch.int8, device='musa')
+        torch.empty(application, dtype=torch.int8, device="musa")
 
     # ensure out of memory error doesn't disturb subsequent kernel
     tensor.fill_(1)
     assert (tensor == 1).all()
+
+
+def test_matmul_memory_use():
+    def get_max_used():
+        torch.musa.synchronize()
+        val = torch.musa.max_memory_allocated()
+        torch.musa.reset_peak_memory_stats()
+        return val
+
+    a = torch.rand(1, 32, 32, device="musa")
+    b = torch.rand(24, 32, 1, device="musa")
+
+    get_max_used()
+
+    torch.matmul(a, b)
+
+    matmul_mem = get_max_used()
+
+    a = a.expand(24, 32, 32)
+    torch.matmul(a, b)
+
+    matmul_expand_mem = get_max_used()
+
+    torch.bmm(a, b)
+
+    bmm_mem = get_max_used()
+
+    assert matmul_expand_mem == matmul_mem
+    assert bmm_mem == matmul_mem

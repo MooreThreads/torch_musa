@@ -1,4 +1,4 @@
-"""Test linspace operator."""
+"""Test grid_sample operator."""
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
 from functools import partial
 import pytest

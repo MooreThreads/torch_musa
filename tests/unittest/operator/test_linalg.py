@@ -42,6 +42,18 @@ def test_linalg_inv(input_data, dtype):
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", [torch.randn(4, 4), torch.randn(2, 3, 4, 4)])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_inverse(input_data, dtype):
+    m = torch.inverse
+    input_data = input_data.to(dtype)
+    output = m(input_data)
+    musa_input = input_data.to("musa")
+    output_musa = m(musa_input)
+    assert testing.DefaultComparator(abs_diff=1e-5)(output, output_musa.cpu())
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize(
     "input_data", [{"A": torch.randn(1, 3, 3), "B": torch.randn(2, 3, 3)}]
 )

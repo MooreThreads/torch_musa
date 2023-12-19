@@ -22,7 +22,17 @@ Tensor& Fill_(Tensor& self, const Tensor& value) {
 
 Tensor& Zero_(Tensor& self) {
   c10::musa::MUSAGuard device_guard(self.device());
-  return at::native::zero_(self);
+  // TODO(mt-ai): remove if condition once bf16 dtype of Fill supported by muDNN
+  if (self.scalar_type() == at::ScalarType::BFloat16) {
+    return at::native::zero_(self);
+  }
+  at::musa::muHandle& h = GetMudnnHandle();
+  auto self_mu = at::musa::CreateMUTensor(self);
+  ::musa::dnn::Fill op;
+  CHECK_MUDNN_STATUS(op.SetValue(0.0), "SetValue");
+  CHECK_MUDNN_STATUS(op.Run(h, self_mu), "Run");
+
+  return self;
 }
 
 // TODO(zaixing.wang): fp16 mark

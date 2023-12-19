@@ -138,12 +138,14 @@ void UnaryCall(
     Tensor& output,
     BINARY_MODE m,
     const std::string op_name) {
+  bool is_other_integer = false;
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Unary uop;
   auto other_scalar = other.item();
   if (other_scalar.isFloatingPoint()) {
     CHECK_MUDNN_STATUS(uop.SetAlpha(other_scalar.toDouble()), "SetAlpha");
   } else if (other_scalar.isIntegral(false)) {
+    is_other_integer = true;
     CHECK_MUDNN_STATUS(uop.SetAlpha(other_scalar.toLong()), "SetAlpha");
   } else {
     AT_ERROR(
@@ -155,6 +157,13 @@ void UnaryCall(
   } else if (m == BINARY_MODE::ADD) {
     CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::ADD), "SetMode");
   } else if (m == BINARY_MODE::TRUEDIV) {
+    // truediv with integer input and integer scalar divider should output a
+    // fp32 tensor instead of keeping the dtype
+    output = is_other_integer &&
+            (self.scalar_type() == at::ScalarType::Int ||
+             self.scalar_type() == at::ScalarType::Long)
+        ? output.to(at::ScalarType::Float)
+        : output;
     CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::TRUEDIV), "SetMode");
   } else if (m == BINARY_MODE::SUB) {
     CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::SUB), "SetMode");

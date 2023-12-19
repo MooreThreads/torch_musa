@@ -86,6 +86,7 @@ pipeline {
           agent {
             docker {
               image 'sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py38:latest'
+              alwaysPull true
               args '-u root:sudo -e MTHREADS_VISIBLE_DEVICES=all -e TARGET_DEVICE=musa -e MUSA_VISIBLE_DEVICES=0 -e PYTORCH_REPO_PATH=/home/pytorch --privileged'
               label 'torch_musa_s80'
             }

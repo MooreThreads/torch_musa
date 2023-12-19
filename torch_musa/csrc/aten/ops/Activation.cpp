@@ -15,6 +15,7 @@
 #include <ATen/core/op_registration/adaption.h>
 #include <ATen/native/Activation.h>
 #include <ATen/native/Resize.h>
+#include <ATen/ops/leaky_relu_backward_native.h>
 #include <torch/library.h>
 #include <torch/torch.h>
 #include <limits>
@@ -1210,6 +1211,104 @@ Tensor& LeakyReluOut(
 }
 
 namespace {
+struct structured_leaky_relu_backward_out_out final
+    : public at::native::structured_leaky_relu_backward_out {
+  structured_leaky_relu_backward_out_out(Tensor& out0)
+      : outputs_{std::ref(out0)} {}
+  void set_output_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+    const auto& out = outputs_[output_idx].get();
+    resize_out(out, sizes, strides, options);
+    auto maybe_proxy = maybe_create_proxy(out, sizes, strides, options);
+    if (C10_UNLIKELY(maybe_proxy.has_value())) {
+      proxy_outputs_[output_idx] =
+          c10::ExclusivelyOwned<Tensor>(std::move(maybe_proxy).value());
+    }
+    if (!names.empty()) {
+      namedinference::propagate_names(outputs_[output_idx], names);
+    }
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_leaky_relu_backward_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+  void set_output_raw_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+    const auto& out = outputs_[output_idx].get();
+    resize_out(out, sizes, strides, options);
+    if (!names.empty()) {
+      namedinference::propagate_names(outputs_[output_idx], names);
+    }
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+    at::native::structured_leaky_relu_backward_out::set_output_raw_strided(
+        output_idx, sizes, strides, options, names);
+  }
+  const Tensor& maybe_get_output(int64_t output_idx) override {
+    return proxy_outputs_[output_idx].has_value() ? **proxy_outputs_[output_idx]
+                                                  : outputs_[output_idx].get();
+  }
+  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
+  std::array<c10::optional<c10::ExclusivelyOwned<Tensor>>, 1> proxy_outputs_;
+  c10::musa::OptionalMUSAGuard guard_;
+};
+
+at::Tensor& LeakyReluBackwardOutGradInput(
+    const at::Tensor& grad_output,
+    const at::Tensor& self,
+    const at::Scalar& negative_slope,
+    bool self_is_result,
+    at::Tensor& grad_input) {
+  c10::optional<Device> common_device = nullopt;
+  (void)common_device; // Suppress unused variable warning
+  c10::impl::check_and_update_common_device(
+      common_device, grad_input, "LeakyReluBackwardOutGradInput", "grad_input");
+  c10::impl::check_and_update_common_device(
+      common_device,
+      grad_output,
+      "LeakyReluBackwardOutGradInput",
+      "grad_output");
+  c10::impl::check_and_update_common_device(
+      common_device, self, "LeakyReluBackwardOutGradInput", "self");
+  structured_leaky_relu_backward_out_out op(grad_input);
+  op.meta(grad_output, self, negative_slope, self_is_result);
+  op.impl(
+      grad_output,
+      self,
+      negative_slope,
+      self_is_result,
+      op.maybe_get_output(0));
+  if (op.proxy_outputs_[0].has_value())
+    op.outputs_[0].get().copy_(**op.proxy_outputs_[0]);
+  return grad_input;
+}
+} // namespace
+
+namespace {
 struct structured_clamp_min_out_out final
     : public at::native::structured_clamp_min_out {
   structured_clamp_min_out_out(Tensor& out0) : outputs_{std::ref(out0)} {}
@@ -2308,6 +2407,11 @@ ADVANCED_REGISTER(aten, PrivateUse1, "pow.Tensor_Scalar_out", PowScalarOut)
 ADVANCED_REGISTER(aten, PrivateUse1, "leaky_relu", LeakyRelu)
 ADVANCED_REGISTER(aten, PrivateUse1, "leaky_relu_", LeakyRelu_)
 ADVANCED_REGISTER(aten, PrivateUse1, "leaky_relu.out", LeakyReluOut)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "leaky_relu_backward.grad_input",
+    LeakyReluBackwardOutGradInput)
 
 ADVANCED_REGISTER(aten, PrivateUse1, "log10", Log10)
 ADVANCED_REGISTER(aten, PrivateUse1, "log10_", Log10_)

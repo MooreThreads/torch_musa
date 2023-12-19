@@ -97,7 +97,7 @@ inline void SetTensorTypeAndAddr(const Tensor& t, muTensor& m_t) {
       m_t.SetType(muTensor::Type::BOOL);
       break;
     case ScalarType::Char:
-      m_t.SetType(muTensor::Type::BOOL);
+      m_t.SetType(muTensor::Type::INT8);
       break;
     case ScalarType::Byte:
       m_t.SetType(muTensor::Type::UINT8);

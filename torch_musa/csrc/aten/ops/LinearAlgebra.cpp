@@ -7,11 +7,18 @@
 #include <ATen/ops/linalg_inv_ex_ops.h>
 #include <ATen/ops/linalg_lstsq_native.h>
 #include <torch/library.h>
+#include "torch_musa/csrc/aten/ops/LinearAlgebra.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
+namespace native {
+
+DEFINE_DISPATCH(inverse_stub);
+REGISTER_NO_CPU_DISPATCH(inverse_stub);
+
+} // namespace native
 namespace musa {
 
 /* TODO(@mt-ai): linalg operators here are all walkarounded by moving tensors to
@@ -101,6 +108,10 @@ namespace musa {
     bool check_errors,
     at::Tensor& inverse,
     at::Tensor& info) {
+  // TODO(@mt-ai): this kernel is doing the same arithmetic as the
+  // one below (LinalgInverse), but pytorch got a hacky way to impl
+  // such functions. For example, torch.inverse should be an alias
+  // of torch.linalg.inv, while we impl them seperately.
   auto cpu_inverse =
       at::empty(inverse.sizes(), inverse.options().device(DeviceType::CPU));
   auto cpu_info =
@@ -121,6 +132,21 @@ namespace musa {
       cpu_info.sizes(), cpu_info.options().device(DeviceType::PrivateUse1));
   info.copy_(cpu_info);
   return ::std::tuple<at::Tensor&, at::Tensor&>{inverse, info};
+}
+
+at::Tensor LinalgInverse(const at::Tensor& A) {
+  // TODO(@mt-ai): kernel provided by mudnn now only support
+  // dtypes of fp32 and fp64
+  TORCH_CHECK(
+      A.scalar_type() == at::ScalarType::Float ||
+          A.scalar_type() == at::ScalarType::Double,
+      "Inverse currently only supports float32/64 dtype, got ",
+      A.scalar_type());
+  c10::musa::MUSAGuard device_guard(A.device());
+
+  at::Tensor result = at::empty_like(A);
+  at::native::inverse_stub(kMUSA, result, A);
+  return result;
 }
 
 ::std::tuple<at::Tensor, at::Tensor> LinalgCholeskyEx(
@@ -186,6 +212,7 @@ ADVANCED_REGISTER(
     PrivateUse1,
     "linalg_inv_ex.inverse",
     LinalgInvExOutInverse)
+ADVANCED_REGISTER(aten, PrivateUse1, "inverse", LinalgInverse)
 
 } // namespace musa
 } // namespace at

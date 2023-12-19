@@ -4,6 +4,8 @@
 #include <ATen/core/op_registration/adaption.h>
 #include <ATen/native/Pool.h>
 #include <ATen/native/ScatterGatherChecks.h>
+#include <ATen/ops/put_native.h>
+#include <ATen/ops/take_native.h>
 #include <torch/library.h>
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
@@ -172,8 +174,38 @@ at::Tensor Gather(
   return result;
 }
 
+at::Tensor Take(const at::Tensor& self, const at::Tensor& index) {
+  c10::optional<Device> common_device = nullopt;
+  (void)common_device; // Suppress unused variable warning
+  c10::impl::check_and_update_common_device(
+      common_device, self, "Take", "self");
+  c10::impl::check_and_update_common_device(
+      common_device, index, "Take", "index");
+  const OptionalDeviceGuard device_guard(device_of(self));
+  return at::native::take(self, index);
+}
+
+at::Tensor& Put_(
+    at::Tensor& self,
+    const at::Tensor& index,
+    const at::Tensor& source,
+    bool accumulate) {
+  c10::optional<Device> common_device = nullopt;
+  (void)common_device; // Suppress unused variable warning
+  c10::impl::check_and_update_common_device(
+      common_device, self, "Put_", "self");
+  c10::impl::check_and_update_common_device(
+      common_device, index, "Put_", "index");
+  c10::impl::check_and_update_common_device(
+      common_device, source, "Put_", "source");
+  const OptionalDeviceGuard device_guard(device_of(self));
+  return at::native::put_(self, index, source, accumulate);
+}
+
 ADVANCED_REGISTER(aten, PrivateUse1, "gather.out", GatherOut)
 ADVANCED_REGISTER(aten, PrivateUse1, "gather", Gather)
+ADVANCED_REGISTER(aten, PrivateUse1, "take", Take)
+ADVANCED_REGISTER(aten, PrivateUse1, "put_", Put_)
 
 } // namespace musa
 } // namespace at

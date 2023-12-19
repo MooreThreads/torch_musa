@@ -173,6 +173,7 @@ struct KernelTable {
 
 #define REGISTER_KERNEL_DTYPE(_OUT_NDIM)                           \
   REGISTER_KERNEL(at::ScalarType::BFloat16, _OUT_NDIM, bfloat16_t) \
+  REGISTER_KERNEL(at::ScalarType::Char, _OUT_NDIM, int8_t)         \
   REGISTER_KERNEL(at::ScalarType::Half, _OUT_NDIM, float16_t)      \
   REGISTER_KERNEL(at::ScalarType::Float, _OUT_NDIM, float)         \
   REGISTER_KERNEL(at::ScalarType::Double, _OUT_NDIM, double)       \
@@ -267,6 +268,7 @@ void IndexPutRun(
           (out.scalar_type() == at::ScalarType::Half) ||
           (out.scalar_type() == at::ScalarType::Double) ||
           (out.scalar_type() == at::ScalarType::Int) ||
+          (out.scalar_type() == at::ScalarType::Char) ||
           (out.scalar_type() == at::ScalarType::BFloat16),
       "IndexPut only support input dtype bf16, fp16/32/64, int32/64, got ",
       out.scalar_type());
@@ -293,7 +295,7 @@ void IndexPutRun(
       out.copy_(value);
       return;
     } else {
-      out = at::empty_like(out, out.options().device(kMUSA)).fill_(value);
+      out = at::empty({0}, out.options().device(kMUSA));
       return;
     }
   }

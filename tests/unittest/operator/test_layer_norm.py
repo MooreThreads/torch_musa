@@ -38,8 +38,8 @@ def test_layer_norm_nlp(embedding_dim, batch, sequence_length):
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@pytest.mark.skip(
-    # testing.get_musa_arch() < 22,  # uncomment when CI uses QY2
+@pytest.mark.skipif(
+    testing.get_musa_arch() < 22,
     reason="fp16 layer norm supported in QY2 or later"
 )
 @pytest.mark.parametrize("embedding_dim", [128, 512, 768, 2048])
@@ -121,8 +121,8 @@ def test_layer_norm_cv(N, C, W, H):
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@pytest.mark.skip(
-    # testing.get_musa_arch() < 22,  # uncomment when CI uses QY2
+@pytest.mark.skipif(
+    testing.get_musa_arch() < 22,
     reason="fp16 layer norm supported in QY2 or later"
 )
 @pytest.mark.parametrize("N", cv_test_data)
