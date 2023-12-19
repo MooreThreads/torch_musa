@@ -25,3 +25,4 @@ pushd ${mudnn_path}/mudnn
 bash install_mudnn.sh
 popd
 echo -e "\033[31mmudnn update to the newest version! \033[0m"
+rm -rf ${mudnn_path}
