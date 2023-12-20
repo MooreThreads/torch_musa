@@ -8,6 +8,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/ops/attention/mudnn/SDPUtils.h"
+#include "torch_musa/csrc/aten/utils/Context.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/Device.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
@@ -95,6 +96,9 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> MuDNNMathSDPAFwd(
   ::musa::dnn::ScaledDotProductAttention sdpa;
 
   // Config Mudnn
+  CHECK_MUDNN_STATUS(
+      sdpa.SetComputeMode(at::musa::GetComputeModeFromCtx(query.scalar_type())),
+      "SetComputeMode");
   CHECK_MUDNN_STATUS(sdpa.SetEmbedDim(head_dim * head_num), "SetEmbedDim");
   CHECK_MUDNN_STATUS(sdpa.SetHeadsNum(head_num), "SetHeadsNum");
   if (mask.has_value()) {

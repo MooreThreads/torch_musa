@@ -13,7 +13,7 @@ index 1416505..74964c2 100644
 +- name: _scaled_dot_product_attention_flash_musa(Tensor query, Tensor key, Tensor value, Tensor? attn_mask=None, float dropout_p=0.0, bool is_causal=False) -> (Tensor output, Tensor dropout_mask)
 +  output_differentiability: [True, False]
 +  query, key, value: _scaled_dot_product_attention_flash_musa_backward(grad, query, key, value, output, dropout_mask)
-+  
++
  # fft
  - name: _fft_r2c(Tensor self, int[] dim, int normalization, bool onesided) -> Tensor
    self: fft_r2c_backward(grad, dim, normalization, onesided, self.sym_size(dim.back()))
