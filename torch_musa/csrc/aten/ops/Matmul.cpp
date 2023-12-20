@@ -58,10 +58,16 @@ void MmCall(
 
   if (is_batch) {
     ::musa::dnn::BatchMatMul b_mm;
+    CHECK_MUDNN_STATUS(
+        b_mm.SetComputeMode(at::musa::GetComputeModeFromCtx(l.scalar_type())),
+        "SetComputeMode");
     CHECK_MUDNN_STATUS(b_mm.SetTranspose(trans_l, trans_r), "SetTranspose");
     CHECK_MUDNN_STATUS(b_mm.Run(h, rst, lmt, rmt, InternalMemAlloc), "Run");
   } else {
     ::musa::dnn::MatMul mm;
+    CHECK_MUDNN_STATUS(
+        mm.SetComputeMode(at::musa::GetComputeModeFromCtx(l.scalar_type())),
+        "SetComputeMode");
     CHECK_MUDNN_STATUS(mm.SetTranspose(trans_l, trans_r), "SetTranspose");
     // not support broadcast
     if (beta.equal(0) && !gama.equal(0) && bias.numel() == out.size(1) &&
