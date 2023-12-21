@@ -11,6 +11,8 @@
 #include <ATen/Functions.h>
 #include <ATen/NativeFunctions.h>
 #else
+#include <ATen/ops/binary_cross_entropy_backward_native.h>
+#include <ATen/ops/binary_cross_entropy_native.h>
 #include <ATen/ops/mse_loss_backward_native.h>
 #include <ATen/ops/mse_loss_native.h>
 #include <ATen/ops/nll_loss2d_backward_native.h>
@@ -624,6 +626,93 @@ ADVANCED_REGISTER(
     "nll_loss2d_backward.grad_input",
     NllLoss2dBwdGradInput)
 ADVANCED_REGISTER(aten, PrivateUse1, "nll_loss2d_backward", NllLoss2dBwd)
+
+at::Tensor BinaryCrossEntropy(
+    const at::Tensor& self,
+    const at::Tensor& target,
+    const c10::optional<at::Tensor>& weight,
+    int64_t reduction) {
+  // No device check
+  const OptionalDeviceGuard device_guard(device_of(self));
+  return at::native::binary_cross_entropy_cuda(self, target, weight, reduction);
+}
+
+at::Tensor& BinaryCrossEntropyOut(
+    const at::Tensor& self,
+    const at::Tensor& target,
+    const c10::optional<at::Tensor>& weight,
+    int64_t reduction,
+    at::Tensor& out) {
+  // No device check
+  const OptionalDeviceGuard device_guard(device_of(self));
+  return at::native::binary_cross_entropy_out_cuda(
+      self, target, weight, reduction, out);
+}
+
+at::Tensor BinaryCrossEntropyBackward(
+    const at::Tensor& grad_output,
+    const at::Tensor& self,
+    const at::Tensor& target,
+    const c10::optional<at::Tensor>& weight,
+    int64_t reduction) {
+  c10::optional<Device> common_device = nullopt;
+  (void)common_device; // Suppress unused variable warning
+  c10::impl::check_and_update_common_device(
+      common_device, grad_output, "BinaryCrossEntropyBackward", "grad_output");
+  c10::impl::check_and_update_common_device(
+      common_device, self, "BinaryCrossEntropyBackward", "self");
+  c10::impl::check_and_update_common_device(
+      common_device, target, "BinaryCrossEntropyBackward", "target");
+  c10::impl::check_and_update_common_device(
+      common_device, weight, "BinaryCrossEntropyBackward", "weight");
+  const OptionalDeviceGuard device_guard(device_of(self));
+  return at::native::binary_cross_entropy_backward_cuda(
+      grad_output, self, target, weight, reduction);
+}
+
+at::Tensor& BinaryCrossEntropyBackwardOut(
+    const at::Tensor& grad_output,
+    const at::Tensor& self,
+    const at::Tensor& target,
+    const c10::optional<at::Tensor>& weight,
+    int64_t reduction,
+    at::Tensor& grad_input) {
+  c10::optional<Device> common_device = nullopt;
+  (void)common_device; // Suppress unused variable warning
+  c10::impl::check_and_update_common_device(
+      common_device, grad_input, "BinaryCrossEntropyBackwardOut", "grad_input");
+  c10::impl::check_and_update_common_device(
+      common_device,
+      grad_output,
+      "BinaryCrossEntropyBackwardOut",
+      "grad_output");
+  c10::impl::check_and_update_common_device(
+      common_device, self, "BinaryCrossEntropyBackwardOut", "self");
+  c10::impl::check_and_update_common_device(
+      common_device, target, "BinaryCrossEntropyBackwardOut", "target");
+  c10::impl::check_and_update_common_device(
+      common_device, weight, "BinaryCrossEntropyBackwardOut", "weight");
+  const OptionalDeviceGuard device_guard(device_of(self));
+  return at::native::binary_cross_entropy_backward_out_cuda(
+      grad_output, self, target, weight, reduction, grad_input);
+}
+
+ADVANCED_REGISTER(aten, PrivateUse1, "binary_cross_entropy", BinaryCrossEntropy)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "binary_cross_entropy.out",
+    BinaryCrossEntropyOut)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "binary_cross_entropy_backward",
+    BinaryCrossEntropyBackward)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "binary_cross_entropy_backward.grad_input",
+    BinaryCrossEntropyBackwardOut)
 
 } // namespace musa
 } // namespace at
