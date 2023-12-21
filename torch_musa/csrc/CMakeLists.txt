@@ -130,6 +130,7 @@ append_cxx_flag_if_supported("-Wno-unused-variable" CMAKE_CXX_FLAGS)
 append_cxx_flag_if_supported("-Wno-sign-compare" CMAKE_CXX_FLAGS)
 append_cxx_flag_if_supported("-w" CMAKE_CXX_FLAGS)
 string(APPEND MUSA_MCC_FLAGS " -U__CUDA__")
+string(APPEND MUSA_MCC_FLAGS " -mllvm -mtgpu-enable-const-calc=0") # TODO(mt-ai): remove after mtcc constCalc pass bug fixed
 
 if(NOT ENABLE_COMPILE_FP64)
   string(APPEND MUSA_MCC_FLAGS " -mathx-disable-fp64") # disable fp64
