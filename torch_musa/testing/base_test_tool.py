@@ -489,7 +489,7 @@ class OpTest:
         bf16_res = self._call_func(inputs, "musa", train, test_out, bf16=True)
         self.compare_res(fp16_res, bf16_res)
 
-    def check_result(self, inputs=None, train=False, test_out=False):
+    def check_result(self, inputs=None, train=False, test_out=False, **kwargs):
         """Run op and compare computing results.
         Args:
             inputs (dict): Inputs arguments for op.
@@ -498,6 +498,6 @@ class OpTest:
         Returns:
             None.
         """
-        cpu_res = self._call_func(inputs, "cpu", train, test_out, refer=True)
-        mtgpu_res = self._call_func(inputs, "musa", train, test_out)
+        cpu_res = self._call_func(inputs, "cpu", train, test_out, refer=True, **kwargs)
+        mtgpu_res = self._call_func(inputs, "musa", train, test_out, **kwargs)
         self.compare_res(cpu_res, mtgpu_res)

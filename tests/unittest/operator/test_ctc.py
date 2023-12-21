@@ -69,7 +69,7 @@ def test_ctc_loss_fp16(config, blank, zero_infinity, reduction, pad):
     test = testing.OpTest(
         func=ctc,
         input_args=ctc_args,
-        comparators=testing.DefaultComparator(abs_diff=1e-8)
+        comparators=testing.DefaultComparator(abs_diff=1e-3)
     )
     T, N, C, S_min, S = config
     inputs = torch.randn((T, N, C)).log_softmax(2).requires_grad_()

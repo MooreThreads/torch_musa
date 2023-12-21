@@ -3,7 +3,6 @@
 #include <ATen/core/List.h>
 #include <ATen/core/Tensor.h>
 
-#include <musa_fp16.h>
 #include "torch_musa/csrc/aten/mudnn/Handle.h"
 #include "torch_musa/csrc/aten/musa/MUSADtype.muh"
 #include "torch_musa/csrc/aten/musa/MUSAMath.muh"
@@ -16,8 +15,6 @@
 
 namespace at {
 namespace native {
-
-typedef __half float16_t;
 
 namespace {
 constexpr int MAX_DIM = kMaxDim;
@@ -151,6 +148,7 @@ struct KernelTable {
     REGISTER_KERNEL(at::ScalarType::Int, int32_t);
     REGISTER_KERNEL(at::ScalarType::Long, int64_t);
     REGISTER_KERNEL(at::ScalarType::Char, int8_t);
+    REGISTER_KERNEL(at::ScalarType::BFloat16, bfloat16_t);
   }
 
   void launch(
@@ -203,7 +201,8 @@ void IndexSelectRun(
           (in.scalar_type() == at::ScalarType::Int) ||
           (in.scalar_type() == at::ScalarType::Char) ||
           (in.scalar_type() == at::ScalarType::Half) ||
-          (in.scalar_type() == at::ScalarType::Double),
+          (in.scalar_type() == at::ScalarType::Double) ||
+          (in.scalar_type() == at::ScalarType::BFloat16),
       "Index only support input dtype float16/32/64, int32/64, but got ",
       out.scalar_type());
 

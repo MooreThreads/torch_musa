@@ -1,5 +1,5 @@
 """Test index operators."""
-# pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
+# pylint: disable=missing-function-docstring, redefined-outer-name, unused-import, unexpected-keyword-arg
 import pytest
 import torch
 import torch_musa
@@ -45,6 +45,8 @@ ind_dtypes = [torch.int64]  # cpu only support int64 indices
 @pytest.mark.parametrize("dtype", dtypes)
 @pytest.mark.parametrize("ind_dtype", ind_dtypes)
 def test_index_put(input_data, dtype, ind_dtype):
+    if testing.get_musa_arch() < 22 and dtype == torch.bfloat16:
+        return
     input_data["input"] = input_data["input"].to(dtype)
     input_data["indices"] = [x.to(ind_dtype) for x in input_data["indices"]]
     input_data["values"] = input_data["values"].to(dtype)
@@ -56,6 +58,8 @@ def test_index_put(input_data, dtype, ind_dtype):
 @pytest.mark.parametrize("tensor_dtype", dtypes)
 @pytest.mark.parametrize("ind_dtype", ind_dtypes)
 def test_index_put_different_device_indices(tensor_dtype, ind_dtype):
+    if testing.get_musa_arch() < 22 and tensor_dtype == torch.bfloat16:
+        return
     input_data = torch.randperm(20, dtype=tensor_dtype).reshape(1, 20)
     value = torch.randperm(5, dtype=tensor_dtype)
     indices_0_cpu = torch.tensor([[0]], device="cpu", dtype=ind_dtype)
@@ -81,6 +85,8 @@ def test_index_put_different_device_indices(tensor_dtype, ind_dtype):
 @pytest.mark.parametrize("input_data", input_datas)
 @pytest.mark.parametrize("dtype", dtypes)
 def test_index_put_bool_index(input_data, dtype):
+    if testing.get_musa_arch() < 22 and dtype == torch.bfloat16:
+        return
     data = input_data["input"].to(dtype)
     inds = torch.randn(data.shape)
     inds = inds.ge(0)
@@ -98,6 +104,8 @@ def test_index_put_bool_index(input_data, dtype):
 @pytest.mark.parametrize("tensor_dtype", dtypes)
 @pytest.mark.parametrize("ind_dtype", ind_dtypes)
 def test_index_tensor(tensor_dtype, ind_dtype):
+    if testing.get_musa_arch() < 22 and tensor_dtype == torch.bfloat16:
+        return
     input_data = torch.randperm(40, dtype=tensor_dtype).reshape(2, 20)
     indices_0_musa = torch.tensor([[0], [1]], device="musa", dtype=ind_dtype)
     indices_1_musa = torch.tensor(
@@ -123,6 +131,8 @@ def test_index_tensor(tensor_dtype, ind_dtype):
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("tensor_dtype", dtypes)
 def test_index_tensor_bool_index(tensor_dtype):
+    if testing.get_musa_arch() < 22 and tensor_dtype == torch.bfloat16:
+        return
     input_data = torch.randperm(40, dtype=tensor_dtype).reshape(2, 20)
     inds = torch.randn(input_data.shape)
     inds = inds.ge(0.5)
@@ -178,3 +188,15 @@ def test_index_select(input_data, dtype):
     input_data["input"] = input_data["input"].to(dtype)
     test = testing.OpTest(func=torch.index_select, input_args=input_data)
     test.check_result()
+
+
+@pytest.mark.skipif(
+    testing.get_musa_arch() < 22,
+    reason="bf16 is not supported on arch older than qy2"
+)
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_datas)
+def test_index_select_bf16(input_data):
+    input_data["input"] = input_data["input"].to(torch.bfloat16)
+    test = testing.OpTest(func=torch.index_select, input_args=input_data)
+    test.check_result(bf16=True)

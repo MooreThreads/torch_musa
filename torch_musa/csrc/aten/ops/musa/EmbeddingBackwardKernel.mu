@@ -22,9 +22,6 @@ namespace native {
 
 namespace {
 
-using float16_t = musa::float16_t;
-using bfloat16_t = musa::bfloat16_t;
-
 #if TORCH_MUSA_ARCH == 110
 constexpr int MAX_BLOCK_SIZE = 16;
 #elif TORCH_MUSA_ARCH == 210
