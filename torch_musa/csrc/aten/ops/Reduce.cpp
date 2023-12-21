@@ -946,12 +946,12 @@ Tensor& AllDimOut(const Tensor& self, int64_t dim, bool keepdim, Tensor& out) {
 
   return out;
 }
-// TODO(zaixing.wang): mudnn ReduceIndices only support float, int64 input
-Tensor& ArgmaxOut(
+void ArgMinOrMaxOutTemplate(
     const Tensor& self,
     c10::optional<int64_t> dim,
     bool keepdim,
-    Tensor& result) {
+    Tensor& result,
+    ::musa::dnn::Reduce::Mode m) {
   Tensor contiguous_self = self.contiguous();
   if (!dim.has_value()) {
     contiguous_self = contiguous_self.flatten();
@@ -959,8 +959,25 @@ Tensor& ArgmaxOut(
   Tensor out_data =
       at::empty(result.sizes(), self.options().dtype(self.scalar_type()));
   auto dim_ = dim.has_value() ? maybe_wrap_dim(dim.value(), self.dim()) : 0;
-  ReduceIndicesCall(
-      out_data, result, contiguous_self, dim_, ::musa::dnn::Reduce::Mode::MAX);
+  ReduceIndicesCall(out_data, result, contiguous_self, dim_, m);
+}
+Tensor& ArgmaxOut(
+    const Tensor& self,
+    c10::optional<int64_t> dim,
+    bool keepdim,
+    Tensor& result) {
+  ArgMinOrMaxOutTemplate(
+      self, dim, keepdim, result, ::musa::dnn::Reduce::Mode::MAX);
+  return result;
+}
+
+Tensor& ArgminOut(
+    const Tensor& self,
+    c10::optional<int64_t> dim,
+    bool keepdim,
+    Tensor& result) {
+  ArgMinOrMaxOutTemplate(
+      self, dim, keepdim, result, ::musa::dnn::Reduce::Mode::MIN);
   return result;
 }
 
@@ -1144,6 +1161,7 @@ ADVANCED_REGISTER(aten, PrivateUse1, "all", All)
 ADVANCED_REGISTER(aten, PrivateUse1, "all.dim", AllDim)
 ADVANCED_REGISTER(aten, PrivateUse1, "all.out", AllDimOut)
 ADVANCED_REGISTER(aten, PrivateUse1, "argmax.out", ArgmaxOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "argmin.out", ArgminOut)
 
 ADVANCED_REGISTER(aten, PrivateUse1, "var_mean.correction", VarMeanCorrection)
 ADVANCED_REGISTER(aten, PrivateUse1, "var.correction", VarCorrection)

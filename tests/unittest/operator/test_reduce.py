@@ -6,14 +6,15 @@ import torch
 from torch_musa import testing
 
 input_data = [
-        {"input": torch.randn([1, 10]), "dim": 1},
-        {"input": torch.randn([1, 10, 5]), "dim": 2},
-        {"input": torch.randn([1, 10, 5, 5]), "dim": 3},
-        {"input": torch.randn([1, 10, 5, 5, 10]), "dim": 4},
-        {"input": torch.randn([9, 8, 7, 6, 5, 4]), "dim": 5},
-        {"input": torch.randn([9, 8, 7, 6, 5, 4, 16]), "dim": 5},
-        {"input": torch.randn([9, 8, 7, 6, 5, 4, 5, 20]), "dim": 7}
+    {"input": torch.randn([1, 10]), "dim": 1},
+    {"input": torch.randn([1, 10, 5]), "dim": 2},
+    {"input": torch.randn([1, 10, 5, 5]), "dim": 3},
+    {"input": torch.randn([1, 10, 5, 5, 10]), "dim": 4},
+    {"input": torch.randn([9, 8, 7, 6, 5, 4]), "dim": 5},
+    {"input": torch.randn([9, 8, 7, 6, 5, 4, 16]), "dim": 5},
+    {"input": torch.randn([9, 8, 7, 6, 5, 4, 5, 20]), "dim": 7}
 ]
+
 
 def function(input_data, dtype, func):
     if isinstance(input_data["input"], torch.Tensor):
@@ -23,11 +24,13 @@ def function(input_data, dtype, func):
                           comparators=testing.DefaultComparator(abs_diff=1e-5))
     test.check_result()
 
+
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_amax(input_data, dtype):
     function(input_data, dtype, torch.amax)
+
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
@@ -35,22 +38,26 @@ def test_amax(input_data, dtype):
 def test_mean(input_data, dtype):
     function(input_data, dtype, torch.mean)
 
+
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_sum(input_data, dtype):
     function(input_data, dtype, torch.sum)
 
+
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("config",
-    [[(15000,), (0)],
-     [(182403,), (0)],
-     [(242, 342, 52, 2), (3)],
-    ]
-)
+                         [[(15000,), (0)],
+                          [(182403,), (0)],
+                             [(242, 342, 52, 2), (3)],
+                          ]
+                         )
 def test_sum_bool(config):
-    input_data = {"input": torch.randint(low=0, high=2, size=config[0]), "dim": config[1]}
+    input_data = {"input": torch.randint(
+        low=0, high=2, size=config[0]), "dim": config[1]}
     function(input_data, torch.bool, torch.sum)
+
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
@@ -58,11 +65,13 @@ def test_sum_bool(config):
 def test_logsumexp(input_data, dtype):
     function(input_data, dtype, torch.logsumexp)
 
+
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_prod(input_data, dtype):
     function(input_data, dtype, torch.prod)
+
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
@@ -70,28 +79,34 @@ def test_prod(input_data, dtype):
 def test_norm(input_data, dtype):
     function(input_data, dtype, torch.norm)
 
+
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
 def test_norm_fp16(input_data):
-    input_data["input"] = input_data["input"].to(torch.float16).to(torch.float32)
+    input_data["input"] = input_data["input"].to(
+        torch.float16).to(torch.float32)
     test = testing.OpTest(func=torch.norm, input_args=input_data,
                           comparators=testing.DefaultComparator(abs_diff=1e-2))
     test.check_musafp16_vs_musafp32()
 
+
 extra_data_for_cumsum = [
-        {"input": torch.rand(3, 4) < 0.5, "dim": 1},
-        {"input": torch.rand([1, 10, 5]) < 0.5, "dim": 2},
-        {"input": torch.rand([1, 10, 5, 5]) < 0.5, "dim": 3},
-        {"input": torch.rand([1, 10, 5, 5, 10]) < 0.5, "dim": 4},
-        {"input": torch.rand([9, 8, 7, 6, 5, 4]) < 0.5, "dim": 5},
-        {"input": torch.rand([9, 8, 7, 6, 5, 4, 16]) < 0.5, "dim": 5},
-        {"input": torch.rand([9, 8, 7, 6, 5, 4, 5, 20]) < 0.5, "dim": 7}
+    {"input": torch.rand(3, 4) < 0.5, "dim": 1},
+    {"input": torch.rand([1, 10, 5]) < 0.5, "dim": 2},
+    {"input": torch.rand([1, 10, 5, 5]) < 0.5, "dim": 3},
+    {"input": torch.rand([1, 10, 5, 5, 10]) < 0.5, "dim": 4},
+    {"input": torch.rand([9, 8, 7, 6, 5, 4]) < 0.5, "dim": 5},
+    {"input": torch.rand([9, 8, 7, 6, 5, 4, 16]) < 0.5, "dim": 5},
+    {"input": torch.rand([9, 8, 7, 6, 5, 4, 5, 20]) < 0.5, "dim": 7}
 ]
+
+
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data+extra_data_for_cumsum)
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_cumsum(input_data, dtype):
     function(input_data, dtype, torch.cumsum)
+
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
@@ -99,17 +114,20 @@ def test_cumsum(input_data, dtype):
 def test_any(input_data, dtype):
     function(input_data, dtype, torch.any)
 
+
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_max(input_data, dtype):
     function(input_data, dtype, torch.max)
 
+
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_max_out(input_data, dtype):
     cmp = testing.DefaultComparator()
+
     def max_fwd(device="cpu"):
         x = input_data["input"].to(device).to(dtype)
         max_values = torch.tensor([], device=device, dtype=dtype)
@@ -123,11 +141,13 @@ def test_max_out(input_data, dtype):
     cmp(max_values, max_values_musa.cpu())
     cmp(indices, indices_musa.cpu())
 
+
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_min(input_data, dtype):
     function(input_data, dtype, torch.min)
+
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
@@ -135,11 +155,19 @@ def test_min(input_data, dtype):
 def test_all(input_data, dtype):
     function(input_data, dtype, torch.all)
 
+
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
-@pytest.mark.parametrize("dtype", [torch.float32])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.half])
 def test_argmax(input_data, dtype):
     function(input_data, dtype, torch.argmax)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_data)
+@pytest.mark.parametrize("dtype", [torch.float32, torch.half])
+def test_argmin(input_data, dtype):
+    function(input_data, dtype, torch.argmin)
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -193,6 +221,8 @@ any_all_integer_input_data = [
     {"input": torch.randint(-1, 1, [9, 8, 7, 6, 5, 4, 16])},
     {"input": torch.randint(-1, 1, [9, 8, 7, 6, 5, 4, 5, 20])}
 ]
+
+
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", any_all_integer_input_data)
 @pytest.mark.parametrize("dtype", [torch.int32, torch.int64])
