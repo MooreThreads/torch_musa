@@ -18,7 +18,7 @@ struct AtomicFPOp<__mt_bfloat16> {
   template <typename func_t>
   inline __device__ __mt_bfloat16
   operator()(__mt_bfloat16* address, __mt_bfloat16 val, const func_t& func) {
-#if (defined(MUSA_ARCH) && MUSA_ARCH >= 220)
+#if (defined(__MUSA_ARCH__) && __MUSA_ARCH__ >= 220)
     unsigned int* address_as_ui =
         (unsigned int*)((char*)address - ((size_t)address & 2));
     unsigned int old = *address_as_ui;
@@ -141,7 +141,7 @@ static inline __device__ __mt_bfloat16
 gpuAtomicAdd(__mt_bfloat16* address, __mt_bfloat16 val) {
   // TODO(@mt-ai): verify the correctness of `atomicAdd(address, val)` on
   // suitable mcc
-  AtomicFPOp<__mt_bfloat16>()(address, val, []() {});
+  return AtomicFPOp<__mt_bfloat16>()(address, val, []() {});
 }
 
 static inline __device__ void gpuAtomicAdd(uint8_t* address, uint8_t val) {

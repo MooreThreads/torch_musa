@@ -4,10 +4,9 @@
 #include <ATen/core/List.h>
 #include <ATen/core/Tensor.h>
 
-#include <musa_bf16.h>
-#include <musa_fp16.h>
 #include "torch_musa/csrc/aten/mudnn/Handle.h"
 #include "torch_musa/csrc/aten/musa/MUSAAtomic.muh"
+#include "torch_musa/csrc/aten/musa/MUSADtype.muh"
 #include "torch_musa/csrc/aten/musa/MUSAMath.muh"
 #include "torch_musa/csrc/aten/ops/TensorShape.h"
 #include "torch_musa/csrc/aten/ops/musa/IndexUtils.muh"
@@ -16,9 +15,6 @@
 
 namespace at {
 namespace native {
-
-typedef __half float16_t;
-typedef __mt_bfloat16 bfloat16_t;
 
 namespace {
 constexpr int MAX_DIM = kMaxDim;

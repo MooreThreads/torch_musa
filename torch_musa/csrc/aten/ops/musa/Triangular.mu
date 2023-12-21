@@ -1,8 +1,6 @@
 #include <ATen/ATen.h>
 #include <ATen/core/Tensor.h>
 
-#include <musa_bf16.h>
-#include <musa_fp16.h>
 #include "torch_musa/csrc/aten/mudnn/Handle.h"
 #include "torch_musa/csrc/aten/musa/MUSADtype.muh"
 #include "torch_musa/csrc/aten/musa/MUSAMath.muh"
@@ -12,13 +10,6 @@
 
 namespace at {
 namespace native {
-
-typedef __half float16_t;
-#if (defined(MUSA_ARCH) && MUSA_ARCH >= 220)
-typedef __mt_bfloat16 bfloat16_t;
-#else
-typedef int16_t bfloat16_t;
-#endif
 
 namespace {
 

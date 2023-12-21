@@ -12,7 +12,7 @@ namespace at {
 namespace musa {
 
 typedef __half float16_t;
-#if (defined(MUSA_ARCH) && MUSA_ARCH >= 220)
+#if defined(__MUSACC__) && (__MUSA_ARCH__ >= 220 || !defined(__MUSA_ARCH__))
 typedef __mt_bfloat16 bfloat16_t;
 #else
 typedef int16_t bfloat16_t;
@@ -57,7 +57,7 @@ typedef int16_t bfloat16_t;
   }
 
 SELF_VEC_DEF(float16_t, Half2, Half4)
-#if (defined(MUSA_ARCH) && MUSA_ARCH >= 220)
+#if defined(__MUSACC__) && (__MUSA_ARCH__ >= 220 || !defined(__MUSA_ARCH__))
 SELF_VEC_DEF(bfloat16_t, Bhalf2, Bhalf4)
 #endif
 
@@ -80,7 +80,7 @@ GEN_VECTYPE(int16_t, Short16, 32, 16);
 GEN_VECTYPE(uint16_t, Ushort8, 16, 8);
 GEN_VECTYPE(float, Float8, 32, 8);
 GEN_VECTYPE(bool, Bool, 8, 8);
-#if (defined(MUSA_ARCH) && MUSA_ARCH >= 220)
+#if defined(__MUSACC__) && (__MUSA_ARCH__ >= 220 || !defined(__MUSA_ARCH__))
 GEN_VECTYPE(bfloat16_t, Bhalf8, 16, 8);
 GEN_VECTYPE(bfloat16_t, Bhalf16, 32, 16);
 GEN_VECTYPE(bfloat16_t, Bhalf32, 64, 32);
@@ -113,7 +113,7 @@ class Dtype;
 
 INST(float, float2, float4);
 INST(float16_t, Half2, Half4);
-#if (defined(MUSA_ARCH) && MUSA_ARCH >= 220)
+#if defined(__MUSACC__) && (__MUSA_ARCH__ >= 220 || !defined(__MUSA_ARCH__))
 INST(bfloat16_t, Bhalf2, Bhalf4);
 #endif
 INST(bool, char2, char4);
@@ -242,7 +242,7 @@ DEF_VECT(float16_t, Half2);
 DEF_VECT(float16_t, Half4);
 DEF_VECT(float16_t, Half8);
 DEF_VECT(float16_t, Half16);
-#if (defined(MUSA_ARCH) && MUSA_ARCH >= 220)
+#if defined(__MUSACC__) && (__MUSA_ARCH__ >= 220 || !defined(__MUSA_ARCH__))
 DEF_VECT(bfloat16_t, bfloat16_t);
 DEF_VECT(bfloat16_t, Bhalf2);
 DEF_VECT(bfloat16_t, Bhalf4);
@@ -310,6 +310,12 @@ DEF_VECT(double, double4);
 #undef MACRO_UNROLL
 
 } // namespace musa
+
+namespace native {
+
+typedef musa::float16_t float16_t;
+typedef musa::bfloat16_t bfloat16_t;
+} // namespace native
 } // namespace at
 
 #endif // _TORCH_MUSA_CSRC_ATEN_UTILS_DTYPE_H_

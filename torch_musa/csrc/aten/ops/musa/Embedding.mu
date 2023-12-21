@@ -16,9 +16,6 @@ namespace native {
 
 namespace {
 
-using float16_t = musa::float16_t;
-using bfloat16_t = musa::bfloat16_t;
-
 template <typename scalar_t, typename index_t>
 __global__ void EmbeddingDenseBwdAtomicKernel(
     scalar_t* grad_weight,
