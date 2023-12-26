@@ -6,27 +6,31 @@
 
 #include <torch/library.h>
 
+#include "torch_musa/csrc/aten/ops/RangeFactories.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 #include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
+
 namespace at {
+
+namespace native {
+DEFINE_DISPATCH(arange_start_out_stub);
+REGISTER_NO_CPU_DISPATCH(arange_start_out_stub);
+} // namespace native
+
 namespace musa {
 
-// TODO(zaixing.wang): fp16 mark
 Tensor& ArangeStartOut(
     const Scalar& start,
     const Scalar& end,
     const Scalar& step,
     Tensor& out) {
   c10::musa::MUSAGuard device_guard(out.device());
-  return at::native::arange_cuda_out(start, end, step, out);
-}
-
-Tensor& ArangeOut(const Scalar& end, Tensor& result) {
-  return ArangeStartOut(/*start=*/0, end, /*step*/ 1, result);
+  at::native::arange_start_out_stub(kMUSA, start, end, step, out);
+  return out;
 }
 
 Tensor& range_out(

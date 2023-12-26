@@ -1,5 +1,5 @@
-#ifndef _TORCH_MUSA_CSRC_ATEN_UTILS_DTYPE_H_
-#define _TORCH_MUSA_CSRC_ATEN_UTILS_DTYPE_H_
+#ifndef _TORCH_MUSA_CSRC_ATEN_MUSA_MUSADTYPE_H_
+#define _TORCH_MUSA_CSRC_ATEN_MUSA_MUSADTYPE_H_
 
 #include <musa_runtime.h>
 #include <stdint.h>
@@ -318,4 +318,4 @@ typedef musa::bfloat16_t bfloat16_t;
 } // namespace native
 } // namespace at
 
-#endif // _TORCH_MUSA_CSRC_ATEN_UTILS_DTYPE_H_
+#endif // _TORCH_MUSA_CSRC_ATEN_MUSA_MUSADTYPE_H_
