@@ -59,7 +59,7 @@ all_inplace_funcs = [
 
 all_nn_funcs = [
     torch.nn.ReLU(),
-    # torch.nn.GELU(approximate="none"),
+    torch.nn.GELU(approximate="none"),
     torch.nn.SiLU(),
     torch.nn.LeakyReLU(),
     torch.nn.Hardswish(),
@@ -76,11 +76,8 @@ def function(input_data, dtype, func):
         input_data["min"] = input_data["min"].to(dtype)
     if "max" in input_data.keys() and isinstance(input_data["max"], torch.Tensor):
         input_data["max"] = input_data["max"].to(dtype)
-    if func in (torch.log, torch.log_):
-        test = testing.OpTest(func=func, input_args=input_data,
-                              comparators=testing.DefaultComparator(abs_diff=1e-6, equal_nan=True))
-    else:
-        test = testing.OpTest(func=func, input_args=input_data)
+    test = testing.OpTest(func=func, input_args=input_data,
+                            comparators=testing.DefaultComparator(abs_diff=1e-6, equal_nan=True))
     test.check_result()
 
 
@@ -151,24 +148,6 @@ def test_nn_funcs(input_data, dtype, func):
 
 
 # =================================== Test nn functions end ================================== #
-
-
-# =================================== Test torch.nn.GELU begin =================================== #
-@testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@pytest.mark.parametrize("input_data", input_datas)
-@pytest.mark.parametrize("dtype", [torch.float32])
-@pytest.mark.parametrize("func", [torch.nn.GELU(approximate="none")])
-def test_gelu(input_data, dtype, func):
-    input_data["input"] = input_data["input"].to(dtype)
-    test = testing.OpTest(
-        func=func,
-        input_args=input_data,
-        comparators=testing.DefaultComparator(abs_diff=1e-6),
-    )
-    test.check_result()
-
-
-# =================================== Test torch.nn.GELU end =================================== #
 
 
 # =================================== Test torch.clamp begin =================================== #

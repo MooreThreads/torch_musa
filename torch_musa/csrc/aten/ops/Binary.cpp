@@ -41,7 +41,6 @@
 #include <ATen/ops/greater_native.h>
 #include <ATen/ops/gt.h>
 #include <ATen/ops/gt_native.h>
-#include <ATen/ops/hardsigmoid_backward_native.h>
 #include <ATen/ops/hardswish_backward_native.h>
 #include <ATen/ops/heaviside_native.h>
 #include <ATen/ops/hypot_native.h>
@@ -924,110 +923,6 @@ struct structured_xlogy_out_out final
   std::array<std::reference_wrapper<Tensor>, 1> outputs_;
   c10::musa::OptionalMUSAGuard guard_;
 };
-
-struct structured_hardsigmoid_backward_out_functional final
-    : public at::native::structured_hardsigmoid_backward_out {
-  void set_output_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    auto current_device = guard_.current_device();
-    if (C10_UNLIKELY(current_device.has_value())) {
-      TORCH_INTERNAL_ASSERT(
-          *current_device == options.device(),
-          "structured kernels don't support multi-device outputs");
-    } else {
-      guard_.reset_device(options.device());
-    }
-    outputs_[output_idx] = create_out(sizes, strides, options);
-    // super must happen after, so that downstream can use maybe_get_output
-    // to retrieve the output
-    at::native::structured_hardsigmoid_backward_out::set_output_raw_strided(
-        output_idx, sizes, strides, options, names);
-  }
-  void set_output_raw_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    auto current_device = guard_.current_device();
-    if (C10_UNLIKELY(current_device.has_value())) {
-      TORCH_INTERNAL_ASSERT(
-          *current_device == options.device(),
-          "structured kernels don't support multi-device outputs");
-    } else {
-      guard_.reset_device(options.device());
-    }
-    outputs_[output_idx] = create_out(sizes, strides, options);
-    // super must happen after, so that downstream can use maybe_get_output
-    // to retrieve the output
-    at::native::structured_hardsigmoid_backward_out::set_output_raw_strided(
-        output_idx, sizes, strides, options, names);
-  }
-  const Tensor& maybe_get_output(int64_t output_idx) override {
-    return *outputs_[output_idx];
-  }
-  std::array<c10::ExclusivelyOwned<Tensor>, 1> outputs_;
-  c10::musa::OptionalMUSAGuard guard_;
-};
-
-struct structured_hardsigmoid_backward_out_out final
-    : public at::native::structured_hardsigmoid_backward_out {
-  structured_hardsigmoid_backward_out_out(Tensor& out0)
-      : outputs_{std::ref(out0)} {}
-  void set_output_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    auto current_device = guard_.current_device();
-    if (C10_UNLIKELY(current_device.has_value())) {
-      TORCH_INTERNAL_ASSERT(
-          *current_device == options.device(),
-          "structured kernels don't support multi-device outputs");
-    } else {
-      guard_.reset_device(options.device());
-    }
-    const auto& out = outputs_[output_idx].get();
-    resize_out(out, sizes, strides, options);
-    // super must happen after, so that downstream can use maybe_get_output
-    // to retrieve the output
-    at::native::structured_hardsigmoid_backward_out::set_output_raw_strided(
-        output_idx, sizes, strides, options, names);
-  }
-  void set_output_raw_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    auto current_device = guard_.current_device();
-    if (C10_UNLIKELY(current_device.has_value())) {
-      TORCH_INTERNAL_ASSERT(
-          *current_device == options.device(),
-          "structured kernels don't support multi-device outputs");
-    } else {
-      guard_.reset_device(options.device());
-    }
-    const auto& out = outputs_[output_idx].get();
-    resize_out(out, sizes, strides, options);
-    // super must happen after, so that downstream can use maybe_get_output
-    // to retrieve the output
-    at::native::structured_hardsigmoid_backward_out::set_output_raw_strided(
-        output_idx, sizes, strides, options, names);
-  }
-  const Tensor& maybe_get_output(int64_t output_idx) override {
-    return proxy_outputs_[output_idx].has_value() ? **proxy_outputs_[output_idx]
-                                                  : outputs_[output_idx].get();
-  }
-  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
-  std::array<c10::optional<c10::ExclusivelyOwned<Tensor>>, 1> proxy_outputs_;
-  c10::musa::OptionalMUSAGuard guard_;
-};
 } // namespace
 
 at::Tensor xlogy_Tensor(const at::Tensor& self, const at::Tensor& other) {
@@ -1055,31 +950,6 @@ at::Tensor& xlogy_out_OutTensor(
   op.meta(self, other);
   op.impl(self, other, op.maybe_get_output(0));
   return out;
-}
-
-at::Tensor HardSigmoidBwd(
-    const at::Tensor& grad_output,
-    const at::Tensor& self) {
-  structured_hardsigmoid_backward_out_functional op;
-  op.meta(grad_output, self);
-  op.impl(grad_output, self, *op.outputs_[0]);
-  return std::move(op.outputs_[0]).take();
-}
-
-at::Tensor& HardSigmoidBwd_out(
-    const at::Tensor& grad_output,
-    const at::Tensor& self,
-    at::Tensor& grad_input) {
-  structured_hardsigmoid_backward_out_out op(grad_input);
-  op.meta(grad_output, self);
-  op.impl(grad_output, self, op.maybe_get_output(0));
-  if (op.proxy_outputs_[0].has_value())
-    op.outputs_[0].get().copy_(**op.proxy_outputs_[0]);
-  return grad_input;
-}
-
-Tensor HardSwishBwd(const Tensor& grad_output, const Tensor& self) {
-  return at::native::hardswish_backward(grad_output, self);
 }
 
 bool MUSAEqual(const at::Tensor& self, const at::Tensor& other) {
@@ -1458,15 +1328,6 @@ ADVANCED_REGISTER(aten, PrivateUse1, "xlogy_.Tensor", xlogy__Tensor)
 ADVANCED_REGISTER(aten, PrivateUse1, "xlogy.OutTensor", xlogy_out_OutTensor)
 
 ADVANCED_REGISTER(aten, PrivateUse1, "pow.Tensor_Tensor_out", Pow_out)
-
-ADVANCED_REGISTER(aten, PrivateUse1, "hardswish_backward", HardSwishBwd)
-
-ADVANCED_REGISTER(aten, PrivateUse1, "hardsigmoid_backward", HardSigmoidBwd)
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "hardsigmoid_backward.grad_input",
-    HardSigmoidBwd_out)
 
 ADVANCED_REGISTER(aten, PrivateUse1, "floor_divide", FloorDivideTensor)
 ADVANCED_REGISTER(aten, PrivateUse1, "floor_divide_.Tensor", FloorDivide_Tensor)
