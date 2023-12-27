@@ -364,6 +364,49 @@ inline void TraversalItems(A arg1, Args... args) {
   TraversalItems(args...);
 }
 
+// A hack used to suppress warnings when overriding operators for CPU backend
+class SuppressOpOverrideWarningHandler : public c10::WarningHandler {
+ public:
+  void process(const c10::Warning& warning) {}
+};
+
+static c10::WarningHandler* GetSuppressOpOverrideHandler() {
+  static SuppressOpOverrideWarningHandler handler;
+  return &handler;
+};
+
+inline int EnterSuppressingOpOverrideWarning() {
+  c10::WarningUtils::set_warning_handler(GetSuppressOpOverrideHandler());
+  return 1;
+}
+
+inline int ExitSuppressingOpOverrideWarning() {
+  c10::WarningUtils::set_warning_handler(nullptr);
+  return 1;
+}
+
+#define CAT_HELPER(a, b) a##b
+#define CATVARS(a, b) CAT_HELPER(a, b)
+#define WARNING_VARNAME(var) CATVARS(var, __COUNTER__)
+
+#define OVERRIDE_SELECTIVE_OPERATOR_REGISTER_WITHOUT_WARNING(op, fn) \
+  static int WARNING_VARNAME(enter_selective_warning) =              \
+      EnterSuppressingOpOverrideWarning();                           \
+  TORCH_LIBRARY_IMPL(aten, BackendSelect, m) {                       \
+    m.impl(TORCH_SELECTIVE_NAME(op), TORCH_FN(fn));                  \
+  }                                                                  \
+  static int WARNING_VARNAME(exit_selective_warning) =               \
+      ExitSuppressingOpOverrideWarning();
+
+#define OVERRIDE_CPU_OPERATOR_REGISTER_WITHOUT_WARNING(op, fn) \
+  static int WARNING_VARNAME(enter_cpu_warning) =              \
+      EnterSuppressingOpOverrideWarning();                     \
+  TORCH_LIBRARY_IMPL(aten, CPU, m) {                           \
+    m.impl(op, TORCH_FN(fn));                                  \
+  }                                                            \
+  static int WARNING_VARNAME(exit_cpu_warning) =               \
+      ExitSuppressingOpOverrideWarning();
+
 } // namespace musa
 } // namespace at
 

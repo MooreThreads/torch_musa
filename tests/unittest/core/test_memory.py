@@ -1,5 +1,6 @@
 """Unittest for memory APIs."""
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import, unused-variable, unexpected-keyword-arg
+# pylint: disable=invalid-name
 import pytest
 import torch
 from torch import nn
@@ -174,6 +175,62 @@ def test_pin_memory_dataloader_non_zero_device():
     for sample in loader:
         assert sample["a_tensor"].is_pinned("musa:1")
         assert sample["another_dict"]["a_number"].is_pinned("musa:1")
+
+
+def test_pin_memory():
+    """Test pin memory"""
+    x = torch.randn(20, 20)
+    assert not x.is_pinned()
+    if not torch.musa.is_available():
+        raise RuntimeError("MUSA is not available")
+
+    pinned = x.pin_memory()
+    assert pinned.is_pinned()
+    # The original tensor should be different from the pinned one.
+    assert pinned.data_ptr() != x.data_ptr()
+    # Pin already pinned tensor has no side-effect
+    assert pinned is pinned.pin_memory()
+    assert pinned.data_ptr() == pinned.pin_memory().data_ptr()
+
+
+def test_pin_memory_empty():
+    """Test pin memory for empty interface"""
+    x1 = torch.empty((3, 5), pin_memory=True)
+    x2 = x1.to("musa", non_blocking=True)
+    assert x1.is_pinned()
+    assert x2.is_musa
+
+    # TODO(mt-ai): enable the following test when empty_strided is supported
+    # x1 = torch.empty_strided((2, 3), (1, 2), pin_memory=True)
+    # x2 = x1.to("musa", non_blocking=True)
+    # assert x1.is_pinned()
+    # assert x2.is_musa
+
+
+def test_pin_memory_with_operator():
+    """Test pin memory using operator constructors"""
+    def _generate_tensors(**kwargs):
+        return [
+            torch.arange(2, 3, **kwargs),
+            torch.empty(2, **kwargs),
+            torch.eye(2, **kwargs),
+            torch.ones(2, **kwargs),
+            torch.rand(3, **kwargs),
+            torch.randn(2, 3, **kwargs),
+            torch.randperm(3, **kwargs),
+            torch.tensor([2, 3], **kwargs),
+            torch.zeros(3, **kwargs)]
+
+    pinned_tensors = _generate_tensors(pin_memory=True)
+    for x in pinned_tensors:
+        assert x.is_pinned()
+
+        x1 = x.to("musa")
+        assert x1.is_musa
+
+    tensors = _generate_tensors()
+    for x in tensors:
+        assert not x.is_pinned()
 
 
 @pytest.mark.skipif(True, reason="waiting musa toolkit fix")
