@@ -40,26 +40,19 @@ namespace at {
 
 namespace native {
 
+DEFINE_DISPATCH(multinomial_with_replacement_stub);
+} // namespace native
+
+namespace musa {
+
 /* The largest consecutive integer representable in float32 (2^24) */
 constexpr int64_t FLOAT32_MAX_CONSECUTIVE_INT = 1 << (FLT_MANT_DIG);
 
-DEFINE_DISPATCH(multinomial_with_replacement_stub);
-
-at::Tensor multinomial(
+at::Tensor& MultinomialOut(
     const at::Tensor& self,
     int64_t num_samples,
     bool replacement,
-    c10::optional<at::Generator> generator) {
-  Tensor result = at::empty({0}, self.options().dtype(at::kLong));
-  return at::native::multinomial_out(
-      self, num_samples, replacement, generator, result);
-}
-
-at::Tensor& multinomial_out(
-    const Tensor& self,
-    int64_t n_sample,
-    bool with_replacement,
-    c10::optional<Generator> gen,
+    c10::optional<at::Generator> generator,
     Tensor& result) {
   TORCH_CHECK(
       result.device() == self.device(),
@@ -72,31 +65,37 @@ at::Tensor& multinomial_out(
       self.scalar_type());
   TORCH_CHECK(
       result.scalar_type() == ScalarType::Long,
-      "multinomial expects Long tensor out, got: ",
+      "multinomial expects Long tensor result, got: ",
       result.scalar_type());
-  TORCH_CHECK(n_sample > 0, "cannot sample n_sample <= 0 samples");
+  TORCH_CHECK(num_samples > 0, "cannot sample num_samples <= 0 samples");
   int64_t n_categories = self.size(-1);
   TORCH_CHECK(
-      with_replacement || (n_sample <= n_categories),
-      "cannot sample n_sample > prob_dist.size(-1) samples without replacement");
-
+      replacement || (num_samples <= n_categories),
+      "cannot sample num_samples > prob_dist.size(-1) samples without replacement");
   // Since the index tensor is float, numCategories cannot exceed max
   // float integer precision
   TORCH_CHECK(
       n_categories <= FLOAT32_MAX_CONSECUTIVE_INT,
       "number of categories cannot exceed 2^24");
 
+  c10::optional<Device> common_device = nullopt;
+  c10::impl::check_and_update_common_device(
+      common_device, self, "MultinomialOut", "self");
+  c10::impl::check_and_update_common_device(
+      common_device, result, "MultinomialOut", "result");
+  const c10::OptionalDeviceGuard device_guard(device_of(self));
+
   if (self.dim() == 1) {
-    result.resize_({n_sample});
+    result.resize_({num_samples});
   } else {
     const int64_t n_dist = self.size(0);
-    result.resize_({n_dist, n_sample});
+    result.resize_({n_dist, num_samples});
   }
   if (result.numel() == 0) {
     return result;
   }
 
-  if (!with_replacement || n_sample == 1) {
+  if (!replacement) {
     // Sanity checks on `self`.
     auto is_valid = ((self.max() < INFINITY) & (self.min() >= 0)).item();
     TORCH_CHECK(
@@ -120,56 +119,39 @@ at::Tensor& multinomial_out(
     // s = argmax( p / (-log(eps)) ) where eps ~ U(0, 1).
     // We can also simplify the formula above by
     // s = argmax( p / q ) where q ~ Exp(1)
-    Tensor q = at::empty_like(self).exponential_(1, std::move(gen));
+    Tensor q = at::empty_like(self).exponential_(1, std::move(generator));
     // In theory the probability to generate 0 from exponential distribution is
-    // 0. However, on CUDA side there is a protection to avoid 0s, but on CPU
+    // 0. However, on CUDA side there is a protection to avoid 0s, but on MUSA
     // side, there is a very low probability to generate 0 from
-    // exponential<double>. The probability is about 2^(-DBL_MANT_DIG). We just
-    // ignore it here, but there may be some risk to get invalid output on CPU.
+    // exponential<double>. The probability is about 2^(-DBL_MANT_DIG), which
+    // would cause metrics degradation of LLMs, so we disable gumbel-max trick
+    // thing, just call stub kernel instead.
     at::div_out(q, self, q);
-    if (n_sample == 1) {
-      at::argmax_out(result, q, /*dim=*/-1, /*keepdim=*/true);
+    if (num_samples == 1) {
+      // for num_samples == 1, it doesn't matter that replacement is true or
+      // false
+      // TODO(@mt-ai): we should check this "generator" thing
+      at::native::multinomial_with_replacement_stub(
+          kMUSA, result, self, num_samples, generator);
     } else {
       Tensor vals = at::empty(result.sizes(), self.options());
-      at::topk_out(vals, result, q, n_sample);
+      at::topk_out(vals, result, q, num_samples);
     }
     return result;
   }
 
-  multinomial_with_replacement_stub(
-      result.device().type(), result, self, n_sample, gen);
+  at::native::multinomial_with_replacement_stub(
+      kMUSA, result, self, num_samples, generator);
   return result;
 }
-
-} // namespace native
-namespace musa {
 
 at::Tensor Multinomial(
     const at::Tensor& self,
     int64_t num_samples,
     bool replacement,
     c10::optional<at::Generator> generator) {
-  c10::optional<Device> common_device = nullopt;
-  c10::impl::check_and_update_common_device(
-      common_device, self, "Multinomial", "self");
-  const c10::OptionalDeviceGuard device_guard(device_of(self));
-  return at::native::multinomial(self, num_samples, replacement, generator);
-}
-
-at::Tensor& MultinomialOut(
-    const at::Tensor& self,
-    int64_t num_samples,
-    bool replacement,
-    c10::optional<at::Generator> generator,
-    Tensor& out) {
-  c10::optional<Device> common_device = nullopt;
-  c10::impl::check_and_update_common_device(
-      common_device, self, "MultinomialOut", "self");
-  c10::impl::check_and_update_common_device(
-      common_device, out, "MultinomialOut", "out");
-  const c10::OptionalDeviceGuard device_guard(device_of(self));
-  return at::native::multinomial_out(
-      self, num_samples, replacement, generator, out);
+  Tensor result = at::empty({0}, self.options().dtype(at::kLong));
+  return MultinomialOut(self, num_samples, replacement, generator, result);
 }
 
 ADVANCED_REGISTER(aten, PrivateUse1, "multinomial", Multinomial)
