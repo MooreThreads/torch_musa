@@ -15,10 +15,10 @@ else
 fi
 
 mudnn_path=./release_mudnn_${DATE}
-wget --no-check-certificate https://oss.mthreads.com/release-rc/cuda_compatible/dev1.5.1/${ARCH}/mudnn_rtm2.3.0-${ARCH}.tar -P ${mudnn_path}
-tar -xf ${mudnn_path}/mudnn_rtm2.3.0-${ARCH}.tar -C ${mudnn_path}
+wget --no-check-certificate https://oss.mthreads.com/release-rc/cuda_compatible/rc2.0.0/${ARCH}/mudnn_rc2.4.0-${ARCH}.tar.gz -P ${mudnn_path}
+tar -zxvf ${mudnn_path}/mudnn_rc2.4.0-${ARCH}.tar.gz -C ${mudnn_path}
 pushd ${mudnn_path}/mudnn
 bash install_mudnn.sh
 popd
-echo -e "\033[31mmudnn update to version rtm2.3.0! \033[0m"
+echo -e "\033[31mmudnn update to version rc2.4.0! \033[0m"
 rm -rf ${mudnn_path}

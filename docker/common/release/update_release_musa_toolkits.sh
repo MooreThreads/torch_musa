@@ -34,11 +34,11 @@ echo -e "\033[31mWarning: update musa toolkit will uninstall mccl and mudnn! \03
 rm -rf /usr/local/musa*
 musa_toolkit_path=./release_musa_toolkits_${DATE}
 mkdir -p ${musa_toolkit_path}
-wget --no-check-certificate https://oss.mthreads.com/release-rc/cuda_compatible/dev1.5.1/${ARCH}/musa_toolkits_dev1.5.1-${ARCH}.tar.gz -P ${musa_toolkit_path}
-tar -zxf ${musa_toolkit_path}/musa_toolkits_dev1.5.1-${ARCH}.tar.gz -C ${musa_toolkit_path}
+wget --no-check-certificate https://oss.mthreads.com/release-rc/cuda_compatible/rc2.0.0/${ARCH}/musa_toolkits_rc2.0.0-${ARCH}.tar.gz -P ${musa_toolkit_path}
+tar -zxf ${musa_toolkit_path}/musa_toolkits_rc2.0.0-${ARCH}.tar.gz -C ${musa_toolkit_path}
 pushd ${musa_toolkit_path}/musa_toolkits_install
 bash ./install.sh 
 popd
 
-echo -e "\033[31mmusa toolkits update to version dev1.5.1! \033[0m"
+echo -e "\033[31mmusa toolkits update to version rc2.0.0! \033[0m"
 rm -rf ${musa_toolkit_path}
