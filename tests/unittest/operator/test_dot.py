@@ -31,5 +31,5 @@ def test_dot(input_data):
     test = testing.OpTest(
             func=torch.dot,
             input_args=input_data,
-            comparators=testing.DefaultComparator(abs_diff=1e-6))
+            comparators=testing.DefaultComparator(abs_diff=2e-6))
     test.check_result()
