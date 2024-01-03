@@ -22,9 +22,8 @@ The scripts for updating the daily and release versions are located in their res
 
 ## **Release MUDNN:**
   ```shell
-  bash release/update_release_mudnn_temp.sh
+  bash release/update_release_mudnn.sh
   ```
- Please do not use docker/common/update_release_mudnn.sh for updates. It is specifically meant for the **torch_musa** CI (Continuous Integration) process.
 
 ## **Release MUSA Toolkits**
   ```shell
