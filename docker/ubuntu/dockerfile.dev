@@ -96,7 +96,5 @@ COPY ./common/test_musa.mu /home/test_musa.mu
 
 RUN chmod 777 /home/check_status.sh
 
-RUN echo "exec /bin/bash" >> /home/check_status.sh
-
 ENTRYPOINT ["/home/check_status.sh"]
 
