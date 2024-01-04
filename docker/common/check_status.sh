@@ -12,6 +12,7 @@ if [[ ! $mthreads_gmi_output =~ "Driver Version" ]]; then
     isSuccess=0
     if [ "$filesize" -eq 0 ]; then
         echo -e "\033[31mIf the size of mthreads-gmi is 0, musa container tool is abnormal. \033[0m"
+    fi
 else
     echo -e "\033[32mmthreads-gmi command check successfully! \033[0m"
 fi
