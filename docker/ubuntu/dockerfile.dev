@@ -50,7 +50,11 @@ ENV MUSA_HOME=/usr/local/musa
 ENV LD_LIBRARY_PATH=$MUSA_HOME/lib:$LD_LIBRARY_PATH
 ENV PATH=${MUSA_HOME}/bin:$PATH
 COPY ./torch_musa /home/torch_musa
-RUN pushd /home/torch_musa && \
+
+COPY ./common/change_conda_mirror.sh change_conda_mirror.sh 
+RUN bash change_conda_mirror.sh && \
+    rm change_conda_mirror.sh && \	
+    pushd /home/torch_musa && \
     # if mkl was not installed via pip
     # pytorch will look for it under /opt/intel/oneapi
     pip install -r requirements.txt && \
