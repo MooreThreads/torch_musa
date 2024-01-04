@@ -2,7 +2,7 @@
 set -e
 
 MINICONDA_FILE="Miniconda3-latest-Linux-x86_64.sh"
-MINICONDA_URL="https://repo.anaconda.com/miniconda/${MINICONDA_FILE}"
+MINICONDA_URL="https://mirrors.ustc.edu.cn/anaconda/miniconda/${MINICONDA_FILE}"
 
 mkdir -p /opt
 cd /opt && \
