@@ -17,5 +17,6 @@
    ./5_quickguide/index
    ./6_support_new_operators/index
    ./7_support_customized_operators/index
-   ./8_FAQ/index
+   ./8_debug_tools/index
+   ./9_FAQ/index
 
