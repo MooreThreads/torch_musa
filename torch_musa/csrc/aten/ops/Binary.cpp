@@ -80,8 +80,6 @@
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/utils/register_wrapper.h"
 
-#include <ATen/ops/slice.h>
-#include <limits.h>
 #include <mudnn.h>
 
 namespace at {
