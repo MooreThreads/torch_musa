@@ -43,7 +43,7 @@ class RawSDP(torch.nn.Module):
             new_mask = torch.zeros_like(
                 attn_mask, dtype=query.dtype, device=query.device)
             attn_mask = new_mask.masked_fill(
-                ~attn_mask, torch.finfo(query.dtype).min)
+                ~attn_mask, torch.finfo(query.dtype).min)  # pylint: disable=invalid-unary-operand-type
 
         if attn_mask is not None and attn_mask.shape == (batch_size, q_seq_len):
             # we should make the mask broadcastable to the atten_probs
