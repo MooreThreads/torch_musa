@@ -466,7 +466,7 @@ class OpTest:
                     selected = torch.abs(c_r[mask_t] - m_r[mask_t])
                     info_str = f"Max abs error: {selected.max().item()}"
 
-                assert comparator(c_r, m_r), info_str
+                assert res, info_str
 
     def check_musafp16_vs_musafp16(self, inputs=None, train=False, test_out=False):
         '''
@@ -485,7 +485,8 @@ class OpTest:
         self.compare_res(fp32_res, fp16_res)
 
     def check_musabf16_vs_musafp16(self, inputs=None, train=False, test_out=False):
-        fp16_res = self._call_func(inputs, "musa", train, test_out, refer=True, fp16=True)
+        fp16_res = self._call_func(
+            inputs, "musa", train, test_out, refer=True, fp16=True)
         bf16_res = self._call_func(inputs, "musa", train, test_out, bf16=True)
         self.compare_res(fp16_res, bf16_res)
 

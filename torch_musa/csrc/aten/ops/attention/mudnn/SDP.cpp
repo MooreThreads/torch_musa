@@ -216,7 +216,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> MuDNNMathSDPABwd(
   return std::make_tuple(grad_query, grad_key, grad_value);
 }
 
-std::tuple<at::Tensor, at::Tensor> MuDNNFlashSDPAFwd(
+std::tuple<at::Tensor, at::Tensor, at::Tensor> MuDNNFlashSDPAFwd(
     const at::Tensor& query,
     const at::Tensor& key,
     const at::Tensor& value,
@@ -329,7 +329,7 @@ std::tuple<at::Tensor, at::Tensor> MuDNNFlashSDPAFwd(
           at::musa::InternalMemAlloc),
       "Run SDPA");
 
-  return std::make_tuple(output, dropout_mask);
+  return std::make_tuple(output, log_sum_exp, dropout_mask);
 }
 
 std::tuple<at::Tensor, at::Tensor, at::Tensor> MuDNNFlashSDPABwd(
@@ -338,9 +338,78 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> MuDNNFlashSDPABwd(
     const at::Tensor& key,
     const at::Tensor& value,
     const at::Tensor& output,
-    const at::Tensor& dropout_mask){TORCH_CHECK(
-    false,
-    "FlashAttention in MUSA backned doesn't support backward now. \nPlease disable the flash attention with `torch.backends.cuda.sdp_kernel(enable_flash=False)` if you want to train model temporarily.")}
+    const at::Tensor& logsumexp,
+    const at::Tensor& dropout_mask,
+    const c10::optional<Tensor>& mask) {
+  c10::musa::MUSAGuard device_guard(query.device());
+
+  musa::muTensor musa_q, musa_k, musa_v;
+  musa_q = at::musa::CreateMUTensor(query);
+  musa_k = at::musa::CreateMUTensor(key);
+  musa_v = at::musa::CreateMUTensor(value);
+
+  auto grad_query =
+      at::empty_like(query, query.options(), at::MemoryFormat::Contiguous);
+  auto musa_grad_query = at::musa::CreateMUTensor(grad_query);
+
+  auto grad_key =
+      at::empty_like(key, key.options(), at::MemoryFormat::Contiguous);
+  auto musa_grad_key = at::musa::CreateMUTensor(grad_key);
+
+  auto grad_value =
+      at::empty_like(value, value.options(), at::MemoryFormat::Contiguous);
+  auto musa_grad_value = at::musa::CreateMUTensor(grad_value);
+
+  auto reformatted_grad_output =
+      at::musa::ContiguousIfZeroInStrides(grad_output);
+  auto musa_grad_output = at::musa::CreateMUTensor(reformatted_grad_output);
+  auto musa_logsumexp = at::musa::CreateMUTensor(logsumexp);
+  auto musa_dropout_mask = at::musa::CreateMUTensor(dropout_mask);
+  auto musa_output = at::musa::CreateMUTensor(output);
+
+  musa::muHandle& h = at::GetMudnnHandle();
+  ::musa::dnn::ScaledDotProductAttention sdpa;
+
+  // check the mask
+  auto contiguous_mask = at::empty({0}); // should we keep this tensor in host?
+  // FIXME: (lms) temporarily check value defined.
+  if (mask.has_value() && mask.value().defined()) {
+    CHECK_MUDNN_STATUS(
+        sdpa.SetMaskMode(is_pad_mask(mask.value(), query)), "SetMaskMode");
+    contiguous_mask = mask.value().contiguous();
+  }
+  auto musa_mask = at::musa::CreateMUTensor(contiguous_mask);
+
+  auto head_dim = query.sizes()[3]; // head_dim
+  auto q_seq_len = query.sizes()[2]; // seq_len
+  auto head_num = query.sizes()[1]; // head_num
+  auto batch_size = query.sizes()[0]; // batch_size
+  auto kv_seq_len = key.size(2);
+
+  // batchfirst doesn't takes effect in SDPA actually.
+  CHECK_MUDNN_STATUS(sdpa.SetEmbedDim(head_num * head_dim), "SetEmbedDim");
+  CHECK_MUDNN_STATUS(sdpa.SetHeadsNum(head_num), "SetHeadsNum");
+  CHECK_MUDNN_STATUS(sdpa.SetTraining(true), "SetTraining");
+
+  CHECK_MUDNN_STATUS(
+      sdpa.RunFlashBwd(
+          h,
+          musa_grad_query,
+          musa_grad_key,
+          musa_grad_value,
+          musa_grad_output,
+          musa_q,
+          musa_k,
+          musa_v,
+          musa_mask,
+          musa_output,
+          musa_logsumexp,
+          musa_dropout_mask,
+          at::musa::InternalMemAlloc),
+      "Run SDPA Flash BWD.");
+
+  return std::make_tuple(grad_query, grad_key, grad_value);
+}
 
 ADVANCED_REGISTER(
     aten,

@@ -10,8 +10,9 @@ from torch_musa import testing
 from torch_musa.testing.base_test_tool import DefaultComparator
 
 
-# MASK_TYPES = [-1]
-MASK_TYPES = [1, 0, -1]
+# NOTE(yutian): 4d mask, 2: 4d float, 3: 4d bool
+# FIXME(yutian) Check the mask type equals to 4
+MASK_TYPES = [-1, 0, 1, 2]
 # ============ Below are only for ScaledDotProductAttention Tests. ===========
 
 
@@ -41,7 +42,8 @@ class RawSDP(torch.nn.Module):
         if attn_mask is not None and attn_mask.dtype == torch.bool:
             new_mask = torch.zeros_like(
                 attn_mask, dtype=query.dtype, device=query.device)
-            attn_mask = new_mask.masked_fill(attn_mask, -float('inf'))
+            attn_mask = new_mask.masked_fill(
+                ~attn_mask, torch.finfo(query.dtype).min)
 
         if attn_mask is not None and attn_mask.shape == (batch_size, q_seq_len):
             # we should make the mask broadcastable to the atten_probs
@@ -49,7 +51,7 @@ class RawSDP(torch.nn.Module):
         if attn_mask is not None:
             attn_weight = attn_weight + attn_mask
         attn_weight = torch.softmax(
-            attn_weight, dim=-1)
+            attn_weight, dim=-1, dtype=torch.float32).to(query.dtype)
 
         if dropout_p > 0:
             attn_weight = torch.dropout(attn_weight, dropout_p, train=True)
@@ -70,7 +72,19 @@ def sdp_cases():
         [(16, 32, 128), 128, 4],
         [(128, 32, 1024), 1024, 16],
         [(2, 512, 2048), 2048, 32],
-        [(2, 1024, 4096), 4096, 32]
+        [(2, 1024, 4096), 4096, 32],
+        [(4, 2048, 2048), 2048, 16],
+        [(1, 4096, 8192), 8192, 64],
+        [(1, 4096, 4096), 4096, 32],
+        [(1, 4096, 2048), 2048, 16],
+        [(2, 4096, 1024), 1024, 8],
+        [(2, 4096, 8192), 8192, 64],
+        [(2, 4096, 4096), 4096, 32],
+        [(2, 4096, 2048), 2048, 16],
+        [(2, 4096, 1024), 1024, 8],
+        [(1, 2048, 1024), 1024, 8],
+        # [(30, 2048, 4096), 4096, 32]
+        # [(1, 4096, 6656), 6656, 52]
     ]
 
 
@@ -80,6 +94,42 @@ def sdp_func(query, key, value, attn_mask=None, dropout_p=0.0, is_casual=False):
         # we should make the mask broadcastable to the atten_probs
         attn_mask = attn_mask.view(batch_size, 1, 1, seq_len)
     return F.scaled_dot_product_attention(query, key, value, attn_mask, dropout_p, is_casual)
+
+
+def make_causal_4d_mask_float(
+    input_ids_shape,
+    dtype: torch.dtype,
+    device: torch.device = torch.device("cpu")
+):
+    """
+    Make Casual 4D float mask
+    """
+    bsz, tgt_len = input_ids_shape
+    mask = torch.full((tgt_len, tgt_len),
+                      torch.finfo(dtype).min, device=device)
+    mask_cond = torch.arange(mask.size(-1), device=device)
+    mask.masked_fill_(mask_cond < (mask_cond + 1).view(mask.size(-1), 1), 0)
+    mask = mask.to(dtype)
+    return mask[None, None, :, :].expand(
+        bsz, 1, tgt_len, tgt_len
+    )
+
+
+def make_causal_4d_mask_bool(
+    input_ids_shape,
+    device: torch.device = torch.device("cpu"),
+):
+    """
+    Make Casual 4D bool mask
+    """
+
+    bsz, tgt_len = input_ids_shape
+    mask = torch.tril(torch.ones(
+        (bsz, tgt_len, tgt_len), device=device)).view(
+            bsz, 1, tgt_len, tgt_len)
+    mask = mask > 0.5
+
+    return mask
 
 
 def generate_square_subsequent_mask(seq_len: int):
@@ -142,10 +192,17 @@ def gen_input_data(case, mask_type, dtype=torch.float32, is_self_attention=False
     elif mask_type == 0:
         # key padding
         mask = generate_square_subsequent_mask(seq_len)
+    elif mask_type == 2:
+        mask = make_causal_4d_mask_float((batch_size, seq_len), dtype=dtype)
+    elif mask_type == 3:
+        mask = make_causal_4d_mask_bool((batch_size, seq_len))
+    elif mask_type == 4:
+        mask = ~make_causal_4d_mask_bool((batch_size, seq_len))
     else:
         mask = None
 
-    mask = mask.to(q.dtype) if mask is not None else mask
+    if mask is not None and mask.dtype != torch.bool:
+        mask = mask.to(q.dtype)
 
     item["attn_mask"] = mask
 
@@ -161,8 +218,9 @@ def function(input_data, func, train=False):
     assert "key" in input_data
     assert "value" in input_data
 
-    # Warning: mudnn SDP numerical untability, have to set abs_diff=5e-2, rel_diff=1e-3
-    comparator = DefaultComparator(abs_diff=5e-2, rel_diff=2e-3)
+    # FIXME(lms):  mudnn SDP numerical untability, have to set abs_diff=5e-2, rel_diff=1e-3
+    # mudnn has: abs_diff=2e-3, rel_diff=2e-3
+    comparator = DefaultComparator(abs_diff=5e-2, rel_diff=1e-3)
     refer_func = None
     is_half_or_fp16 = input_data["query"].dtype in {torch.half, torch.bfloat16}
     if is_half_or_fp16:
@@ -178,6 +236,7 @@ def function(input_data, func, train=False):
         # CPU doesn't support half.
         test.check_musafp16_vs_musafp16(train=train)
     else:
+        # Our reference should use fp32 cpu result
         test.check_result(train=train)
 
 
@@ -230,3 +289,27 @@ def test_flash_sdp(case, dtype, func, mask_type, is_self_attn):
         input_data = gen_input_data(
             case, mask_type, dtype, is_self_attention=is_self_attn)
         function(input_data, func)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.skipif(f"{torch.musa.get_device_properties(torch.musa.current_device()).major}."
+                    f"{torch.musa.get_device_properties(torch.musa.current_device()).minor}"
+                    < "2.2", reason="SKIP this test if in GPU with arch below 2.2(QY2).")
+@pytest.mark.parametrize("case", sdp_cases())
+# FIXME:(lms) dtype bfloat16 tensor not supported now
+@pytest.mark.parametrize("dtype", [torch.half])
+@pytest.mark.parametrize("func", [sdp_func])
+@pytest.mark.parametrize("mask_type", MASK_TYPES)
+@pytest.mark.parametrize("is_self_attn", [True, False])
+def test_flash_sdp_backward(case, dtype, func, mask_type, is_self_attn):
+    """
+    Flash SDP test.
+    """
+    head_dim = case[-2]/case[-1]
+    if head_dim not in (64, 128):
+        pytest.skip(
+            reason="Flash backward doesn't support case with head dim not equal to 64 or 128")
+    with torch.backends.cuda.sdp_kernel(enable_math=False, enable_flash=True):
+        input_data = gen_input_data(
+            case, mask_type, dtype, is_self_attention=is_self_attn)
+        function(input_data, func, True)
