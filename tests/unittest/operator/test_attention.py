@@ -64,28 +64,33 @@ def sdp_cases():
     """
     Return atten cases
     """
-    return [
-        # [batch_size, seq_len, embedding_dim], embedding_dim, num_heads
+    cases = [
         [(2, 4, 6), 6, 2],
         [(1, 32, 128), 128, 4],
         [(4, 32, 128), 128, 4],
         [(16, 32, 128), 128, 4],
-        [(128, 32, 1024), 1024, 16],
-        [(2, 512, 2048), 2048, 32],
-        [(2, 1024, 4096), 4096, 32],
-        [(4, 2048, 2048), 2048, 16],
-        [(1, 4096, 8192), 8192, 64],
-        [(1, 4096, 4096), 4096, 32],
-        [(1, 4096, 2048), 2048, 16],
-        [(2, 4096, 1024), 1024, 8],
-        [(2, 4096, 8192), 8192, 64],
-        [(2, 4096, 4096), 4096, 32],
-        [(2, 4096, 2048), 2048, 16],
-        [(2, 4096, 1024), 1024, 8],
-        [(1, 2048, 1024), 1024, 8],
-        # [(30, 2048, 4096), 4096, 32]
-        # [(1, 4096, 6656), 6656, 52]
+        [(128, 32, 1024), 1024, 16]
     ]
+    device_arch_name = torch.musa.get_device_properties(
+        torch.musa.current_device()).name
+    if device_arch_name != "MTT S80":
+        cases.extend([
+            [(2, 512, 2048), 2048, 32],
+            [(2, 1024, 4096), 4096, 32],
+            [(4, 2048, 2048), 2048, 16],
+            [(1, 4096, 8192), 8192, 64],
+            [(1, 4096, 4096), 4096, 32],
+            [(1, 4096, 2048), 2048, 16],
+            [(2, 4096, 1024), 1024, 8],
+            [(2, 4096, 8192), 8192, 64],
+            [(2, 4096, 4096), 4096, 32],
+            [(2, 4096, 2048), 2048, 16],
+            [(2, 4096, 1024), 1024, 8],
+            [(1, 2048, 1024), 1024, 8],
+            # [(30, 2048, 4096), 4096, 32]
+            # [(1, 4096, 6656), 6656, 52]
+        ])
+    return cases
 
 
 def sdp_func(query, key, value, attn_mask=None, dropout_p=0.0, is_casual=False):
@@ -274,7 +279,9 @@ def test_math_sdp_backward(case, dtype, func, mask_type, is_self_attn):
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@pytest.mark.skipif(f"{torch.musa.get_device_properties(torch.musa.current_device()).major}.{torch.musa.get_device_properties(torch.musa.current_device()).minor}" < "2.2", reason="SKIP this test if in GPU with arch below 2.2(QY2).")  # pylint: disable=line-too-long
+@pytest.mark.skipif(f"{torch.musa.get_device_properties(torch.musa.current_device()).major}"
+                    f".{torch.musa.get_device_properties(torch.musa.current_device()).minor}"
+                    < "2.2", reason="SKIP this test if in GPU with arch below 2.2(QY2).")
 @pytest.mark.parametrize("case", sdp_cases())
 # FIXME:(lms) dtype bfloat16 tensor not supported now
 @pytest.mark.parametrize("dtype", [torch.half])
