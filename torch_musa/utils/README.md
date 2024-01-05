@@ -1,11 +1,161 @@
 # torch_musa utils
+
+<!-- toc -->
+- [MUSAExtension](#musaextension)
+- [LOGGER](#logger)
+- [CMakeListsGenerator](#cmakelistsgenerator)
+- [SimplePorting](#simpleporting)
+- [CompareTool](#comparetool)
+<!-- tocstop -->
+
 ## MUSAExtension
-MUSAExtension is a function which can do help to building MUSA backend for third party as CUDAExtension does the same thing for CUDA backend. What it differs from CUDAExtension is that it keeps the consistent interface with [CppExtension](https://pytorch.org/docs/stable/cpp_extension.html#torch.utils.cpp_extension.CppExtension) so parameter `extra_compile_args` is a list instead of a dict. Unlike nvcc, it is not conveniently to integrate mcc (MUSA Compiler Collection) into MUSAExtension. But CmakeManager which is from pytorch/tools can be utilized to facilitate the mcc compiling part.
+MUSAExtension is a function that helps third-party libraries build MUSA extensions. What it differs from CUDAExtension is that it keeps the consistent interface with [CppExtension](https://pytorch.org/docs/stable/cpp_extension.html#torch.utils.cpp_extension.CppExtension) so parameter `extra_compile_args` is a list instead of a dict. Unlike nvcc, it is not conveniently to integrate mcc (MUSA Compiler Collection) into MUSAExtension. But **CMake** which is from [pytorch/tools/setup_helpers/cmake.py](https://github.com/pytorch/pytorch/blob/main/tools/setup_helpers/cmake.py) can be utilized to facilitate the mcc compiling part.
 ```
 from torch_musa.utils.musa_extension import MUSAExtension
 
-ext_module: torch.utils.cpp_extension.CppExtension = MUSAExtension(name, sources, *args, **kwargs)
+# ext_module is an instance of torch.utils.cpp_extension.CppExtension
+ext_module = MUSAExtension(name, sources, *args, **kwargs)
 ```
+There is a simple MUSAExtension example which has the following catalogue structure:
+
+![image](../../docs/source/img/render_dir_tree.png)
+
+And the content of `setup_musa.py` is:
+```
+import os
+from setuptools import setup, find_packages
+from torch_musa.utils.simple_porting import SimplePorting
+from torch_musa.utils.musa_extension import MUSAExtension
+
+c_flags = []
+if os.name == "posix":
+    c_flags = ['-O3', '-std=c++14']
+
+# porting .cu to .mu
+SimplePorting(cuda_dir_path="freqencoder/src", mapping_rule={
+    "x.device().is_cuda()": "true",
+    "#include <ATen/cuda/CUDAContext.h>": "#include \"torch_musa/csrc/aten/musa/MUSAContext.h\"",
+    "#include <c10/cuda/CUDAGuard.h>": "#include \"torch_musa/csrc/core/MUSAGuard.h\"",
+    }).run()
+
+setup(
+    name='freqencoder', # package name, import this to use python API
+    ext_modules=[
+        MUSAExtension(
+            name='freqencoder._MUSAC', # extension name, import this to use MUSA API
+            sources=[os.path.join('freqencoder/src_musa', f) for f in [
+                'freqencoder.mu',
+                'bindings.cpp',
+            ]],
+            extra_compile_args=c_flags
+        ),
+    ],
+    package_dir={"": "../render"},
+    packages=find_packages(where="../render", exclude=["build"]),
+    package_data={
+        "freqencoder": [
+            "lib/*.so*",
+        ]
+    }
+)
+```
+
+Another example has the following catalogue structure:
+
+![image](../../docs/source/img/rwkv_dir_tree.png)
+
+We can see `setup.py` is not located at the same level with package but `MUSAExtension` can handle this situation. That is, it will copy the generated shared object to `rwkv/lib/`. In addition, the generated shared object should be also packed when we install the package. Hence there are two recommended ways:
+#### First way, set `package_data`, `package_dir` and `packages` in `setup` function like the following:
+
+The conten of `setup.py` is:
+```
+import os
+from setuptools import setup, find_packages
+from torch_musa.utils.simple_porting import SimplePorting
+from torch_musa.utils.musa_extension import MUSAExtension
+
+
+c_flags = []
+if os.name == "posix":
+    c_flags = ['-O3', '-std=c++14']
+
+# porting .cu to .mu
+SimplePorting(cuda_dir_path="/home/ChatRWKV/rwkv_pip_package/src/rwkv/cuda",
+            mapping_rule={
+                "WITH_CUDA": "WITH_MUSA",
+                "#include <ATen/cuda/CUDAContext.h>": "#include \"torch_musa/csrc/aten/musa/MUSAContext.h\"",
+                "#include <c10/cuda/CUDAGuard.h>": "#include \"torch_musa/csrc/core/MUSAGuard.h\"",
+                "::cuda::": "::musa::",
+                "/cuda/": "/musa/",
+                ", CUDA,": ", PrivateUse1,",
+                "_CUDA_": "_MUSA_",
+                ".cuh": ".muh",
+                ".is_cuda()": ".is_privateuseone()",
+                "cublas": "mublas",
+                "CUBLAS": "MUBLAS"
+                }
+                ).run()
+
+setup(
+    name='rwkv', # package name, import this to use python API
+    ext_modules=[
+        MUSAExtension(
+            name='rwkv._MUSAC', # extension name, import this to use MUSA API
+            sources=[os.path.join("src/rwkv", 'cuda_musa', f) for f in [
+                # 'gemm_fp16_cublas.cpp',
+                'operators.mu',
+                'wrapper.cpp',
+            ]],
+            define_macros=[('DISABLE_MUBLAS_GEMM', None)],
+            extra_compile_args=c_flags
+        ),
+    ],
+    package_dir={"": "src"},
+    packages=find_packages(where="src", exclude=["build"]),
+    package_data={
+        "rwkv": [
+        "lib/*.so*",
+        ]
+    }
+)
+```
+#### Second way, add a `MANIFEST.in` file and set `include_package_data=True`(***DO NOT mix with the first way***):
+
+The content of `MANIFEST.in` of `rwkv` is:
+```
+include src/rwkv/cuda_musa/*
+include src/rwkv/*.txt
+include src/rwkv/lib/*.so
+```
+
+In `MANIFEST.in` of `torch_musa`, we can see the following: 
+```
+...
+include torch_musa/lib/*.so*
+...
+```
+
+```
+# Setup
+if __name__ == "__main__":
+    dump_version()
+
+    setup(
+        name="torch_musa",
+        version=version,
+        description="A PyTorch backend extension for Moore Threads MUSA",
+        url="https://github.mthreads.com/mthreads/torch_musa",
+        author="Moore Threads PyTorch AI Dev Team",
+        packages=find_packages(exclude=["tools", "tools*"]),
+        ext_modules=configure_extension_build(),
+        include_package_data=True,
+        install_requires=install_requires,
+        extras_require={},
+        cmdclass={"build_ext": Build, "clean": Clean, "install": Install},
+    )
+```
+
+
 ## LOGGER
 ```
 from torch_musa.utils.logger_util import LOGGER
@@ -28,7 +178,7 @@ CMakeListsGenerator(sources=["/path/to/xxx.mu", "/path/to/xxx.cpp"], include_dir
 python -m torch_musa.utils.simple_porting --cuda-dir-path cuda/
 ```
 
-Please refer to simple_porting.py if you want more customizations.
+`SimplePorting` outputs the transformed files to `${cuda-dir-path}_musa` hence executing the above command will generate a directory named `cuda_musa`. Please refer to simple_porting.py if you want more customizations.
 
 Full command maybe:
 
