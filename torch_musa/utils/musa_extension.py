@@ -2,7 +2,9 @@
 import multiprocessing
 import os
 import sysconfig
-from os.path import dirname, realpath, join
+import shutil
+from os.path import dirname, realpath, join, exists
+from setuptools import find_packages
 
 import torch
 from torch.utils.cpp_extension import CppExtension
@@ -114,6 +116,19 @@ def MUSAExtension(name, sources, *args, **kwargs):
     cmake.generate(version, cmake_python_library, True, build_test, env, RERUN_CMAKE)
     cmake.build(env)
 
+    # search the package location
+    package_location = search_package_location(package_name)
+    print(package_location)
+    if not package_location:
+        raise RuntimeError(f"Error: can't find package name={package_name}")
+    # extension .so is copied to package/lib/
+    default_lib_dir = join("build", project_name, "lib")
+    package_lib_dir = join(package_location, "lib")
+    os.makedirs(package_lib_dir, exist_ok=True)
+    src_ext_lib_path = join(default_lib_dir, f"lib{plugin_name}.so")
+    target_ext_lib_path = join(package_lib_dir, f"lib{plugin_name}.so")
+    if not exists(target_ext_lib_path):
+        shutil.copy(src_ext_lib_path, target_ext_lib_path)
     # define extra_compile_args
     user_extra_compile_args = kwargs.get("extra_compile_args", [])
     if isinstance(user_extra_compile_args, dict):
@@ -160,3 +175,17 @@ def MUSAExtension(name, sources, *args, **kwargs):
     kwargs["extra_compile_args"] = extra_compile_args
     kwargs["extra_link_args"] = extra_link_args
     return CppExtension(name, cpp_srcs, *args, **kwargs)
+
+
+def search_package_location(package_name: str):
+    r"""Search location of the given package name under current directory"""
+    if find_packages("./"):
+        return join("./", package_name)
+
+    for root, dirs, _ in os.walk("./"):
+        for directory in dirs:
+            if find_packages(join(root, directory), \
+                include=[package_name], exclude=["build"]):
+                return join(root, directory, package_name)
+
+    return None

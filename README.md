@@ -8,6 +8,9 @@
 
 * CUDA compatibility could be achieved in **torch_musa**, which greatly reduces the workload of adapting new operators.
 * **torch_musa** API is consistent with PyTorch in format, which allows users accustomed to PyTorch to migrate smoothly to **torch_musa**.
+
+**torch_musa** also provides a bundle of tools for users to conduct cuda-porting, building musa extension and debugging. Please refer to [README.md](torch_musa/utils/README.md) of **torch_musa.utils**.
+
 --------------------------------------------------------------------------------
 
 <!-- toc -->
