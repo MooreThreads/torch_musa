@@ -125,8 +125,8 @@ def MUSAExtension(name, sources, *args, **kwargs):
     default_lib_dir = join("build", project_name, "lib")
     package_lib_dir = join(package_location, "lib")
     os.makedirs(package_lib_dir, exist_ok=True)
-    src_ext_lib_path = join(default_lib_dir, f"lib{plugin_name}.so")
-    target_ext_lib_path = join(package_lib_dir, f"lib{plugin_name}.so")
+    src_ext_lib_path = join(default_lib_dir, f"lib{plugin_name}.a")
+    target_ext_lib_path = join(package_lib_dir, f"lib{plugin_name}.a")
     if not exists(target_ext_lib_path):
         shutil.copy(src_ext_lib_path, target_ext_lib_path)
     # define extra_compile_args

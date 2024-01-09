@@ -282,7 +282,7 @@ musa_include_directories(
 )
                 """ if include_dir_paths else "",
                 "\n",
-                f"musa_add_library({self.plugin_name}" + " SHARED ${MU_SRCS})",
+                f"musa_add_library({self.plugin_name}" + " STATIC ${MU_SRCS})",
                 """
 set(INSTALL_BIN_DIR "bin")
 set(INSTALL_LIB_DIR "lib64")
