@@ -51,7 +51,7 @@ pipeline {
           steps {
             container('main') {
               sh 'git config --global --add safe.directory \"*\"'
-              sh '/opt/conda/condabin/conda run -n py38 --no-capture-output /bin/bash tools/lint/git-clang-format.sh --rev origin/main'
+              sh '/opt/conda/condabin/conda run -n py38 --no-capture-output /bin/bash tools/lint/git-clang-format.sh --rev origin/${CHANGE_TARGET}'
             }
           }
         }
