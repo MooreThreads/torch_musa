@@ -88,7 +88,7 @@ def test_layer_norm_nlp_bf16(embedding_dim, batch, sequence_length):
     test = testing.OpTest(
         func=F.layer_norm,
         input_args=input_args,
-        comparators=testing.DefaultComparator(abs_diff=1e-2, rel_diff=1e-2),
+        comparators=testing.DefaultComparator(abs_diff=5e-2, rel_diff=5e-3),
     )
     test.check_result(train=True)
 

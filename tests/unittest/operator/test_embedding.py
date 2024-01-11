@@ -54,7 +54,7 @@ def test_embedding_bf16(input_shape, indices_dtype):
     global m, n
     seed = 0
     input_tensor = torch.randint(low=0, high=n, size=input_shape).type(indices_dtype)
-    comparator = testing.DefaultComparator(abs_diff=1e-1, rel_diff=1e-1)
+    comparator = testing.DefaultComparator(abs_diff=5e-2, rel_diff=5e-3)
 
     def fwd_func(device):
         random.seed(seed)

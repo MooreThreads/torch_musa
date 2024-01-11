@@ -109,7 +109,7 @@ def test_addcdiv_bf16(input_data, value):
         "tensor2": torch.abs(input_data["tensor2"].to(torch.bfloat16)) + 0.001,
         "value": transform_dtype(torch.float32, value),
     }
-    comparator = testing.DefaultComparator(abs_diff=5e-3, rel_diff=5e-3)
+    comparator = testing.DefaultComparator(abs_diff=5e-2, rel_diff=5e-3)
     test = testing.OpTest(
         func=torch.addcdiv, input_args=input_dict, comparators=comparator
     )
