@@ -283,11 +283,8 @@ void BinaryCall(
   const auto out_memory_format = output.suggest_memory_format();
   TORCH_INTERNAL_ASSERT_DEBUG_ONLY(output.is_contiguous(out_memory_format));
 
-  if (self_tmp.suggest_memory_format() != out_memory_format) {
-    self_ = FormatContiguous(self_tmp, out_memory_format);
-  } else {
-    self_ = self_tmp;
-  }
+  self_ = FormatContiguous(self_tmp, out_memory_format);
+
   if (other_tmp.suggest_memory_format() != out_memory_format) {
     other_ = FormatContiguous(other_tmp, out_memory_format);
   } else {

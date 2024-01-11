@@ -57,6 +57,24 @@ def function(input_data, dtype, other_dtype, func):
 def test_binary(input_data, dtype, other_dtype, func):
     function(input_data, dtype, other_dtype, func)
 
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("dtype", all_support_types)
+@pytest.mark.parametrize("other_dtype", all_support_types)
+@pytest.mark.parametrize("func", all_funcs_except_div)
+def test_binary_non_contiguous(dtype, other_dtype, func):
+    lhs_contiguous = torch.arange(8).resize(2,2,2)
+    rhs_contiguous = torch.arange(4).resize(2,2)
+    lhs_non_contiguous = lhs_contiguous[...,0]
+    rhs_non_contiguous, _ = rhs_contiguous.split([1,1], dim=-1)
+    function(
+        {"input": lhs_non_contiguous, "other": rhs_non_contiguous},
+        dtype, other_dtype, func)
+    function(
+        {"input": lhs_contiguous, "other": rhs_non_contiguous},
+        dtype, other_dtype, func)
+    function(
+        {"input": lhs_non_contiguous, "other": rhs_contiguous},
+        dtype, other_dtype, func)
 
 # test div, remainder, floor_divide which only support float and make sure other is not zero
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
