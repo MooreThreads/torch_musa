@@ -5,14 +5,14 @@ index 1416505..7ab33f4 100644
 @@ -2681,6 +2681,14 @@
    output_differentiability: [True, False, False, False, False]
    query, key, value: _flash_attention_backward(grad, query, key, value, output, softmax_logsumexp, cum_seq_q, cum_seq_k, max_q, max_k, dropout_p, is_causal, philox_seed, philox_offset)
- 
+
 +- name: _scaled_dot_product_attention_math_musa(Tensor query, Tensor key, Tensor value, Tensor? attn_mask=None, float dropout_p=0.0, bool is_causal=False) -> (Tensor output, Tensor attn_weights, Tensor bwd_reserve)
 +  output_differentiability: [True, False, False]
 +  query, key, value: _scaled_dot_product_attention_math_musa_backward(grad, query, key, value, output, attn_weights, bwd_reserve)
 +
 +- name: _scaled_dot_product_attention_flash_musa(Tensor query, Tensor key, Tensor value, Tensor? attn_mask=None, float dropout_p=0.0, bool is_causal=False) -> (Tensor output, Tensor logsumexp, Tensor dropout_mask)
 +  output_differentiability: [True, False, False]
-+  query, key, value: _scaled_dot_product_attention_flash_musa_backward(grad, query, key, value, output, logsumexp, dropout_mask, attn_mask)  
++  query, key, value: _scaled_dot_product_attention_flash_musa_backward(grad, query, key, value, output, logsumexp, dropout_mask, attn_mask)
 +
  # fft
  - name: _fft_r2c(Tensor self, int[] dim, int normalization, bool onesided) -> Tensor

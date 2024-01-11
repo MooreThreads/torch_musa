@@ -426,7 +426,9 @@ void ClampCall(
     const c10::optional<Scalar>& max) {
   const auto t_type = self.scalar_type();
   switch (t_type) {
-    case ScalarType::Float: {
+    case ScalarType::Float:
+    case ScalarType::Half:
+    case ScalarType::BFloat16: {
       // DBL_MIN = 2.22507e-308 which is positive, so we must use lowest or
       // (-max) there !!!
       const double min_val = has_min ? min.value().to<double>()
@@ -457,7 +459,6 @@ void ClampCall(
       break;
     }
     case ScalarType::Int: {
-      // TODO(@fan.mo): mudnn currently doesn't support INT32 CLIP
       // INT_MIN = - 2**32, INT_MAX = 2**32 - 1
       const int32_t min_val = has_min ? min.value().to<int32_t>()
                                       : std::numeric_limits<int32_t>::min();
@@ -465,15 +466,12 @@ void ClampCall(
                                       : std::numeric_limits<int32_t>::max();
       int64_t min_val_ = (int64_t)min_val;
       int64_t max_val_ = (int64_t)max_val;
-      const Tensor self_ = self.to(ScalarType::Long);
-      Tensor out_ = out.to(ScalarType::Long);
-      UnaryCall(op_name, out_, self_, [&](::musa::dnn::Unary& op) {
+      UnaryCall(op_name, out, self, [&](::musa::dnn::Unary& op) {
         CHECK_MUDNN_STATUS(op.SetAlpha(min_val_), "SetAlpha");
         CHECK_MUDNN_STATUS(op.SetBeta(max_val_), "SetBeta");
         CHECK_MUDNN_STATUS(
             op.SetMode(::musa::dnn::Unary::Mode::CLIP), "SetMode");
       });
-      out = out_.to(ScalarType::Int);
       break;
     }
     default:
@@ -492,138 +490,30 @@ Tensor Clamp(
       has_min || has_max,
       "torch.clamp: either min, max or both scalars must be defined")
   const c10::musa::MUSAGuard device_guard(self.device());
-  // TODO(jing.li): eliminate fp32 conversion workaround after muDNN supports
-  // fp16 calculation.
-  const bool self_fp16 = (self.scalar_type() == ScalarType::Half);
-  Tensor input = self_fp16 ? self.to(ScalarType::Float) : self;
-  const bool is_transpose_contig = IsTranspose(input, false);
-  if (is_transpose_contig) {
-    input.transpose_(-1, -2);
-  }
   Tensor output = at::empty_like(
       self,
-      c10::TensorOptions(input.suggest_memory_format())
-          .dtype(input.scalar_type()));
+      c10::TensorOptions(self.suggest_memory_format())
+          .dtype(self.scalar_type()));
 
   MUSA_TENSOR_TYPE_CHECK(self);
-  ClampCall(__func__, output, input, has_min, min, has_max, max);
+  ClampCall(__func__, output, self, has_min, min, has_max, max);
 
-  if (is_transpose_contig) {
-    output.transpose_(-1, -2);
-  }
-  if (self_fp16) {
-    return output.to(ScalarType::Half);
-  }
   return output;
 }
 
-Tensor& MudnnClamp_(
+Tensor& Clamp_(
     Tensor& self,
-    const c10::optional<Scalar>& min,
-    const c10::optional<Scalar>& max) {
+    const c10::optional<at::Scalar>& min,
+    const c10::optional<at::Scalar>& max) {
   const bool has_min = (min.has_value());
   const bool has_max = (max.has_value());
   TORCH_CHECK(
       has_min || has_max,
-      "torch.clamp: either min, max or both scalars must be defined")
+      "torch.clamp: either min, max or both scalars must be defined");
   MUSA_TENSOR_TYPE_CHECK(self);
   const c10::musa::MUSAGuard device_guard(self.device());
   ClampCall(__func__, self, self, has_min, min, has_max, max);
-  return self;
-}
 
-namespace {
-struct structured_clamp_out_inplace final
-    : public at::native::structured_clamp_out {
-  structured_clamp_out_inplace(Tensor& self) : outputs_{std::ref(self)} {}
-
-  void set_output_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    auto current_device = guard_.current_device();
-    if (C10_UNLIKELY(current_device.has_value())) {
-      TORCH_INTERNAL_ASSERT(
-          *current_device == options.device(),
-          "structured kernels don't support multi-device outputs");
-    } else {
-      guard_.reset_device(options.device());
-    }
-    const auto& out = outputs_[output_idx].get();
-    check_inplace(out, sizes, options);
-    auto maybe_proxy = maybe_create_proxy(out, sizes, strides, options);
-    if (C10_UNLIKELY(maybe_proxy.has_value())) {
-      proxy_outputs_[output_idx] =
-          c10::ExclusivelyOwned<Tensor>(std::move(maybe_proxy).value());
-    }
-    if (!names.empty()) {
-      namedinference::propagate_names(outputs_[output_idx], names);
-    }
-    // super must happen after, so that downstream can use maybe_get_output
-    // to retrieve the output
-    at::native::structured_clamp_out::set_output_raw_strided(
-        output_idx, sizes, strides, options, names);
-  }
-
-  void set_output_raw_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    auto current_device = guard_.current_device();
-    if (C10_UNLIKELY(current_device.has_value())) {
-      TORCH_INTERNAL_ASSERT(
-          *current_device == options.device(),
-          "structured kernels don't support multi-device outputs");
-    } else {
-      guard_.reset_device(options.device());
-    }
-    const auto& out = outputs_[output_idx].get();
-    check_inplace(out, sizes, options);
-    if (!names.empty()) {
-      namedinference::propagate_names(outputs_[output_idx], names);
-    }
-    // super must happen after, so that downstream can use maybe_get_output
-    // to retrieve the output
-    at::native::structured_clamp_out::set_output_raw_strided(
-        output_idx, sizes, strides, options, names);
-  }
-
-  const Tensor& maybe_get_output(int64_t output_idx) override {
-    return proxy_outputs_[output_idx].has_value() ? **proxy_outputs_[output_idx]
-                                                  : outputs_[output_idx].get();
-  }
-
-  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
-  std::array<c10::optional<c10::ExclusivelyOwned<Tensor>>, 1> proxy_outputs_;
-  c10::musa::OptionalMUSAGuard guard_;
-};
-} // namespace
-
-at::Tensor& Clamp_(
-    at::Tensor& self,
-    const c10::optional<at::Scalar>& min,
-    const c10::optional<at::Scalar>& max) {
-  // No device check
-  structured_clamp_out_inplace op(self);
-  op.meta(
-      self,
-      (min.has_value() ? at::OptionalScalarRef(&(min.value()))
-                       : at::OptionalScalarRef()),
-      (max.has_value() ? at::OptionalScalarRef(&(max.value()))
-                       : at::OptionalScalarRef()));
-  op.impl(
-      self,
-      (min.has_value() ? at::OptionalScalarRef(&(min.value()))
-                       : at::OptionalScalarRef()),
-      (max.has_value() ? at::OptionalScalarRef(&(max.value()))
-                       : at::OptionalScalarRef()),
-      op.outputs_[0]);
-  if (op.proxy_outputs_[0].has_value())
-    op.outputs_[0].get().copy_(**op.proxy_outputs_[0]);
   return self;
 }
 
@@ -639,25 +529,54 @@ Tensor& ClampOut(
       "torch.clamp: either min, max or both scalars must be defined")
   MUSA_TENSOR_TYPE_CHECK(self);
   const c10::musa::MUSAGuard device_guard(self.device());
+
   out.resize_as_(self);
-  at::MemoryFormat output_memory_format;
-  const bool is_transpose_contig =
-      IsTranspose(self, false) && IsTranspose(out, false);
-  Tensor input;
-  if (is_transpose_contig) {
-    out.transpose_(-1, -2);
-    output_memory_format = out.suggest_memory_format();
-    input = self.transpose(-1, -2);
-  } else {
-    output_memory_format = out.suggest_memory_format();
-    input = self.suggest_memory_format() == output_memory_format
-        ? self
-        : FormatContiguous(self, output_memory_format);
-  }
+  at::MemoryFormat output_memory_format = out.suggest_memory_format();
+  Tensor input = self.suggest_memory_format() == output_memory_format
+      ? self
+      : FormatContiguous(self, output_memory_format);
   ClampCall(__func__, out, input, has_min, min, has_max, max);
-  if (is_transpose_contig) {
-    out.transpose_(-1, -2);
-  }
+
+  return out;
+}
+
+Tensor& ClampMinOut(const Tensor& self, const Scalar& min, Tensor& out) {
+  MUSA_TENSOR_TYPE_CHECK(self);
+  const c10::musa::MUSAGuard device_guard(self.device());
+
+  out.resize_as_(self);
+  at::MemoryFormat output_memory_format = out.suggest_memory_format();
+  Tensor input = self.suggest_memory_format() == output_memory_format
+      ? self
+      : FormatContiguous(self, output_memory_format);
+  ClampCall(
+      __func__,
+      out,
+      input,
+      true,
+      c10::optional<Scalar>(min),
+      false,
+      c10::optional<Scalar>());
+  return out;
+}
+
+Tensor& ClampMaxOut(const Tensor& self, const Scalar& max, Tensor& out) {
+  MUSA_TENSOR_TYPE_CHECK(self);
+  const c10::musa::MUSAGuard device_guard(self.device());
+
+  out.resize_as_(self);
+  at::MemoryFormat output_memory_format = out.suggest_memory_format();
+  Tensor input = self.suggest_memory_format() == output_memory_format
+      ? self
+      : FormatContiguous(self, output_memory_format);
+  ClampCall(
+      __func__,
+      out,
+      input,
+      false,
+      c10::optional<Scalar>(),
+      true,
+      c10::optional<Scalar>(max));
   return out;
 }
 
@@ -1323,68 +1242,6 @@ at::Tensor& LeakyReluBackwardOutGradInput(
   if (op.proxy_outputs_[0].has_value())
     op.outputs_[0].get().copy_(**op.proxy_outputs_[0]);
   return grad_input;
-}
-
-namespace {
-struct structured_clamp_min_out_out final
-    : public at::native::structured_clamp_min_out {
-  structured_clamp_min_out_out(Tensor& out0) : outputs_{std::ref(out0)} {}
-
-  void set_output_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    auto current_device = guard_.current_device();
-    if (C10_UNLIKELY(current_device.has_value())) {
-      TORCH_INTERNAL_ASSERT(
-          *current_device == options.device(),
-          "structured kernels don't support multi-device outputs");
-    } else {
-      guard_.reset_device(options.device());
-    }
-    // super must happen after, so that downstream can use maybe_get_output
-    // to retrieve the output
-    at::native::structured_clamp_min_out::set_output_raw_strided(
-        output_idx, sizes, strides, options, names);
-  }
-
-  void set_output_raw_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    // super must happen after, so that downstream can use maybe_get_output
-    // to retrieve the output
-    auto current_device = guard_.current_device();
-    if (C10_UNLIKELY(current_device.has_value())) {
-      TORCH_INTERNAL_ASSERT(
-          *current_device == options.device(),
-          "structured kernels don't support multi-device outputs");
-    } else {
-      guard_.reset_device(options.device());
-    }
-    at::native::structured_clamp_min_out::set_output_raw_strided(
-        output_idx, sizes, strides, options, names);
-  }
-
-  const Tensor& maybe_get_output(int64_t output_idx) override {
-    return outputs_[output_idx].get();
-  }
-
-  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
-  c10::musa::OptionalMUSAGuard guard_;
-};
-} // namespace
-
-Tensor& ClampMinOut(const Tensor& self, const Scalar& min, Tensor& out) {
-  // No device check
-  structured_clamp_min_out_out op(out);
-  op.meta(self, min);
-  op.impl(self, min, op.maybe_get_output(0));
-  return out;
 }
 
 namespace {
@@ -2324,6 +2181,7 @@ ADVANCED_REGISTER(aten, PrivateUse1, "clamp_", Clamp_)
 ADVANCED_REGISTER(aten, PrivateUse1, "clamp.out", ClampOut)
 ADVANCED_REGISTER(aten, PrivateUse1, "clamp.Tensor_out", ClampTensorOut)
 ADVANCED_REGISTER(aten, PrivateUse1, "clamp_min.out", ClampMinOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "clamp_max.out", ClampMaxOut)
 
 ADVANCED_REGISTER(aten, PrivateUse1, "reciprocal", Reciprocal)
 ADVANCED_REGISTER(aten, PrivateUse1, "reciprocal_", Reciprocal_)
