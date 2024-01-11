@@ -1,7 +1,7 @@
 本节主要介绍如何对PyTorch生态的第三方库进行MUSA扩展的构建(MUSAExtension)，对应于CUDAExtension。
 
-为什么要对第三方库进行MUSA扩展的构建？
-======================
+为什么要对第三方库进行MUSA扩展的构建
+=====================================
 
 以mmcv库(commit id为0a2f60ba0198f8d567b536313bfba329588f9c3f)为例，当我们的测试代码有如下报错log，则说明mmcv中没有构建MUSA扩展。此时，我们需要对mmcv库进行MUSA扩展，从而使得mmcv库运行在摩尔线程显卡上。
 
@@ -30,11 +30,11 @@
 
 注意以上测试不要在mmcv根目录下进行，以免将当前目录下的mmcv包导入。
 
-如何对第三方库进行MUSA扩展？
-==============
+如何对第三方库进行MUSA扩展
+==========================
 
 了解MUSAExtension这个API
--------------
+--------------------------
 阅读torch_musa/utils/README.md中关于MUSAExtension的介绍。
 
 CUDA-Porting
@@ -65,7 +65,7 @@ CUDA-Porting
 - AT_DISPATCH_FLOATING_TYPES_AND_HALF -> AT_DISPATCH_FLOATING_TYPES
 - #include <ATen/cuda/CUDAContext.h> -> #include \"torch_musa/csrc/aten/musa/MUSAContext.h\"
 - #include <c10/cuda/CUDAGuard.h> -> #include \"torch_musa/csrc/core/MUSAGuard.h\"
-- ::cuda:: -> ::musa::
+- "::cuda:: -> ::musa::"
 - /cuda/ -> /musa/
 - , CUDA, -> , PrivateUse1,
 - .cuh -> .muh
@@ -110,7 +110,7 @@ PrivateUse1是PyTorch中对于扩展的自定义backend默认名字，is_private
 想在代码里添加映射规则，也可以在extra.json文件中添加条目或者自行添加新的json文件。
 
 分析mmcv的构建脚本setup.py
--------------
+--------------------------
 
 .. code-block:: python
   
@@ -211,7 +211,8 @@ PrivateUse1是PyTorch中对于扩展的自定义backend默认名字，is_private
 仅仅将csrc批量替换成csrc_musa并加入生成的额外的共享库的路径即可。
 
 尝试构建并测试
--------------
+--------------
+
 由于本次实验是在MTT S3000上进行，对应的MUSA架构版本为21，而mmcv中涉及到fp64的使用，所以我们也要打开这个选项。对于这些额外的环境变量，可以参
 考torch_musa根目录下的CMakeLists.txt和build.sh。
 
