@@ -1,20 +1,21 @@
 .. attention::
-   | 编译安装前，需要安装MUSAToolkits软件包，MUDNN库，muThrust库，muAlg库，muRAND库，muSPARSE库。具体安装步骤，请参见相应组件的安装手册。
+   | 编译安装前，需要安装MUSAToolkits软件包，MUDNN库，MCCL库，muThrust库，muAlg库，muRAND库，muSPARSE库。具体安装步骤，请参见相应组件的安装手册。
 
 依赖环境
 ----------------------------
 
-- Python == 3.8 或者 Python == 3.9。
+- Python == 3.8/3.9/3.10。
 - 摩尔线程MUSA软件包，推荐版本如下：
 
-  * MUSA驱动rc1.4.1
-  * MUSAToolkits Release1.4.1
-  * MUDNN rc1.4.1 
+  * MUSA驱动musa_2.6.0
+  * MUSAToolkits rc2.0.0
+  * MUDNN rc2.4.0
+  * MCCL rc1.4.0
   * muAlg_dev-0.1.1-Linux.deb
   * muRAND_dev1.0.0.tar.gz
   * muSPARSE_dev0.1.0.tar.gz
   * muThrust_dev-0.1.1-Linux.deb
-  * Docker Container Toolkits(https://mcconline.mthreads.com/software)
+  * `Docker Container Toolkits <https://mcconline.mthreads.com/software>`_
 
 
 
@@ -25,7 +26,7 @@
 #. 编译PyTorch
 #. 编译torch_musa
 
-torch_musa是在PyTorch v2.0.0基础上以插件的方式来支持摩尔线程显卡。开发时涉及到对PyTorch源码的修改，目前是以打patch的方式实现的。PyTorch社区正在积极支持第三方后端接入，https://github.com/pytorch/pytorch/issues/98406 这个issue下有相关PR。我们也在积极向PyTorch社区提交PR，避免在编译过程中向PyTorch打patch。
+torch_musa是在PyTorch v2.0.0基础上以插件的方式来支持摩尔线程显卡。开发时涉及到对PyTorch源码的修改，目前是以打patch的方式实现的。PyTorch社区正在积极支持第三方后端接入，这个 `issue <https://github.com/pytorch/pytorch/issues/98406>`_ 下有相关PR。我们也在积极向PyTorch社区提交PR，避免在编译过程中向PyTorch打patch。
 
 
 开发Docker
@@ -38,7 +39,7 @@ torch_musa是在PyTorch v2.0.0基础上以插件的方式来支持摩尔线程�
   docker run -it --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev:latest /bin/bash
 
 .. attention::
-   | 使用docker时，请务必提前安装mt-container-toolkit(https://mcconline.mthreads.com/software/1?id=1)，并且在启动docker container时添加选项“--env MTHREADS_VISIBLE_DEVICES=all”，否则在docker container内部无法使用torch_musa。
+   | 使用docker时，请务必提前安装 `mt-container-toolkit <https://mcconline.mthreads.com/software/1?id=1>`_ ，并且在启动docker container时添加选项“--env MTHREADS_VISIBLE_DEVICES=all”，否则在docker container内部无法使用torch_musa。
 
 编译步骤
 ---------

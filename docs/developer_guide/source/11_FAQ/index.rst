@@ -58,10 +58,17 @@ Q：如果在更新过torch_musa最新代码后，编译报错？
 Docker容器
 -----------
 
-Q：如果在docker container内部使用torch_musa时，报错 ``ImportError: libsrv_um_MUSA.so: cannot open shared object file: No such file or directory`` ？
+Q：如果在docker container内部使用torch_musa时，报错 ``ImportError: libsrv_um_MUSA.so: cannot open shared object file: No such file or directory`` 或者 ``ImportError: /usr/lib/x86_64-linux-gnu/musa/libsrv_um_MUSA.so: file too short`` ？
 
-#. 请确保成功安装mt-container-toolkit(https://mcconline.mthreads.com/software/1?id=1);
-#. 在启动docker container时请添加 ``--env MTHREADS_VISIBLE_DEVICES=all`` 。
+.. figure:: ../doc_image/libsrv_um_MUSA.*
+
+#. 请确保成功安装mt-container-toolkit，安装步骤可以参考 `mt-container-toolkit文档 <https://mcconline.mthreads.com/software/1?id=1>`_ ; 请务必注意下面两点：
+
+- 绑定摩尔线程容器运行时到 Docker，执行下图中红框中命令：
+
+.. figure:: ../doc_image/set_docker.*
+
+- 在启动docker container时请添加 ``--env MTHREADS_VISIBLE_DEVICES=all`` 。
 
 
 适配算子

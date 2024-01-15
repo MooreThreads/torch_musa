@@ -18,5 +18,6 @@
    ./6_support_new_operators/index
    ./7_support_customized_operators/index
    ./8_build_musa_extensions/index
-   ./9_debug_tools/index
-   ./10_FAQ/index
+   ./9_optimize_performance/index
+   ./10_debug_tools/index
+   ./11_FAQ/index

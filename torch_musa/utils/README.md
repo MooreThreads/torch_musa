@@ -18,7 +18,7 @@ ext_module = MUSAExtension(name, sources, *args, **kwargs)
 ```
 There is a simple MUSAExtension example which has the following catalogue structure:
 
-![image](../../docs/source/img/render_dir_tree.png)
+![image](../../docs/images/render_dir_tree.png)
 
 And the content of `setup_musa.py` is:
 ```
@@ -62,7 +62,7 @@ setup(
 
 Another example has the following catalogue structure:
 
-![image](../../docs/source/img/rwkv_dir_tree.png)
+![image](../../docs/images/rwkv_dir_tree.png)
 
 We can see `setup.py` is not located at the same level with package but `MUSAExtension` can handle this situation. That is, it will copy the generated shared object to `rwkv/lib/`. In addition, the generated shared object should be also packed when we install the package. Hence there are two recommended ways:
 #### First way, set `package_data`, `package_dir` and `packages` in `setup` function like the following:

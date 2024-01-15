@@ -1,4 +1,4 @@
-![Torch MUSA_Logo](https://github.mthreads.com/mthreads/torch_musa/blob/main/docs/source/img/torch_musa.png)
+![Torch MUSA_Logo](https://github.mthreads.com/mthreads/torch_musa/blob/main/docs/images/torch_musa.png)
 --------------------------------------------------------------------------------
 
 [![Build Status](https://jenkins-aidev.mthreads.com/buildStatus/icon?job=torch_musa%2Fmain)](https://jenkins-aidev.mthreads.com/job/torch_musa/job/main/)

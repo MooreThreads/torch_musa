@@ -52,7 +52,7 @@ The split feature is designed to mitigate the influence of memory fragments. It 
 
 When `free` is called, not only the specified block is freed (recycled), the neighbors in the linked list will be checked. If the neighbor(s) are available (not occupied), the freed block and the contiguous available neighber(s) are combined into a larger available block without changing those blocks' position in the doubly linked list. Let's see this example.
 
-![avatar](../../../docs/source/img/split_blocks.png)
+![avatar](../../../docs/images/split_blocks.png)
 
 In the example above, when block 3 is freed, since block 2 and block 4 are available, they will be combined into block (2 + 3 + 4), while the connection between block 1 and block 5 will not change.
 
