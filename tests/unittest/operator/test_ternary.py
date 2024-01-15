@@ -144,6 +144,20 @@ input_datas.append(torch.tensor(random.uniform(-10, 10)))
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("data", input_datas)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_where_with_different_shape(data, dtype):
+    input_args = {}
+    input_args["condition"] = data > 0.5
+    input_args["input"] = torch.tensor(1.0).to(dtype)
+    input_args["other"] = torch.tensor(0.0).to(dtype)
+    test = testing.OpTest(func=torch.where, input_args=input_args)
+    if dtype == torch.float16:
+        test.check_musafp16_vs_musafp32()
+    else:
+        test.check_result()
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("data", input_datas)
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float16])
 def test_where(data, dtype):
     input_args = {}

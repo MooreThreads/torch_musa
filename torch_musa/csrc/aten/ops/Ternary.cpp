@@ -159,25 +159,31 @@ Tensor& WhereSelfOut(
       ? condition.to(ScalarType::Bool)
       : condition;
   // compute output shape
-  DimVector output_shape;
-  std::vector<std::vector<int64_t>> operands_shape = {
-      condition.sizes().vec(), self.sizes().vec(), other.sizes().vec()};
-  for (const auto& shape : operands_shape) {
-    if (output_shape.empty()) {
-      output_shape = DimVector(shape.begin(), shape.end());
-    }
-    if (output_shape != DimVector(shape.begin(), shape.end())) {
-      output_shape = infer_size_dimvector(output_shape, shape);
-    }
-  }
-
+  std::vector<int64_t> condition_shape = condition.sizes().vec();
+  DimVector output_shape =
+      DimVector(condition_shape.begin(), condition_shape.end());
   if (!out.sizes().equals(output_shape)) {
     out.resize_(output_shape);
   }
   if (!out.numel()) {
     return out;
   }
-  return TernaryOut(out, cond_bool, self, other, TERNARY_MODE::SELECT, 1);
+  Tensor contiguous_out = out.contiguous();
+
+  if (other.dim() == 0) {
+    contiguous_other = at::full_like(contiguous_out, contiguous_other.item());
+  }
+  if (self.dim() == 0) {
+    contiguous_self = at::full_like(contiguous_out, contiguous_self.item());
+  }
+  // we should keep self, other and out's shape consistent
+  return TernaryOut(
+      out,
+      cond_bool,
+      contiguous_self,
+      contiguous_other,
+      TERNARY_MODE::SELECT,
+      1);
 }
 
 Tensor WhereSelf(
