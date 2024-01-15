@@ -33,8 +33,9 @@ Tensor& UpSampleNearest2dOut(
       result.dim());
   TORCH_CHECK(
       self.scalar_type() == c10::ScalarType::Float ||
-          self.scalar_type() == c10::ScalarType::Half,
-      "UpSampleNearest2dOut needs input to be a float or half dtype tensor, which is",
+          self.scalar_type() == c10::ScalarType::Half ||
+          self.scalar_type() == c10::ScalarType::BFloat16,
+      "UpSampleNearest2dOut needs input to be a float or half/bfloat16 dtype tensor, which is",
       self.scalar_type());
 
   if (self.numel() == 0) {

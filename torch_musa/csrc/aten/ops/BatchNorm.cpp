@@ -38,8 +38,9 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNorm(
     double eps) {
   TORCH_CHECK(
       input.scalar_type() == at::ScalarType::Float ||
-          input.scalar_type() == at::ScalarType::Half,
-      "batch_norm supports Float or Half tensor dtype, now got: ",
+          input.scalar_type() == at::ScalarType::Half ||
+          input.scalar_type() == at::ScalarType::BFloat16,
+      "batch_norm supports Float or Half/BFloat16 tensor dtype, now got: ",
       input.scalar_type());
 
   const c10::musa::MUSAGuard device_guard(input.device());
@@ -187,8 +188,9 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
       input.device());
   TORCH_CHECK(
       grad_out.scalar_type() == at::ScalarType::Float ||
-          grad_out.scalar_type() == at::ScalarType::Half,
-      "Dtype of grad_out tensor of BatchNormBackward only support Float32/Half, ",
+          grad_out.scalar_type() == at::ScalarType::Half ||
+          grad_out.scalar_type() == at::ScalarType::BFloat16,
+      "Dtype of grad_out tensor of BatchNormBackward only support Float32/Half/Bfloat16, ",
       "but now it is ",
       grad_out.scalar_type());
   TORCH_CHECK(

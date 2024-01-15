@@ -102,7 +102,8 @@ inline bool SupportMode(BINARY_MODE m) {
 
 inline bool SupportType(at::ScalarType type) {
   return type == ScalarType::Float || type == ScalarType::Half ||
-      type == ScalarType::Int || type == ScalarType::Long;
+      type == ScalarType::Int || type == ScalarType::Long ||
+      type == ScalarType::BFloat16;
 }
 
 inline bool SupportOptimizeScalarToUnary(
@@ -595,7 +596,8 @@ Tensor& ThresholdBwd_out(
         auto threshold_value = threshold.to<scalar_t>();
         if (self.scalar_type() == at::ScalarType::Double ||
             self.scalar_type() == at::ScalarType::Float ||
-            self.scalar_type() == at::ScalarType::Half) {
+            self.scalar_type() == at::ScalarType::Half ||
+            self.scalar_type() == at::ScalarType::BFloat16) {
           CHECK_MUDNN_STATUS(
               binary_op.SetAlpha(static_cast<double>(threshold_value)),
               "SetAlpha");

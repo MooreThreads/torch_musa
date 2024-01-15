@@ -59,8 +59,9 @@ std::tuple<Tensor, Tensor, Tensor> NativeGroupNorm(
   (void)HxW;
   TORCH_CHECK(
       X.scalar_type() == at::ScalarType::Float ||
-          X.scalar_type() == at::ScalarType::Half,
-      "group norm supports Float and Half tensor type, now got ",
+          X.scalar_type() == at::ScalarType::Half ||
+          X.scalar_type() == at::ScalarType::BFloat16,
+      "group norm supports Float and Half/BFloat16 tensor type, now got ",
       X.scalar_type());
 
   c10::musa::MUSAGuard device_guard(X.device());

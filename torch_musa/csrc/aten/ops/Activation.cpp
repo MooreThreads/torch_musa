@@ -1000,7 +1000,9 @@ void NegCall(
         : FormatContiguous(self, output_memory_format);
   }
   switch (t_type) {
-    case ScalarType::Float: {
+    case ScalarType::Float:
+    case ScalarType::Half:
+    case ScalarType::BFloat16: {
       const double alpha = val.value().to<double>();
       UnaryCall(op_name, out, input, [&](::musa::dnn::Unary& op) {
         CHECK_MUDNN_STATUS(op.SetAlpha(alpha), "SetAlpha");
@@ -1009,24 +1011,7 @@ void NegCall(
       });
       break;
     }
-    case ScalarType::Half: {
-      const double alpha = val.value().to<double>();
-      UnaryCall(op_name, out, input, [&](::musa::dnn::Unary& op) {
-        CHECK_MUDNN_STATUS(op.SetAlpha(alpha), "SetAlpha");
-        CHECK_MUDNN_STATUS(
-            op.SetMode(::musa::dnn::Unary::Mode::MUL), "SetMode");
-      });
-      break;
-    }
-    case ScalarType::Int: {
-      const int64_t alpha = val.value().to<int64_t>();
-      UnaryCall(op_name, out, input, [&](::musa::dnn::Unary& op) {
-        CHECK_MUDNN_STATUS(op.SetAlpha(alpha), "SetAlpha");
-        CHECK_MUDNN_STATUS(
-            op.SetMode(::musa::dnn::Unary::Mode::MUL), "SetMode");
-      });
-      break;
-    }
+    case ScalarType::Int:
     case ScalarType::Long: {
       const int64_t alpha = val.value().to<int64_t>();
       UnaryCall(op_name, out, input, [&](::musa::dnn::Unary& op) {

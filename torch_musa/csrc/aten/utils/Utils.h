@@ -35,8 +35,9 @@ namespace musa {
       TYPE,                                                                   \
       NAME,                                                                   \
       AT_DISPATCH_CASE(at::ScalarType::Byte, __VA_ARGS__) AT_DISPATCH_CASE(   \
-          at::ScalarType::Char, __VA_ARGS__)                                  \
-          AT_DISPATCH_CASE(at::ScalarType::Half, __VA_ARGS__)                 \
+          at::ScalarType::Char,                                               \
+          __VA_ARGS__) AT_DISPATCH_CASE(at::ScalarType::Half, __VA_ARGS__)    \
+          AT_DISPATCH_CASE(at::ScalarType::BFloat16, __VA_ARGS__)             \
               AT_DISPATCH_CASE(at::ScalarType::Short, __VA_ARGS__)            \
                   AT_DISPATCH_CASE(at::ScalarType::Float, __VA_ARGS__)        \
                       AT_DISPATCH_CASE(at::ScalarType::Int, __VA_ARGS__)      \

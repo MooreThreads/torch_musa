@@ -53,7 +53,7 @@ def test_amp_autocast_fp32():
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 def test_get_amp_supported_dtype():
     support_dtype = torch.musa.get_amp_supported_dtype()
-    assert support_dtype == [torch.float16, torch.float32]
+    assert support_dtype == [torch.float16, torch.bfloat16, torch.float32]
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)

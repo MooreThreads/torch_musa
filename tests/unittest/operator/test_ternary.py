@@ -38,18 +38,39 @@ all_support_types = testing.get_all_support_types()
 
 
 def transform_dtype(dtype, value):
-    if dtype is torch.float32:
+    if dtype in(torch.float32, torch.float16, torch.bfloat16):
         return float(value)
     if dtype in (torch.int32, torch.int64):
         return int(value)
     return dtype
 
-
+all_support_types.extend([torch.float16])
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_datas)
 @pytest.mark.parametrize("dtype", all_support_types)
 @pytest.mark.parametrize("value", values)
 def test_addcmul(input_data, dtype, value):
+    input_dict = {
+        "input": input_data["input"].to(dtype),
+        "tensor1": input_data["tensor1"].to(dtype),
+        "tensor2": input_data["tensor2"].to(dtype),
+        "value": transform_dtype(dtype, value),
+    }
+    test = testing.OpTest(func=torch.addcmul, input_args=input_dict)
+    if dtype == torch.float16:
+        test.check_musafp16_vs_musafp32()
+    else:
+        test.check_result()
+
+@pytest.mark.skipif(
+    testing.get_musa_arch() < 22,
+    reason="bf16 is not supported on arch older than qy2"
+)
+@testing.test_on_nonzero_card_if_multiple_musa_device(0)
+@pytest.mark.parametrize("input_data", input_datas)
+@pytest.mark.parametrize("dtype", [torch.bfloat16])
+@pytest.mark.parametrize("value", values)
+def test_addcmul_bf16(input_data, dtype, value):
     input_dict = {
         "input": input_data["input"].to(dtype),
         "tensor1": input_data["tensor1"].to(dtype),
@@ -123,15 +144,32 @@ input_datas.append(torch.tensor(random.uniform(-10, 10)))
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("data", input_datas)
-@pytest.mark.parametrize("dtype", [torch.float32])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16])
 def test_where(data, dtype):
     input_args = {}
     input_args["condition"] = data > 0.5
     input_args["input"] = data.to(dtype)
     input_args["other"] = data.to(dtype)
     test = testing.OpTest(func=torch.where, input_args=input_args)
-    test.check_result()
+    if dtype == torch.float16:
+        test.check_musafp16_vs_musafp32()
+    else:
+        test.check_result()
 
+@pytest.mark.skipif(
+    testing.get_musa_arch() < 22,
+    reason="bf16 is not supported on arch older than qy2"
+)
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("data", input_datas)
+@pytest.mark.parametrize("dtype", [torch.float16])
+def test_where_bf16(data, dtype):
+    input_args = {}
+    input_args["condition"] = data > 0.5
+    input_args["input"] = data.to(dtype)
+    input_args["other"] = data.to(dtype)
+    test = testing.OpTest(func=torch.where, input_args=input_args)
+    test.check_result()
 
 dtypes = [torch.float32, torch.half, torch.uint8, torch.int8, torch.int16, torch.int32]
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)

@@ -1,6 +1,7 @@
 # pylint: disable= missing-module-docstring, missing-class-docstring,missing-function-docstring,unused-import,unused-variable,not-callable
 import os
 import random
+import pytest
 import torch
 from torch import nn
 import numpy as np
@@ -13,10 +14,8 @@ def set_seed(seed=1029):
     os.environ["PYTHONHASHSEED"] = str(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+    torch.musa.manual_seed(seed)
+    torch.musa.manual_seed_all(seed)
 
 
 # simple linear model to test the usability of amp .
@@ -37,7 +36,7 @@ class SimpleModel(nn.Module):
 
 DEVICE = "musa"
 
-def train_in_amp():
+def train_in_amp(low_dtype=torch.float16):
     set_seed()
     model = SimpleModel().to(DEVICE)
     criterion = nn.MSELoss()
@@ -51,9 +50,9 @@ def train_in_amp():
     for step in range(20):
         optimizer.zero_grad()
         # create autocast environment
-        with torch.musa.amp.autocast():
+        with torch.musa.amp.autocast(dtype=low_dtype):
             outputs = model(inputs)
-            assert outputs.dtype == torch.float16
+            assert outputs.dtype == low_dtype
             loss = criterion(outputs, targets)
 
         scaler.scale(loss).backward()
@@ -78,12 +77,22 @@ def train_in_fp32():
         optimizer.step()
     return loss
 
-# res_fp32 = train_in_fp32()
-# res_fp16 = train_in_fp16()
-# testing.DefaultComparator(res_fp16, res_fp32)
+@pytest.mark.parametrize("low_dtype", [torch.float16])
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
-def test_amp_autocast():
+def test_amp_autocast_fp16(low_dtype):
     res_fp32 = train_in_fp32()
-    res_fp16 = train_in_amp()
+    res_amp = train_in_amp(low_dtype=low_dtype)
     torch.musa.synchronize()
-    testing.DefaultComparator(res_fp16, res_fp32)
+    testing.DefaultComparator(res_amp, res_fp32)
+
+@pytest.mark.skipif(
+    testing.get_musa_arch() < 22,
+    reason="bf16 is not supported on arch older than qy2"
+)
+@pytest.mark.parametrize("low_dtype", [torch.bfloat16])
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_amp_autocast_bf16(low_dtype):
+    res_fp32 = train_in_fp32()
+    res_amp = train_in_amp(low_dtype=low_dtype)
+    torch.musa.synchronize()
+    testing.DefaultComparator(res_amp, res_fp32)

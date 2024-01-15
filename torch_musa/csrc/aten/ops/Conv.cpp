@@ -330,14 +330,16 @@ Tensor Convolution(
       input.device());
   TORCH_CHECK(
       weight.scalar_type() == at::ScalarType::Float ||
-          weight.scalar_type() == at::ScalarType::Half,
-      "Dtype of weight tensor of Convolution only support Float32 and Half, ",
+          weight.scalar_type() == at::ScalarType::Half ||
+          weight.scalar_type() == at::ScalarType::BFloat16,
+      "Dtype of weight tensor of Convolution only support Float32 and Half/BFloat16, ",
       "but now it is ",
       weight.scalar_type());
   TORCH_CHECK(
       input.scalar_type() == at::ScalarType::Float ||
-          input.scalar_type() == at::ScalarType::Half,
-      "Dtype of input tensor of Convolution only support Float32 and Half, ",
+          input.scalar_type() == at::ScalarType::Half ||
+          input.scalar_type() == at::ScalarType::BFloat16,
+      "Dtype of input tensor of Convolution only support Float32 and Half/BFloat16, ",
       "but now it is ",
       input.scalar_type());
   TORCH_CHECK(
@@ -729,20 +731,23 @@ Tensor Conv1dWeightBwd(
       grad_output.device());
   TORCH_CHECK(
       weight.scalar_type() == at::ScalarType::Float ||
-          weight.scalar_type() == at::ScalarType::Half,
-      "Dtype of weight tensor of Convolution Backward only support Float32 and Float16, ",
+          weight.scalar_type() == at::ScalarType::Half ||
+          weight.scalar_type() == at::ScalarType::BFloat16,
+      "Dtype of weight tensor of Convolution Backward only support Float32 and Float16/Bfloat16, ",
       "but now is ",
       weight.scalar_type());
   TORCH_CHECK(
       input.scalar_type() == at::ScalarType::Float ||
-          input.scalar_type() == at::ScalarType::Half,
-      "Dtype of input tensor of Convolution Backward only support Float32 and Float16, ",
+          input.scalar_type() == at::ScalarType::Half ||
+          input.scalar_type() == at::ScalarType::BFloat16,
+      "Dtype of input tensor of Convolution Backward only support Float32 and Float16/Bfloat16, ",
       "but now is ",
       input.scalar_type());
   TORCH_CHECK(
       grad_output.scalar_type() == at::ScalarType::Float ||
-          grad_output.scalar_type() == at::ScalarType::Half,
-      "Dtype of grad_output tensor of Convolution Backward only support Float32 and Float16, ",
+          grad_output.scalar_type() == at::ScalarType::Half ||
+          grad_output.scalar_type() == at::ScalarType::BFloat16,
+      "Dtype of grad_output tensor of Convolution Backward only support Float32 and Float16/Bfloat16, ",
       "but now is ",
       grad_output.scalar_type());
   c10::musa::MUSAGuard device_guard(input.device());

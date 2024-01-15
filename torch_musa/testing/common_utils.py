@@ -15,22 +15,11 @@ from torch.testing._comparison import (
 )
 from torch.utils._mode_utils import no_dispatch
 import torch_musa
+from torch_musa.core._utils import _get_musa_arch
 
 
 def get_musa_arch() -> int:
-    """Get musa arch string, 21 for QY1, 22 for QY2, and so on."""
-    try:
-        properties = torch_musa.get_device_properties(0)
-        major = properties.major
-        minor = properties.minor
-        musa_arch_string = int(major * 10 + minor)
-    except Exception as err:  # pylint: disable=W0718
-        print("get_devie_properties failed, reason:")
-        print(err)
-        print("Default musa arch properties is: 21")  # depend on CI machine
-        musa_arch_string = 21
-
-    return musa_arch_string
+    return _get_musa_arch()
 
 
 @functools.lru_cache()

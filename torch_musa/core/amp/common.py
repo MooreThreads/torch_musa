@@ -2,6 +2,7 @@
 from importlib.util import find_spec
 import torch
 import torch_musa
+from torch_musa.core._utils import _get_musa_arch
 
 __all__ = [
     "amp_definitely_not_available",
@@ -23,7 +24,7 @@ def amp_definitely_not_available():
 
 
 def get_amp_supported_dtype():
-    return [torch.float16, torch.float32]
+    return [torch.float16, torch.bfloat16, torch.float32]
 
 
 def is_autocast_musa_enabled():
@@ -35,6 +36,10 @@ def set_autocast_musa_enabled(enable):
 
 
 def set_autocast_musa_dtype(dtype):
+    if dtype == torch.bfloat16:
+        assert _get_musa_arch()>21,\
+                f"Currently, autocast only support arch greater 21, such as\
+        S4000/S90, but now it is {torch.musa.get_device_properties(0).name}"
     return torch_musa._MUSAC._set_autocast_musa_dtype(dtype)
 
 
