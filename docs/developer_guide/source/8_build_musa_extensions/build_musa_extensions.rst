@@ -322,3 +322,54 @@ PrivateUse1是PyTorch中对于扩展的自定义backend默认名字，is_private
 我们进入到mmcv/tests/test_ops目录下，然后执行'pytest -s test_box_iou_quadri.py'就可以测试该单元测试用例了，测试结果如下所示：
 
 .. figure:: ../doc_image/ut_passed.*
+
+
+基于MUSAExtension构建定制化算子
+======================
+
+本小节以构建swintransformer中的 `window_process_kernel算子 <https://github.com/microsoft/Swin-Transformer/tree/main/kernels/window_process>`_ 为例介绍如何通过cuda-porting和MUSAExtension完成CUDA代码到MUSA代码的转译及构建。
+
+
+原始目录结构如下：
+
+:: 
+
+    window_process
+    ├── setup.py
+    ├── swin_window_process.cpp
+    ├── swin_window_process_kernel.cu
+    ├── unit_test.py
+    └── window_process.py
+
+首先在window_process同级目录下执行cuda-porting命令将CUDA代码转化为MUSA代码：``python -m torch_musa.utils.simple_porting --cuda-dir-path ./window_process --mapping-rule "{\"cuda\":\"musa\",\"torch::kCUDA\":\"torch::kPrivateUse1\", \"type().is_cuda\":\"is_privateuseone\"}"``，命令执行完毕后会在当前目录下生成名为window_process_musa的新目录，该目录结构如下：
+
+::
+
+    window_process_musa
+    ├── swin_window_process.cpp
+    └── swin_window_process_kernel.mu
+
+之后基于MUSAExtension编写setup.py文件，该文件写法与CUDAExtension类似，其代码如下：
+
+.. code-block:: python
+
+    from setuptools import setup
+    from torch.utils.cpp_extension import BuildExtension
+    from torch_musa.utils.musa_extension import MUSAExtension
+
+
+    setup(
+        name="swin_window_process",
+        ext_modules=[
+            MUSAExtension(
+                "swin_window_process",
+                [
+                    "swin_window_process.cpp",
+                    "swin_window_process_kernel.mu",
+                ],
+            )
+        ],
+        cmdclass={"build_ext": BuildExtension},
+    )
+
+在编译并安装MUSA扩展时需要通过MUSA_ARCH环境变量指定架构号，在S80或S3000机器上可执行 ``MUSA_ARCH=21 python setup.py install`` ,在S4000机器上可执行 ``MUSA_ARCH=22 python setup.py install`` 完成window_process_kernel扩展的安装，之后在python解释器中尝试 ``import swin_window_process`` 若无错误出现则表示定制化算子构建并安装成功。

@@ -94,6 +94,6 @@ Q：如果在CUDA-Porting适配新算子时，编译可以通过，在 ``import 
 
 问题与反馈
 ------------
-如果在开发或者使用torch_musa的过程中，遇到任何bug或者没支持的特性，请积极向torch_musa (https://github.mthreads.com/mthreads/torch_musa/issues) 提交issue，我们会及时作出反馈。提交issue时，请给出复现问题的代码，报错log，并且打上对应的标签，如下面例子所示：
+如果在开发或者使用torch_musa的过程中，遇到任何bug或者没支持的特性，请积极向torch_musa (https://github.com/MooreThreads/torch_musa/issues) 提交issue，我们会及时作出反馈。提交issue时，请给出复现问题的代码，报错log，并且打上对应的标签，如下面例子所示：
 
 .. figure:: ../doc_image/issue.*
