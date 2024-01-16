@@ -499,6 +499,7 @@ class OpTest:
         Returns:
             None.
         """
-        cpu_res = self._call_func(inputs, "cpu", train, test_out, refer=True, **kwargs)
+        cpu_res = self._call_func(
+            inputs, "cpu", train, test_out, refer=True, **kwargs)
         mtgpu_res = self._call_func(inputs, "musa", train, test_out, **kwargs)
         self.compare_res(cpu_res, mtgpu_res)

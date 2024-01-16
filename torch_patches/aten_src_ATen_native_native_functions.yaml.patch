@@ -1,5 +1,5 @@
 diff --git a/aten/src/ATen/native/native_functions.yaml b/aten/src/ATen/native/native_functions.yaml
-index 6464615..6644cf4 100644
+index 6464615..6a8b476 100644
 --- a/aten/src/ATen/native/native_functions.yaml
 +++ b/aten/src/ATen/native/native_functions.yaml
 @@ -13821,6 +13821,28 @@
@@ -31,17 +31,26 @@ index 6464615..6644cf4 100644
  - func: _scaled_dot_product_attention_math(Tensor query, Tensor key, Tensor value, Tensor? attn_mask=None, float dropout_p=0.0, bool is_causal=False, Tensor? dropout_mask=None) -> (Tensor, Tensor)
    variants: function
  
-@@ -14609,3 +14631,13 @@
+@@ -14609,3 +14631,22 @@
    dispatch:
      CUDA: _fused_adamw_kernel_cuda_
    autogen: _fused_adamw, _fused_adamw.out
-+
-+- func: rms_norm(Tensor input, SymInt[] normalized_shape, Tensor? weight=None, float eps=1e-05) -> Tensor
-+  variants: function
-+  dispatch:
-+    CUDA: rms_norm
 +
 +- func: gated_silu(Tensor input) -> Tensor
 +  variants: function
 +  dispatch:
 +    CUDA: gated_silu
++
++- func: rms_norm(Tensor input, SymInt[] normalized_shape, Tensor? weight=None, float eps=1e-05) -> Tensor
++  variants: function
++  autogen: rms_norm.out
++    
++- func: rms_norm_forward(Tensor input, int[] normalized_shape, Tensor? weight=None, float eps=1e-05) -> (Tensor output, Tensor invvar)
++  variants: function
++  dispatch:
++    CUDA: rms_norm_forward_cuda
++
++- func: rms_norm_backward(Tensor grad_out, Tensor invvar, Tensor input, int[] normalized_shape, Tensor? weight=None, float eps=1e-05) -> (Tensor grad_input, Tensor grad_weight)
++  variants: function
++  dispatch:
++    CUDA: rms_norm_backward_cuda

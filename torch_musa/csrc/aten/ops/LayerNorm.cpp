@@ -254,7 +254,12 @@ namespace musa {
   return std::make_tuple(std::move(dX), std::move(dgamma), std::move(dbeta));
 }
 
-at::Tensor RMSNorm(
+/**
+ * @brief RMSNorm forward in muDNN way.
+ * @deprecated This could be removed in the future.
+ *
+ */
+at::Tensor RMSNormMUDNN(
     const Tensor& input,
     IntArrayRef normalized_shape,
     const c10::optional<Tensor>& weight_opt /* optional */,
@@ -367,7 +372,6 @@ ADVANCED_REGISTER(
     PrivateUse1,
     "native_layer_norm_backward",
     NativeLayerNormBwd)
-ADVANCED_REGISTER(aten, PrivateUse1, "rms_norm", RMSNorm)
 
 } // namespace musa
 } // namespace at
