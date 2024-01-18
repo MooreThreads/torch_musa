@@ -23,7 +23,7 @@ torch_musa核心代码目录概述
 ===============================
 
 - torch_musa/tests  测试文件。
-- torch_musa/core   主要包含Python module，提供amp/device/memory/stream/even等模块的Python前端接口。
+- torch_musa/core   主要包含Python module，提供amp/device/memory/stream/event等模块的Python前端接口。
 - torch_musa/csrc   c++侧实现代码；
 
   - csrc/amp        提供混合精度模块的C++实现。

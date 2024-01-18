@@ -7,14 +7,13 @@
 - Python == 3.8/3.9/3.10。
 - 摩尔线程MUSA软件包，推荐版本如下：
 
-  * MUSA驱动musa_2.6.0
+  * MUSA驱动 musa_2.6.0
   * MUSAToolkits rc2.0.0
   * MUDNN rc2.4.0
   * MCCL rc1.4.0
-  * muAlg_dev-0.1.1-Linux.deb
-  * muRAND_dev1.0.0.tar.gz
-  * muSPARSE_dev0.1.0.tar.gz
-  * muThrust_dev-0.1.1-Linux.deb
+  * muAlg dev0.3.0
+  * muSPARSE dev0.4.0
+  * muThrust dev0.3.0
   * `Docker Container Toolkits <https://mcconline.mthreads.com/software>`_
 
 

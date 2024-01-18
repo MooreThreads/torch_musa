@@ -278,11 +278,12 @@ torch_musa中python api基本与PyTorch原生api接口保持一致，极大降�
 使能TensorCore示例代码
 ----------------------
 
+在s4000上，当输入数据类型是flaot32时，可以通过设置TensorFloat32来使能TensorCore，从而加速计算过程。TensorFloat32的加速原理可以参考 `TensorFloat-32 <https://pytorch.org/docs/stable/notes/cuda.html#tensorfloat-32-tf32-on-ampere-devices>`_ 。
+
 .. code-block:: python
 
   import torch
   import torch_musa
-  # 在s4000或者更新的设备上，可以使能TensorCore，来加速计算过程
   with torch.backends.mudnn.flags(allow_tf32=True):
       assert torch.backends.mudnn.allow_tf32
       a = torch.randn(10240, 10240, dtype=torch.float, device='musa')

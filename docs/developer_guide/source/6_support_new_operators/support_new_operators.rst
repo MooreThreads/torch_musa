@@ -362,7 +362,7 @@ ADVANCED_REGISTER(lib, key, yaml, func) 是对原生注册机制TORCH_LIBRARY_IM
 
 REGISTER_IMPL(lib, key, yaml, func, name)的用法与ADVANCED_REGISTER相似。
 
-但与之不同的时，REGISTER_IMPL额外接受一个name参数，以指定封装后的别名函数的命名：该别名函数将被命名为wrapper\_##name。
+但与之不同的是，REGISTER_IMPL额外接受一个name参数，以指定封装后的别名函数的命名：该别名函数将被命名为wrapper\_##name。
 
 如果name和func参数相同时，REGISTER_IMPL即为ADVANCED_REGISTER。
 
