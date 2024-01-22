@@ -44,7 +44,7 @@ index 6464615..6a8b476 100644
 +- func: rms_norm(Tensor input, SymInt[] normalized_shape, Tensor? weight=None, float eps=1e-05) -> Tensor
 +  variants: function
 +  autogen: rms_norm.out
-+    
++
 +- func: rms_norm_forward(Tensor input, int[] normalized_shape, Tensor? weight=None, float eps=1e-05) -> (Tensor output, Tensor invvar)
 +  variants: function
 +  dispatch:
