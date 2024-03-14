@@ -1,7 +1,5 @@
-![Torch MUSA_Logo](https://github.mthreads.com/mthreads/torch_musa/blob/main/docs/images/torch_musa.png)
+![Torch MUSA_Logo](./docs/images/torch_musa.png)
 --------------------------------------------------------------------------------
-
-[![Build Status](https://jenkins-aidev.mthreads.com/buildStatus/icon?job=torch_musa%2Fmain)](https://jenkins-aidev.mthreads.com/job/torch_musa/job/main/)
 
 
 **torch_musa** is an extended Python package based on PyTorch. Developing **torch_musa** in a plug-in way allows **torch_musa** to be decoupled from PyTorch, which is convenient for code maintenance. Combined with PyTorch, users can take advantage of the strong power of Moore Threads graphics cards through **torch_musa**. In addition, **torch_musa** has two significant advantages:
@@ -40,7 +38,7 @@
 ## Installation
 
 ### From Python Package
-- [Package Download Link](https://oss.mthreads.com:9001/buckets/ai-product/browse/ZGFpbHkvZnJhbWV3b3JrL3RvcmNoX211c2E=)
+- [Package Download Link](https://.com:9001/buckets/ai-product/browse/ZGFpbHkvZnJhbWV3b3JrL3RvcmNoX211c2E=)
 
 ```bash
 # for Python3.8
@@ -59,8 +57,8 @@ pip install torch_musa-2.0.0-cp310-cp310-linux_x86_64.whl
 ### From Source
 
 #### Prerequisites
-- [MUSA ToolKit](https://github.mthreads.com/mthreads/musa_toolkit)
-- [MUDNN](https://github.mthreads.com/mthreads/muDNN)
+- MUSA ToolKit
+- MUDNN
 - Other Libs (including muThrust, muSparse, muAlg, muRand)
 - [PyTorch Source Code](https://github.com/pytorch/pytorch/tree/v2.0.0)
 - [Docker Container Toolkits](https://mcconline.mthreads.com/software)
@@ -130,50 +128,27 @@ python setup.py install
 ```bash
 #To run the Docker for qy2, simply replace 'qy1' with 'qy2' in the following command.
 #Python3.8
-docker run -it --privileged --pull always --network=host --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py38:dev1.5.1-qy1 /bin/bash
+docker run -it --privileged --pull always --network=host --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py38:rc2.0.0-v1.1.0-qy1 /bin/bash
 
 #Python3.9
-docker run -it --privileged --pull always --network=host --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py39:dev1.5.1-qy1 /bin/bash
+docker run -it --privileged --pull always --network=host --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py39:rc2.0.0-v1.1.0-qy1 /bin/bash
 
 #Python3.10
-docker run -it --privileged --pull always --network=host --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py310:dev1.5.1-qy1 /bin/bash
+docker run -it --privileged --pull always --network=host --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py310:rc2.0.0-v1.1.0-qy1 /bin/bash
 ```
-<details>
-<summary>Docker Image List</summary>
-
-| Docker Tag | Description |
-| ---- | --- |
-| **dev1.5.1-qy1/dev1.5.1-qy2** <br>[ **Python3.8** ](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev-py38/artifacts-tab) <br> [ **Python3.9** ](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev-py39/artifacts-tab) <br> [ **Python3.10** ](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev-py310/artifacts-tab)| musatoolkits dev1.5.1 <br> mudnn dev1.5.1 <br> mccl dev1.5.1 <br> muAlg_dev-0.3.0  <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.3.0 <br> torch_musa tag-dev1.5.1 |
-| [**v0.1.18**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | musatoolkits daily20230913 (ddk musa_2.3.1)<br> mudnn daily20230913; mccl dev1.2.2 <br> libomp-11-dev <br> muAlg_dev-0.3.0  <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.3.0 <br> Python3.8 |
-| [**v0.1.17**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | musatoolkits dev1.4.2 (ddk musa_2.2.0)<br> mudnn daily20230822; mccl dev1.2.2 <br> libomp-11-dev <br> muAlg_dev-0.3.0 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.3.0 <br> Python3.8 |
-| [**v0.1.16**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | build and install torchvision from source code [a6dea86] <br> other components are the same with v0.1.15 <br> Python3.8 |
-| [**v0.1.15**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | musatoolkits rc1.4.0 (ddk musa_2.1.1)<br> mudnn rtm_2.1.1; mccl 20230627 <br> libomp-11-dev <br> muAlg _dev-0.1.1 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.1.1 <br> Python3.8 |
-| [**v0.1.14**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev/artifacts-tab) | musatoolkits rc1.4.0-rc1 (ddk rc1.4.0-rc1)<br> mudnn rc1.4.0-rc1; mccl_rc1.1.0 <br> libomp-11-dev <br> muAlg _dev-0.1.1 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.1.1 <br> Python3.8 |
-
-</details>  
 
 #### Docker Image for User
 ```bash
 #To run the Docker for qy2, simply replace 'qy1' with 'qy2' in the following command.
 #python3.8
-docker run -it --privileged --pull always --network=host --name=torch_musa_release --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-release-py38:dev1.5.1-qy1 /bin/bash
+docker run -it --privileged --pull always --network=host --name=torch_musa_release --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-release-py38:rc2.0.0-v1.1.0-qy1 /bin/bash
 
 #python3.9
-docker run -it --privileged --pull always --network=host --name=torch_musa_release --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-release-py39:dev1.5.1-qy1 /bin/bash
+docker run -it --privileged --pull always --network=host --name=torch_musa_release --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-release-py39:rc2.0.0-v1.1.0-qy1 /bin/bash
 
 #python3.10
-docker run -it --privileged --pull always --network=host --name=torch_musa_release --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-release-py310:dev1.5.1-qy1 /bin/bash
+docker run -it --privileged --pull always --network=host --name=torch_musa_release --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-release-py310:rc2.0.0-v1.1.0-qy1 /bin/bash
 ```
-<details>
-<summary>Docker Image List</summary>
-
-| Docker Tag | Description |
-| ---- | --- |
-|**dev1.5.1-qy1/dev1.5.1-qy2**  <br> [ **Python3.8** ](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-release-py38/artifacts-tab) <br> [ **Python3.9** ](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-release-py39/artifacts-tab) <br> [ **Python3.10** ](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-release-py310/artifacts-tab)| musatoolkits dev1.5.1 <br> mudnn dev1.5.1 <br> mccl dev1.5.1 <br> muAlg_dev-0.3.0  <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.3.0 <br> torch_musa tag-dev1.5.1 |
-| [**v0.1.15**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-release/artifacts-tab) | musatoolkits-rc1.4.0 (ddk_musa_2.1.1)<br> mudnn_rtm_2.1.1; mccl_20230627 <br> muAlg _dev-0.1.1 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.1.1 |
-| [**v0.1.12**](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-release/artifacts-tab) | musatoolkits-20230605 (ddk_20230604 develop or newer)<br> mudnn 20230605; mccl_rc1.1.0 <br> muAlg _dev-0.1.1 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.1.1 |
-
-</details>  
 
 ## Getting Started
 ### Coding Style
@@ -387,4 +362,4 @@ print(f'Accuracy of the network on the 10000 test images: {100 * correct // tota
 ### How to Update the Underlying Libraries
 Please refer to the [README.md](./docker/common/README.md) inside directory [docker/common](./docker/common).
 ### For More Detailed Information
-Please refer to the files in the [docs folder](https://github.mthreads.com/mthreads/torch_musa/tree/main/docs).
+Please refer to the files in the [docs folder](./docs).

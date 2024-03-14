@@ -144,7 +144,7 @@ if __name__ == "__main__":
         name="torch_musa",
         version=version,
         description="A PyTorch backend extension for Moore Threads MUSA",
-        url="https://github.mthreads.com/mthreads/torch_musa",
+        url="https://github.com/MooreThreads/torch_musa.git",
         author="Moore Threads PyTorch AI Dev Team",
         packages=find_packages(exclude=["tools", "tools*"]),
         ext_modules=configure_extension_build(),
