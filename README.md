@@ -31,27 +31,30 @@
   - [Example of Inference Demo](#example-of-inference-demo)
   - [Example of Training Demo](#example-of-training-demo)
 - [FAQ](#faq)
-  - [How to Update the Underlying Libraries](#how-to-update-the-underlying-libraries)
   - [For More Detailed Information](#for-more-detailed-information)
 <!-- tocstop -->
 
 ## Installation
 
 ### From Python Package
-- [Package Download Link](https://.com:9001/buckets/ai-product/browse/ZGFpbHkvZnJhbWV3b3JrL3RvcmNoX211c2E=)
+- [Package Download Link](https://github.com/MooreThreads/torch_musa/releases)
 
 ```bash
+# To install the packages for S4000, simply replace 'S80_S3000' with 'S4000' in the following command.
 # for Python3.8
-pip install torch-2.0.0-cp38-cp38-linux_x86_64.whl
-pip install torch_musa-2.0.0-cp38-cp38-linux_x86_64.whl
+pip install torch-2.0.0-cp38-cp38-linux_x86_64-S80_S3000.whl
+pip install torch_musa-1.1.0-cp38-cp38-linux_x86_64-S80_S3000.whl
+pip install torchvision-0.15.2a0+fa99a53-cp38-cp38-linux_x86_64-S80_S3000.whl
 
 # for Python3.9
-pip install torch-2.0.0-cp39-cp39-linux_x86_64.whl
-pip install torch_musa-2.0.0-cp39-cp39-linux_x86_64.whl
+pip install torch-2.0.0-cp39-cp39-linux_x86_64-S80_S3000.whl
+pip install torch_musa-1.1.0-cp39-cp39-linux_x86_64-S80_S3000.whl
+pip install torchvision-0.15.2a0+fa99a53-cp39-cp39-linux_x86_64-S80_S3000.whl
 
 # for python3.10
-pip install torch-2.0.0-cp310-cp310-linux_x86_64.whl
-pip install torch_musa-2.0.0-cp310-cp310-linux_x86_64.whl
+pip install torch-2.0.0-cp310-cp310-linux_x86_64-S80_S3000.whl
+pip install torch_musa-1.1.0-cp310-cp310-linux_x86_64-S80_S3000.whl
+pip install torchvision-0.15.2a0+fa99a53-cp310-cp310-linux_x86_64-S80_S3000.whl
 ```
 
 ### From Source
@@ -126,28 +129,28 @@ python setup.py install
 
 #### Docker Image for Developer
 ```bash
-#To run the Docker for qy2, simply replace 'qy1' with 'qy2' in the following command.
+#To run the Docker for S3000/S80, simply replace 'S4000' with 'S3000' or 'S80' in the following command.
 #Python3.8
-docker run -it --privileged --pull always --network=host --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py38:rc2.0.0-v1.1.0-qy1 /bin/bash
+docker run -it --privileged --pull always --network=host --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g registry.mthreads.com/mcconline/musa-pytorch-dev-public:rc2.0.0-v1.1.0-S4000-py38 /bin/bash
 
 #Python3.9
-docker run -it --privileged --pull always --network=host --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py39:rc2.0.0-v1.1.0-qy1 /bin/bash
+docker run -it --privileged --pull always --network=host --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g registry.mthreads.com/mcconline/musa-pytorch-dev-public:rc2.0.0-v1.1.0-S4000-py39 /bin/bash
 
 #Python3.10
-docker run -it --privileged --pull always --network=host --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py310:rc2.0.0-v1.1.0-qy1 /bin/bash
+docker run -it --privileged --pull always --network=host --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g registry.mthreads.com/mcconline/musa-pytorch-dev-public:rc2.0.0-v1.1.0-S4000-py310 /bin/bash
 ```
 
 #### Docker Image for User
 ```bash
-#To run the Docker for qy2, simply replace 'qy1' with 'qy2' in the following command.
+#To run the Docker for S3000/S80, simply replace 'S4000' with 'S3000' or 'S80' in the following command.
 #python3.8
-docker run -it --privileged --pull always --network=host --name=torch_musa_release --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-release-py38:rc2.0.0-v1.1.0-qy1 /bin/bash
+docker run -it --privileged --pull always --network=host --name=torch_musa_release --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g registry.mthreads.com/mcconline/musa-pytorch-release-public:rc2.0.0-v1.1.0-S4000-py38 /bin/bash
 
 #python3.9
-docker run -it --privileged --pull always --network=host --name=torch_musa_release --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-release-py39:rc2.0.0-v1.1.0-qy1 /bin/bash
+docker run -it --privileged --pull always --network=host --name=torch_musa_release --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g registry.mthreads.com/mcconline/musa-pytorch-release-public:rc2.0.0-v1.1.0-S4000-py39 /bin/bash
 
 #python3.10
-docker run -it --privileged --pull always --network=host --name=torch_musa_release --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-release-py310:rc2.0.0-v1.1.0-qy1 /bin/bash
+docker run -it --privileged --pull always --network=host --name=torch_musa_release --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g registry.mthreads.com/mcconline/musa-pytorch-release-public:rc2.0.0-v1.1.0-S4000-py310 /bin/bash
 ```
 
 ## Getting Started
@@ -359,7 +362,5 @@ print(f'Accuracy of the network on the 10000 test images: {100 * correct // tota
 </details>
 
 ## FAQ
-### How to Update the Underlying Libraries
-Please refer to the [README.md](./docker/common/README.md) inside directory [docker/common](./docker/common).
 ### For More Detailed Information
 Please refer to the files in the [docs folder](./docs).

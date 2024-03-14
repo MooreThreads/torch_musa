@@ -55,7 +55,6 @@ def _dummy_type(name: str) -> type:
     )
 
 def _get_musa_arch() -> int:
-    """Get musa arch string, 21 for QY1, 22 for QY2, and so on."""
     try:
         properties = torch_musa.get_device_properties(0)
         major = properties.major

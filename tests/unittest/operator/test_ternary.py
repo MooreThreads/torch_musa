@@ -64,7 +64,7 @@ def test_addcmul(input_data, dtype, value):
 
 @pytest.mark.skipif(
     testing.get_musa_arch() < 22,
-    reason="bf16 is not supported on arch older than qy2"
+    reason="bf16 is not supported on arch older than S4000"
 )
 @testing.test_on_nonzero_card_if_multiple_musa_device(0)
 @pytest.mark.parametrize("input_data", input_datas)
@@ -118,7 +118,7 @@ def test_addcdiv_fp16(input_data, value):
 
 @pytest.mark.skipif(
     testing.get_musa_arch() < 22,
-    reason="bf16 is not supported on arch older than qy2"
+    reason="bf16 is not supported on arch older than S4000"
 )
 @testing.test_on_nonzero_card_if_multiple_musa_device(0)
 @pytest.mark.parametrize("input_data", input_datas)
@@ -172,7 +172,7 @@ def test_where(data, dtype):
 
 @pytest.mark.skipif(
     testing.get_musa_arch() < 22,
-    reason="bf16 is not supported on arch older than qy2"
+    reason="bf16 is not supported on arch older than S4000"
 )
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("data", input_datas)

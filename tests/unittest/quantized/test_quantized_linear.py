@@ -49,7 +49,7 @@ linear_input_data = [
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.skipif(
     testing.get_musa_arch() < 22,
-    reason="Quantized Lineare supported in QY2 or later"
+    reason="Quantized Lineare supported in S4000 or later"
 )
 @pytest.mark.parametrize("input_data", linear_input_data)
 def test_qlinear(input_data):

@@ -77,7 +77,7 @@ def test_upsample_nearest2d(input_data, dtype, scale_factor):
 @pytest.mark.parametrize("dtype", all_support_types)
 @pytest.mark.skipif(
     testing.get_musa_arch() < 22,
-    reason="fp16 upsample nearest supported in QY2 or later",
+    reason="fp16 upsample nearest supported in S4000 or later",
 )
 @pytest.mark.parametrize("scale_factor", scale_factor)
 def test_upsample_nearest2d_fp16(input_data, dtype, scale_factor):
