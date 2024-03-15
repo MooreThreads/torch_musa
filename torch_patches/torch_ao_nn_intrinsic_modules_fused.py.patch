@@ -1,0 +1,58 @@
+diff --git a/torch/ao/nn/intrinsic/modules/fused.py b/torch/ao/nn/intrinsic/modules/fused.py
+index f70a543..8aea108 100644
+--- a/torch/ao/nn/intrinsic/modules/fused.py
++++ b/torch/ao/nn/intrinsic/modules/fused.py
+@@ -1,5 +1,5 @@
+ import torch
+-from torch.nn import Conv1d, Conv2d, Conv3d, ReLU, Linear, BatchNorm1d, BatchNorm2d, BatchNorm3d
++from torch.nn import Conv1d, Conv2d, Conv3d, ReLU, Linear, BatchNorm1d, BatchNorm2d, BatchNorm3d, SiLU
+ from torch.nn.utils.parametrize import type_before_parametrizations
+ 
+ __all__ = ['ConvReLU1d', 'ConvReLU2d', 'ConvReLU3d', 'LinearReLU', 'ConvBn1d', 'ConvBn2d',
+@@ -28,6 +28,15 @@ class ConvReLU2d(_FusedModule):
+                 type_before_parametrizations(conv), type_before_parametrizations(relu))
+         super().__init__(conv, relu)
+ 
++class ConvSiLU2d(_FusedModule):
++    r"""This is a sequential container which calls the Conv2d and SiLU modules.
++    During quantization this will be replaced with the corresponding fused module."""
++    def __init__(self, conv, silu):
++        assert type_before_parametrizations(conv) == Conv2d and type_before_parametrizations(silu) == SiLU, \
++            'Incorrect types for input modules{}{}'.format(
++                type_before_parametrizations(conv), type_before_parametrizations(silu))
++        super().__init__(conv, silu)
++
+ class ConvReLU3d(_FusedModule):
+     r"""This is a sequential container which calls the Conv3d and ReLU modules.
+     During quantization this will be replaced with the corresponding fused module."""
+@@ -82,6 +91,15 @@ class ConvBnReLU2d(_FusedModule):
+             .format(type_before_parametrizations(conv), type_before_parametrizations(bn), type_before_parametrizations(relu))
+         super().__init__(conv, bn, relu)
+ 
++class ConvBnSiLU2d(_FusedModule):
++    r"""This is a sequential container which calls the Conv 2d, Batch Norm 2d, and SiLU modules.
++    During quantization this will be replaced with the corresponding fused module."""
++    def __init__(self, conv, bn, silu):
++        assert type_before_parametrizations(conv) == Conv2d and type_before_parametrizations(bn) == BatchNorm2d and \
++            type_before_parametrizations(silu) == SiLU, 'Incorrect types for input modules{}{}{}' \
++            .format(type_before_parametrizations(conv), type_before_parametrizations(bn), type_before_parametrizations(silu))
++        super().__init__(conv, bn, silu)
++
+ class ConvBn3d(_FusedModule):
+     r"""This is a sequential container which calls the Conv 3d and Batch Norm 3d modules.
+     During quantization this will be replaced with the corresponding fused module."""
+@@ -166,3 +184,14 @@ class ConvAddReLU2d(_FusedModule):
+ 
+     def forward(self, x1, x2):
+         return self.relu(self.add(self[0](x1), x2))
++
++class ConvAddSiLU2d(_FusedModule):
++    r"""This is a sequential container which calls the Conv2d, add, Silu.
++    During quantization this will be replaced with the corresponding fused module."""
++    def __init__(self, conv, add, silu):
++        super().__init__(conv)
++        self.add = add
++        self.silu = silu
++
++    def forward(self, x1, x2):
++        return self.silu(self.add(self[0](x1), x2))

@@ -1,0 +1,15 @@
+diff --git a/aten/src/ATen/native/DispatchStub.cpp b/aten/src/ATen/native/DispatchStub.cpp
+index 52f73cf..44e44fd 100644
+--- a/aten/src/ATen/native/DispatchStub.cpp
++++ b/aten/src/ATen/native/DispatchStub.cpp
+@@ -120,6 +120,10 @@ void* DispatchStubImpl::get_call_ptr(
+       TORCH_INTERNAL_ASSERT(cuda_dispatch_ptr, "DispatchStub: missing CUDA kernel");
+       return cuda_dispatch_ptr;
+ 
++    case DeviceType::PrivateUse1:
++      TORCH_INTERNAL_ASSERT(musa_dispatch_ptr, "DispatchStub: missing MUSA kernel");
++      return musa_dispatch_ptr;
++
+     case DeviceType::HIP:
+       TORCH_INTERNAL_ASSERT(hip_dispatch_ptr, "DispatchStub: missing HIP kernel");
+       return hip_dispatch_ptr;

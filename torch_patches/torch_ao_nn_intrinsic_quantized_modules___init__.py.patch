@@ -1,0 +1,26 @@
+diff --git a/torch/ao/nn/intrinsic/quantized/modules/__init__.py b/torch/ao/nn/intrinsic/quantized/modules/__init__.py
+index 51149bf..a7fb507 100644
+--- a/torch/ao/nn/intrinsic/quantized/modules/__init__.py
++++ b/torch/ao/nn/intrinsic/quantized/modules/__init__.py
+@@ -1,17 +1,20 @@
+ from .linear_relu import LinearReLU, LinearLeakyReLU, LinearTanh
+ from .conv_relu import ConvReLU1d, ConvReLU2d, ConvReLU3d
++from .conv_silu import ConvSiLU2d
+ from .bn_relu import BNReLU2d, BNReLU3d
+-from .conv_add import ConvAdd2d, ConvAddReLU2d
++from .conv_add import ConvAdd2d, ConvAddReLU2d, ConvAddSiLU2d
+ 
+ __all__ = [
+     'LinearReLU',
+     'ConvReLU1d',
+     'ConvReLU2d',
+     'ConvReLU3d',
++    'ConvSiLU2d',
+     'BNReLU2d',
+     'BNReLU3d',
+     'LinearLeakyReLU',
+     'LinearTanh',
+     'ConvAdd2d',
+     'ConvAddReLU2d',
++    'ConvAddSiLU2d',
+ ]

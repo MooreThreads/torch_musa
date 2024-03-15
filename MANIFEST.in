@@ -1,0 +1,9 @@
+include torch_musa/csrc/core/*.h torch_musa/csrc/core/*.muh
+include torch_musa/csrc/utils/*.h
+include torch_musa/csrc/aten/mudnn/*.h torch_musa/csrc/aten/musa/*.h torch_musa/csrc/aten/ops/*.h torch_musa/csrc/aten/ops/musa/*.h
+include torch_musa/csrc/aten/utils/*.h
+include torch_musa/share/cmake/*.cmake torch_musa/share/cmake/modules/*.cmake
+include torch_musa/setup_helpers/*.py
+include torch_musa/utils/*.py torch_musa/utils/mapping/*.json
+include torch_musa/lib/*.so*
+recursive-include torch_musa/share/generated_cuda_compatible *.*

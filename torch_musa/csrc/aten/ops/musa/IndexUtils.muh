@@ -1,0 +1,57 @@
+#include <ATen/ATen.h>
+#include <ATen/core/Array.h>
+#include <ATen/core/Tensor.h>
+
+#include <musa_fp16.h>
+#include "torch_musa/csrc/aten/utils/Utils.h"
+
+namespace at {
+namespace native {
+
+static constexpr int kMaxDim = 8;
+
+bool HasContiguousSubspace(
+    int& indices_num,
+    const std::vector<Tensor>& indices);
+
+void IndicesBroadCast(
+    int num,
+    const std::vector<Tensor>& indice,
+    at::detail::Array<int, kMaxDim>& bcast_shape,
+    int& bcast_indice_ndim);
+
+void ValueBroadcastableCheck(
+    const Tensor& v,
+    at::detail::Array<int, kMaxDim>& shape,
+    int bcast_ndim);
+
+void IndicesStrides(
+    at::detail::Array<int, kMaxDim * kMaxDim>& stride_inds,
+    at::detail::Array<int, kMaxDim * kMaxDim>& shape_inds,
+    at::detail::Array<int, kMaxDim>& bcast_indice_shape,
+    at::detail::Array<int, kMaxDim>& task_shape,
+    int num,
+    const std::vector<Tensor>& indice,
+    int bcast_indice_ndim,
+    int shape_ndim,
+    int num_of_null_in_front = 0);
+
+void InputStrides(
+    at::detail::Array<int, kMaxDim>& stride_in,
+    const Tensor& in,
+    int indices_num,
+    const std::vector<Tensor>& indices,
+    bool has_contiguous_subspace);
+
+void ValueStrides(
+    at::detail::Array<int, kMaxDim>& stride_v,
+    at::detail::Array<int, kMaxDim>& shape_v,
+    at::detail::Array<int, kMaxDim>& task_shape,
+    const Tensor& value,
+    int shape_ndim);
+
+void OutputStrides(
+    at::detail::Array<int, kMaxDim>& stride_o,
+    const Tensor& out);
+} // namespace native
+} // namespace at

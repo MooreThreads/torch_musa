@@ -1,0 +1,12 @@
+diff --git a/torch/_C/__init__.pyi.in b/torch/_C/__init__.pyi.in
+index 1bd547c..ad9f504 100644
+--- a/torch/_C/__init__.pyi.in
++++ b/torch/_C/__init__.pyi.in
+@@ -1045,6 +1045,7 @@ def _get_custom_class_python_wrapper(name: str, attr: str) -> Any: ...
+ 
+ # Defined in torch/csrc/Module.cpp
+ def _rename_privateuse1_backend(backend: str) -> None: ...
++def _get_privateuse1_backend_name() -> str: ...
+ 
+ # Defined in torch/csrc/Generator.cpp
+ class Generator:

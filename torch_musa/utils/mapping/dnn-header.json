@@ -1,0 +1,6 @@
+{
+    "cuda_device_runtime_api.h": "musa_device_runtime_api.h",
+    "cuda_runtime.h": "musa_runtime.h",
+    "cuda_runtime_api.h": "musa_runtime_api.h",
+    "cudnn.h": "mudnn.h"
+}

@@ -1,0 +1,20 @@
+#pragma once
+#include <ATen/TensorUtils.h>
+#include <ATen/core/Tensor.h>
+#include <ATen/native/DispatchStub.h>
+
+#include "torch_musa/csrc/aten/musa/MUSAContext.h"
+#include "torch_musa/csrc/aten/ops/Embedding.h"
+
+namespace at {
+namespace native {
+
+Tensor EmbeddingBackwardMUSAKernel(
+    const Tensor& grad,
+    const Tensor& orig_indices,
+    const Tensor& sorted_indices,
+    int64_t num_weights,
+    int padding_idx = -1);
+
+} // namespace native
+} // namespace at
