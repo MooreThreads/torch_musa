@@ -7,8 +7,7 @@ import torch_musa
 from torch_musa import testing
 
 input_data = testing.get_raw_data()
-# dtype of input tensor of topk only support Float32 in muDNN now.
-support_dtypes = [torch.float32]
+support_dtypes = [torch.float32,torch.float16]
 largest = [False, True]
 
 # TODO(MT-AI): fix error when testing on GPU 1
@@ -27,7 +26,10 @@ def test_topk_sorted_true(input_data, dtype, largest, sort):
     input_args["largest"] = largest
     input_args["sorted"] = sort
     test = testing.OpTest(func=torch.topk, input_args=input_args)
-    test.check_result()
+    if dtype == torch.float32:
+        test.check_result()
+    if dtype == torch.float16:
+        test.check_musafp16_vs_musafp32()
 
 # TODO(MT-AI): fix error when testing on GPU 1
 @testing.test_on_nonzero_card_if_multiple_musa_device(0)
@@ -46,4 +48,7 @@ def test_topk_sorted_false(input_data, dtype, largest, sort, k):
     test = testing.OpTest(func=torch.topk,
                           input_args=input_args,
                           ignored_result_indices=[1])
-    test.check_result()
+    if dtype == torch.float32:
+        test.check_result()
+    if dtype == torch.float16:
+        test.check_musafp16_vs_musafp32()

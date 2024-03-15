@@ -1,0 +1,12 @@
+diff --git a/torch/csrc/utils/python_dispatch.cpp b/torch/csrc/utils/python_dispatch.cpp
+index 3d611db..373ede5 100644
+--- a/torch/csrc/utils/python_dispatch.cpp
++++ b/torch/csrc/utils/python_dispatch.cpp
+@@ -514,6 +514,7 @@ void initDispatchBindings(PyObject* module) {
+       DEF_ONE(AutocastXPU)
+       DEF_ONE(AutocastHPU)
+       DEF_ONE(AutocastCUDA)
++      DEF_ONE(AutocastPrivateUse1)
+   // clang-format on
+ 
+ #define DEF_SINGLE(n, prefix) .value(#prefix #n, c10::DispatchKey::prefix##n)

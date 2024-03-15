@@ -10,7 +10,9 @@
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/core/CachingHostAllocator.h"
 #include "torch_musa/csrc/core/MUSAEvent.h"
+#include "torch_musa/csrc/core/MUSAException.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 #include "torch_musa/csrc/core/MUSAStream.h"
 #include "torch_musa/csrc/core/PeerToPeerAccess.h"
@@ -23,11 +25,6 @@
 namespace at {
 namespace musa {
 namespace {
-
-enum class Memcpy_type {
-  MEMCPY_HOST_TO_DEVICE,
-  MEMCPY_DEVICE_TO_HOST,
-};
 
 bool dense_judger_internal(
     int64_t sizes[],
@@ -146,8 +143,8 @@ bool require_copy_backup(const Tensor& src, const Tensor& self) {
 void permute_to_contiguous(const Tensor& self, const Tensor& src) {
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Permute op;
-  auto contiguous_out = CreateMUTensor(self, true);
-  auto contiguous_in = CreateMUTensor(src, true);
+  auto contiguous_out = CreateMUTensor(self, false);
+  auto contiguous_in = CreateMUTensor(src, false);
   CHECK_MUDNN_STATUS(op.Run(h, contiguous_out, contiguous_in), "Run");
 }
 
@@ -165,7 +162,12 @@ void mtgpu_impl_copy_d2d(
   bool same_type = tensor_self.dtype() == tensor_src.dtype();
   bool same_conj = tensor_self.is_conj() == tensor_src.is_conj();
   bool same_neg = tensor_self.is_neg() == tensor_src.is_neg();
-  bool is_contig = tensor_self.is_contiguous() && tensor_src.is_contiguous();
+  bool is_contig =
+      (tensor_self.is_contiguous() && tensor_src.is_contiguous()) ||
+      (tensor_self.is_contiguous(at::MemoryFormat::ChannelsLast) &&
+       tensor_src.is_contiguous(at::MemoryFormat::ChannelsLast)) ||
+      (tensor_self.is_contiguous(at::MemoryFormat::ChannelsLast3d) &&
+       tensor_src.is_contiguous(at::MemoryFormat::ChannelsLast3d));
   bool memcpy_eligible = same_type && same_conj && same_neg && is_contig;
 
   Device dst_device = tensor_self.device();
@@ -203,17 +205,13 @@ void mtgpu_impl_copy_d2d(
           dst, src, size, musaMemcpyDeviceToDevice, copy_stream));
     }
   } else {
-    TORCH_CHECK(same_type == true, "Device to device copy is unsupported");
-    TORCH_CHECK(same_conj == true, "Device to device copy is unsupported");
-    TORCH_CHECK(same_neg == true, "Device to device copy is unsupported");
+    TORCH_CHECK(same_type, "Device to device copy is unsupported");
+    TORCH_CHECK(same_conj, "Device to device copy is unsupported");
+    TORCH_CHECK(same_neg, "Device to device copy is unsupported");
     if (!is_contig) {
       permute_to_contiguous(tensor_self, tensor_src);
       return;
     }
-  }
-
-  if (!non_blocking) {
-    TORCH_MUSA_CHECK(musaStreamSynchronize(copy_stream));
   }
 
   if (src_device != dst_device) {
@@ -236,78 +234,13 @@ void mtgpu_impl_datacast(const Tensor& tensor_self, const Tensor& tensor_src) {
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Unary op;
 
-  auto contiguous_in = CreateMUTensor(tensor_src, true);
-  auto contiguous_out = CreateMUTensor(tensor_self, true);
+  const auto self_memory_format = tensor_self.suggest_memory_format();
+  auto contiguous_tensor_src = FormatContiguous(tensor_src, self_memory_format);
+  auto contiguous_in = CreateMUTensor(contiguous_tensor_src);
+  auto contiguous_out = CreateMUTensor(tensor_self);
 
   CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::CAST), "SetMode");
   CHECK_MUDNN_STATUS(op.Run(h, contiguous_out, contiguous_in), "Run");
-}
-
-// Note: both cpyfromdevice and cpytodevice will go to this copy_from function!
-//       So we should implment both memcpyfrom and memcpyto functions!
-inline void mtgpu_impl_copy(
-    const Tensor& tensor_self,
-    const Tensor& tensor_src,
-    Memcpy_type copy_type,
-    bool non_blocking = false) {
-  muHandle& h = GetMudnnHandle();
-
-  // Since we already check the equivalance of src & dst sizes, so we do not
-  // need to check nbytes here.
-  const auto capacity = tensor_self.nbytes();
-  if (!capacity) {
-    return;
-  }
-  if (copy_type == Memcpy_type::MEMCPY_HOST_TO_DEVICE) { // cpu -> musa
-    // Note: tensor.data_ptr() will return the type void*
-    if (tensor_self.dtype() != tensor_src.dtype()) {
-      // Note: when H2D copy, tensor_src and tensor_self have different
-      // dtypes, type conversions are performed on the CPU for CPU->GPU copies.
-      auto cpu_cast_result = tensor_src.to(tensor_self.dtype());
-      auto musa_self = CreateMUTensor(tensor_self, true);
-      auto result = musa_self.CopyFrom(
-          cpu_cast_result.data_ptr(),
-          capacity,
-          musaMemcpyHostToDevice,
-          h,
-          !non_blocking);
-      TORCH_CHECK(
-          result == ::musa::dnn::Status::SUCCESS,
-          "Copy(MEMCPY_HOST_TO_DEVICE)");
-    } else {
-      auto musa_self = CreateMUTensor(tensor_self, true);
-      auto result = musa_self.CopyFrom(
-          tensor_src.data_ptr(),
-          capacity,
-          musaMemcpyHostToDevice,
-          h,
-          !non_blocking);
-      TORCH_CHECK(
-          result == ::musa::dnn::Status::SUCCESS,
-          "Copy(MEMCPY_HOST_TO_DEVICE)");
-    }
-  } else if (copy_type == Memcpy_type::MEMCPY_DEVICE_TO_HOST) { // musa -> cpu
-    if (tensor_self.dtype() != tensor_src.dtype()) {
-      // Note: when D2H copy, tensor_src and tensor_self have different
-      // dtypes, type conversions are performed on the CPU for CPU->GPU copies.
-      Tensor cpu_tensor = at::empty_like(tensor_self, tensor_src.dtype());
-      cpu_tensor.copy_(tensor_src);
-      tensor_self.copy_(cpu_tensor);
-    } else {
-      auto musa_self = CreateMUTensor(tensor_self, true);
-      auto result = musa_self.CopyFrom(
-          tensor_src.data_ptr(),
-          capacity,
-          musaMemcpyDeviceToHost,
-          h,
-          !non_blocking);
-      TORCH_CHECK(
-          result == ::musa::dnn::Status::SUCCESS,
-          "Copy(MEMCPY_DEVICE_TO_HOST)");
-    }
-  } else {
-    TORCH_CHECK(false, "Unsupported memcpy type!");
-  }
 }
 
 } // namespace
@@ -323,8 +256,6 @@ Tensor mtgpu_copy_from(
     const Tensor& src,
     const Tensor& self,
     bool non_blocking) {
-  // For all cases, the source and destination's sizes should be the same.
-  TORCH_INTERNAL_ASSERT(self.sizes() == src.sizes());
   // At least one of src and dst should be MUSA, otherwise it is impossible
   // to fall into this function!
   TORCH_INTERNAL_ASSERT(is_musa(self) || is_musa(src));
@@ -334,7 +265,7 @@ Tensor mtgpu_copy_from(
   if (is_musa(src) && is_musa(self)) {
     // call cast during copy with different type.
     if (src.dtype() == self.dtype()) {
-      mtgpu_impl_copy_d2d(self, src, non_blocking);
+      mtgpu_impl_copy_d2d(self, src);
       return self;
     }
 
@@ -344,19 +275,19 @@ Tensor mtgpu_copy_from(
     }
 
     Tensor dst_contig = src.to(self.dtype());
-    mtgpu_impl_copy_d2d(self, dst_contig, non_blocking);
+    mtgpu_impl_copy_d2d(self, dst_contig);
 
     return self;
   }
 
   c10::musa::OptionalMUSAGuard device_guard;
-  Memcpy_type copy_type;
+  musaMemcpyKind copy_type;
   if (!is_musa(src) && is_musa(self)) {
     device_guard.set_device(self.device());
-    copy_type = Memcpy_type::MEMCPY_HOST_TO_DEVICE;
+    copy_type = musaMemcpyHostToDevice;
   } else if (is_musa(src) && !is_musa(self)) {
     device_guard.set_device(src.device());
-    copy_type = Memcpy_type::MEMCPY_DEVICE_TO_HOST;
+    copy_type = musaMemcpyDeviceToHost;
   } else {
     TORCH_INTERNAL_ASSERT(false, "unsupport devices in mtGPU copy_()");
   }
@@ -366,35 +297,71 @@ Tensor mtgpu_copy_from(
     Tensor dst_contig;
     Tensor src_contig;
 
-    dst_contig = dst.is_contiguous()
-        ? dst
-        : at::empty_like(dst, LEGACY_CONTIGUOUS_MEMORY_FORMAT);
-    auto src_temp = src.itemsize() < dst.itemsize()
-        ? src.expand_as(dst)
-        : src.to(dst.dtype()).expand_as(dst);
-    src_contig = src_temp.is_contiguous()
-        ? src_temp
-        : src_temp.clone(MemoryFormat::Contiguous);
+    // If non_blocking is true - type conversions are performed on the GPU
+    // for CPU-GPU copies, otherwise type conversions are performed on the CPU.
+    // Type conversions are performed on the src device for GPU-GPU copies.
+    if (is_musa(self) || non_blocking) {
+      dst_contig = dst.is_contiguous()
+          ? dst
+          : at::empty_like(dst, LEGACY_CONTIGUOUS_MEMORY_FORMAT);
+      src_contig = src.to(self.scalar_type()).expand_as(dst).contiguous();
+    } else {
+      bool same_type = self.scalar_type() == src.scalar_type();
+      dst_contig = (dst.is_contiguous() && same_type)
+          ? dst
+          : at::empty_like(
+                dst, src.scalar_type(), LEGACY_CONTIGUOUS_MEMORY_FORMAT);
+      src_contig = src.expand_as(dst).contiguous();
+    }
+    // expand_as will change sizes hence assert is moved here
+    TORCH_INTERNAL_ASSERT(dst_contig.sizes() == src_contig.sizes());
+    dst_contig._set_conj(dst.is_conj());
+    src_contig._set_conj(self.is_conj());
 
-    mtgpu_impl_copy(dst_contig, src_contig, copy_type, non_blocking);
+    dst_contig._set_neg(dst.is_neg());
+    src_contig._set_neg(self.is_neg());
+    dst_contig.copy_(src_contig, non_blocking);
 
     if (!dst_contig.is_same(dst)) {
       TORCH_INTERNAL_ASSERT(dst.device() == dst_contig.device());
-      if (dst.device().type() == DeviceType::CPU) {
-        dst.copy_(dst_contig);
-      } else {
-        // call d2d copy to convert intermediate tensor into dst.
-        mtgpu_impl_copy_d2d(dst, dst_contig);
-      }
+      dst.copy_(dst_contig, non_blocking);
     }
   } else {
-    mtgpu_impl_copy(self, src, copy_type, non_blocking);
+    // Since we already check the equivalence of src & dst sizes, so we do not
+    // need to check nbytes here.
+    const auto capacity = self.nbytes();
+    if (!capacity) {
+      return self;
+    }
+
+    MUSAStream stream = getCurrentMUSAStream();
+    TORCH_MUSA_CHECK(musaMemcpyAsync(
+        self.data_ptr(), src.data_ptr(), capacity, copy_type, stream));
+    if (non_blocking) {
+      const auto& host_tensor = is_musa(src) ? self : src;
+      auto* ptr = is_musa(src) ? self.data_ptr() : src.data_ptr();
+      auto* ctx = host_tensor.storage().data_ptr().get_context();
+      CachingHostAllocator_recordEvent(ptr, ctx, stream);
+    } else {
+      musaStreamSynchronize(stream);
+    }
+
+    if (self.is_conj() != src.is_conj()) {
+      self.conj_physical_();
+    }
+    if (self.is_neg() != src.is_neg()) {
+      self.neg_();
+    }
   }
   return self;
 }
 
 TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
   m.impl("_copy_from", &mtgpu_copy_from);
+}
+
+TORCH_LIBRARY_IMPL(aten, QuantizedPrivateUse1, m) {
+  m.impl(TORCH_SELECTIVE_NAME("aten::_copy_from"), TORCH_FN(mtgpu_copy_from));
 }
 
 } // namespace musa

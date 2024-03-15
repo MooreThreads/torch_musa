@@ -2,6 +2,7 @@ import argparse
 import os
 import re
 from collections import defaultdict
+from itertools import chain
 from os.path import join
 
 import openpyxl
@@ -26,10 +27,10 @@ class OpsScannerBase:
     def _get_op_name(self, file_path: str):
         file_name = os.path.split(file_path)[-1]
         with open(file_path) as f:
-            for line in f.readlines():
-                match_res: list = re.findall(self.ops_regex, line)
-                if match_res:
-                    self.res[file_name].extend(match_res)
+            match_res: list = re.findall(self.ops_regex, f.read(), re.M)
+            if match_res:
+                processed_res = list(filter(lambda x: x, chain(*match_res)))
+                self.res[file_name].extend(processed_res)
 
     def write_to_xlsx(self):
         # Create a new workbook and select the active worksheet

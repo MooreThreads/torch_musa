@@ -2,6 +2,7 @@
 """
 
 import os
+import re
 import json
 import pathlib
 import argparse
@@ -89,7 +90,8 @@ def transform_line(
         # which is not consistent with other musa libraries. So here we need to skip 
         # header files replacement of cub library.
         if "cub/" not in new_line:
-            new_line = new_line.replace(key, value)
+            pattern = re.compile(key)
+            new_line = pattern.sub(value, new_line)
 
     return new_line
 

@@ -10,6 +10,7 @@
 #include <torch/library.h>
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
@@ -125,7 +126,8 @@ Tensor& ReflectPad1DOut(const Tensor& self, IntArrayRef pad, Tensor& output) {
   Pad op;
   ConfigPad(op, pad, Pad_MODE::REFLECT);
   TORCH_CHECK(output.is_contiguous(), "check contiguous failed");
-  PadCall(output, Contiguous(self), op);
+  auto contiguous_self = self.contiguous();
+  PadCall(output, contiguous_self, op);
   return output;
 }
 
@@ -133,7 +135,8 @@ Tensor ReflectPad1D(const Tensor& self, IntArrayRef pad) {
   MUSA_TENSOR_TYPE_CHECK(self);
   Pad op;
   ConfigPad(op, pad, Pad_MODE::REFLECT);
-  return PadInternal(Contiguous(self), pad, op);
+  auto contiguous_self = self.contiguous();
+  return PadInternal(contiguous_self, pad, op);
 }
 
 namespace {
@@ -202,14 +205,14 @@ Tensor ReflectionPad2d(const Tensor& self, IntArrayRef padding) {
   return at::native::reflection_pad2d_cuda(self, padding);
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("reflection_pad2d", &ReflectionPad2d);
-  m.impl("reflection_pad1d", &ReflectPad1D);
-  m.impl("reflection_pad1d.out", &ReflectPad1DOut);
-  m.impl(
-      "reflection_pad1d_backward.grad_input",
-      &ReflectionPad1dBackwardOutGradInput);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "reflection_pad2d", ReflectionPad2d)
+ADVANCED_REGISTER(aten, PrivateUse1, "reflection_pad1d", ReflectPad1D)
+ADVANCED_REGISTER(aten, PrivateUse1, "reflection_pad1d.out", ReflectPad1DOut)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "reflection_pad1d_backward.grad_input",
+    ReflectionPad1dBackwardOutGradInput)
 
 } // namespace musa
 } // namespace at

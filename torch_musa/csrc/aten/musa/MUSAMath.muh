@@ -1,0 +1,403 @@
+#ifndef ATEN_MUSA_MUSA_MATH_H_
+#define ATEN_MUSA_MUSA_MATH_H_
+
+#include <math.h>
+#include <type_traits>
+
+#include "mudnn.h"
+
+//! fast_div ref from include/cutlass/fast_math.h see
+//! https://ridiculousfish.com/blog/posts/labor-of-division-episode-i.html or
+//! <<Hacker's Delight>>
+namespace at {
+namespace musa {
+
+typedef __half float16_t;
+
+template <typename T>
+__device__ inline bool is_negative(T x) {
+  if constexpr (std::is_unsigned<T>::value) {
+    return false;
+  } else {
+    return x < (T)0;
+  }
+  return false;
+}
+
+template <typename T>
+__device__ inline bool signs_diff(T x, T y) {
+  return is_negative(x) != is_negative(y);
+}
+
+template <typename T>
+__device__ __host__ inline T sigmoid(T x) {
+  return 1.f / (1.f + __expf(-x));
+}
+
+/**
+ * Statically determine if N is a power-of-two
+ */
+template <int N>
+struct is_pow2 {
+  static bool const value = ((N & (N - 1)) == 0);
+};
+
+/**
+ * Statically determine log2(N), rounded down
+ */
+template <int N, int CurrentVal = N, int Count = 0>
+struct log2_down {
+  /// Static logarithm value
+  enum { value = log2_down<N, (CurrentVal >> 1), Count + 1>::value };
+};
+
+// Base case
+template <int N, int Count>
+struct log2_down<N, 1, Count> {
+  enum { value = Count };
+};
+
+/**
+ * Statically determine log2(N), rounded up
+ */
+template <int N, int CurrentVal = N, int Count = 0>
+struct log2_up {
+  /// Static logarithm value
+  enum { value = log2_up<N, (CurrentVal >> 1), Count + 1>::value };
+};
+
+// Base case
+template <int N, int Count>
+struct log2_up<N, 1, Count> {
+  enum { value = ((1 << Count) < N) ? Count + 1 : Count };
+};
+
+/**
+ * Greatest common divisor
+ */
+template <typename value_t>
+__device__ __host__ __forceinline__ value_t gcd(value_t a, value_t b) {
+  for (;;) {
+    if (a == 0)
+      return b;
+    b %= a;
+    if (b == 0)
+      return a;
+    a %= b;
+  }
+}
+
+/**
+ * Least common multiple
+ */
+template <typename value_t>
+__device__ __host__ __forceinline__ value_t lcm(value_t a, value_t b) {
+  value_t temp = gcd(a, b);
+
+  return temp ? (a / temp * b) : 0;
+}
+
+/// Returns the smallest value in the half-open range [a, a+b) that is a
+/// multiple of b
+__device__ __host__ __forceinline__ constexpr int round_up(int a, int b) {
+  return ((a + b - 1) / b) * b;
+}
+
+/// Returns the ceiling of (a / b)
+__device__ __host__ __forceinline__ constexpr int ceil_div(int a, int b) {
+  return (a + b - 1) / b;
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/**
+ * log2 computation, what's the
+ * difference between the below codes and
+ * log2_up/down codes?
+ */
+template <typename value_t>
+__device__ __host__ __forceinline__ value_t clz(value_t x) {
+  for (int i = 31; i >= 0; --i) {
+    if ((1 << i) & x)
+      return 31 - i;
+  }
+  return 32;
+}
+
+template <typename value_t>
+__device__ __host__ __forceinline__ value_t find_log2(value_t x) {
+  int a = int(31 - clz(x));
+  a += (x & (x - 1)) != 0; // Round up, add 1 if not a power of 2.
+  return a;
+}
+
+/**
+ * Find divisor, using find_log2
+ */
+__device__ __host__ __forceinline__ void find_divisor(
+    unsigned int& mul,
+    unsigned int& shr,
+    unsigned int denom) {
+  if (denom == 1) {
+    mul = 0;
+    shr = 0;
+  } else {
+    unsigned int p = 31 + find_log2(denom);
+    unsigned m =
+        unsigned(((1ull << p) + unsigned(denom) - 1) / unsigned(denom));
+
+    mul = m;
+    shr = p - 32;
+  }
+}
+
+/**
+ * Find quotient and remainder using device-side intrinsics
+ */
+__device__ __host__ __forceinline__ void fast_divmod(
+    int& quo,
+    int& rem,
+    int src,
+    int div,
+    unsigned int mul,
+    unsigned int shr) {
+  quo = int((div != 1) ? int(((int64_t)src * mul) >> 32) >> shr : src);
+
+  // The remainder.
+  rem = src - (quo * div);
+}
+
+// For long int input
+__device__ __host__ __forceinline__ void fast_divmod(
+    int& quo,
+    int64_t& rem,
+    int64_t src,
+    int div,
+    unsigned int mul,
+    unsigned int shr) {
+  quo = int((div != 1) ? ((src * mul) >> 32) >> shr : src);
+  // The remainder.
+  rem = src - (quo * div);
+}
+
+__device__ __host__ __forceinline__ void fast_divmod(
+    int& quo,
+    int& rem,
+    int64_t src,
+    int div,
+    unsigned int mul,
+    unsigned int shr) {
+  quo = int((div != 1) ? ((src * mul) >> 32) >> shr : src);
+  // The remainder.
+  rem = (src - (quo * div));
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Object to encapsulate the fast division+modulus operation.
+///
+/// This object precomputes two values used to accelerate the computation and is
+/// best used when the divisor is a grid-invariant. In this case, it may be
+/// computed in host code and marshalled along other kernel arguments using the
+/// 'Params' pattern.
+///
+/// Example:
+///
+///
+///   int quotient, remainder, dividend, divisor;
+///
+///   FastDivmod divmod(divisor);
+///
+///   divmod(quotient, remainder, dividend);
+///
+///   // quotient = (dividend / divisor)
+///   // remainder = (dividend % divisor)
+///
+struct FastDivmod {
+  int divisor;
+  unsigned int multiplier;
+  unsigned int shift_right;
+
+  /// Construct the FastDivmod object, in host code ideally.
+  ///
+  /// This precomputes some values based on the divisor and is computationally
+  /// expensive.
+
+  __device__ __host__ __forceinline__ FastDivmod()
+      : divisor(0), multiplier(0), shift_right(0) {}
+
+  __device__ __host__ __forceinline__ FastDivmod(int divisor_)
+      : divisor(divisor_) {
+    find_divisor(multiplier, shift_right, divisor);
+  }
+
+  /// Computes integer division and modulus using precomputed values. This is
+  /// computationally inexpensive.
+  __device__ __host__ __forceinline__ void operator()(
+      int& quotient,
+      int& remainder,
+      int dividend) const {
+    fast_divmod(
+        quotient, remainder, dividend, divisor, multiplier, shift_right);
+  }
+
+  /// Computes integer division and modulus using precomputed values. This is
+  /// computationally inexpensive.
+  ///
+  /// Simply returns the quotient
+  __device__ __host__ __forceinline__ int divmod(int& remainder, int dividend)
+      const {
+    int quotient;
+    fast_divmod(
+        quotient, remainder, dividend, divisor, multiplier, shift_right);
+    return quotient;
+  }
+
+  __device__ __host__ __forceinline__ int div(int dividend) const {
+    int quotient, remainder;
+    fast_divmod(
+        quotient, remainder, dividend, divisor, multiplier, shift_right);
+    return quotient;
+  }
+
+  /// Computes integer division and modulus using precomputed values. This is
+  /// computationally inexpensive.
+  __device__ __host__ __forceinline__ void operator()(
+      int& quotient,
+      int64_t& remainder,
+      int64_t dividend) const {
+    fast_divmod(
+        quotient, remainder, dividend, divisor, multiplier, shift_right);
+  }
+
+  /// Computes integer division and modulus using precomputed values. This is
+  /// computationally inexpensive.
+  __device__ __host__ __forceinline__ int divmod(
+      int64_t& remainder,
+      int64_t dividend) const {
+    int quotient;
+    fast_divmod(
+        quotient, remainder, dividend, divisor, multiplier, shift_right);
+    return quotient;
+  }
+
+  /// Computes integer division and modulus using precomputed values. This is
+  /// computationally inexpensive.
+  __device__ __host__ __forceinline__ void operator()(
+      int& quotient,
+      int& remainder,
+      int64_t dividend) const {
+    fast_divmod(
+        quotient, remainder, dividend, divisor, multiplier, shift_right);
+  }
+
+  /// Computes integer division and modulus using precomputed values. This is
+  /// computationally inexpensive.
+  __device__ __host__ __forceinline__ int divmod(
+      int& remainder,
+      int64_t dividend) const {
+    int quotient;
+    fast_divmod(
+        quotient, remainder, dividend, divisor, multiplier, shift_right);
+    return quotient;
+  }
+
+  __device__ __host__ __forceinline__ int div(int64_t dividend) const {
+    int quotient, remainder;
+    fast_divmod(
+        quotient, remainder, dividend, divisor, multiplier, shift_right);
+    return quotient;
+  }
+};
+
+struct Rsqrtf {
+  static __device__ inline float apply(float x) {
+    return rsqrtf(x);
+  }
+};
+
+struct Fabs {
+  static __device__ inline float apply(float x) {
+    return fabs(x);
+  }
+};
+
+// CUDA max/min function for comparing NAN values
+#ifdef __CUDACC__ // MUSIFY_EXCL_LINE
+__device__ inline bool is_lt_or_nan(float x, float y) {
+  return (x < y || isnan(x)) && !(isnan(y));
+}
+
+__device__ inline bool is_ge_or_nan(float x, float y) {
+  return (x >= y || isnan(x)) && !(isnan(y));
+}
+
+__device__ inline float fmaxf_or_nan(float x, float y) {
+  return (isnan(x) || isnan(y)) ? NAN : max(x, y);
+}
+
+__device__ inline float fminf_or_nan(float x, float y) {
+  return (isnan(x) || isnan(y)) ? NAN : min(x, y);
+}
+#endif
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+/// Converts a Dtype to an unsigned integer representation for purpose of radix
+/// sort
+template <typename Dtype>
+struct RadixTypeConvert {};
+
+template <>
+struct RadixTypeConvert<float> {
+  typedef uint32_t RadixType;
+  static __device__ __forceinline__ RadixType convert(float v) {
+    RadixType i_in = *((RadixType*)(&v));
+    return (i_in >> 31 & 0x1) ? ~i_in : i_in | 0x80000000;
+  }
+
+  static __device__ __forceinline__ float deconvert(RadixType v) {
+    RadixType i_out = (v >> 31 & 0x1) ? v & 0x7fffffff : ~v;
+    return *((float*)(&i_out));
+  }
+};
+
+template <>
+struct RadixTypeConvert<float16_t> {
+  typedef uint16_t RadixType;
+  static __device__ __forceinline__ RadixType convert(float16_t v) {
+    RadixType i_in = *((RadixType*)(&v));
+    RadixType u_in = (i_in >> 15 & 0x1) ? ~i_in : i_in | 0x8000;
+    return u_in;
+  }
+
+  static __device__ __forceinline__ float16_t deconvert(RadixType v) {
+    RadixType i_out = (v >> 15 & 0x1) ? v & 0x7fff : ~v;
+    return *((float16_t*)(&i_out));
+  }
+};
+
+template <>
+struct RadixTypeConvert<int32_t> {
+  typedef uint32_t RadixType;
+  static __device__ __forceinline__ RadixType convert(int32_t v) {
+    RadixType i_in = *((RadixType*)(&v));
+    RadixType u_in = (i_in >> 31 & 0x1) ? i_in & 0x7fffffff : i_in | 0x80000000;
+    return u_in;
+  }
+};
+
+template <>
+struct RadixTypeConvert<int64_t> {
+  typedef uint64_t RadixType;
+  static __device__ __forceinline__ RadixType convert(int64_t v) {
+    RadixType i_in = *((RadixType*)(&v));
+    RadixType u_in = (i_in >> 63 & 0x1) ? i_in & 0x7fffffffffffffff
+                                        : i_in | 0x8000000000000000;
+    return u_in;
+  }
+};
+
+} // namespace musa
+} // namespace at
+#endif // ATEN_MUSA_MUSA_MATH_H_

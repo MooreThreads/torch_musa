@@ -7,6 +7,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -56,14 +57,15 @@ at::Tensor& MaskedSelectOut(
       ? c10::MaybeOwned<Tensor>::owned(self.unsqueeze(0))
       : c10::MaybeOwned<Tensor>::borrowed(self);
   if (!mask_temp->numel() || !self_temp->numel()) {
-    out = at::empty({0}, self.options());
+    auto out_tmp = at::empty({0}, self.options());
+    out.copy_(out_tmp);
     return out;
   }
 
   c10::musa::MUSAGuard device_guard(mask.device());
 
-  auto contiguous_self = Contiguous(*self_temp);
-  auto contiguous_mask = Contiguous(*mask_temp);
+  auto contiguous_self = (*self_temp).contiguous();
+  auto contiguous_mask = (*mask_temp).contiguous();
 
   c10::MaybeOwned<Tensor> expand_mask, expand_input;
   std::tie(expand_mask, expand_input) =
@@ -71,9 +73,9 @@ at::Tensor& MaskedSelectOut(
   out.resize_({(*expand_input).numel()});
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::MaskedSelect maskedselect_op;
-  auto mt_input = CreateMUTensor(*expand_input, true);
-  auto mt_mask = CreateMUTensor(*expand_mask, true);
-  auto mt_result = CreateMUTensor(out, true);
+  auto mt_input = CreateMUTensor(*expand_input);
+  auto mt_mask = CreateMUTensor(*expand_mask);
+  auto mt_result = CreateMUTensor(out);
   CHECK_MUDNN_STATUS(
       maskedselect_op.Run(h, mt_result, mt_input, mt_mask, InternalMemAlloc),
       "Run");
@@ -81,8 +83,8 @@ at::Tensor& MaskedSelectOut(
   // First we malloc sufficient memory for output tensor;
   // Then MUDNN kernel will compute the actual output shape and sync.
   // Finally, wo need to reset actual output shape to out tensor.
-  std::vector<int32_t> out_shape;
-  std::vector<int32_t> out_stride;
+  std::vector<int64_t> out_shape;
+  std::vector<int64_t> out_stride;
   CHECK_MUDNN_STATUS(mt_result.GetNdInfo(out_shape, out_stride), "GetNdInfo");
   std::vector<int64_t> out_shape_int64;
   for (const auto i : out_shape) {
@@ -98,6 +100,7 @@ at::Tensor& MaskedSelectOut(
 }
 
 at::Tensor MaskedSelect(const at::Tensor& input, const at::Tensor& mask) {
+  c10::musa::MUSAGuard(input.device());
   auto result = at::empty({0}, input.options());
   MaskedSelectOut(input, mask, result);
   return result;
@@ -112,20 +115,20 @@ at::Tensor& NonzeroOut(const at::Tensor& self, at::Tensor& out) {
       out.device().type() == kMUSA,
       "Device of output tensor of Nonzero must be MUSA, but now is ",
       out.device());
-  TORCH_CHECK(
-      self.scalar_type() == at::ScalarType::Float ||
-          self.scalar_type() == at::ScalarType::Bool,
-      "Dtype of input tensor of NoneZero only support "
-      "Float32/Bool, ",
-      "but now it is ",
-      self.scalar_type());
+
   if (!self.numel()) {
     out.resize_({0, self.dim()});
     return out;
   }
 
   c10::musa::MUSAGuard device_guard(self.device());
-  auto contiguous_self = Contiguous(self);
+
+  if (self.scalar_type() != at::ScalarType::Float &&
+      self.scalar_type() != at::ScalarType::Bool) {
+    return at::native::nonzero_out_cuda(self, out);
+  }
+
+  auto contiguous_self = self.contiguous();
 
   TORCH_CHECK(
       contiguous_self.numel() < std::numeric_limits<int>::max(),
@@ -148,7 +151,7 @@ at::Tensor& NonzeroOut(const at::Tensor& self, at::Tensor& out) {
   // First we malloc sufficient memory for output tensor;
   // Then MUDNN kernel will compute the actual output shape and sync.
   // Finally, we need to reset actual output shape to out tensor.
-  std::vector<int32_t> out_shape;
+  std::vector<int64_t> out_shape;
   CHECK_MUDNN_STATUS(mt_out.GetNdInfo(out_shape), "GetNdInfo");
   std::vector<int64_t> out_shape_int64;
   for (const auto i : out_shape) {
@@ -159,6 +162,7 @@ at::Tensor& NonzeroOut(const at::Tensor& self, at::Tensor& out) {
 }
 
 at::Tensor Nonzero(const at::Tensor& input) {
+  c10::musa::MUSAGuard(input.device());
   auto result = at::empty({0}, input.options().dtype(kLong));
   NonzeroOut(input, result);
   return result;
@@ -195,8 +199,9 @@ at::Tensor& MaskedScatter(
       " and ",
       source.scalar_type());
   c10::musa::MUSAGuard device_guard(mask.device());
-  auto contiguous_self = Contiguous(self);
-  auto contiguous_mask = Contiguous(mask);
+  auto contiguous_self = self.contiguous();
+  auto contiguous_mask = mask.contiguous();
+  auto contiguous_source = source.contiguous();
   c10::MaybeOwned<Tensor> b_mask =
       expand_inplace(contiguous_self, contiguous_mask, "masked_scatter_");
   if (b_mask->dtype() == ScalarType::Byte) {
@@ -213,19 +218,18 @@ at::Tensor& MaskedScatter(
   ::musa::dnn::MaskedScatter op;
   auto mt_input = CreateMUTensor(contiguous_self);
   auto mt_mask = CreateMUTensor(contiguous_mask);
-  auto mt_source = CreateMUTensor(source);
+  auto mt_source = CreateMUTensor(contiguous_source);
   CHECK_MUDNN_STATUS(
       op.Run(h, mt_input, mt_mask, mt_source, InternalMemAlloc), "Run");
+  self.copy_(contiguous_self);
   return self;
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("masked_select", &MaskedSelect);
-  m.impl("masked_select.out", &MaskedSelectOut);
-  m.impl("nonzero", &Nonzero);
-  m.impl("nonzero.out", &NonzeroOut);
-  m.impl("masked_scatter_", &MaskedScatter);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "masked_select", MaskedSelect)
+ADVANCED_REGISTER(aten, PrivateUse1, "masked_select.out", MaskedSelectOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "nonzero", Nonzero)
+ADVANCED_REGISTER(aten, PrivateUse1, "nonzero.out", NonzeroOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "masked_scatter_", MaskedScatter)
 
 } // namespace musa
 } // namespace at

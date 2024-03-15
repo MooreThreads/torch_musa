@@ -13,8 +13,8 @@ static constexpr unsigned int kDefaultFlags = musaStreamNonBlocking;
 static constexpr int kStreamTypeBits = 3;
 
 // Note: lower numbers are higher priorities, zero is default priority
-static constexpr int kHighPriority = 0;
-static constexpr int kLowPriority = 1;
+static constexpr int kHighPriority = -1;
+static constexpr int kLowPriority = 0;
 
 static c10::once_flag device_flags[MUSA_COMPILE_TIME_MAX_GPUS];
 static std::atomic<uint32_t> low_priority_counters[MUSA_COMPILE_TIME_MAX_GPUS];

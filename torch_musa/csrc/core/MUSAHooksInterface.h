@@ -1,11 +1,14 @@
+#ifndef TORCH_MUSA_CSRC_CORE_MUSA_HOOKS_INTERFACE_H_
+#define TORCH_MUSA_CSRC_CORE_MUSA_HOOKS_INTERFACE_H_
 #include <ATen/core/Generator.h>
+#include <ATen/detail/PrivateUse1HooksInterface.h>
 #include <c10/core/Device.h>
 #include <c10/util/Exception.h>
 #include <c10/util/Registry.h>
 
 namespace at {
 
-struct MUSAHooksInterface {
+struct MUSAHooksInterface : public at::PrivateUse1HooksInterface {
   virtual ~MUSAHooksInterface() = default;
 
   virtual void initMUSA() const {
@@ -40,7 +43,7 @@ struct MUSAHooksInterface {
   }
 };
 
-struct MUSAHooksArgs {};
+struct MUSAHooksArgs : public at::PrivateUse1HooksArgs {};
 
 C10_DECLARE_REGISTRY(MUSAHooksRegistry, MUSAHooksInterface, MUSAHooksArgs);
 #define REGISTER_MUSA_HOOKS(clsname) \
@@ -50,3 +53,5 @@ namespace detail {
 const MUSAHooksInterface& getMUSAHooks();
 } // namespace detail
 } // namespace at
+
+#endif // TORCH_MUSA_CSRC_CORE_MUSA_HOOKS_INTERFACE_H_

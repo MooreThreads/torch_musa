@@ -2,4 +2,4 @@
 set -exo pipefail
 
 # Integration tests
-pytest -s tests/integration/vision
+pytest -v tests/integration/vision

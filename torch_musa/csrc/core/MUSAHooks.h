@@ -1,3 +1,5 @@
+#ifndef TORCH_MUSA_CSRC_CORE_MUSA_HOOKS_H_
+#define TORCH_MUSA_CSRC_CORE_MUSA_HOOKS_H_
 #include "torch_musa/csrc/core/Device.h"
 #include "torch_musa/csrc/core/MUSAHooksInterface.h"
 
@@ -20,3 +22,5 @@ struct MUSAHooks : public MUSAHooksInterface {
 } // namespace detail
 } // namespace musa
 } // namespace at
+
+#endif // TORCH_MUSA_CSRC_CORE_MUSA_HOOKS_H_

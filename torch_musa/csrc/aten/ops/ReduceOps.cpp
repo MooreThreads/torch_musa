@@ -15,6 +15,9 @@
 #include <ATen/Functions.h>
 #include <ATen/NativeFunctions.h>
 #else
+#include <ATen/ops/amax_native.h>
+#include <ATen/ops/aminmax.h>
+#include <ATen/ops/aminmax_native.h>
 #include <ATen/ops/full.h>
 #include <ATen/ops/imag.h>
 #include <ATen/ops/kthvalue_native.h>
@@ -23,14 +26,19 @@
 #include <ATen/ops/where.h>
 #endif
 
-#include <ATen/ATen.h>
 #include <ATen/TensorUtils.h>
 #include <ATen/core/Tensor.h>
 #include <ATen/native/ReduceOps.h>
+#include <ATen/native/musa/ReduceOps.h>
+#include <ATen/ops/aminmax.h>
+#include <ATen/ops/aminmax_native.h>
 #include <torch/library.h>
+
+#include <tuple>
 
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace native {
@@ -57,72 +65,115 @@ void NormKernel(TensorIterator& iter, const Scalar& val) {
   }
 }
 
+void AMinMaxKernel(
+    const Tensor& self,
+    int64_t dim,
+    bool keepdim,
+    Tensor& min_result,
+    Tensor& max_result) {
+  at::TensorIterator iter = make_reduction(
+      "aminmax_musa",
+      min_result,
+      max_result,
+      self,
+      dim,
+      keepdim,
+      self.scalar_type());
+  aminmax_launch_kernel(iter);
+}
+
+void AMinMaxAllReduceKernel(
+    const Tensor& input,
+    Tensor& min_result,
+    Tensor& max_result) {
+  auto dtype = input.scalar_type();
+  auto iter = make_reduction(
+      "aminmax_musa",
+      min_result,
+      max_result,
+      input,
+      IntArrayRef{},
+      false,
+      dtype);
+  TORCH_CHECK(
+      iter.numel() > 0, "min_max on a tensor with no elements is not defined.");
+  aminmax_allreduce_launch_kernel(iter);
+}
+
 } // namespace
 
 REGISTER_MUSA_DISPATCH(norm_stub, &NormKernel);
+REGISTER_MUSA_DISPATCH(aminmax_stub, &AMinMaxKernel);
+REGISTER_MUSA_DISPATCH(aminmax_allreduce_stub, &AMinMaxAllReduceKernel);
+
 } // namespace native
 
 namespace musa {
-
-namespace {
-struct structured_amax_out_out final : public at::native::structured_amax_out {
-  structured_amax_out_out(Tensor& out0) : outputs_{std::ref(out0)} {}
-  void set_output_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    auto current_device = guard_.current_device();
-    if (C10_UNLIKELY(current_device.has_value())) {
-      TORCH_INTERNAL_ASSERT(
-          *current_device == options.device(),
-          "structured kernels don't support multi-device outputs");
-    } else {
-      guard_.reset_device(options.device());
-    }
-    const auto& out = outputs_[output_idx].get();
-    at::musa::resize_out(out, sizes, strides, options);
-  }
-  void set_output_raw_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    auto current_device = guard_.current_device();
-    if (C10_UNLIKELY(current_device.has_value())) {
-      TORCH_INTERNAL_ASSERT(
-          *current_device == options.device(),
-          "structured kernels don't support multi-device outputs");
-    } else {
-      guard_.reset_device(options.device());
-    }
-    const auto& out = outputs_[output_idx].get();
-    at::musa::resize_out(out, sizes, strides, options);
-  }
-  const Tensor& maybe_get_output(int64_t output_idx) override {
-    return outputs_[output_idx].get();
-  }
-  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
-  c10::musa::OptionalMUSAGuard guard_;
-};
-} // namespace
 
 at::Tensor& AMaxOut(
     const at::Tensor& self,
     at::IntArrayRef dim,
     bool keepdim,
     at::Tensor& out) {
-  structured_amax_out_out op(out);
-  op.meta(self, dim, keepdim);
-  op.impl(self, dim, keepdim, op.maybe_get_output(0));
+  c10::musa::MUSAGuard device_guard(self.device());
+  DimVector dims_vec(dim);
+  maybe_wrap_dims(dims_vec, self.dim());
+  namedinference::propagate_names_for_reduction(out, self, dims_vec, keepdim);
+
+  at::Tensor input = self.contiguous();
+
+  auto in_m = CreateMUTensor(input);
+  auto out_m = CreateMUTensor(out);
+
+  std::vector<int> dims(dims_vec.data(), dims_vec.data() + dims_vec.size());
+  muHandle& h = GetMudnnHandle();
+  ::musa::dnn::Reduce r;
+  ::musa::dnn::Reduce::Mode m = ::musa::dnn::Reduce::Mode::MAX;
+  CHECK_MUDNN_STATUS(r.SetMode(m), "SetMode");
+  CHECK_MUDNN_STATUS(r.SetDim(dims.size(), dims.data()), "SetDim");
+  CHECK_MUDNN_STATUS(r.Run(h, out_m, in_m, InternalMemAlloc), "Run");
+
   return out;
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("amax.out", &AMaxOut);
+std::tuple<at::Tensor&, at::Tensor&> AMinMaxOut(
+    const at::Tensor& self,
+    c10::optional<int64_t> dim,
+    bool keepdim,
+    at::Tensor& min,
+    at::Tensor& max) {
+  c10::musa::MUSAGuard device_guard(self.device());
+
+  IntArrayRef dims(dim.value());
+  DimVector dims_vec(dims);
+  maybe_wrap_dims(dims_vec, self.dim());
+  namedinference::propagate_names_for_reduction(min, self, dims_vec, keepdim);
+  namedinference::propagate_names_for_reduction(max, self, dims_vec, keepdim);
+
+  at::Tensor input = self.contiguous();
+
+  auto in_m = CreateMUTensor(input);
+  auto min_m = CreateMUTensor(min);
+  auto max_m = CreateMUTensor(max);
+
+  const int dim_m = dims_vec[0];
+  muHandle& h = GetMudnnHandle();
+  ::musa::dnn::Reduce r_min;
+  ::musa::dnn::Reduce r_max;
+  CHECK_MUDNN_STATUS(
+      r_min.SetMode(::musa::dnn::Reduce::Mode::MIN), "SetMinMode");
+  CHECK_MUDNN_STATUS(
+      r_max.SetMode(::musa::dnn::Reduce::Mode::MAX), "SetMaxMode");
+  CHECK_MUDNN_STATUS(r_min.SetDim({dim_m}), "SetMinDim");
+  CHECK_MUDNN_STATUS(r_max.SetDim({dim_m}), "SetMaxDim");
+  CHECK_MUDNN_STATUS(r_min.Run(h, min_m, in_m, InternalMemAlloc), "RunMin");
+  CHECK_MUDNN_STATUS(r_max.Run(h, max_m, in_m, InternalMemAlloc), "RunMax");
+
+  return std::forward_as_tuple(min, max);
 }
+
+ADVANCED_REGISTER(aten, PrivateUse1, "amax.out", AMaxOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "aminmax.out", AMinMaxOut)
 
 } // namespace musa
 } // namespace at

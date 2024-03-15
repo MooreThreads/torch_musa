@@ -1,10 +1,17 @@
 #include <ATen/Config.h>
 #include <ATen/ExpandUtils.h>
-#include <ATen/NativeFunctions.h>
 #include <torch/library.h>
 
+#ifndef AT_PER_OPERATOR_HEADERS
+#include <ATen/Functions.h>
+#include <ATen/NativeFunctions.h>
+#else
+#include <ATen/ops/ones_like.h>
+#include <ATen/ops/zeros_like.h>
+#endif
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
@@ -17,9 +24,12 @@ namespace musa {
       "Device of input tensor of NativeDropout must be MUSA, ",
       "but now is ",
       input.device());
+
   TORCH_CHECK(
-      input.scalar_type() == at::ScalarType::Float,
-      "Dtype of input tensor of NativeDropout only support Float32, ",
+      input.scalar_type() == at::ScalarType::Float ||
+          input.scalar_type() == at::ScalarType::Half ||
+          input.scalar_type() == at::ScalarType::BFloat16,
+      "Dtype of input tensor of NativeDropout only support Float, Half and BFloat16, ",
       "but now it is ",
       input.scalar_type());
 
@@ -46,10 +56,13 @@ namespace musa {
   }
 
   Tensor mask = at::empty_like(
-      input, input.options().dtype(c10::CppTypeToScalarType<bool>::value));
-  Tensor output = at::empty_like(input);
+      input,
+      input.options().dtype(c10::CppTypeToScalarType<bool>::value),
+      at::MemoryFormat::Contiguous);
+  Tensor output = at::empty_like(input, at::MemoryFormat::Contiguous);
   muHandle& h = GetMudnnHandle();
-  auto musa_input = CreateMUTensor(input);
+  auto contiguous_input = input.contiguous();
+  auto musa_input = CreateMUTensor(contiguous_input);
   auto musa_output = CreateMUTensor(output);
   auto musa_mask = CreateMUTensor(mask);
 
@@ -70,9 +83,11 @@ Tensor NativeDropoutBackward(
       " but now is ",
       grad_output.device());
   TORCH_CHECK(
-      grad_output.scalar_type() == at::ScalarType::Float,
+      grad_output.scalar_type() == at::ScalarType::Float ||
+          grad_output.scalar_type() == at::ScalarType::Half ||
+          grad_output.scalar_type() == at::ScalarType::BFloat16,
       "Dtype of input tensor of NativeDropoutBackward only support",
-      " Float32, but now it is ",
+      " Float, Half and BFloat16, but now it is ",
       grad_output.scalar_type());
   TORCH_CHECK(
       mask.device().type() == kMUSA,
@@ -85,10 +100,12 @@ Tensor NativeDropoutBackward(
       " Bool, but now it is ",
       mask.scalar_type());
   c10::musa::MUSAGuard device_guard(grad_output.device());
-  Tensor output = at::empty_like(grad_output);
+  Tensor output = at::empty_like(grad_output, at::MemoryFormat::Contiguous);
   muHandle& h = GetMudnnHandle();
-  auto musa_grad_output = CreateMUTensor(grad_output);
-  auto musa_mask = CreateMUTensor(mask);
+  auto contiguous_grad_output = grad_output.contiguous();
+  auto contiguous_mask = mask.contiguous();
+  auto musa_grad_output = CreateMUTensor(contiguous_grad_output);
+  auto musa_mask = CreateMUTensor(contiguous_mask);
   auto musa_output = CreateMUTensor(output);
 
   ::musa::dnn::Dropout dropout;
@@ -99,10 +116,12 @@ Tensor NativeDropoutBackward(
   return output;
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("native_dropout", &NativeDropout);
-  m.impl("native_dropout_backward", &NativeDropoutBackward);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "native_dropout", NativeDropout)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "native_dropout_backward",
+    NativeDropoutBackward)
 
 } // namespace musa
 } // namespace at

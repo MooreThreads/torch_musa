@@ -55,7 +55,7 @@ author = u''
 # built documents.
 #
 # The short X.Y version.
-version = u'1.0.0'
+version = u'1.1.0'
 # The full version, including alpha/beta/rc tags.
 release = version
 curfnpre=u'MooreThreads-Torch_MUSA-Developer-Guide-CN-v'

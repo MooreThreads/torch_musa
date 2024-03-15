@@ -7,6 +7,14 @@ namespace detail {
 
 static MUSAHooksInterface* musa_hooks = nullptr;
 
+static at::MUSAHooksInterface* get_private_hooks() {
+  return musa_hooks;
+}
+
+void RegisterHook() {
+  at::RegisterPrivateUse1HooksInterface(get_private_hooks());
+}
+
 const MUSAHooksInterface& getMUSAHooks() {
   static c10::once_flag once;
   c10::call_once(once, [] {
@@ -15,6 +23,7 @@ const MUSAHooksInterface& getMUSAHooks() {
     if (!musa_hooks) {
       musa_hooks = new MUSAHooksInterface();
     }
+    RegisterHook();
   });
   return *musa_hooks;
 }

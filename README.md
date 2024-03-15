@@ -1,10 +1,14 @@
-![Torch MUSA_Logo](https://github.com/MooreThreads/torch_musa/blob/main/docs/source/img/torch_musa.png)
+![Torch MUSA_Logo](./docs/images/torch_musa.png)
 --------------------------------------------------------------------------------
+
 
 **torch_musa** is an extended Python package based on PyTorch. Developing **torch_musa** in a plug-in way allows **torch_musa** to be decoupled from PyTorch, which is convenient for code maintenance. Combined with PyTorch, users can take advantage of the strong power of Moore Threads graphics cards through **torch_musa**. In addition, **torch_musa** has two significant advantages:
 
 * CUDA compatibility could be achieved in **torch_musa**, which greatly reduces the workload of adapting new operators.
 * **torch_musa** API is consistent with PyTorch in format, which allows users accustomed to PyTorch to migrate smoothly to **torch_musa**.
+
+**torch_musa** also provides a bundle of tools for users to conduct cuda-porting, building musa extension and debugging. Please refer to [README.md](torch_musa/utils/README.md) of **torch_musa.utils**.
+
 --------------------------------------------------------------------------------
 
 <!-- toc -->
@@ -21,13 +25,13 @@
     - [Docker Image for Developer](#docker-image-for-developer)
     - [Docker Image for User](#docker-image-for-user)
 - [Getting Started](#getting-started)
+  - [Code Style](#coding-style)
   - [Key Changes](#key-changes)
   - [Example of Frequently Used APIs](#example-of-frequently-used-apis)
   - [Example of Inference Demo](#example-of-inference-demo)
   - [Example of Training Demo](#example-of-training-demo)
-- [Documentation](#documentation)
 - [FAQ](#faq)
-
+  - [For More Detailed Information](#for-more-detailed-information)
 <!-- tocstop -->
 
 ## Installation
@@ -36,20 +40,28 @@
 - [Package Download Link](https://github.com/MooreThreads/torch_musa/releases)
 
 ```bash
-# for python3.8
-pip install torch-2.0.0_xxxxxx-cp38-cp38-linux_x86_64.whl
-pip install torch_musa_xxxxxx-cp38-cp38-linux_x86_64.whl
+# To install the packages for S4000, simply replace 'S80_S3000' with 'S4000' in the following command.
+# for Python3.8
+pip install torch-2.0.0-cp38-cp38-linux_x86_64-S80_S3000.whl
+pip install torch_musa-1.1.0-cp38-cp38-linux_x86_64-S80_S3000.whl
+pip install torchvision-0.15.2a0+fa99a53-cp38-cp38-linux_x86_64-S80_S3000.whl
 
-# for python3.9
-pip install torch-2.0.0_xxxxxx-cp39-cp39-linux_x86_64.whl
-pip install torch_musa_xxxxxx-cp39-cp39-linux_x86_64.whl
+# for Python3.9
+pip install torch-2.0.0-cp39-cp39-linux_x86_64-S80_S3000.whl
+pip install torch_musa-1.1.0-cp39-cp39-linux_x86_64-S80_S3000.whl
+pip install torchvision-0.15.2a0+fa99a53-cp39-cp39-linux_x86_64-S80_S3000.whl
+
+# for python3.10
+pip install torch-2.0.0-cp310-cp310-linux_x86_64-S80_S3000.whl
+pip install torch_musa-1.1.0-cp310-cp310-linux_x86_64-S80_S3000.whl
+pip install torchvision-0.15.2a0+fa99a53-cp310-cp310-linux_x86_64-S80_S3000.whl
 ```
 
 ### From Source
 
 #### Prerequisites
-- [MUSA ToolKit](https://new-developer.mthreads.com/sdk/download/musa?equipment=&os=&driverVersion=&version=)
-- [MUDNN](https://new-developer.mthreads.com/sdk/download/musa?equipment=&os=&driverVersion=&version=)
+- MUSA ToolKit
+- MUDNN
 - Other Libs (including muThrust, muSparse, muAlg, muRand)
 - [PyTorch Source Code](https://github.com/pytorch/pytorch/tree/v2.0.0)
 - [Docker Container Toolkits](https://mcconline.mthreads.com/software)
@@ -60,6 +72,7 @@ pip install torch_musa_xxxxxx-cp39-cp39-linux_x86_64.whl
 
 ```bash
 apt-get install ccache
+apt-get install libomp-11-dev
 pip install -r requirements.txt
 ```
 
@@ -81,7 +94,7 @@ bash build.sh --musa   # build torch_musa only
 bash build.sh --fp64   # compile fp64 in kernels using mcc in torch_musa
 bash build.sh --debug  # build in debug mode
 bash build.sh --asan   # build in asan mode
-bash build.sh --clean  # clean everything built
+bash build.sh --clean  # clean everything built and build
 ```
 
 #### Building Step by Step From Source
@@ -109,57 +122,104 @@ python setup.py install
 ```
 
 ### Docker Image
-- [Development Docker Image Download Link](https://mcconline.mthreads.com/repo/musa-pytorch-dev-public?repoName=musa-pytorch-dev-public&repoNamespace=mcconline&displayName=MUSA%20Pytorch%20Dev%20Public)
-- [Release Docker Image Download Link](https://mcconline.mthreads.com/repo/musa-pytorch-release-public?repoName=musa-pytorch-release-public&repoNamespace=mcconline&displayName=MUSA%20Pytorch%20Release%20Public)
 
-**NOTE:** If you want to use **torch_musa** in docker container, please install [mt-container-toolkit](https://mcconline.mthreads.com/software/1?id=1) first and use '--env MTHREADS_VISIBLE_DEVICES=all' when starting a container.
+**NOTE:** If you want to use **torch_musa** in docker container, please install [mt-container-toolkit](https://mcconline.mthreads.com/software/1?id=1) first and use '--env MTHREADS_VISIBLE_DEVICES=all' when starting a container. During its initial startup, Docker performs a self-check. The unit tests and integration test results for **torch_musa** in the develop docker are located in /home/integration_test_output.txt and /home/ut_output.txt. The develop docker has already installed torch and **torch_musa** and the source code is located in /home.
+
+
 
 #### Docker Image for Developer
-
 ```bash
-docker run -it --privileged --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g torch_musa_develop_image /bin/bash
+#To run the Docker for S3000/S80, simply replace 'S4000' with 'S3000' or 'S80' in the following command.
+#Python3.8
+docker run -it --privileged --pull always --network=host --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g registry.mthreads.com/mcconline/musa-pytorch-dev-public:rc2.0.0-v1.1.0-S4000-py38 /bin/bash
+
+#Python3.9
+docker run -it --privileged --pull always --network=host --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g registry.mthreads.com/mcconline/musa-pytorch-dev-public:rc2.0.0-v1.1.0-S4000-py39 /bin/bash
+
+#Python3.10
+docker run -it --privileged --pull always --network=host --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g registry.mthreads.com/mcconline/musa-pytorch-dev-public:rc2.0.0-v1.1.0-S4000-py310 /bin/bash
 ```
-<details>
-<summary>Docker Image List</summary>
-
-| Docker Tag | Description |
-| ---- | --- |
-| [**latest/v1.0.0**](https://mcconline.mthreads.com/repo/musa-pytorch-dev-public?repoName=musa-pytorch-dev-public&repoNamespace=mcconline&displayName=MUSA%20Pytorch%20Dev%20Public) | musatoolkits rc1.4.0 (requires musa driver musa_2.1.1)<br> mudnn rtm_2.1.1; mccl 20230627 <br> libomp-11-dev <br> muAlg _dev-0.1.1 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.1.1 |
-
-</details>  
-
 
 #### Docker Image for User
 ```bash
-docker run -it --privileged --name=torch_musa_release --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g torch_musa_release_image /bin/bash
+#To run the Docker for S3000/S80, simply replace 'S4000' with 'S3000' or 'S80' in the following command.
+#python3.8
+docker run -it --privileged --pull always --network=host --name=torch_musa_release --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g registry.mthreads.com/mcconline/musa-pytorch-release-public:rc2.0.0-v1.1.0-S4000-py38 /bin/bash
+
+#python3.9
+docker run -it --privileged --pull always --network=host --name=torch_musa_release --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g registry.mthreads.com/mcconline/musa-pytorch-release-public:rc2.0.0-v1.1.0-S4000-py39 /bin/bash
+
+#python3.10
+docker run -it --privileged --pull always --network=host --name=torch_musa_release --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g registry.mthreads.com/mcconline/musa-pytorch-release-public:rc2.0.0-v1.1.0-S4000-py310 /bin/bash
 ```
-<details>
-<summary>Docker Image List</summary>
-
-| Docker Tag | Description |
-| ---- | --- |
-| [**latest/v1.0.0**](https://mcconline.mthreads.com/repo/musa-pytorch-release-public?repoName=musa-pytorch-release-public&repoNamespace=mcconline&displayName=MUSA%20Pytorch%20Release%20Public) | musatoolkits rc1.4.0 (requires musa driver musa_2.1.1)<br> mudnn rtm_2.1.1; mccl 20230627 <br> libomp-11-dev <br> muAlg _dev-0.1.1 <br> muRAND_dev1.0.0 <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.1.1 |
-
-</details>  
-
 
 ## Getting Started
+### Coding Style
+**torch_musa** mainly follows [Google C++ style](https://google.github.io/styleguide/cppguide.html) and customized PEP8 Python style.
+You can use the linting tools under `tools/lint` to check if coding styles are correctly followed.
+```bash
+# Check Python linting errors
+bash tools/lint/pylint.sh --rev main
+
+# Check C++ linting errorrs
+bash tools/lint/git-clang-format.sh --rev main
+```
+
+You can use the following command to fix C++ linting errors with clang-format-11 and above.
+```bash
+bash tools/lint/git-clang-format.sh -i --rev main
+```
+Python errors are slightly different. `tools/lint/git-black.sh` can be used to
+format the Python code, but other linting errors, e.g. naming, still needs to be fixed
+manually according to the prompted errors.
+
+
 ### Key Changes
 The following two key changes are required when using **torch_musa**:
  - Import **torch_musa** package
-   ```python
+   ```Python
    import torch
    import torch_musa
    ```
 
  - Change the device to **musa**
-   ```python
+   ```Python
    import torch
    import torch_musa
 
    a = torch.tensor([1.2, 2.3], dtype=torch.float32, device='musa')
    b = torch.tensor([1.2, 2.3], dtype=torch.float32, device='cpu').to('musa')
+   c = torch.tensor([1.2, 2.3], dtype=torch.float32).musa()
    ```
+**torch musa** has integrated torchvision ops in the musa backend. Please do the following if torchvision is not installed:
+- Install torchvision package via building from source
+  ```
+  # ensure torchvision is not installed
+  pip uninstall torchvision
+  
+  git clone https://github.com/pytorch/vision.git
+  cd vision
+  python setup.py install
+  ```
+- Use torchvision musa backend:
+  ```
+  import torch
+  import torch_musa
+  import torchvision
+
+  def get_forge_data(num_boxes):
+      boxes = torch.cat((torch.rand(num_boxes, 2), torch.rand(num_boxes, 2) + 10), dim=1)
+      assert max(boxes[:, 0]) < min(boxes[:, 2])  # x1 < x2
+      assert max(boxes[:, 1]) < min(boxes[:, 3])  # y1 < y2
+      scores = torch.rand(num_boxes)
+      return boxes, scores
+
+  num_boxes = 10
+  boxes, scores = get_forge_data(num_boxes)
+  iou_threshold = 0.5
+  print(torchvision.ops.nms(boxes=boxes.to("musa"), scores=scores.to("musa"), iou_threshold=iou_threshold))
+  ```
+  
 
 ### Example of Frequently Used APIs
 
@@ -193,7 +253,7 @@ c = a + b
 <details>
 <summary>code</summary>
 
-```python
+```Python
 import torch
 import torch_musa
 import torchvision.models as models
@@ -211,7 +271,7 @@ y = model(x)
 <details>
 <summary>code</summary>
 
-```python
+```Python
 import torch
 import torch_musa
 import torchvision
@@ -301,8 +361,6 @@ print(f'Accuracy of the network on the 10000 test images: {100 * correct // tota
 ```
 </details>
 
-## Documentation
-- [Developer Guide](https://github.com/MooreThreads/torch_musa/blob/main/docs/MooreThreads-Torch_MUSA-Developer-Guide-CN-v1.0.0.pdf)
-
 ## FAQ
-For more detailed information, please refer to the files in the [docs folder](https://github.com/MooreThreads/torch_musa/tree/main/docs). Please let us know by email **developers@mthreads.com** if you have any questions.
+### For More Detailed Information
+Please refer to the files in the [docs folder](./docs).

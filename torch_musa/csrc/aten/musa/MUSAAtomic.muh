@@ -1,0 +1,173 @@
+#ifndef ATEN_MUSA_MUSA_ATOMIC_H_
+#define ATEN_MUSA_MUSA_ATOMIC_H_
+
+#include <musa_runtime.h>
+#include <stdint.h>
+
+namespace at {
+namespace musa {
+
+typedef unsigned long long ull;
+typedef __half float16_t;
+
+template <typename T>
+struct AtomicFPOp;
+
+template <>
+struct AtomicFPOp<__mt_bfloat16> {
+  template <typename func_t>
+  inline __device__ __mt_bfloat16
+  operator()(__mt_bfloat16* address, __mt_bfloat16 val, const func_t& func) {
+#if (defined(__MUSA_ARCH__) && __MUSA_ARCH__ >= 220)
+    unsigned int* address_as_ui =
+        (unsigned int*)((char*)address - ((size_t)address & 2));
+    unsigned int old = *address_as_ui;
+    unsigned int assumed;
+    bool uplo = (size_t)address & 2;
+
+    do {
+      assumed = old;
+      uint16_t bsum = uplo ? (old >> 16) : (old & 0xffff);
+      float newval = __bfloat162float(__ushort_as_bfloat16(bsum)) +
+          static_cast<float>(val);
+      uint16_t newval_u = __bfloat16_as_ushort(__float2bfloat16(newval));
+      old = uplo ? (old & 0xffff) | (newval_u << 16)
+                 : (old & 0xffff0000) | newval_u;
+      old = atomicCAS(address_as_ui, assumed, old);
+    } while (assumed != old);
+    return __ushort_as_bfloat16(uplo ? (old >> 16) : (old & 0xffff));
+#else
+    return __float2bfloat16(0);
+#endif
+  }
+};
+
+template <typename T, size_t n>
+struct AtomicAddIntegerImpl;
+
+template <typename T>
+struct AtomicAddIntegerImpl<T, 1> {
+  inline __device__ void operator()(T* address, T val) {
+    size_t offset = (size_t)address & 3;
+    uint32_t* address_as_ui = (uint32_t*)((char*)address - offset);
+    uint32_t old = *address_as_ui;
+    uint32_t shift = offset * 8;
+    uint32_t old_byte;
+    uint32_t newval;
+    uint32_t assumed;
+
+    do {
+      assumed = old;
+      old_byte = (old >> shift) & 0xff;
+      // preserve size in initial cast. Casting directly to uint32_t pads
+      // negative signed values with 1's (e.g. signed -1 = unsigned ~0).
+      newval = static_cast<uint8_t>(val + static_cast<T>(old_byte));
+      newval = (old & ~(0x000000ff << shift)) | (newval << shift);
+      old = atomicCAS(address_as_ui, assumed, newval);
+    } while (assumed != old);
+  }
+};
+
+template <typename T>
+struct AtomicAddIntegerImpl<T, 2> {
+  inline __device__ void operator()(T* address, T val) {
+    size_t offset = (size_t)address & 2;
+    uint32_t* address_as_ui = (uint32_t*)((char*)address - offset);
+    bool is_32_align = offset;
+    uint32_t old = *address_as_ui;
+    uint32_t old_bytes;
+    uint32_t newval;
+    uint32_t assumed;
+
+    do {
+      assumed = old;
+      old_bytes = is_32_align ? old >> 16 : old & 0xffff;
+      // preserve size in initial cast. Casting directly to uint32_t pads
+      // negative signed values with 1's (e.g. signed -1 = unsigned ~0).
+      newval = static_cast<uint16_t>(val + static_cast<T>(old_bytes));
+      newval = is_32_align ? (old & 0xffff) | (newval << 16)
+                           : (old & 0xffff0000) | newval;
+      old = atomicCAS(address_as_ui, assumed, newval);
+    } while (assumed != old);
+  }
+};
+
+template <typename T>
+struct AtomicAddIntegerImpl<T, 4> {
+  inline __device__ void operator()(T* address, T val) {
+    uint32_t* address_as_ui = (uint32_t*)(address);
+    uint32_t old = *address_as_ui;
+    uint32_t newval;
+    uint32_t assumed;
+
+    do {
+      assumed = old;
+      newval = static_cast<uint32_t>(val + static_cast<T>(old));
+      old = atomicCAS(address_as_ui, assumed, newval);
+    } while (assumed != old);
+  }
+};
+
+template <typename T>
+struct AtomicAddIntegerImpl<T, 8> {
+  inline __device__ void operator()(T* address, T val) {
+    ull* address_as_ui = (ull*)(address);
+    ull old = *address_as_ui;
+    ull newval;
+    ull assumed;
+
+    do {
+      assumed = old;
+      newval = static_cast<uint64_t>(val + static_cast<T>(old));
+      old = atomicCAS(address_as_ui, assumed, newval);
+    } while (assumed != old);
+  }
+};
+
+static inline __device__ float gpuAtomicAdd(float* address, float val) {
+  return atomicAdd(address, val);
+}
+
+static inline __device__ float16_t
+gpuAtomicAdd(float16_t* address, float16_t val) {
+  return atomicAdd(address, val);
+}
+
+static inline __device__ double gpuAtomicAdd(double* address, double val) {
+  return atomicAdd(address, val);
+}
+
+static inline __device__ __mt_bfloat16
+gpuAtomicAdd(__mt_bfloat16* address, __mt_bfloat16 val) {
+  // TODO(@mt-ai): verify the correctness of `atomicAdd(address, val)` on
+  // suitable mcc
+  return AtomicFPOp<__mt_bfloat16>()(address, val, []() {});
+}
+
+static inline __device__ void gpuAtomicAdd(uint8_t* address, uint8_t val) {
+  AtomicAddIntegerImpl<uint8_t, sizeof(uint8_t)>()(address, val);
+}
+
+static inline __device__ void gpuAtomicAdd(int8_t* address, int8_t val) {
+  AtomicAddIntegerImpl<int8_t, sizeof(int8_t)>()(address, val);
+}
+
+static inline __device__ void gpuAtomicAdd(int16_t* address, int16_t val) {
+  AtomicAddIntegerImpl<int16_t, sizeof(int16_t)>()(address, val);
+}
+
+static inline __device__ int32_t gpuAtomicAdd(int32_t* address, int32_t val) {
+  return atomicAdd(address, val);
+}
+
+static inline __device__ void gpuAtomicAdd(int64_t* address, int64_t val) {
+  AtomicAddIntegerImpl<int64_t, sizeof(int64_t)>()(address, val);
+}
+
+static inline __device__ void gpuAtomicAdd(bool* address, bool val) {
+  *address = address && val;
+}
+
+} // namespace musa
+} // namespace at
+#endif // ATEN_MUSA_MUSA_ATOMIC_H_

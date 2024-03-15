@@ -1,0 +1,31 @@
+diff --git a/aten/src/ATen/Context.h b/aten/src/ATen/Context.h
+index 8816fb0872a..854c26a97b4 100644
+--- a/aten/src/ATen/Context.h
++++ b/aten/src/ATen/Context.h
+@@ -10,6 +10,7 @@
+ #include <ATen/detail/HIPHooksInterface.h>
+ #include <ATen/detail/MPSHooksInterface.h>
+ #include <ATen/detail/ORTHooksInterface.h>
++#include <ATen/detail/PrivateUse1HooksInterface.h>
+ #include <c10/core/QEngine.h>
+ #include <c10/core/impl/DeviceGuardImplInterface.h>
+ #include <c10/util/CallOnce.h>
+@@ -41,6 +42,9 @@ class TORCH_API Context {
+       return at::detail::getCUDAHooks().getDefaultCUDAGenerator(device.index());
+     } else if (device_type == at::kMPS) {
+       return at::detail::getMPSHooks().getDefaultMPSGenerator();
++    } else if (device_type == at::kPrivateUse1) {
++      return at::GetPrivateUse1HooksInterface()->getDefaultGenerator(
++          device.index());
+     } else {
+       AT_ERROR(DeviceTypeName(device_type), " device type not enabled.");
+     }
+@@ -52,6 +56,8 @@ class TORCH_API Context {
+       return DeviceType::CPU;
+     } else if (device_type == at::kCUDA) {
+       return at::detail::getCUDAHooks().getDeviceFromPtr(data);
++    } else if (device_type == at::kPrivateUse1) {
++      return at::GetPrivateUse1HooksInterface()->getDeviceFromPtr(data);
+     } else {
+       AT_ERROR(DeviceTypeName(device_type), " device type not enabled.");
+     }

@@ -7,7 +7,6 @@
 
 #define MUSA_COMPILE_TIME_MAX_GPUS 16
 
-namespace py = pybind11;
 namespace c10 {
 namespace musa {
 
@@ -23,6 +22,7 @@ void set_device(DeviceIndex);
 
 void Synchronize();
 
+void init_mem_get_func(PyObject* module);
 } // namespace musa
 } // namespace c10
 #endif // TORCH_MUSA_CSRC_CORE_MUSADEVICE_H_

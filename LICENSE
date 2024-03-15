@@ -50,3 +50,8 @@ tools/lint
 BSD 2-clause License
 --------------------
 docs
+
+
+Apache Software Foundation License 2.0
+--------------------------------------
+examples/cpp
