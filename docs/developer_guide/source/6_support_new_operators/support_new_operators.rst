@@ -72,7 +72,7 @@ PyTorch社区推荐使用PrivateUse1作为第三方扩展后端的key，所以�
         self.scalar_type());
        ....
     // 2).convert it to contiguous tensor
-    Tensor tensor_cong = Contiguous(tensor1);
+    Tensor tensor_cong = tensor1.contiguous();
        ...
     // 3). create muTensor，which binds the two variables by address.
     muTensor musa_tensor1 = CreateMUTensor(tensor_cong);
@@ -321,7 +321,92 @@ CUDA中tril算子的部分适配代码如下：
   pytest -s torch_musa/tree/main/tests/unittest/operator/xxxx.py
 
 
-即将支持的特性
----------------
+使用调试注册接口注册算子
+------------------------
 
-引入codegen模块，实现算子的注册代码和实现代码的生成，能进一步简化算子适配的工作量。请关注这部分工作。
+如果希望对算子的调用记录和输入输出值加以记录或统计，可以使用调试注册接口进行注册。
+
+调试注册接口是一组宏，提供对算子的额外调试封装。目前提供三个宏作为注册接口使用：
+
+1. ADVANCED_REGISTER
+
+ADVANCED_REGISTER(lib, key, yaml, func) 是对原生注册机制TORCH_LIBRARY_IMPL的改进版本。
+
+默认情况下，它将原算子封装为一个包含了额外调试组件的新函数，并附加上额外的隐藏前缀注册。
+
+使用时，将原生注册时指定的lib（如aten）、key（如PrivateUse1）、算子的注册名称（如"Abs"）和算子实现函数作为参数传入即可。
+
+下面是一个示例：
+
+原注册方式：
+
+.. code-block:: c++
+
+  TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
+    m.impl("Abs", &CustomAbs);
+  }
+
+新的注册方式：
+
+.. code-block:: c++
+
+  ADVANCED_REGISTER(aten, PrivateUse1, "Abs", CustomAbs)
+
+在上述示例中，ADVANCED_REGISTER会首先将CustomAbs封装为一个别名函数，并在实际注册时，使用这个封装后的函数进行注册。
+
+默认情况下，这个别名函数的名称为wrapper_CustomAbs。
+
+如果函数名称中存在额外的名字空间，或该函数为类成员函数等情况时，函数名称可能包含特殊符号（如::等）。此时需要使用下述的REGISTER_IMPL指定封装名称。
+
+2. REGISTER_IMPL
+
+REGISTER_IMPL(lib, key, yaml, func, name)的用法与ADVANCED_REGISTER相似。
+
+但与之不同的是，REGISTER_IMPL额外接受一个name参数，以指定封装后的别名函数的命名：该别名函数将被命名为wrapper\_##name。
+
+如果name和func参数相同时，REGISTER_IMPL即为ADVANCED_REGISTER。
+
+下面给出一个示例：
+
+.. code-block:: c++
+
+  REGISTER_IMPL(aten, PrivateUse1, "view", at::native::view, at_native_view)
+
+示例中，view算子的实现为at::native::view，包含了名字空间，因此使用REGISTER_IMPL将其名称指定为at\_native\_view。
+
+其实际注册的封装函数名称为wrapper\_at\_native\_view。
+
+3. REDEFINE_REGISTER
+
+部分情况下，同一个算子可能会被注册为多个不同的别名，例如，not_equal和ne都使用相同的实现。
+
+在已经使用ADVANCED_REGISTER或REGISTER_IMPL将其封装为别名函数之后，不能再进行重复封装，而应直接复用封装后的函数。
+
+因此，使用REDEFINE_REGISTER(lib, key, yaml, name)进行重复注册。
+
+如果之前的封装注册使用ADVANCED_REGISTER，则name即为ADVANCED_REGISTER中的func参数。
+
+如果之前的封装注册使用REGISTER_IMPL，则name为REGSITER_IMPL中的name参数。
+
+示例如下：
+
+.. code-block:: c++
+  
+  ADVANCED_REGISTER(aten, PrivateUse1, "ne.Tensor", NotEqualTensor)
+  ADVANCED_REGISTER(aten, PrivateUse1, "ne_.Tensor", NotEqual_Tensor)
+  ADVANCED_REGISTER(aten, PrivateUse1, "ne.Tensor_out", NotEqual_out)
+  // not_equal, alias for torch.ne
+  REDEFINE_REGISTER(aten, PrivateUse1, "not_equal.Tensor", NotEqualTensor)
+  REDEFINE_REGISTER(aten, PrivateUse1, "not_equal_.Tensor", NotEqual_Tensor)
+  REDEFINE_REGISTER(aten, PrivateUse1, "not_equal.Tensor_out", NotEqual_out)
+
+示例中，首先使用ADVANCED_REGISTER将NotEqual系列的三个实现分别注册为ne类接口，之后的not_equal类接口使用了相同的实现，因此，改用REDEFINE_REGISTER注册。
+
+即将支持的特性
+-----------------
+
+调试注册接口将在未来支持torch原生的函数封装宏，如TORCH_FN等，可以适应更多的算子注册方式。
+
+引入codegen模块，实现算子的注册代码和实现代码的生成，能进一步简化算子适配的工作量。
+
+请关注这部分工作。

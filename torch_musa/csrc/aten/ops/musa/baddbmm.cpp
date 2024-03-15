@@ -9,6 +9,7 @@
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
@@ -65,5 +66,8 @@ Tensor Baddbmm(
   op.impl(self, batch1, batch2, beta, alpha, *op.outputs_[0]);
   return std::move(op.outputs_[0]).take();
 }
+
+ADVANCED_REGISTER(aten, PrivateUse1, "baddbmm", Baddbmm)
+
 } // namespace musa
 } // namespace at

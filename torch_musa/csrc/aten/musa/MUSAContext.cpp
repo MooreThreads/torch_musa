@@ -71,6 +71,10 @@ Allocator* getMUSADeviceAllocator() {
 void registerMusaDeviceProperties(PyObject* module) {
   // Add _musaDeviceProperties class to torch_musa._MUSAC.
   auto py_module = pybind11::handle(module).cast<pybind11::module>();
+
+  // Set musa version
+  py_module.attr("_musa_version") = py::str(std::to_string(MUSA_VERSION));
+
   py::class_<musaDeviceProp>(py_module, "_MusaDeviceProperties")
       .def_readonly("name", &musaDeviceProp::name)
       .def_readonly("major", &musaDeviceProp::major)

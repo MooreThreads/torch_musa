@@ -6,6 +6,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -35,8 +36,10 @@ std::tuple<Tensor&, Tensor&> TopkOut(
       "Device of indices tensor of TopK must be MTGPU, but now is ",
       indices.device());
   TORCH_CHECK(
-      self.scalar_type() == at::ScalarType::Float,
-      "Dtype of input tensor of topk only support Float32, but "
+      self.scalar_type() == at::ScalarType::Float ||
+          self.scalar_type() == at::ScalarType::Half ||
+          self.scalar_type() == at::ScalarType::BFloat16,
+      "Dtype of input tensor of topk only support Float32/Half/BFloat16, but "
       "now it is ",
       self.scalar_type());
 
@@ -57,29 +60,10 @@ std::tuple<Tensor&, Tensor&> TopkOut(
   values.resize_(topk_size);
   indices.resize_(topk_size);
 
-  auto self_contiguous = Contiguous(self);
+  auto self_contiguous = self.contiguous();
   auto mt_input = CreateMUTensor(self_contiguous);
-  muTensor mt_values;
-  muTensor mt_indices;
-  muTensor mt_values_sorted;
-  muTensor mt_indices_sorted;
-  auto values_not_use = at::empty_like(values);
-  auto indices_not_use = at::empty_like(indices);
-  auto indices_tmp = at::empty_like(indices);
-  auto mt_indices_tmp = CreateMUTensor(indices_tmp);
-  if (sorted && k > 1) {
-    // when sorted=True, the results value/indices of topk are carried by
-    // mt_values_sorted/mt_indices_sorted。
-    mt_values_sorted = CreateMUTensor(values);
-    mt_indices_sorted = CreateMUTensor(indices);
-    mt_values = CreateMUTensor(values_not_use);
-    mt_indices = CreateMUTensor(indices_not_use);
-  } else {
-    mt_values_sorted = CreateMUTensor(values_not_use);
-    mt_indices_sorted = CreateMUTensor(indices_not_use);
-    mt_values = CreateMUTensor(values);
-    mt_indices = CreateMUTensor(indices);
-  }
+  muTensor mt_values = CreateMUTensor(values);
+  muTensor mt_indices = CreateMUTensor(indices);
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::TopK mTopk;
@@ -89,16 +73,7 @@ std::tuple<Tensor&, Tensor&> TopkOut(
   CHECK_MUDNN_STATUS(mTopk.SetSorted(sorted), "SetSorted");
 
   CHECK_MUDNN_STATUS(
-      mTopk.Run(
-          h,
-          mt_values,
-          mt_indices,
-          mt_input,
-          mt_values_sorted,
-          mt_indices_tmp,
-          mt_indices_sorted,
-          InternalMemAlloc),
-      "Run");
+      mTopk.Run(h, mt_values, mt_indices, mt_input, InternalMemAlloc), "Run");
   return std::forward_as_tuple(values, indices);
 }
 
@@ -116,10 +91,8 @@ std::tuple<Tensor, Tensor> Topk(
   return std::forward_as_tuple(values, indices);
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("topk", &Topk);
-  m.impl("topk.values", &TopkOut);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "topk", Topk)
+ADVANCED_REGISTER(aten, PrivateUse1, "topk.values", TopkOut)
 
 } // namespace musa
 } // namespace at

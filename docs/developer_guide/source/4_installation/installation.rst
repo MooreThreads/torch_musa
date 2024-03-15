@@ -1,20 +1,20 @@
 .. attention::
-   | 编译安装前，需要安装MUSAToolkits软件包，MUDNN库，muThrust库，muAlg库，muRAND库，muSPARSE库。具体安装步骤，请参见相应组件的安装手册。
+   | 编译安装前，需要安装MUSAToolkits软件包，MUDNN库，MCCL库，muThrust库，muAlg库，muRAND库，muSPARSE库。具体安装步骤，请参见相应组件的安装手册。
 
 依赖环境
 ----------------------------
 
-- Python == 3.8 或者 Python == 3.9。
+- Python == 3.8/3.9/3.10。
 - 摩尔线程MUSA软件包，推荐版本如下：
 
-  * MUSA驱动(https://new-developer.mthreads.com/sdk/download/musa?equipment=&os=&driverVersion=&version=)
-  * MUSAToolkits工具包(https://new-developer.mthreads.com/sdk/download/musa?equipment=&os=&driverVersion=&version=)
-  * MUDNN算子库(https://new-developer.mthreads.com/sdk/download/musa?equipment=&os=&driverVersion=&version=)
-  * muAlg_dev-0.1.1-Linux.deb
-  * muRAND_dev1.0.0.tar.gz
-  * muSPARSE_dev0.1.0.tar.gz
-  * muThrust_dev-0.1.1-Linux.deb
-  * Docker Container Toolkits(https://mcconline.mthreads.com/software)
+  * MUSA驱动 musa_2.6.0
+  * MUSAToolkits rc2.0.0
+  * MUDNN rc2.4.0
+  * MCCL rc1.4.0
+  * muAlg dev0.3.0
+  * muSPARSE dev0.4.0
+  * muThrust dev0.3.0
+  * `Docker Container Toolkits <https://mcconline.mthreads.com/software>`_
 
 
 
@@ -25,22 +25,20 @@
 #. 编译PyTorch
 #. 编译torch_musa
 
-torch_musa是在PyTorch v2.0.0基础上以插件的方式来支持摩尔线程显卡。开发时涉及到对PyTorch源码的修改，目前是以打patch的方式实现的。PyTorch社区正在积极支持第三方后端接入，https://github.com/pytorch/pytorch/issues/98406 这个issue下有相关PR。我们也在积极向PyTorch社区提交PR，避免在编译过程中向PyTorch打patch。
+torch_musa是在PyTorch v2.0.0基础上以插件的方式来支持摩尔线程显卡。开发时涉及到对PyTorch源码的修改，目前是以打patch的方式实现的。PyTorch社区正在积极支持第三方后端接入，这个 `issue <https://github.com/pytorch/pytorch/issues/98406>`_ 下有相关PR。我们也在积极向PyTorch社区提交PR，避免在编译过程中向PyTorch打patch。
 
 
-开发Docker镜像
+开发Docker
 -----------
 
-为了方便开发者开发torch_musa，我们提供了开发用的docker image(https://mcconline.mthreads.com/repo/musa-pytorch-dev-public?repoName=musa-pytorch-dev-public&repoNamespace=mcconline&displayName=MUSA%20Pytorch%20Dev%20Public)，参考命令：
+为了方便开发者开发torch_musa，我们提供了开发用的docker image，参考命令：
 
 .. code-block:: bash
 
-  docker run -it --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g torch_musa_develop_image /bin/bash
-
-开发docker镜像中已经安装了必需的依赖包，包括一些未正式发布的依赖包。如果用户不想在我们提供的docker镜像中开发，请通过developers@mthreads.com邮箱联系我们获取必需的依赖包。
+  docker run -it --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev:latest /bin/bash
 
 .. attention::
-   | 使用docker时，请务必提前安装mt-container-toolkit(https://mcconline.mthreads.com/software/1?id=1)，并且在启动docker container时添加选项“--env MTHREADS_VISIBLE_DEVICES=all”，否则在docker container内部无法使用torch_musa。
+   | 使用docker时，请务必提前安装 `mt-container-toolkit <https://mcconline.mthreads.com/software/1?id=1>`_ ，并且在启动docker container时添加选项“--env MTHREADS_VISIBLE_DEVICES=all”，否则在docker container内部无法使用torch_musa。
 
 编译步骤
 ---------
@@ -61,6 +59,7 @@ torch_musa是在PyTorch v2.0.0基础上以插件的方式来支持摩尔线程�
 .. code-block:: bash
 
   cd torch_musa
+  bash docker/common/daily/update_daily_mudnn.sh # update daily mudnn lib if needed
   bash build.sh   # build original PyTorch and torch_musa from scratch
   
   # Some important parameters are as follows:
@@ -83,7 +82,7 @@ torch_musa是在PyTorch v2.0.0基础上以插件的方式来支持摩尔线程�
 .. code-block:: bash
 
   # 请保证PyTorch源码和torch_musa源码在同级目录或者export PYTORCH_REPO_PATH=path/to/PyTorch指向PyTorch源码
-  bash build.sh --patch
+  bash build.sh --only-patch
 
 2. 编译PyTorch
 

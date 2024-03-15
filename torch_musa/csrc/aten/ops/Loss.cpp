@@ -1,15 +1,28 @@
 #include <ATen/Config.h>
 #include <ATen/ExpandUtils.h>
 #include <ATen/NamedTensorUtils.h>
-#include <ATen/NativeFunctions.h>
 #include <ATen/TensorUtils.h>
 #include <ATen/WrapDimUtils.h>
 #include <ATen/core/op_registration/adaption.h>
 #include <ATen/native/Resize.h>
 #include <torch/library.h>
 
+#ifndef AT_PER_OPERATOR_HEADERS
+#include <ATen/Functions.h>
+#include <ATen/NativeFunctions.h>
+#else
+#include <ATen/ops/binary_cross_entropy_backward_native.h>
+#include <ATen/ops/binary_cross_entropy_native.h>
+#include <ATen/ops/mse_loss_backward_native.h>
+#include <ATen/ops/mse_loss_native.h>
+#include <ATen/ops/nll_loss2d_backward_native.h>
+#include <ATen/ops/nll_loss2d_forward_native.h>
+#include <ATen/ops/zeros_like.h>
+#endif
+
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -55,8 +68,8 @@ std::tuple<at::Tensor&, at::Tensor&> NllLossOut(
       input.scalar_type());
   c10::musa::MUSAGuard device_guard(input.device());
 
-  auto contiguous_input = Contiguous(input);
-  auto contiguous_target = Contiguous(target);
+  auto contiguous_input = input.contiguous();
+  auto contiguous_target = target.contiguous();
   TORCH_CHECK(
       input.dim() > 0 && input.dim() <= 2, "input tensor should be 1D or 2D");
   TORCH_CHECK(
@@ -103,16 +116,17 @@ std::tuple<at::Tensor&, at::Tensor&> NllLossOut(
     output.resize_({});
   }
   total_weight.resize_({});
+  auto contiguous_total_weight = total_weight.contiguous();
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::NLLLoss nll_loss_op;
   auto mt_input = CreateMUTensor(contiguous_input);
   auto mt_target = CreateMUTensor(contiguous_target);
   auto mt_output = CreateMUTensor(output);
-  auto mt_total_weight = CreateMUTensor(total_weight);
+  auto mt_total_weight = CreateMUTensor(contiguous_total_weight);
   muTensor mt_weight;
   if (has_weight) {
-    auto contiguous_weight = Contiguous(weight.value());
+    auto contiguous_weight = weight.value().contiguous();
     mt_weight = CreateMUTensor(contiguous_weight);
   }
   CHECK_MUDNN_STATUS(
@@ -140,6 +154,7 @@ std::tuple<at::Tensor, at::Tensor> NllLoss(
     const c10::optional<at::Tensor>& weight,
     int64_t reduction,
     int64_t ignore_index) {
+  c10::musa::MUSAGuard guard_device(input.device());
   auto output = at::empty({0}, input.options());
   auto total_weight = at::empty(input.sizes(), input.options());
   NllLossOut(
@@ -190,10 +205,10 @@ at::Tensor& NllLossBwdGradInput(
       "but now it is ",
       input.scalar_type());
   c10::musa::MUSAGuard guard_device(input.device());
-  auto contiguous_grad_output = Contiguous(grad_output);
-  auto contiguous_input = Contiguous(input);
-  auto contiguous_target = Contiguous(target);
-  auto contiguous_total_weight = Contiguous(total_weight);
+  auto contiguous_grad_output = grad_output.contiguous();
+  auto contiguous_input = input.contiguous();
+  auto contiguous_target = target.contiguous();
+  auto contiguous_total_weight = total_weight.contiguous();
 
   TORCH_CHECK(
       input.dim() > 0 && input.dim() <= 2, "input tensor should be 1D or 2D");
@@ -253,7 +268,7 @@ at::Tensor& NllLossBwdGradInput(
   auto mt_grad_input = CreateMUTensor(grad_input);
   muTensor mt_weight;
   if (has_weight) {
-    auto contiguous_weight = Contiguous(weight.value());
+    auto contiguous_weight = weight.value().contiguous();
     mt_weight = CreateMUTensor(contiguous_weight);
   }
   CHECK_MUDNN_STATUS(
@@ -298,6 +313,70 @@ at::Tensor NllLossBwd(
   return grad_input;
 }
 
+std::tuple<at::Tensor&, at::Tensor&> NllLoss2dOut(
+    const at::Tensor& self,
+    const at::Tensor& target,
+    const c10::optional<at::Tensor>& weight,
+    int64_t reduction,
+    int64_t ignore_index,
+    at::Tensor& output,
+    at::Tensor& total_weight) {
+  c10::musa::MUSAGuard device_guard(self.device());
+  TORCH_CHECK(
+      self.sizes()[1] > target.max().item().to<int>(),
+      "Target is out of bounds.");
+  return at::native::nll_loss2d_forward_out_cuda(
+      self, target, weight, reduction, ignore_index, output, total_weight);
+}
+
+std::tuple<at::Tensor, at::Tensor> NllLoss2d(
+    const at::Tensor& self,
+    const at::Tensor& target,
+    const c10::optional<at::Tensor>& weight,
+    int64_t reduction,
+    int64_t ignore_index) {
+  c10::musa::MUSAGuard device_guard(self.device());
+  TORCH_CHECK(
+      self.sizes()[1] > target.max().item().to<int>(),
+      "Target is out of bounds.");
+  return at::native::nll_loss2d_forward_cuda(
+      self, target, weight, reduction, ignore_index);
+}
+
+at::Tensor& NllLoss2dBwdGradInput(
+    const at::Tensor& grad_output,
+    const at::Tensor& self,
+    const at::Tensor& target,
+    const c10::optional<at::Tensor>& weight,
+    int64_t reduction,
+    int64_t ignore_index,
+    const at::Tensor& total_weight,
+    at::Tensor& grad_input) {
+  c10::musa::MUSAGuard device_guard(self.device());
+  return at::native::nll_loss2d_backward_out_cuda(
+      grad_output,
+      self,
+      target,
+      weight,
+      reduction,
+      ignore_index,
+      total_weight,
+      grad_input);
+}
+
+at::Tensor NllLoss2dBwd(
+    const at::Tensor& grad_output,
+    const at::Tensor& self,
+    const at::Tensor& target,
+    const c10::optional<at::Tensor>& weight,
+    int64_t reduction,
+    int64_t ignore_index,
+    const at::Tensor& total_weight) {
+  c10::musa::MUSAGuard device_guard(self.device());
+  return at::native::nll_loss2d_backward_cuda(
+      grad_output, self, target, weight, reduction, ignore_index, total_weight);
+}
+
 Tensor KLDiv(
     const Tensor& input,
     const Tensor& target,
@@ -316,12 +395,12 @@ Tensor KLDiv(
     output = at::empty({0}, input.options());
   } else {
     kldiv.SetReductionMode(::musa::dnn::KLDivLoss::Mode::NONE);
-    output = at::empty_like(input);
+    output = at::empty_like(input, at::MemoryFormat::Contiguous);
   }
   kldiv.SetLogTarget(log_target);
-  Tensor contiguous_input = Contiguous(input);
+  Tensor contiguous_input = input.contiguous();
   auto mt_input = CreateMUTensor(contiguous_input);
-  Tensor contiguous_target = Contiguous(target);
+  Tensor contiguous_target = target.contiguous();
   auto mt_target = CreateMUTensor(contiguous_target);
   auto mt_output = CreateMUTensor(output);
   kldiv.Run(h, mt_output, mt_input, mt_target, InternalMemAlloc);
@@ -348,11 +427,11 @@ Tensor KLDivBwd(
   }
   kldiv.SetLogTarget(log_target);
 
-  Tensor grad_ = Contiguous(grad);
+  Tensor grad_ = grad.contiguous();
   auto mt_grad = CreateMUTensor(grad_);
-  Tensor contiguous_input = Contiguous(input);
+  Tensor contiguous_input = input.contiguous();
   auto mt_input = CreateMUTensor(contiguous_input);
-  Tensor contiguous_target = Contiguous(target);
+  Tensor contiguous_target = target.contiguous();
   auto mt_target = CreateMUTensor(contiguous_target);
   auto mt_gradin = CreateMUTensor(grad_input);
 
@@ -530,17 +609,110 @@ Tensor MseLoss(const Tensor& self, const Tensor& target, int64_t reduction) {
   return std::move(op.outputs_[0]).take();
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("mse_loss", &MseLoss);
-  m.impl("mse_loss.out", &MseLossOut);
-  m.impl("mse_loss_backward", &MseLossBwd);
-  m.impl("mse_loss_backward.grad_input", &MseLossBwdGradInput);
+ADVANCED_REGISTER(aten, PrivateUse1, "mse_loss", MseLoss)
+ADVANCED_REGISTER(aten, PrivateUse1, "mse_loss.out", MseLossOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "mse_loss_backward", MseLossBwd)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "mse_loss_backward.grad_input",
+    MseLossBwdGradInput)
 
-  m.impl("nll_loss_forward.output", &NllLossOut);
-  m.impl("nll_loss_forward", &NllLoss);
-  m.impl("nll_loss_backward.grad_input", &NllLossBwdGradInput);
-  m.impl("nll_loss_backward", &NllLossBwd);
+ADVANCED_REGISTER(aten, PrivateUse1, "nll_loss2d_forward.output", NllLoss2dOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "nll_loss2d_forward", NllLoss2d)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "nll_loss2d_backward.grad_input",
+    NllLoss2dBwdGradInput)
+ADVANCED_REGISTER(aten, PrivateUse1, "nll_loss2d_backward", NllLoss2dBwd)
+
+at::Tensor BinaryCrossEntropy(
+    const at::Tensor& self,
+    const at::Tensor& target,
+    const c10::optional<at::Tensor>& weight,
+    int64_t reduction) {
+  // No device check
+  const OptionalDeviceGuard device_guard(device_of(self));
+  return at::native::binary_cross_entropy_cuda(self, target, weight, reduction);
 }
+
+at::Tensor& BinaryCrossEntropyOut(
+    const at::Tensor& self,
+    const at::Tensor& target,
+    const c10::optional<at::Tensor>& weight,
+    int64_t reduction,
+    at::Tensor& out) {
+  // No device check
+  const OptionalDeviceGuard device_guard(device_of(self));
+  return at::native::binary_cross_entropy_out_cuda(
+      self, target, weight, reduction, out);
+}
+
+at::Tensor BinaryCrossEntropyBackward(
+    const at::Tensor& grad_output,
+    const at::Tensor& self,
+    const at::Tensor& target,
+    const c10::optional<at::Tensor>& weight,
+    int64_t reduction) {
+  c10::optional<Device> common_device = nullopt;
+  (void)common_device; // Suppress unused variable warning
+  c10::impl::check_and_update_common_device(
+      common_device, grad_output, "BinaryCrossEntropyBackward", "grad_output");
+  c10::impl::check_and_update_common_device(
+      common_device, self, "BinaryCrossEntropyBackward", "self");
+  c10::impl::check_and_update_common_device(
+      common_device, target, "BinaryCrossEntropyBackward", "target");
+  c10::impl::check_and_update_common_device(
+      common_device, weight, "BinaryCrossEntropyBackward", "weight");
+  const OptionalDeviceGuard device_guard(device_of(self));
+  return at::native::binary_cross_entropy_backward_cuda(
+      grad_output, self, target, weight, reduction);
+}
+
+at::Tensor& BinaryCrossEntropyBackwardOut(
+    const at::Tensor& grad_output,
+    const at::Tensor& self,
+    const at::Tensor& target,
+    const c10::optional<at::Tensor>& weight,
+    int64_t reduction,
+    at::Tensor& grad_input) {
+  c10::optional<Device> common_device = nullopt;
+  (void)common_device; // Suppress unused variable warning
+  c10::impl::check_and_update_common_device(
+      common_device, grad_input, "BinaryCrossEntropyBackwardOut", "grad_input");
+  c10::impl::check_and_update_common_device(
+      common_device,
+      grad_output,
+      "BinaryCrossEntropyBackwardOut",
+      "grad_output");
+  c10::impl::check_and_update_common_device(
+      common_device, self, "BinaryCrossEntropyBackwardOut", "self");
+  c10::impl::check_and_update_common_device(
+      common_device, target, "BinaryCrossEntropyBackwardOut", "target");
+  c10::impl::check_and_update_common_device(
+      common_device, weight, "BinaryCrossEntropyBackwardOut", "weight");
+  const OptionalDeviceGuard device_guard(device_of(self));
+  return at::native::binary_cross_entropy_backward_out_cuda(
+      grad_output, self, target, weight, reduction, grad_input);
+}
+
+ADVANCED_REGISTER(aten, PrivateUse1, "binary_cross_entropy", BinaryCrossEntropy)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "binary_cross_entropy.out",
+    BinaryCrossEntropyOut)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "binary_cross_entropy_backward",
+    BinaryCrossEntropyBackward)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "binary_cross_entropy_backward.grad_input",
+    BinaryCrossEntropyBackwardOut)
 
 } // namespace musa
 } // namespace at

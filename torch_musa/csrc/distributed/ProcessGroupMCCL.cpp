@@ -40,9 +40,9 @@ mcclDataType_t getMcclDataType(at::ScalarType type) {
 
 // TODO(yueran-tang): Not finished since we only support a few Ops.
 mcclRedOp_t getMcclReduceOp(
-    const ReduceOp& reduceOp,
+    const ReduceOp& reduce_op,
     at::Tensor& input,
-    const mcclDataType_t& dataType,
+    const mcclDataType_t& data_type,
     const mcclComm_t& comm,
     int dev_in_group) {
   try {
@@ -50,16 +50,16 @@ mcclRedOp_t getMcclReduceOp(
       // SUM of kBool is the same as "OR" or "MAX" of Boolean.
       // TODO(yueran-tang): Bool Max is nccl style reduceOp, and we need to
       // check it on mccl.
-      if (reduceOp == ReduceOp::SUM) {
+      if (reduce_op == ReduceOp::SUM) {
         return mcclMax;
       }
-      if (reduceOp == ReduceOp::AVG) {
+      if (reduce_op == ReduceOp::AVG) {
         TORCH_CHECK(false, "Cannot use ReduceOp.AVG with Boolean inputs");
       }
     }
-    return mcclOp.at(reduceOp);
+    return mcclOp.at(reduce_op);
   } catch (const std::out_of_range& e) {
-    TORCH_CHECK(false, "Unexpected ReduceOp: ", reduceOp);
+    TORCH_CHECK(false, "Unexpected ReduceOp: ", reduce_op);
   }
 }
 
@@ -682,17 +682,17 @@ void ProcessGroupMCCL::abortTimedOutCollectives(
 
 void ProcessGroupMCCL::mcclCommWatchdog() {
   try {
-    LOG_INFO << "[Rank " << rank_ << "] MCCL watchdog thread started!";
+    LOG(INFO) << "[Rank " << rank_ << "] MCCL watchdog thread started!";
     mcclCommWatchdogInternal();
-    LOG_INFO << "[Rank " << rank_
-             << "] MCCL watchdog thread terminated normally";
+    LOG(INFO) << "[Rank " << rank_
+              << "] MCCL watchdog thread terminated normally";
   } catch (std::exception& e) {
-    LOG_INFO << "[Rank " << rank_
-             << "] MCCL watchdog thread terminated with exception: "
-             << e.what();
+    LOG(INFO) << "[Rank " << rank_
+              << "] MCCL watchdog thread terminated with exception: "
+              << e.what();
   } catch (...) {
-    LOG_INFO << "[Rank " << rank_
-             << "] MCCL watchdog thread terminated with unknown exception";
+    LOG(INFO) << "[Rank " << rank_
+              << "] MCCL watchdog thread terminated with unknown exception";
   }
 }
 
@@ -714,15 +714,15 @@ void ProcessGroupMCCL::mcclCommWatchdogInternal() {
         if (mcclErrorException) {
           auto exceptionMsg =
               getExceptionMsgFromExceptionPtr(mcclErrorException);
-          LOG_INFO
+          LOG(INFO)
               << "[Rank " << rank_
               << "] Received MCCL errors for communicators in the cache: \n"
               << "MCCL error: \n"
               << exceptionMsg;
 
           if (blockingWait_ || asyncErrorHandling_ != NoHandling) {
-            LOG_INFO << "[Rank " << rank_
-                     << "] Aborting communicators that received errors";
+            LOG(INFO) << "[Rank " << rank_
+                      << "] Aborting communicators that received errors";
             // We abort MCCL communicators that have received errors from this
             // thread, and exceptions are set on the corresponding work objects.
             // The workCleanupThread will then loop through the unfinished
@@ -767,9 +767,9 @@ void ProcessGroupMCCL::mcclCommWatchdogInternal() {
         const auto& storeKey = getMcclAbortedCommStoreKey(abortedCommId);
         auto rankStr = std::to_string(rank_);
         store_->set(storeKey, rankStr);
-        LOG_INFO << "[Rank " << rank_
-                 << "] Watchdog wrote aborted communicator id to store: "
-                 << storeKey;
+        LOG(INFO) << "[Rank " << rank_
+                  << "] Watchdog wrote aborted communicator id to store: "
+                  << storeKey;
       }
 
       // Check for any communicators in the store and abort them if needed.
@@ -790,7 +790,7 @@ void ProcessGroupMCCL::mcclCommWatchdogInternal() {
                << ". This means that rank has aborted its MCCL communicators previously and is not in a healthy state."
                << ". Aborting appropriate communicators";
             std::string abortReason = ss.str();
-            LOG_WARNING << abortReason;
+            LOG(WARNING) << abortReason;
 
             // Now abort the appropriate communicators.
             std::lock_guard<std::mutex> lock(mutex_);
@@ -1120,7 +1120,7 @@ std::vector<std::shared_ptr<MCCLComm>>& ProcessGroupMCCL::getMCCLComm(
   // At this point MCCL should have been initialized, hence we can accurately
   // get the env value even if MCCL sets it by reading from mccl.conf file
   if (getRank() == 0) {
-    LOG_INFO << "MCCL_DEBUG: " << parse_env("MCCL_DEBUG");
+    LOG(INFO) << "MCCL_DEBUG: " << parse_env("MCCL_DEBUG");
   }
 
   // See [Group Start/End Note]
@@ -2283,20 +2283,232 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::barrier(const BarrierOptions& opts) {
   return work;
 }
 
+static mcclResult_t all2all_single_equal_split_impl(
+    at::Tensor& input,
+    at::Tensor& output,
+    int size,
+    mcclComm_t comm,
+    c10::musa::MUSAStream& stream) {
+  int numranks;
+  auto type = getMcclDataType(input.scalar_type());
+  size_t count = input.numel() / size;
+  size_t rankdiff = input.nbytes() / size;
+  const auto* sendbuff = reinterpret_cast<char*>(input.data_ptr());
+  auto* recvbuff = reinterpret_cast<char*>(output.data_ptr());
+  // TODO(yueran.tang): mccl has no ROCM or AllToAll operators.
+  // Support it in the future.
+  C10D_MCCL_ASSERT(mcclCommCount(comm, &numranks));
+  C10D_MCCL_ASSERT(mcclGroupStart());
+  for (const auto r : c10::irange(numranks)) {
+    // MCCL uses 0 byte message for synchronization
+    // Avoid send/recv when message size is zero
+    if (count != 0) {
+      C10D_MCCL_ASSERT(
+          mcclSend(sendbuff + r * rankdiff, count, type, r, comm, stream));
+      C10D_MCCL_ASSERT(
+          mcclRecv(recvbuff + r * rankdiff, count, type, r, comm, stream));
+    }
+  }
+  C10D_MCCL_ASSERT(mcclGroupEnd());
+  return mcclSuccess;
+}
+
+static mcclResult_t all2all_single_unequal_split_impl(
+    void* sendbuff,
+    const size_t* sendcounts,
+    const size_t* senddispls,
+    void* recvbuff,
+    const size_t* recvcounts,
+    const size_t* recvdispls,
+    size_t size,
+    c10::ScalarType _type,
+    mcclComm_t comm,
+    c10::musa::MUSAStream& stream) {
+  auto type = getMcclDataType(_type);
+  int numranks;
+  C10D_MCCL_ASSERT(mcclCommCount(comm, &numranks));
+  C10D_MCCL_ASSERT(mcclGroupStart());
+  for (const auto r : c10::irange(numranks)) {
+    // MCCL uses 0 byte message for synchronization
+    // Avoid send/recv when message size is zero
+    if (sendcounts[r] != 0) {
+      C10D_MCCL_ASSERT(mcclSend(
+          ((char*)sendbuff) + senddispls[r] * size,
+          sendcounts[r],
+          type,
+          r,
+          comm,
+          stream));
+    }
+    if (recvcounts[r] != 0) {
+      C10D_MCCL_ASSERT(mcclRecv(
+          ((char*)recvbuff) + recvdispls[r] * size,
+          recvcounts[r],
+          type,
+          r,
+          comm,
+          stream));
+    }
+  }
+  C10D_MCCL_ASSERT(mcclGroupEnd());
+  return mcclSuccess;
+}
+
+static mcclResult_t all2all_impl(
+    std::vector<at::Tensor>& outputTensors,
+    std::vector<at::Tensor>& inputTensors,
+    mcclComm_t comm,
+    c10::musa::MUSAStream& stream) {
+  C10D_MCCL_ASSERT(mcclGroupStart());
+  for (const auto r : c10::irange(outputTensors.size())) {
+    at::Tensor& input = inputTensors[r];
+    at::Tensor& output = outputTensors[r];
+    if (input.numel() != 0) {
+      C10D_MCCL_ASSERT(mcclSend(
+          input.data_ptr(),
+          input.numel(),
+          getMcclDataType(input.scalar_type()),
+          r,
+          comm,
+          stream.stream()));
+    }
+    if (output.numel() != 0) {
+      C10D_MCCL_ASSERT(mcclRecv(
+          output.data_ptr(),
+          output.numel(),
+          getMcclDataType(output.scalar_type()),
+          r,
+          comm,
+          stream.stream()));
+    }
+  }
+  C10D_MCCL_ASSERT(mcclGroupEnd());
+  return mcclSuccess;
+}
+
 c10::intrusive_ptr<Work> ProcessGroupMCCL::alltoall_base(
     at::Tensor& outputTensor,
     at::Tensor& inputTensor,
     std::vector<int64_t>& outputSplitSizes,
     std::vector<int64_t>& inputSplitSizes,
     const AllToAllOptions& /* unused */) {
-  TORCH_CHECK(false, "alltoall_base is not supported");
+  check_gpu_single_tensor(outputTensor);
+  check_gpu_single_tensor(inputTensor);
+  if (outputSplitSizes.size() == 0 && inputSplitSizes.size() == 0) {
+    std::vector<at::Tensor> inputTensors = {inputTensor};
+    std::vector<at::Tensor> outputTensors = {outputTensor};
+
+    RECORD_PARAM_COMMS_DATA(
+        static_cast<int>(
+            this->getSequenceNumberForGroup() +
+            1), // seq + 1 to match collective
+        reinterpret_cast<std::intptr_t>(this), // process group ptr
+        inputTensor, // inputTensor
+        outputTensor, // outputTensor
+        rank_, // rank
+        "all_to_all", // colName
+        inputTensor.numel(), // inSize
+        outputTensor.numel(), // outSize
+        inputTensor.scalar_type(), // dType
+        std::vector<int64_t>(), // inSplitSizes
+        std::vector<int64_t>()); // outSplitSizes
+
+    return collective(
+        inputTensors,
+        outputTensors,
+        [&](at::Tensor& input,
+            at::Tensor& output,
+            mcclComm_t comm,
+            c10::musa::MUSAStream& stream) {
+          // See [Sync Streams].
+          c10::musa::MUSACachingAllocator::recordStream(
+              output.storage().data_ptr(), stream);
+          return all2all_single_equal_split_impl(
+              input, output, this->getSize(), comm, stream);
+        },
+        OpType::ALLTOALL_BASE,
+        "mccl:all_to_all");
+  } else {
+    c10d::checkSplitSizes(inputSplitSizes, inputTensor, size_);
+    c10d::checkSplitSizes(outputSplitSizes, outputTensor, size_);
+    std::vector<at::Tensor> inputTensors = {inputTensor};
+    std::vector<at::Tensor> outputTensors = {outputTensor};
+
+    RECORD_PARAM_COMMS_DATA(
+        static_cast<int>(
+            this->getSequenceNumberForGroup() +
+            1), // seq + 1 to match collective
+        reinterpret_cast<std::intptr_t>(this), // process group ptr
+        inputTensor, // inputTensor
+        outputTensor, // outputTensor
+        rank_, // rank
+        "all_to_allv", // colName
+        inputTensor.numel(), // inSize
+        outputTensor.numel(), // outSize
+        inputTensor.scalar_type(), // dType
+        inputSplitSizes, // inSplitSizes
+        outputSplitSizes); // outSplitSizes
+
+    return collective(
+        inputTensors,
+        outputTensors,
+        [&](at::Tensor& input,
+            at::Tensor& output,
+            mcclComm_t comm,
+            c10::musa::MUSAStream& stream) {
+          std::vector<size_t> send_lengths(size_);
+          std::vector<size_t> recv_lengths(size_);
+          std::vector<size_t> send_offsets(size_);
+          std::vector<size_t> recv_offsets(size_);
+          c10d::computeLengthsAndOffsets(
+              inputSplitSizes, input, &send_lengths, &send_offsets);
+          c10d::computeLengthsAndOffsets(
+              outputSplitSizes, output, &recv_lengths, &recv_offsets);
+          // See [Sync Streams].
+          c10::musa::MUSACachingAllocator::recordStream(
+              output.storage().data_ptr(), stream);
+          return all2all_single_unequal_split_impl(
+              input.data_ptr(),
+              send_lengths.data(),
+              send_offsets.data(),
+              output.data_ptr(),
+              recv_lengths.data(),
+              recv_offsets.data(),
+              input.element_size(),
+              input.scalar_type(),
+              comm,
+              stream);
+        },
+        OpType::ALLTOALL_BASE,
+        "mccl:all_to_all");
+  }
 }
 
 c10::intrusive_ptr<Work> ProcessGroupMCCL::alltoall(
     std::vector<at::Tensor>& outputTensors,
     std::vector<at::Tensor>& inputTensors,
     const AllToAllOptions& /* unused */) {
-  TORCH_CHECK(false, "alltoall is not supported");
+  auto device = outputTensors[0].device();
+  for (const auto r : c10::irange(outputTensors.size())) {
+    check_gpu_single_tensor(outputTensors[r]);
+    check_gpu_single_tensor(inputTensors[r]);
+    TORCH_CHECK(
+        device == outputTensors[r].device() &&
+            device == inputTensors[r].device(),
+        "Tensors must be on the same device")
+  }
+  std::vector<at::Tensor> inputTensor0 = {inputTensors[0]};
+  std::vector<at::Tensor> outputTensor0 = {outputTensors[0]};
+  return collective(
+      inputTensor0,
+      outputTensor0,
+      [&](at::Tensor& /* unused */,
+          at::Tensor& /* unused */,
+          mcclComm_t comm,
+          c10::musa::MUSAStream& stream) {
+        return all2all_impl(outputTensors, inputTensors, comm, stream);
+      },
+      OpType::ALLTOALL);
 }
 
 // torch_musa P2P comms call mccl Operators directly.

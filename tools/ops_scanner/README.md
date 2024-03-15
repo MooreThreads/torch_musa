@@ -17,7 +17,7 @@ Please execute command under **torch_musa root** directory.
 python -m tools.ops_scanner.scan_musa_full_ops  \
 --scan-dir /home/torch_musa/torch_musa/csrc/aten/ops  \
 --file-ext .cpp  \
---regex 'm\.impl\(\"(.*?)\"'  \
+--regex 'm\.impl\(\s*?TORCH_SELECTIVE_NAME\(\s*?\"(.*?)\"|m\.impl\(\s*?\"(.*?)\"|ADVANCED_REGISTER\(\s*?aten,\s*?PrivateUse1,\s*?\"(.*?)\",'  \
 --output-path ./torch_musa_full_ops.xlsx
 ```
 

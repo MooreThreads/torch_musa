@@ -20,3 +20,60 @@ def test_mse_loss(input_data, dtype):
     output_cpu = loss(input_data, target_data)
     output_musa = loss(input_data.to("musa"), target_data.to("musa"))
     assert pytest.approx(output_cpu, 1e-6) == output_musa.to("cpu")
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_nll_loss2d():
+    input_data = torch.randn(3,20,224,224, requires_grad=True)
+    target_data = torch.randint(0,19,(3,224,224),dtype=torch.int64)
+    loss = torch.nn.CrossEntropyLoss()
+    output_cpu = loss(input_data, target_data)
+    musa_data = torch.tensor(input_data.detach().numpy(), requires_grad=True, device="musa")
+    musa_target = torch.tensor(target_data.detach().numpy(), device="musa")
+    output_musa = loss(musa_data, musa_target)
+    output_cpu.backward()
+    output_musa.backward()
+    assert pytest.approx(output_cpu.detach(), 1e-6) == output_musa.detach().to("cpu")
+    assert pytest.approx(input_data.grad, 1e-6) == musa_data.grad.to("cpu")
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_nll_loss_fp32():
+    input_data = torch.randn(3,20, requires_grad=True)
+    target_data = torch.randint(0,19,(3,),dtype=torch.int64)
+    loss = torch.nn.CrossEntropyLoss()
+    output_cpu = loss(input_data, target_data)
+    musa_data = torch.tensor(input_data.detach().numpy(),
+                             requires_grad=True, device="musa")
+    musa_target = torch.tensor(target_data.detach().numpy(), device="musa")
+    output_musa = loss(musa_data, musa_target)
+    output_cpu.backward()
+    output_musa.backward()
+    assert pytest.approx(output_cpu.detach(), 1e-6) == output_musa.detach().to("cpu")
+    assert pytest.approx(input_data.grad, 1e-6) == musa_data.grad.to("cpu")
+
+def test_nll_loss_fp16():
+    input_data = torch.randn(3,20, dtype=torch.float32, requires_grad=True)
+    target_data = torch.randint(0,19,(3,),dtype=torch.int64)
+    loss = torch.nn.CrossEntropyLoss()
+    output_cpu = loss(input_data, target_data)
+    musa_data = torch.tensor(input_data.half().detach().numpy(),
+                             requires_grad=True, device="musa")
+    musa_target = torch.tensor(target_data.detach().numpy(), device="musa")
+    output_musa = loss(musa_data, musa_target)
+    output_cpu.backward()
+    output_musa.backward()
+    assert pytest.approx(output_cpu.float().detach(), 1e-3) == \
+                            output_musa.float().detach().to("cpu")
+    assert pytest.approx(input_data.grad, 1e-2) == musa_data.grad.float().to("cpu")
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_binary_cross_entropy():
+    input_data = torch.randn(3,20,224,224, requires_grad=True)
+    target_data = torch.randn(3,20,224,224, requires_grad=False)
+    output_cpu = torch.nn.functional.binary_cross_entropy(torch.sigmoid(input_data), target_data)
+    musa_data = torch.tensor(input_data.detach().numpy(), requires_grad=True, device="musa")
+    musa_target = torch.tensor(target_data.detach().numpy(), device="musa")
+    output_musa = torch.nn.functional.binary_cross_entropy(torch.sigmoid(musa_data), musa_target)
+    output_cpu.backward()
+    output_musa.backward()
+    assert pytest.approx(output_cpu.detach(), 1e-6) == output_musa.detach().to("cpu")
+    assert pytest.approx(input_data.grad, 1e-6) == musa_data.grad.to("cpu")

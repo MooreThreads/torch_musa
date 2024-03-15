@@ -1,0 +1,28 @@
+diff --git a/torch/distributed/utils.py b/torch/distributed/utils.py
+index f827de1..c252859 100644
+--- a/torch/distributed/utils.py
++++ b/torch/distributed/utils.py
+@@ -55,6 +55,23 @@ def _recursive_to(inputs, target_gpu, use_side_stream_for_tensor_copies):
+     def to_map(obj):
+         if isinstance(obj, (torch.Tensor, PackedSequence)):
+             device = obj.data.device if isinstance(obj, PackedSequence) else obj.device
++            if hasattr(torch, "musa") and torch.musa.is_available():
++                if device == torch.device('musa', target_gpu):
++                    return (obj,)
++                if not use_side_stream_for_tensor_copies:
++                    return (obj.to(target_gpu),)
++                else:
++                    stream = _get_stream(target_gpu)
++                    with torch.musa.stream(stream):
++                        output = obj.to(target_gpu)
++                    with torch.musa.device(target_gpu):
++                        current_stream = torch.musa.current_stream()
++                        current_stream.wait_stream(stream)
++                        if isinstance(obj, PackedSequence):
++                            output.data.record_stream(current_stream)
++                        else:
++                            output.record_stream(current_stream)
++                    return (output,)
+             if device == torch.device("cuda", target_gpu):
+                 return (obj,)
+             if not use_side_stream_for_tensor_copies:

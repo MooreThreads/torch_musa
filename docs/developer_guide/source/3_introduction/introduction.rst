@@ -22,9 +22,11 @@ torch_musa概述
 torch_musa核心代码目录概述
 ===============================
 
-- torch_musa/tests  测试文件
-- torch_musa/core   主要包含Python module，提供Python前端的接口。
-- torch_musa/csrc   c++侧实现代码
+- torch_musa/tests  测试文件。
+- torch_musa/core   主要包含Python module，提供amp/device/memory/stream/event等模块的Python前端接口。
+- torch_musa/csrc   c++侧实现代码；
 
-  - csrc/aten       提供C++ Tensor库，包括MUDNN算子适配，CUDA-Porting算子适配等等
-  - csrc/core       提供核心功能库，包括设备管理，内存分配管理，Stream管理，Events管理等
+  - csrc/amp        提供混合精度模块的C++实现。
+  - csrc/aten       提供C++ Tensor库，包括MUDNN算子适配，CUDA-Porting算子适配等等。
+  - csrc/core       提供核心功能库，包括设备管理，内存分配管理，Stream管理，Events管理等。
+  - csrc/distributed    提供分布式模块的C++实现。

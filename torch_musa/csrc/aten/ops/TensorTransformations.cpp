@@ -4,6 +4,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -24,10 +25,10 @@ at::Tensor Roll(
   return at::native::roll_cuda(self, shifts, dims);
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("flip", &Flip);
-  m.impl("roll", &Roll);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "flip", Flip)
+ADVANCED_REGISTER(aten, PrivateUse1, "roll", Roll)
+
+REDEFINE_REGISTER(aten, QuantizedPrivateUse1, "flip", Flip)
 
 } // namespace musa
 } // namespace at

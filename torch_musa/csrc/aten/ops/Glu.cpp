@@ -6,6 +6,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -31,23 +32,18 @@ int64_t CheckGluDim(const Tensor& in, int64_t dim) {
 }
 
 Tensor Glu(const Tensor& self, int64_t dim) {
+  c10::musa::MUSAGuard device_guard(self.device());
   dim = CheckGluDim(self, dim);
   auto output_size = self.sizes().vec();
   output_size[dim] = output_size[dim] / 2;
-  Tensor self_ = Contiguous(self);
-  auto out = empty_musa(
-      output_size,
-      self_.scalar_type(),
-      c10::nullopt,
-      self.device(),
-      c10::nullopt,
-      at::MemoryFormat::Contiguous);
+  Tensor self_ = self.contiguous();
+  auto out = at::empty(output_size, self_.options());
   GluCall(out, self_, static_cast<int>(dim));
   return out;
 }
 
 Tensor& GluOut(const Tensor& self, int64_t dim, Tensor& out) {
-  Tensor self_ = Contiguous(self);
+  Tensor self_ = self.contiguous();
   dim = CheckGluDim(self_, dim);
   GluCall(out, self_, static_cast<int>(dim));
   return out;
@@ -58,11 +54,9 @@ Tensor GluBackward(const Tensor& grad_output, const Tensor& self, int64_t dim) {
   return at::native::glu_backward_cuda(grad_output, self, dim);
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("glu", &Glu);
-  m.impl("glu.out", &GluOut);
-  m.impl("glu_backward", &GluBackward);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "glu", Glu)
+ADVANCED_REGISTER(aten, PrivateUse1, "glu.out", GluOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "glu_backward", GluBackward)
 
 } // namespace musa
 } // namespace at

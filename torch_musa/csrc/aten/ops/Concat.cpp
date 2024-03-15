@@ -1,148 +1,136 @@
 #include <ATen/Config.h>
+#include <ATen/NamedTensorUtils.h>
 #include <ATen/NativeFunctions.h>
+#include <ATen/native/TypeProperties.h>
 #include <torch/library.h>
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
 namespace at {
 namespace musa {
 
-inline bool cat_should_skip_tensor(const Tensor& t) {
-  return t.numel() == 0 && t.dim() == 1;
-}
-
-// Check to see if the shape of tensors is compatible
-// for being concatenated along a given dimension.
-inline void check_cat_shape_except_dim(
-    const Tensor& first,
-    const Tensor& second,
-    int64_t dimension) {
-  int64_t first_dims = first.dim();
-  int64_t second_dims = second.dim();
-  TORCH_CHECK(
-      first_dims == second_dims,
-      "Tensors must have same number of dimensions: got ",
-      first_dims,
-      " and ",
-      second_dims);
-  for (const auto dim : c10::irange(first_dims)) {
-    if (dim == dimension) {
-      continue;
-    }
-    int64_t first_dim_size = first.sizes()[dim];
-    int64_t second_dim_size = second.sizes()[dim];
+// these two utilities are borrowed from
+// pytorch/aten/src/ATen/native/TensorShape.cpp
+inline void CatCheckNoZeroDim(const MaterializedITensorListRef& tensors) {
+  size_t i = 0;
+  for (const Tensor& t : tensors) {
     TORCH_CHECK(
-        first_dim_size == second_dim_size,
-        "Sizes of tensors must match except in dimension ",
-        dimension,
-        ". Expected size ",
-        first_dim_size,
-        " but got size ",
-        second_dim_size,
-        " in the list.");
+        t.dim() > 0,
+        "zero-dimensional tensor (at position ",
+        i,
+        ") cannot be concatenated");
+    i++;
   }
 }
 
-void ConcatImpl(Tensor& output, int dim, TensorList tensors) {
-  int64_t num_inputs = tensors.size();
-  std::vector<muTensor> musa_tensors;
-  musa_tensors.reserve(num_inputs);
-  for (int i = 0; i < num_inputs; i++) {
-    // Skip the tensor[i] when cat_dim is empty,
-    if (tensors[i].size(dim) == 0) {
-      continue;
+inline c10::MemoryFormat CatComputeOutputMemoryFormat(
+    const MaterializedITensorListRef& inputs) {
+  c10::optional<c10::MemoryFormat> format = c10::nullopt;
+  for (const Tensor& t : inputs) {
+    auto f = t.suggest_memory_format();
+    if (f == c10::MemoryFormat::Contiguous) {
+      return f;
     }
-    muTensor mt_tensor = CreateMUTensor(tensors[i]);
-    musa_tensors.emplace_back(mt_tensor);
+    if (format.has_value() && format.value() != f) {
+      return c10::MemoryFormat::Contiguous;
+    }
+    format = f;
   }
-  if (musa_tensors.size() == 0) {
-    return;
+  return format.value();
+}
+
+Tensor& CatOut(const at::ITensorListRef& tensors, int64_t dim, Tensor& out) {
+  if (out.numel() == 0) {
+    return out;
   }
-  auto om = CreateMUTensor(output);
-  muHandle& handle = GetMudnnHandle();
+  const auto& materialized = tensors.materialize();
+  const OptionalDeviceGuard device_guard(device_of(materialized[0].get()));
+  auto ref_type = at::native::result_type(materialized);
+  auto memory_format = CatComputeOutputMemoryFormat(materialized);
+  TORCH_CHECK(
+      out.suggest_memory_format() == memory_format,
+      "out tensor of cat.out should be in memory format of ",
+      memory_format,
+      "but now is ",
+      out.suggest_memory_format());
+  TORCH_CHECK(
+      ref_type == out.scalar_type(),
+      "out tensor dtype (",
+      out.scalar_type(),
+      ") should be same as ref tensor (",
+      ref_type,
+      ")");
+
+  // Sicne muDNN concat doesn't support uncontiguous tensors,
+  // so we store contiguous tensors for muTensors
+  std::vector<Tensor> rt_tensors;
+  int elements = 0;
+
+  for (int idx = 0; idx < materialized.size(); ++idx) {
+    if (materialized[idx].get().numel() > 0) {
+      rt_tensors.emplace_back(
+          FormatContiguous(materialized[idx].get(), memory_format)
+              .to(ref_type));
+      elements++;
+    }
+  }
+
+  // Computational muTensors
+  std::vector<at::musa::muTensor> mu_tensors;
+  mu_tensors.reserve(elements);
+  for (const auto& tensor : rt_tensors) {
+    mu_tensors.emplace_back(at::musa::CreateMUTensor(tensor));
+  }
+
+  at::musa::muTensor out_ = at::musa::CreateMUTensor(out);
+  at::musa::muHandle& h = at::GetMudnnHandle();
   ::musa::dnn::Concat op;
-  CHECK_MUDNN_STATUS(op.SetAxis(dim), "SetAxis");
+  if (dim == 1 && memory_format == at::MemoryFormat::ChannelsLast) {
+    CHECK_MUDNN_STATUS(op.SetAxis(3), "Set concat axis");
+  } else {
+    CHECK_MUDNN_STATUS(op.SetAxis(dim), "Set concat axis");
+  }
   CHECK_MUDNN_STATUS(
-      op.Run(handle, om, musa_tensors.size(), musa_tensors.data()), "Run");
+      op.Run(h, out_, elements, mu_tensors.data()), "Run Concat");
+
+  return out;
 }
 
 Tensor Cat(const at::ITensorListRef& tensors, int64_t dim = 0) {
-  Tensor valid_tensor;
-  auto num_inputs = tensors.size();
-  for (const auto& t : tensors) {
-    if (!cat_should_skip_tensor(t)) {
-      valid_tensor = t;
-      break;
-    }
+  const auto& materialized = tensors.materialize();
+  const Tensor& ref = materialized[0].get();
+
+  CatCheckNoZeroDim(materialized);
+  dim = at::legacy_cat_wrap_dim(dim, materialized);
+  TORCH_CHECK(dim >= 0 && dim < ref.dim(), "Wrong Cat dim: ", dim);
+  TORCH_CHECK(
+      !materialized.empty(), "torch.cat(): expect a non-empty list of tensors");
+
+  // Compute the output's shape
+  std::vector<int64_t> output_shape{ref.sizes().vec()};
+  output_shape[dim] = 0;
+  for (const Tensor& tensor : materialized) {
+    output_shape[dim] += tensor.size(dim);
   }
+  // Compute the output's dtype and memory_format
+  auto out_dtype = at::native::result_type(tensors);
+  auto memory_format = CatComputeOutputMemoryFormat(materialized);
 
-  // cal output_sizes must use valid_id !!!
-  auto ndim = valid_tensor.dim();
-  dim = ((dim % ndim) + ndim) % ndim;
-  int64_t dim_out_size = 0;
-  std::vector<Tensor> valid_tensors;
-  valid_tensors.reserve(num_inputs);
+  TensorOptions options =
+      ref.options().memory_format(memory_format).dtype(out_dtype);
+  Tensor output = at::empty(output_shape, options);
+  CatOut(tensors, dim, output);
 
-  for (const auto& t : tensors) {
-    if (!cat_should_skip_tensor(t)) {
-      check_cat_shape_except_dim(valid_tensor, t, dim);
-      dim_out_size = dim_out_size + t.size(dim);
-      Tensor one = Contiguous(t);
-      valid_tensors.emplace_back(one);
-    }
-  }
-
-  auto output_sizes = valid_tensor.sizes().vec();
-  output_sizes[dim] = dim_out_size;
-  Device device_opt = valid_tensor.device();
-  c10::musa::MUSAGuard device_guard(device_opt);
-
-  Tensor output = empty_musa(
-      output_sizes,
-      valid_tensor.scalar_type(),
-      c10::nullopt,
-      device_opt,
-      c10::nullopt,
-      at::MemoryFormat::Contiguous);
-  ConcatImpl(output, dim, valid_tensors);
   return output;
 }
 
-Tensor& CatOut(const at::ITensorListRef& tensors, int64_t dim, Tensor& output) {
-  auto num_inputs = tensors.size();
-  Tensor valid_tensor;
-  for (const auto& t : tensors) {
-    if (!cat_should_skip_tensor(t)) {
-      valid_tensor = t;
-      break;
-    }
-  }
-  auto ndim = valid_tensor.dim();
-  dim = ((dim % ndim) + ndim) % ndim;
-
-  std::vector<Tensor> valid_tensors;
-  valid_tensors.reserve(num_inputs);
-  c10::musa::MUSAGuard device_guard(valid_tensor.device());
-
-  for (const auto& t : tensors) {
-    if (!cat_should_skip_tensor(t)) {
-      check_cat_shape_except_dim(valid_tensor, t, dim);
-      Tensor one = Contiguous(t);
-      valid_tensors.emplace_back(one);
-    }
-  }
-  ConcatImpl(output, dim, valid_tensors);
-  return output;
-}
-
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("cat", &Cat);
-  m.impl("_cat", &Cat);
-  m.impl("cat.out", &CatOut);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "cat", Cat)
+REDEFINE_REGISTER(aten, PrivateUse1, "_cat", Cat)
+ADVANCED_REGISTER(aten, PrivateUse1, "cat.out", CatOut)
 
 } // namespace musa
 } // namespace at

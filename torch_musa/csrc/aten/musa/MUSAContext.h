@@ -9,8 +9,11 @@
 
 #include <ATen/Context.h>
 #include <ATen/core/ATenGeneral.h>
+#include <pybind11/pybind11.h>
 
 #include "torch_musa/csrc/aten/musa/Exceptions.h"
+#include "torch_musa/csrc/core/MUSAFunctions.h"
+#include "torch_musa/csrc/core/MUSAHooksInterface.h"
 #include "torch_musa/csrc/core/MUSAStream.h"
 
 namespace at {
@@ -32,6 +35,8 @@ Note that MUSAContext simply defines an interface with no associated class.
 It is expected that the modules whose functions compose this interface will
 manage their own state. There is only a single MUSA context/state.
 */
+
+using c10::musa::memcpy_and_sync;
 
 /**
  * DEPRECATED: use device_count() instead
@@ -61,6 +66,12 @@ Allocator* getMUSADeviceAllocator();
 
 mublasHandle_t getCurrentMUSABlasHandle();
 
+inline void lazyInitMUSA() {
+  static c10::once_flag thm_init;
+  c10::call_once(thm_init, [&] { at::detail::getMUSAHooks().initMUSA(); });
+}
+
+namespace py = pybind11;
 void registerMusaDeviceProperties(PyObject* module);
 } // namespace musa
 } // namespace at

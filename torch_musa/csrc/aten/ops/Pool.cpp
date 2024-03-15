@@ -6,6 +6,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -28,18 +29,15 @@ void PoolCall(
     Tensor& output,
     Tensor* indices = nullptr) {
   c10::musa::MUSAGuard device_guard(input.device());
+  const auto output_memory_format = output.suggest_memory_format();
+  auto contiguous_input = FormatContiguous(input, output_memory_format);
   auto out = CreateMUTensor(output);
-  auto in = CreateMUTensor(input);
+  auto in = CreateMUTensor(contiguous_input);
   muTensor inds;
   if (indices != nullptr) {
-    inds = CreateMUTensor(*indices);
+    auto contiguous_indices = FormatContiguous(*indices, output_memory_format);
+    inds = CreateMUTensor(contiguous_indices);
   }
-
-  auto contiguous_input = input;
-
-  ConfigFormat(contiguous_input, in, true);
-  ConfigFormat(output, out, true);
-
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Pooling pool;
   CHECK_MUDNN_STATUS(pool.SetMode(p.mode), "SetMode");
@@ -65,15 +63,18 @@ void PoolCallBwd(
     Tensor& grad_input,
     const Tensor* indices = nullptr) {
   c10::musa::MUSAGuard device_guard(grad_output.device());
-  auto in = CreateMUTensor(grad_output);
+  const auto grad_input_memory_format = grad_input.suggest_memory_format();
+  auto contiguous_grad_output =
+      FormatContiguous(grad_output, grad_input_memory_format);
+  auto in = CreateMUTensor(contiguous_grad_output);
   auto out = CreateMUTensor(grad_input);
   muTensor inds;
+  Tensor contiguous_indices;
   if (indices) {
-    inds = CreateMUTensor(*indices);
+    auto contiguous_indices =
+        FormatContiguous(*indices, grad_input_memory_format);
+    inds = CreateMUTensor(contiguous_indices);
   }
-  auto contiguous_input = grad_output;
-  ConfigFormat(contiguous_input, in, true);
-  ConfigFormat(grad_input, out, true);
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Pooling pool;
@@ -320,7 +321,7 @@ void MaxPool2dInternal(
       inW, p.k[1], p.pad[1], p.d[1], p.dil[1], ceil_mode);
 
   // Our own code
-  const auto memory_format = input.suggest_memory_format();
+  const auto memory_format = contiguous_input.suggest_memory_format();
   auto options = contiguous_input.options()
                      .dtype(contiguous_input.scalar_type())
                      .memory_format(memory_format);
@@ -716,29 +717,170 @@ at::Tensor& MaxPool3dIndicesBwdOut(
       grad_input);
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("_adaptive_avg_pool2d", &AdaptiveAvgPool2d);
-  m.impl("adaptive_avg_pool2d.out", &AdaptiveAvgPool2dOut);
-  m.impl("_adaptive_avg_pool2d_backward", &AdaptiveAvgPool2dBwd);
+struct structured_avg_pool3d_out_cuda_out final
+    : public at::native::structured_avg_pool3d_out_cuda {
+  structured_avg_pool3d_out_cuda_out(Tensor& out0) : outputs_{std::ref(out0)} {}
 
-  m.impl("avg_pool2d", &AvgPool2d);
-  m.impl("avg_pool2d.out", &AvgPool2dOut);
-  m.impl("avg_pool2d_backward", AvgPool2dBwd);
-  m.impl("avg_pool2d_backward.grad_input", AvgPool2dOutBwd);
+  void set_output_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+    const auto& out = outputs_[output_idx].get();
+    resize_out(out, sizes, strides, options);
+    auto maybe_proxy = maybe_create_proxy(out, sizes, strides, options);
+    if (C10_UNLIKELY(maybe_proxy.has_value())) {
+      proxy_outputs_[output_idx] =
+          c10::ExclusivelyOwned<Tensor>(std::move(maybe_proxy).value());
+    }
+    if (!names.empty()) {
+      namedinference::propagate_names(outputs_[output_idx], names);
+    }
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+  }
 
-  m.impl("max_pool2d_with_indices", &MaxPool2dIndices);
-  m.impl("max_pool2d_with_indices_backward", &MaxPool2dIndicesBwd);
-  m.impl("max_pool2d_with_indices.out", &MaxPool2dIndicesOut);
-  m.impl("max_pool2d_with_indices_backward_out", &MaxPool2dIndicesBwdOut);
+  void set_output_raw_strided(
+      int64_t output_idx,
+      IntArrayRef sizes,
+      IntArrayRef strides,
+      TensorOptions options,
+      DimnameList names) override {
+    auto current_device = guard_.current_device();
+    if (C10_UNLIKELY(current_device.has_value())) {
+      TORCH_INTERNAL_ASSERT(
+          *current_device == options.device(),
+          "structured kernels don't support multi-device outputs");
+    } else {
+      guard_.reset_device(options.device());
+    }
+    const auto& out = outputs_[output_idx].get();
+    resize_out(out, sizes, strides, options);
+    if (!names.empty()) {
+      namedinference::propagate_names(outputs_[output_idx], names);
+    }
+    // super must happen after, so that downstream can use maybe_get_output
+    // to retrieve the output
+  }
 
-  // For max_pooling, muDNN only support max_pool2d for now, we use porting
-  // here.
-  m.impl("max_pool3d_with_indices", &MaxPool3dIndices);
-  m.impl("max_pool3d_with_indices_backward", &MaxPool3dIndicesBwd);
-  m.impl("max_pool3d_with_indices.out", &MaxPool3dIndicesOut);
-  m.impl(
-      "max_pool3d_with_indices_backward.grad_input", &MaxPool3dIndicesBwdOut);
+  const Tensor& maybe_get_output(int64_t output_idx) override {
+    return proxy_outputs_[output_idx].has_value() ? **proxy_outputs_[output_idx]
+                                                  : outputs_[output_idx].get();
+  }
+
+  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
+  std::array<c10::optional<c10::ExclusivelyOwned<Tensor>>, 1> proxy_outputs_;
+  c10::musa::OptionalMUSAGuard guard_;
+};
+
+at::Tensor& AvgPool3dOut(
+    const at::Tensor& self,
+    at::IntArrayRef kernel_size,
+    at::IntArrayRef stride,
+    at::IntArrayRef padding,
+    bool ceil_mode,
+    bool count_include_pad,
+    c10::optional<int64_t> divisor_override,
+    at::Tensor& out) {
+  c10::optional<Device> common_device = nullopt;
+  structured_avg_pool3d_out_cuda_out op(out);
+  op.meta(
+      self,
+      kernel_size,
+      stride,
+      padding,
+      ceil_mode,
+      count_include_pad,
+      divisor_override);
+  op.impl(
+      self,
+      kernel_size,
+      stride,
+      padding,
+      ceil_mode,
+      count_include_pad,
+      divisor_override,
+      op.maybe_get_output(0));
+  if (op.proxy_outputs_[0].has_value())
+    op.outputs_[0].get().copy_(**op.proxy_outputs_[0]);
+  return out;
 }
+
+ADVANCED_REGISTER(aten, PrivateUse1, "_adaptive_avg_pool2d", AdaptiveAvgPool2d)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "adaptive_avg_pool2d.out",
+    AdaptiveAvgPool2dOut)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "_adaptive_avg_pool2d_backward",
+    AdaptiveAvgPool2dBwd)
+
+ADVANCED_REGISTER(aten, PrivateUse1, "avg_pool2d", AvgPool2d)
+ADVANCED_REGISTER(aten, PrivateUse1, "avg_pool2d.out", AvgPool2dOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "avg_pool2d_backward", AvgPool2dBwd)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "avg_pool2d_backward.grad_input",
+    AvgPool2dOutBwd)
+
+ADVANCED_REGISTER(aten, PrivateUse1, "avg_pool3d.out", AvgPool3dOut)
+
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "max_pool2d_with_indices",
+    MaxPool2dIndices)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "max_pool2d_with_indices_backward",
+    MaxPool2dIndicesBwd)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "max_pool2d_with_indices.out",
+    MaxPool2dIndicesOut)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "max_pool2d_with_indices_backward_out",
+    MaxPool2dIndicesBwdOut)
+
+// For max_pooling, muDNN only support max_pool2d for now, we use porting
+// here.
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "max_pool3d_with_indices",
+    MaxPool3dIndices)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "max_pool3d_with_indices_backward",
+    MaxPool3dIndicesBwd)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "max_pool3d_with_indices.out",
+    MaxPool3dIndicesOut)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "max_pool3d_with_indices_backward.grad_input",
+    MaxPool3dIndicesBwdOut)
 
 } // namespace musa
 } // namespace at

@@ -1,13 +1,15 @@
-#ifndef ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUUTILS_H_
-#define ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUUTILS_H_
+#ifndef TORCH_MUSA_CSRC_ATEN_UTILS_UTILS_H_
+#define TORCH_MUSA_CSRC_ATEN_UTILS_UTILS_H_
 
 #include <ATen/Dispatch.h>
+#include <c10/core/Backend.h>
 
 #include <mudnn.h>
 #include "torch_musa/csrc/aten/mudnn/Handle.h"
 #include "torch_musa/csrc/core/MUSAException.h"
 
 namespace at {
+
 namespace musa {
 
 #define UNUSED(x) (void)(x)
@@ -33,8 +35,9 @@ namespace musa {
       TYPE,                                                                   \
       NAME,                                                                   \
       AT_DISPATCH_CASE(at::ScalarType::Byte, __VA_ARGS__) AT_DISPATCH_CASE(   \
-          at::ScalarType::Char, __VA_ARGS__)                                  \
-          AT_DISPATCH_CASE(at::ScalarType::Half, __VA_ARGS__)                 \
+          at::ScalarType::Char,                                               \
+          __VA_ARGS__) AT_DISPATCH_CASE(at::ScalarType::Half, __VA_ARGS__)    \
+          AT_DISPATCH_CASE(at::ScalarType::BFloat16, __VA_ARGS__)             \
               AT_DISPATCH_CASE(at::ScalarType::Short, __VA_ARGS__)            \
                   AT_DISPATCH_CASE(at::ScalarType::Float, __VA_ARGS__)        \
                       AT_DISPATCH_CASE(at::ScalarType::Int, __VA_ARGS__)      \
@@ -45,16 +48,18 @@ namespace musa {
 using muTensor = ::musa::dnn::Tensor;
 using muHandle = ::musa::dnn::Handle;
 
+constexpr c10::Backend kMUSABackend = c10::Backend::PrivateUse1;
 constexpr DeviceType kMUSA = DeviceType::PrivateUse1;
-constexpr ::c10::DispatchKey kMUSAKey = ::c10::DispatchKey::PrivateUse1;
+constexpr c10::DispatchKey kMUSAKey = c10::DispatchKey::PrivateUse1;
 
-#define MUSA_TENSOR_TYPE_CHECK(self)                \
-  TORCH_CHECK(                                      \
-      ((self.scalar_type() == ScalarType::Float) || \
-       (self.scalar_type() == ScalarType::Half) ||  \
-       (self.scalar_type() == ScalarType::Int) ||   \
-       (self.scalar_type() == ScalarType::Long)),   \
-      "Now muDNN only support float32, half, int32, and int64");
+#define MUSA_TENSOR_TYPE_CHECK(self)                   \
+  TORCH_CHECK(                                         \
+      ((self.scalar_type() == ScalarType::Float) ||    \
+       (self.scalar_type() == ScalarType::Half) ||     \
+       (self.scalar_type() == ScalarType::BFloat16) || \
+       (self.scalar_type() == ScalarType::Int) ||      \
+       (self.scalar_type() == ScalarType::Long)),      \
+      "Now muDNN only support float32, half, bfloat16, int32, and int64");
 
 #define CHECK_MUDNN_STATUS(rst, msg)       \
   TORCH_CHECK(                             \
@@ -63,13 +68,30 @@ constexpr ::c10::DispatchKey kMUSAKey = ::c10::DispatchKey::PrivateUse1;
       " MUDNN failed in: ",                \
       msg);
 
-muTensor CreateMUTensor(const Tensor& t, bool use_stride = false);
+muTensor CreateMUTensor(const Tensor& t, bool permute_if_not_contiguous = true);
 
-muTensor CreateEmptyMUTensor();
+inline muTensor CreateEmptyMUTensor() {
+  return muTensor();
+}
 
 // May need to contiguous the input pytorch tensor according the needed
 // tensor format, so need to pass tensor as reference
-void ConfigFormat(Tensor& t, muTensor& mt, bool auto_contiguous = false);
+void ConfigFormat(
+    const Tensor& t,
+    muTensor& mt,
+    bool permute_if_not_contiguous = true);
+
+// Set quantized mudnn tensor info
+void inline SetMudnnQuantizationInfo(
+    at::musa::muTensor& self,
+    double scales,
+    int64_t zero_points) {
+  float scales_ = static_cast<float>(scales);
+  unsigned int zero_points_ = static_cast<unsigned int>(zero_points);
+  CHECK_MUDNN_STATUS(
+      self.SetQuantizationInfo(1, &scales_, &zero_points_),
+      "Set quantization info");
+}
 
 // use for memory handler
 void InternalMemFree(void* ptr);
@@ -99,7 +121,29 @@ c10::optional<Tensor> maybe_create_proxy(
     IntArrayRef strides,
     const TensorOptions& options);
 
+bool MatContiguous(const Tensor& mat);
+
+bool IsTranspose(const Tensor& mat, bool strict = true);
+
+Tensor FormatContiguous(const Tensor& t, at::MemoryFormat memory_format);
+
+size_t DTypeSize(c10::ScalarType type);
+
+/**
+ * @brief There is a buggy check for zero strides. We should change the
+ *        zero stride to 1 to keep the mudnn to get right data format.
+ * @todo TODO: (lms) Actually we should make this func inline, but inline
+ *       this func in Utils.h will cause compilation-chain broken, so just
+ *       keep the declaration and definition separate temporarily.
+ * @param t Tensor to change stride from zero to 1
+ * @return at::Tensor output tensor of this func.
+ */
+at::Tensor ContiguousIfZeroInStrides(const at::Tensor& t);
+
 } // namespace musa
+
+using musa::kMUSA;
+
 } // namespace at
 
-#endif // ATEN_SRC_ATEN_NATIVE_MUSA_MTGPUUTILS_H_
+#endif // TORCH_MUSA_CSRC_ATEN_UTILS_UTILS_H_

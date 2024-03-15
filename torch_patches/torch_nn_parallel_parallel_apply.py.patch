@@ -1,0 +1,34 @@
+diff --git a/torch/nn/parallel/parallel_apply.py b/torch/nn/parallel/parallel_apply.py
+index a114dfd..734d4ba 100644
+--- a/torch/nn/parallel/parallel_apply.py
++++ b/torch/nn/parallel/parallel_apply.py
+@@ -28,7 +28,7 @@ def parallel_apply(modules, inputs, kwargs_tup=None, devices=None):
+     Args:
+         modules (Module): modules to be parallelized
+         inputs (tensor): inputs to the modules
+-        devices (list of int or torch.device): CUDA devices
++        devices (list of int or torch.device): MUSA devices
+ 
+     :attr:`modules`, :attr:`inputs`, :attr:`kwargs_tup` (if given), and
+     :attr:`devices` (if given) should all have same length. Moreover, each
+@@ -45,7 +45,7 @@ def parallel_apply(modules, inputs, kwargs_tup=None, devices=None):
+     else:
+         devices = [None] * len(modules)
+     devices = [_get_device_index(x, True) for x in devices]
+-    streams = [torch.cuda.current_stream(x) for x in devices]
++    streams = [torch.musa.current_stream(x) for x in devices]
+     lock = threading.Lock()
+     results = {}
+     grad_enabled, autocast_enabled = torch.is_grad_enabled(), torch.is_autocast_enabled()
+@@ -55,9 +55,9 @@ def parallel_apply(modules, inputs, kwargs_tup=None, devices=None):
+         if device is None:
+             device = get_a_var(input).get_device()
+         if stream is None:
+-            stream = torch.cuda.current_stream(device)
++            stream = torch.musa.current_stream(device)
+         try:
+-            with torch.cuda.device(device), torch.cuda.stream(stream), autocast(enabled=autocast_enabled):
++            with torch.musa.device(device), torch.musa.stream(stream), autocast(enabled=autocast_enabled):
+                 # this also avoids accidental slicing of `input` if it is a Tensor
+                 if not isinstance(input, (list, tuple)):
+                     input = (input,)

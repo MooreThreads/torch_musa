@@ -5,12 +5,19 @@
 #include <ATen/native/Pool.h>
 #include <torch/library.h>
 
-#include "torch_musa/csrc/aten/ops/TensorFactory.h"
+#include "torch_musa/csrc/aten/ops/Bucketize.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-
-#include <mudnn.h>
+#include "torch_musa/csrc/core/MUSAGuard.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
+namespace native {
+
+DEFINE_DISPATCH(bucketize_stub);
+REGISTER_NO_CPU_DISPATCH(bucketize_stub);
+
+} // namespace native
+
 namespace musa {
 
 Tensor Bucketize(
@@ -27,39 +34,33 @@ Tensor Bucketize(
       "Device of boundaries tensor of Bucketize must be MUSA, but now is ",
       boundaries.device());
   TORCH_CHECK(
-      self.scalar_type() == at::ScalarType::Float,
-      "Dtype of input tensor of Bucketize only support Float32, but "
+      self.scalar_type() == at::ScalarType::Float ||
+          self.scalar_type() == at::ScalarType::Long ||
+          self.scalar_type() == at::ScalarType::Int,
+      "Bucketize supports dtypes of float32, int32 and int64, but "
       "now it is ",
       self.scalar_type());
 
   c10::musa::MUSAGuard device_guard(self.device());
-  muHandle& h = GetMudnnHandle();
-  ::musa::dnn::Bucketize mBucketize;
-  CHECK_MUDNN_STATUS(mBucketize.SetRight(right), "SetRight");
 
-  auto self_contiguous = Contiguous(self);
-  auto self_input = CreateMUTensor(self_contiguous);
+  // bucketize kernel dosen't support un-contiguous tensors currently
+  Tensor self_contiguous = self.contiguous();
+  Tensor boundaries_contiguous = boundaries.contiguous();
 
-  auto boundaries_contiguous = Contiguous(boundaries);
-  auto boundaries_input = CreateMUTensor(boundaries_contiguous);
-  // note: Unsupported out data type: FLOAT in muDNN, hence out_int32 is dummy
-  Tensor out = empty_musa(
-      self.sizes(),
-      at::kLong,
-      c10::nullopt,
-      self.device(),
-      c10::nullopt,
-      at::MemoryFormat::Contiguous);
+  at::ScalarType out_dtype =
+      out_int32 ? at::ScalarType::Int : at::ScalarType::Long;
+  Tensor out = at::empty_like(
+      self,
+      self.options().dtype(out_dtype).memory_format(
+          at::MemoryFormat::Contiguous));
 
-  auto output = CreateMUTensor(out);
-  CHECK_MUDNN_STATUS(
-      mBucketize.Run(h, output, self_input, boundaries_input), "Run");
-  return out_int32 ? out.to(at::kInt) : out;
+  at::native::bucketize_stub(
+      kMUSA, out, self_contiguous, boundaries_contiguous, right);
+
+  return out;
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("bucketize.Tensor", &Bucketize);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "bucketize.Tensor", Bucketize)
 
 } // namespace musa
 } // namespace at

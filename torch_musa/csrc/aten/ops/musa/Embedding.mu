@@ -1,76 +1,163 @@
+#include <ATen/ATen.h>
+#include <ATen/Dispatch.h>
+#include <ATen/ceil_div.h>
 #include <ATen/core/Tensor.h>
-#include "torch_musa/csrc/aten/ops/Embedding.h"
-#include <mudnn.h>
-#include <ATen/musa/MUSAConfig.h>
-#include <ATen/musa/cub.muh>
-#include <musa_fp16.h>
 
+#include <mudnn.h>
+#include "torch_musa/csrc/aten/mudnn/Handle.h"
+#include "torch_musa/csrc/aten/musa/MUSAAtomic.muh"
+#include "torch_musa/csrc/aten/musa/MUSADtype.muh"
+#include "torch_musa/csrc/aten/ops/musa/EmbeddingBackwardKernel.muh"
+#include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/core/MUSAStream.h"
 
 namespace at {
-namespace musa {
-  
-template <typename DataType, typename IndexType>
-__global__ void EmbeddingKernel(DataType* out, const DataType* tbl,
-                                const IndexType* idx, const int num_indices,
-                                const int tbl_h, const int tbl_w,
-                                const int padding_idx) {
+namespace native {
+
+namespace {
+
+template <typename scalar_t, typename index_t>
+__global__ void EmbeddingDenseBwdAtomicKernel(
+    scalar_t* grad_weight,
+    const scalar_t* grad,
+    const index_t* idx,
+    const int num_indices,
+    const int tbl_h,
+    const int tbl_w,
+    const int padding_idx) {
   int ox = threadIdx.x;
   int oy = blockIdx.x + threadIdx.y * gridDim.x;
 
   for (; oy < num_indices; oy += blockDim.y * gridDim.x) {
-    IndexType id = idx[oy];
-    DataType* po = out + oy * tbl_w;
-    const DataType* pt = tbl + id * tbl_w;
+    // use a batch of threads with same theadIdx.x
+    // to process one row of grad_weight
+    index_t id = idx[oy];
+    scalar_t* grad_weight_row = grad_weight + id * tbl_w;
+    const scalar_t* grad_row = grad + oy * tbl_w;
     bool valid_id = (id >= 0 && id < tbl_h && id != padding_idx);
     for (int i = ox; i < tbl_w; i += blockDim.x) {
-      po[i] = valid_id ? pt[i] : DataType(0);
+      if (valid_id && grad_row[i] != static_cast<scalar_t>(0)) {
+        at::musa::gpuAtomicAdd(grad_weight_row + i, grad_row[i]);
+      }
     }
   }
 }
 
-void EmbeddingRun(const Tensor& o, const Tensor& t, const Tensor& i, int64_t padding) {
-    auto stream = c10::musa::getCurrentMUSAStream();
+Tensor EmbeddingDenseBwdMUSA(
+    const Tensor& grad_output,
+    const Tensor& indices,
+    int64_t num_weights,
+    int64_t padding_idx,
+    bool scale_grad_by_freq) {
+  TORCH_CHECK(
+      grad_output.device() == indices.device() &&
+          grad_output.device().type() == kMUSA,
+      "Excepted device of grad_output and indices of embedding_dense_backward "
+      "both on MUSA, but now grad_output on ",
+      grad_output.device(),
+      " indices on ",
+      indices.device());
+  TORCH_CHECK(
+      !scale_grad_by_freq,
+      "scale grad by the frequency of the words in the mini-batch is not "
+      "supported yet");
 
-    int num_indices = i.numel();
-    int tbl_h = t.size(0);
-    int tbl_w = t.size(1);
-    int padding_idx = static_cast<int>(padding);
+  auto contiguous_indices = indices.contiguous();
+  auto num_indices = indices.numel();
+  auto contiguous_grad_output = grad_output.contiguous();
+  musaStream_t stream = at::musa::getCurrentMUSAStream();
 
-    const uint32_t block_x = 128;
-    const uint32_t block_y = 8;
-    const uint32_t grid_x = (tbl_w + 128 - 1) / 128;
-    const uint32_t grid_y = 1;
+  if (num_indices <= 1024 && !scale_grad_by_freq) {
+    Tensor grad_weight = at::zeros(
+        {num_weights, grad_output.size(-1)},
+        grad_output.options().memory_format(at::MemoryFormat::Contiguous));
 
-    dim3 block_size{block_x, block_y, 1};
-    dim3 grid_size{grid_x, grid_y, 1};
+    int tbl_h = grad_weight.size(0);
+    int tbl_w = grad_weight.size(1);
+    const int wrap_size = at::musa::warp_size();
+    dim3 block(wrap_size, 8, 1);
+    dim3 grid(at::ceil_div(tbl_w, wrap_size), 1, 1);
 
-    if (ScalarType::Float == t.scalar_type()) {
-      if (ScalarType::Int == i.scalar_type()) {
-        EmbeddingKernel<float, int32_t><<<grid_size, block_size, 0, stream>>>(
-            static_cast<float*>(o.data_ptr()), static_cast<const float*>(t.data_ptr()),
-            static_cast<const int32_t*>(i.data_ptr()), num_indices, tbl_h, tbl_w,
-            padding_idx);
-      } else {
-        EmbeddingKernel<float, int64_t><<<grid_size, block_size, 0, stream>>>(
-            static_cast<float*>(o.data_ptr()), static_cast<const float*>(t.data_ptr()),
-            static_cast<const int64_t*>(i.data_ptr()), num_indices, tbl_h, tbl_w,
-            padding_idx);
-      }
-    } else {
-      if (ScalarType::Int == i.scalar_type()) {
-        EmbeddingKernel<half, int32_t><<<grid_size, block_size, 0, stream>>>(
-            static_cast<half*>(o.data_ptr()), static_cast<const half*>(t.data_ptr()),
-            static_cast<const int32_t*>(i.data_ptr()), num_indices, tbl_h, tbl_w,
-            padding_idx);
-      } else {
-        EmbeddingKernel<half, int64_t><<<grid_size, block_size, 0, stream>>>(
-            static_cast<half*>(o.data_ptr()), static_cast<const half*>(t.data_ptr()),
-            static_cast<const int64_t*>(i.data_ptr()), num_indices, tbl_h, tbl_w,
-            padding_idx);
-      }
+#define DISPATCH_ATOMIC_KERNEL(SCALAR_TYPE)                     \
+  AT_DISPATCH_INDEX_TYPES(                                      \
+      indices.scalar_type(), "EmbeddingDenseBwdMUSA", [&]() {   \
+        using scalar_t = SCALAR_TYPE;                           \
+        EmbeddingDenseBwdAtomicKernel<scalar_t, index_t>        \
+            <<<grid, block, 0, stream>>>(                       \
+                static_cast<scalar_t*>(grad_weight.data_ptr()), \
+                static_cast<const scalar_t*>(                   \
+                    contiguous_grad_output.data_ptr()),         \
+                contiguous_indices.data_ptr<index_t>(),         \
+                static_cast<int>(num_indices),                  \
+                static_cast<int>(tbl_h),                        \
+                static_cast<int>(tbl_w),                        \
+                static_cast<int>(padding_idx));                 \
+        C10_MUSA_KERNEL_LAUNCH_CHECK();                         \
+      });
+
+    const auto& the_type = contiguous_grad_output.scalar_type();
+    switch (the_type) {
+      case at::ScalarType::Float:
+        DISPATCH_ATOMIC_KERNEL(
+            c10::impl::ScalarTypeToCPPTypeT<at::ScalarType::Float>);
+        break;
+      case at::ScalarType::Double:
+        DISPATCH_ATOMIC_KERNEL(
+            c10::impl::ScalarTypeToCPPTypeT<at::ScalarType::Double>);
+        break;
+      case at::ScalarType::Half:
+        // slight performance imporvement compared to ScalarType::Half
+        DISPATCH_ATOMIC_KERNEL(float16_t);
+        break;
+      case at::ScalarType::BFloat16:
+        DISPATCH_ATOMIC_KERNEL(bfloat16_t);
+        break;
+      default:
+        AT_ERROR("EmbeddingDenseBwdMUSA not support ", toString(the_type));
     }
+#undef DISPATCH_ATOMIC_KERNEL
+
+    return grad_weight;
+  }
+
+  auto sorted_indices =
+      at::empty_like(indices, LEGACY_CONTIGUOUS_MEMORY_FORMAT);
+  auto orig_indices = at::empty_like(indices, LEGACY_CONTIGUOUS_MEMORY_FORMAT);
+
+  AT_DISPATCH_INDEX_TYPES(
+      contiguous_indices.scalar_type(), "EmbeddingBwd", [&]() {
+        int32_t numel = contiguous_indices.numel();
+        at::musa::muHandle& h = GetMudnnHandle();
+        auto indices_ = at::musa::CreateMUTensor(contiguous_indices);
+        indices_.SetNdInfo({numel});
+        auto orig_indices_ = at::musa::CreateMUTensor(orig_indices);
+        orig_indices_.SetNdInfo({numel});
+        auto sorted_indices_ = at::musa::CreateMUTensor(sorted_indices);
+        sorted_indices_.SetNdInfo({numel});
+        ::musa::dnn::Sort op;
+        op.SetDim(0);
+        op.SetDescending(false);
+        op.SetStable(true);
+        CHECK_MUDNN_STATUS(
+            op.Run(
+                h,
+                sorted_indices_,
+                orig_indices_,
+                indices_,
+                at::musa::InternalMemAlloc),
+            "SortRun");
+      });
+
+  return EmbeddingBackwardMUSAKernel(
+      contiguous_grad_output,
+      orig_indices,
+      sorted_indices,
+      num_weights,
+      padding_idx);
 }
+} // namespace
 
-}  // namespace musa
-}  // namespace at
+REGISTER_MUSA_DISPATCH(embedding_dense_backward_stub, &EmbeddingDenseBwdMUSA);
 
+} // namespace native
+} // namespace at

@@ -8,6 +8,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -44,7 +45,7 @@ inline void CheckDimParams(const Tensor& input, const int64_t dim) {
 }
 
 Tensor OpInternal(const Tensor& input, const int64_t dim, SOFTMAX_MODE mode) {
-  auto contiguous_input = Contiguous(input);
+  auto contiguous_input = input.contiguous();
   CheckDimParams(contiguous_input, dim);
   auto output = at::empty_like(contiguous_input);
   SoftMaxCall(output, dim, contiguous_input, mode);
@@ -56,7 +57,7 @@ void OpInternalOut(
     const Tensor& input,
     const int64_t dim,
     SOFTMAX_MODE mode) {
-  auto contiguous_input = Contiguous(input);
+  auto contiguous_input = input.contiguous();
   CheckDimParams(contiguous_input, dim);
   TORCH_CHECK(output.is_contiguous(), "check contiguous failed for unary op!");
   SoftMaxCall(output, dim, contiguous_input, mode);
@@ -81,8 +82,9 @@ Tensor LogSoftmaxInt(
     const Tensor& self,
     int64_t dim,
     c10::optional<at::ScalarType> dtype = c10::nullopt) {
-  bool half_to_float =
-      self.scalar_type() == ScalarType::Half && dtype == ScalarType::Float;
+  bool half_to_float = (self.scalar_type() == ScalarType::Half ||
+                        self.scalar_type() == ScalarType::BFloat16) &&
+      dtype == ScalarType::Float;
 
   Tensor converted = dtype.has_value() ? self.toType(dtype.value()) : self;
   Tensor result = LogSoftmax(converted, dim, half_to_float);
@@ -117,8 +119,9 @@ Tensor SoftmaxInt(
     const Tensor& self,
     int64_t dim,
     c10::optional<at::ScalarType> dtype = c10::nullopt) {
-  bool half_to_float =
-      self.scalar_type() == ScalarType::Half && dtype == ScalarType::Float;
+  bool half_to_float = (self.scalar_type() == ScalarType::Half ||
+                        self.scalar_type() == ScalarType::BFloat16) &&
+      dtype == ScalarType::Float;
 
   Tensor converted = dtype.has_value() ? self.toType(dtype.value()) : self;
   Tensor result = Softmax(converted, dim, half_to_float);
@@ -143,7 +146,9 @@ Tensor& SoftmaxBwdInternal(
     SOFTMAX_MODE mode,
     Tensor& grad_input) {
   TORCH_CHECK(
-      input_dtype == ScalarType::Float, "input_dtype only support float32");
+      input_dtype == ScalarType::Float || input_dtype == ScalarType::Half ||
+          input_dtype == ScalarType::BFloat16,
+      "input_dtype of SoftmaxBwd only support Float/Half/BFloat16");
   TORCH_CHECK(
       grad_output.device().type() == kMUSA,
       "Device of grad_output tensor of ",
@@ -163,23 +168,27 @@ Tensor& SoftmaxBwdInternal(
       " must be MUSA, but now is ",
       grad_input.device());
   TORCH_CHECK(
-      grad_output.scalar_type() == at::ScalarType::Float,
+      grad_output.scalar_type() == at::ScalarType::Float ||
+          grad_output.scalar_type() == at::ScalarType::Half ||
+          grad_output.scalar_type() == at::ScalarType::BFloat16,
       "Dtype of grad_output tensor of ",
       std::string(op_name),
-      " only support Float32, but now it is ",
+      " only support Float/Half/BFloat16, but now it is ",
       grad_output.scalar_type());
   TORCH_CHECK(
-      output.scalar_type() == at::ScalarType::Float,
+      output.scalar_type() == at::ScalarType::Float ||
+          output.scalar_type() == at::ScalarType::Half ||
+          output.scalar_type() == at::ScalarType::BFloat16,
       "Dtype of output tensor of ",
       std::string(op_name),
-      " only support Float32, but now it is ",
+      " only support Float/Half/BFloat16, but now it is ",
       output.scalar_type());
 
   grad_input.resize_(grad_output.sizes());
 
   c10::musa::MUSAGuard device_guard(grad_output.device());
-  auto contiguous_grad_output = Contiguous(grad_output);
-  auto contiguous_output = Contiguous(output);
+  auto contiguous_grad_output = grad_output.contiguous();
+  auto contiguous_output = output.contiguous();
 
   const TensorArg grad_arg{grad_output, "grad", 0};
   const TensorArg output_arg{output, "output", 1};
@@ -225,7 +234,7 @@ Tensor SoftmaxBwd(
     const Tensor& output,
     int64_t dim,
     ScalarType input_dtype) {
-  auto grad_input = at::empty_like(grad_output);
+  auto grad_input = at::empty_like(grad_output, at::MemoryFormat::Contiguous);
   SoftmaxOutBwd(grad_output, output, dim, input_dtype, grad_input);
   return grad_input;
 }
@@ -256,20 +265,30 @@ Tensor LogSoftmaxDataBwd(
   return result;
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("log_softmax.Dimname", &LogSoftmaxDimname);
-  m.impl("_log_softmax", &LogSoftmax);
-  m.impl("_log_softmax.out", &LogSoftmaxOut);
-  m.impl("_log_softmax_backward_data", &LogSoftmaxDataBwd);
-  m.impl("_log_softmax_backward_data.out", &LogSoftmaxDataOutBwd);
+ADVANCED_REGISTER(aten, PrivateUse1, "log_softmax.Dimname", LogSoftmaxDimname)
+ADVANCED_REGISTER(aten, PrivateUse1, "_log_softmax", LogSoftmax)
+ADVANCED_REGISTER(aten, PrivateUse1, "_log_softmax.out", LogSoftmaxOut)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "_log_softmax_backward_data",
+    LogSoftmaxDataBwd)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "_log_softmax_backward_data.out",
+    LogSoftmaxDataOutBwd)
 
-  m.impl("softmax.Dimname", &SoftmaxDimname);
-  m.impl("_softmax", &Softmax);
-  m.impl("_softmax.out", &SoftmaxOut);
+ADVANCED_REGISTER(aten, PrivateUse1, "softmax.Dimname", SoftmaxDimname)
+ADVANCED_REGISTER(aten, PrivateUse1, "_softmax", Softmax)
+ADVANCED_REGISTER(aten, PrivateUse1, "_softmax.out", SoftmaxOut)
 
-  m.impl("_softmax_backward_data.out", &SoftmaxOutBwd);
-  m.impl("_softmax_backward_data", &SoftmaxBwd);
-}
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "_softmax_backward_data.out",
+    SoftmaxOutBwd)
+ADVANCED_REGISTER(aten, PrivateUse1, "_softmax_backward_data", SoftmaxBwd)
 
 } // namespace musa
 } // namespace at
