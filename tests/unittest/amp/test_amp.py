@@ -87,7 +87,7 @@ def test_amp_autocast_fp16(low_dtype):
 
 @pytest.mark.skipif(
     testing.get_musa_arch() < 22,
-    reason="bf16 is not supported on arch older than qy2"
+    reason="bf16 is not supported on arch older than S4000"
 )
 @pytest.mark.parametrize("low_dtype", [torch.bfloat16])
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)

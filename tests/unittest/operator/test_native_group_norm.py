@@ -85,7 +85,7 @@ def test_native_group_norm_device():
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.skipif(
     testing.get_musa_arch() < 22,
-    reason="fp16 group_norm supported in QY2 or later"
+    reason="fp16 group_norm supported in S4000 or later"
 )
 @pytest.mark.parametrize("input_dtype", input_dtype)
 @pytest.mark.parametrize("parameter", parameter)

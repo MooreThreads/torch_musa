@@ -32,7 +32,7 @@ def test_batch_norm(input_data, train):
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.skipif(
     testing.get_musa_arch() < 22,
-    reason="fp16 batch_norm supported in QY2 or later",
+    reason="fp16 batch_norm supported in S4000 or later",
 )
 @pytest.mark.parametrize("train", train)
 def test_batch_norm_fp16(input_data, train):

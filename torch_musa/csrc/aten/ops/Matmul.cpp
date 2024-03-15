@@ -19,7 +19,6 @@ at::Tensor Dot(const at::Tensor& l, const at::Tensor& r) {
       {1, 1}, l.options().memory_format(at::MemoryFormat::Contiguous));
   auto rst = CreateMUTensor(out);
   // TODO : (lms)view out, l and r to fix the mudnn's convention
-  // https://github.mthreads.com/mthreads/muDNN/issues/304
   Tensor contiguous_l = l.contiguous().view(c10::IntArrayRef{1, l.size(0)});
   Tensor contiguous_r = r.contiguous().view(c10::IntArrayRef{l.size(0), 1});
   auto lmt = CreateMUTensor(contiguous_l);
@@ -129,7 +128,6 @@ at::Tensor& AddMvOut(
   sz.push_back(1);
   const at::Tensor& vec = mat2.view(sz);
   // TODO:(lms) to avoid mudnn failing in gemv
-  // https://github.mthreads.com/mthreads/muDNN/issues/304
   out = out.unsqueeze(-1);
   AddMmOut(self, mat1, vec, beta, alpha, out);
   return out.squeeze_();

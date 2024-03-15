@@ -326,4 +326,4 @@ C++部署示例代码
     return 0;
   }
 
-详细用法请参考 `examples/cpp <https://github.mthreads.com/mthreads/torch_musa/tree/main/examples/cpp>`_ 下内容。
+详细用法请参考 `examples/cpp <https://github.com/MooreThreads/torch_musa/tree/v1.1.0/examples/cpp>`_ 下内容。

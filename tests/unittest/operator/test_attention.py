@@ -281,7 +281,7 @@ def test_math_sdp_backward(case, dtype, func, mask_type, is_self_attn):
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.skipif(f"{torch.musa.get_device_properties(torch.musa.current_device()).major}"
                     f".{torch.musa.get_device_properties(torch.musa.current_device()).minor}"
-                    < "2.2", reason="SKIP this test if in GPU with arch below 2.2(QY2).")
+                    < "2.2", reason="SKIP this test if in GPU with arch below 2.2(S4000).")
 @pytest.mark.parametrize("case", sdp_cases())
 # FIXME:(lms) dtype bfloat16 tensor not supported now
 @pytest.mark.parametrize("dtype", [torch.half])
@@ -301,7 +301,7 @@ def test_flash_sdp(case, dtype, func, mask_type, is_self_attn):
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.skipif(f"{torch.musa.get_device_properties(torch.musa.current_device()).major}."
                     f"{torch.musa.get_device_properties(torch.musa.current_device()).minor}"
-                    < "2.2", reason="SKIP this test if in GPU with arch below 2.2(QY2).")
+                    < "2.2", reason="SKIP this test if in GPU with arch below 2.2(S4000).")
 @pytest.mark.parametrize("case", sdp_cases())
 # FIXME:(lms) dtype bfloat16 tensor not supported now
 @pytest.mark.parametrize("dtype", [torch.half])
