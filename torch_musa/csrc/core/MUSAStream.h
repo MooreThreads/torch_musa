@@ -89,7 +89,7 @@ class MUSAStream {
     c10::DeviceGuard guard{stream_.device()};
     int priority = 0;
     TORCH_MUSA_CHECK(musaStreamGetPriority(stream(), &priority));
-    return priority - 1; // musa priority level [1, 0], cuda level [0, -1]
+    return priority; // musa priority level [0, -1], cuda level [0, -1]
   }
 
   musaStream_t stream() const;
@@ -115,9 +115,9 @@ class MUSAStream {
     TORCH_MUSA_CHECK(
         musaDeviceGetStreamPriorityRange(&least_priority, &greatest_priority));
     TORCH_INTERNAL_ASSERT(
-        least_priority >= 1, "Unexpected MUSA stream priority range");
+        least_priority >= 0, "Unexpected MUSA stream priority range");
     TORCH_INTERNAL_ASSERT(
-        greatest_priority <= 0, "Unexpected MUSA stream priority range");
+        greatest_priority <= -1, "Unexpected MUSA stream priority range");
     return std::make_tuple(0, -1);
   }
 

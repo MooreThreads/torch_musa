@@ -3,6 +3,7 @@
 #include <ATen/NativeFunctions.h>
 #include <ATen/TensorUtils.h>
 #include <ATen/Utils.h>
+#include <ATen/core/op_registration/adaption.h>
 #include <ATen/native/Resize.h>
 #include <ATen/native/ResizeCommon.h>
 #include <ATen/native/TensorFactories.h>
@@ -10,6 +11,7 @@
 #include <c10/core/TensorOptions.h>
 #include <torch/library.h>
 
+#include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/Allocator.h"
@@ -17,6 +19,7 @@
 #include "torch_musa/csrc/core/MUSAGuard.h"
 #include "torch_musa/csrc/core/PeerToPeerAccess.h"
 #include "torch_musa/csrc/utils/musa_lazy_init.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -31,21 +34,33 @@ Tensor empty_musa(
     c10::optional<Device> device_opt,
     c10::optional<bool> pin_memory_opt,
     c10::optional<c10::MemoryFormat> memory_format_opt) {
+  at::musa::lazyInitMUSA();
   if (layout_opt.has_value()) {
     LOG(INFO) << "layout_opt is invalid in empty_musa";
   }
   auto device = device_or_default(device_opt);
   c10::musa::OptionalMUSAGuard guard(device);
 
-  bool pin_memory = pinned_memory_or_default(pin_memory_opt);
-
-  TORCH_CHECK(pin_memory == false, "MUSA only support not pinned memory");
   TORCH_CHECK(device.type() == at::musa::kMUSA, "Device isn't MUSA!");
   c10::Allocator* allocator = c10::musa::MUSACachingAllocator::get();
 
   auto dtype = dtype_or_default(dtype_opt);
   constexpr c10::DispatchKeySet musa_ks(at::musa::kMUSAKey);
+  if (size.size() != 4 && size.size() != 5) {
+    return empty_generic(
+        size, allocator, musa_ks, dtype, at::MemoryFormat::Contiguous);
+  }
   return empty_generic(size, allocator, musa_ks, dtype, memory_format_opt);
+}
+
+TensorBase empty_musa(IntArrayRef size, const TensorOptions& options) {
+  return at::detail::empty_musa(
+      size,
+      optTypeMetaToScalarType(options.dtype_opt()),
+      options.layout_opt(),
+      options.device_opt(),
+      options.pinned_memory_opt(),
+      options.memory_format_opt());
 }
 
 } // namespace detail
@@ -70,7 +85,7 @@ void resize_bytes_musa(StorageImpl* storage, size_t size_bytes) {
   at::DataPtr data = allocator->allocate(size_bytes);
   if (storage->data_ptr()) {
     // Enable p2p access when the memcpy is across devices
-    torch::utils::musa_lazy_init();
+    at::musa::lazyInitMUSA();
     at::musa::get_p2p_access(device, storage->device().index());
 
     C10_MUSA_CHECK(musaMemcpyAsync(
@@ -156,8 +171,8 @@ Tensor empty_strided_musa(
     c10::optional<Layout> layout_opt,
     c10::optional<Device> device_opt,
     c10::optional<bool> pin_memory_opt) {
+  at::musa::lazyInitMUSA();
   check_size_nonnegative(size);
-  torch::utils::musa_lazy_init();
 
   TORCH_CHECK(
       !pin_memory_opt.has_value() || !*pin_memory_opt,
@@ -334,59 +349,63 @@ Tensor& set_tensor_(Tensor& result, const Tensor& source) {
   return result;
 }
 
-bool IsContiguous(const Tensor& self, MemoryFormat memory_format) {
-  if (self.is_contiguous(memory_format) && !self.storage_offset() &&
-      (self.dim() == 0 || (self.dim() != 0 && self.stride(-1) == 1))) {
-    return true;
+Tensor Contiguous(const Tensor& self, MemoryFormat memory_format) {
+  if (4 == self.dim() && self.is_contiguous() &&
+      self.is_contiguous(MemoryFormat::ChannelsLast)) {
+    if (self.stride(1) != 1 && self.stride(3) != 1) {
+      // Why we still need to check the stride at index1 and index3 ?
+      // assume that the current input Tensor has shape (4, 1, 16, 1) and stride
+      // (16, 16, 1, 16), in this case, MemoryFormat::Contiguous ==
+      // input.suggest_memory_format() always equal to true, which hinders to
+      // get the desired Contiguous format result. See
+      // https://github.com/pytorch/pytorch/blob/c263bd43e8e8502d4726643bc6fd046f0130ac0e/aten/src/ATen/native/TensorConversions.cpp#L377-L393
+      // for more details of Tensor.to()
+      Tensor temp = at::empty_like(self, memory_format);
+      temp.copy_(self);
+      return temp;
+    }
+    return self.to(memory_format);
   }
-  return false;
+  return self.contiguous(memory_format);
 }
 
-Tensor Contiguous(const Tensor& self, Tensor& ref, MemoryFormat memory_format) {
-  ref = Contiguous(self, memory_format);
+Tensor ContiguousRef(
+    const Tensor& self,
+    Tensor& ref,
+    MemoryFormat memory_format) {
+  ref = self.contiguous(memory_format);
   return ref;
 }
 
-Tensor Contiguous(const Tensor& self, MemoryFormat memory_format) {
-  if (IsContiguous(self, memory_format)) {
-    return self;
-  }
-  TORCH_CHECK(
-      memory_format != MemoryFormat::Preserve,
-      "preserve memory format is unsupported by the contiguous operator");
-  return self.clone(memory_format);
+at::Tensor& EyeOut(int64_t n, at::Tensor& out) {
+  c10::optional<Device> common_device = nullopt;
+  c10::impl::check_and_update_common_device(
+      common_device, out, "EyeOut", "out");
+  const OptionalDeviceGuard device_guard(device_of(out));
+  return at::native::eye_out_cuda(n, out);
 }
 
-Tensor& EyeMOut(int64_t n, int64_t m, Tensor& result) {
-  TORCH_CHECK(n >= 0, "n must be greater or equal to 0, got ", n);
-  TORCH_CHECK(m >= 0, "m must be greater or equal to 0, got ", m);
-
-  result.resize_({n, m});
-  result.zero_();
-
-  int64_t sz = std::min<int64_t>(n, m);
-  int64_t stride = result.stride(0) + result.stride(1);
-
-  Tensor diag = result.as_strided({sz}, {stride});
-  diag.fill_(1);
-  return result;
+at::Tensor& EyeMOut(int64_t n, int64_t m, at::Tensor& out) {
+  c10::optional<Device> common_device = nullopt;
+  c10::impl::check_and_update_common_device(
+      common_device, out, "EyeMOut", "out");
+  const OptionalDeviceGuard device_guard(device_of(out));
+  return at::native::eye_out_cuda(n, m, out);
 }
 
-Tensor& EyeOut(int64_t n, Tensor& result) {
-  // the default value of `m` equals to `n`
-  return at::musa::EyeMOut(n, n, result);
-}
-
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("empty.memory_format", &empty_musa);
-  m.impl("empty_strided", &empty_strided_musa);
-  m.impl("resize_", &resize_musa_);
-  m.impl("set_", &set_musa_);
-  m.impl("set_.source_Storage_storage_offset", &set_storage_musa_);
-  m.impl("set_.source_Storage", &set_source_);
-  m.impl("set_.source_Tensor", &set_tensor_);
-  m.impl("eye.m_out", &EyeMOut);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "empty.memory_format", empty_musa)
+ADVANCED_REGISTER(aten, PrivateUse1, "empty_strided", empty_strided_musa)
+ADVANCED_REGISTER(aten, PrivateUse1, "resize_", resize_musa_)
+ADVANCED_REGISTER(aten, PrivateUse1, "set_", set_musa_)
+ADVANCED_REGISTER(
+    aten,
+    PrivateUse1,
+    "set_.source_Storage_storage_offset",
+    set_storage_musa_)
+ADVANCED_REGISTER(aten, PrivateUse1, "set_.source_Storage", set_source_)
+ADVANCED_REGISTER(aten, PrivateUse1, "set_.source_Tensor", set_tensor_)
+ADVANCED_REGISTER(aten, PrivateUse1, "eye.out", EyeOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "eye.m_out", EyeMOut)
 
 } // namespace musa
 } // namespace at

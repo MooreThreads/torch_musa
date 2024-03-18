@@ -9,10 +9,7 @@ namespace at {
 namespace musa {
 
 inline at::Allocator* getPinnedMemoryAllocator() {
-  C10_THROW_ERROR(
-      NotImplementedError,
-      "PinnedMemoryAllocator in torch_musa is not supported now!");
-  return nullptr;
+  return getCachingHostAllocator();
 }
 } // namespace musa
 } // namespace at

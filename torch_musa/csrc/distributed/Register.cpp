@@ -7,6 +7,7 @@
 #include <torch/library.h>
 #include <thread>
 #include "mccl.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace c10d {
 
@@ -261,73 +262,119 @@ c10::intrusive_ptr<Work> barrier_musa(
       ->barrier(BarrierOptions{device_ids, std::chrono::milliseconds(timeout)});
 }
 
-TORCH_LIBRARY_IMPL(c10d, AutogradPrivateUse1, m) {
-  m.impl("send", &ops::send_musa);
-}
+REGISTER_IMPL(c10d, AutogradPrivateUse1, "send", ops::send_musa, ops_send_musa)
 
-TORCH_LIBRARY_IMPL(c10d, AutogradPrivateUse1, m) {
-  m.impl("recv_", &ops::recv_musa_);
-}
+REGISTER_IMPL(
+    c10d,
+    AutogradPrivateUse1,
+    "recv_",
+    ops::recv_musa_,
+    ops_recv_musa_)
 
-TORCH_LIBRARY_IMPL(c10d, AutogradPrivateUse1, m) {
-  m.impl("allreduce_", &ops::allreduce_musa_);
-}
+REGISTER_IMPL(
+    c10d,
+    AutogradPrivateUse1,
+    "allreduce_",
+    ops::allreduce_musa_,
+    ops_allreduce_musa_)
 
-TORCH_LIBRARY_IMPL(c10d, AutogradPrivateUse1, m) {
-  m.impl("recv_any_source_", &ops::recv_any_source_musa_);
-}
+REGISTER_IMPL(
+    c10d,
+    AutogradPrivateUse1,
+    "recv_any_source_",
+    ops::recv_any_source_musa_,
+    ops_recv_any_source_musa_)
 
-TORCH_LIBRARY_IMPL(c10d, AutogradPrivateUse1, m) {
-  m.impl("reduce_", &ops::reduce_musa_);
-}
+REGISTER_IMPL(
+    c10d,
+    AutogradPrivateUse1,
+    "reduce_",
+    ops::reduce_musa_,
+    ops_reduce_musa_)
 
-TORCH_LIBRARY_IMPL(c10d, AutogradPrivateUse1, m) {
-  m.impl("broadcast_", &ops::broadcast_musa_);
-}
+REGISTER_IMPL(
+    c10d,
+    AutogradPrivateUse1,
+    "broadcast_",
+    ops::broadcast_musa_,
+    ops_broadcast_musa_)
 
-TORCH_LIBRARY_IMPL(c10d, AutogradPrivateUse1, m) {
-  m.impl("allreduce_coalesced_", &ops::allreduce_coalesced_musa_);
-}
+REGISTER_IMPL(
+    c10d,
+    AutogradPrivateUse1,
+    "allreduce_coalesced_",
+    ops::allreduce_coalesced_musa_,
+    ops_allreduce_coalesced_musa_)
 
-TORCH_LIBRARY_IMPL(c10d, AutogradPrivateUse1, m) {
-  m.impl("allgather_", &ops::allgather_musa_);
-}
+REGISTER_IMPL(
+    c10d,
+    AutogradPrivateUse1,
+    "allgather_",
+    ops::allgather_musa_,
+    ops_allgather_musa_)
 
-TORCH_LIBRARY_IMPL(c10d, AutogradPrivateUse1, m) {
-  m.impl("_allgather_base_", &ops::_allgather_base_musa_);
-}
+REGISTER_IMPL(
+    c10d,
+    AutogradPrivateUse1,
+    "_allgather_base_",
+    ops::_allgather_base_musa_,
+    ops__allgather_base_musa_)
 
-TORCH_LIBRARY_IMPL(c10d, AutogradPrivateUse1, m) {
-  m.impl("allgather_coalesced_", &ops::allgather_coalesced_musa_);
-}
+REGISTER_IMPL(
+    c10d,
+    AutogradPrivateUse1,
+    "allgather_coalesced_",
+    ops::allgather_coalesced_musa_,
+    ops_allgather_coalesced_musa_)
 
-TORCH_LIBRARY_IMPL(c10d, AutogradPrivateUse1, m) {
-  m.impl("reduce_scatter_", &ops::reduce_scatter_musa_);
-}
+REGISTER_IMPL(
+    c10d,
+    AutogradPrivateUse1,
+    "reduce_scatter_",
+    ops::reduce_scatter_musa_,
+    ops_reduce_scatter_musa_)
 
-TORCH_LIBRARY_IMPL(c10d, AutogradPrivateUse1, m) {
-  m.impl("_reduce_scatter_base_", &ops::_reduce_scatter_base_musa_);
-}
+REGISTER_IMPL(
+    c10d,
+    AutogradPrivateUse1,
+    "_reduce_scatter_base_",
+    ops::_reduce_scatter_base_musa_,
+    ops__reduce_scatter_base_musa_)
 
-TORCH_LIBRARY_IMPL(c10d, AutogradPrivateUse1, m) {
-  m.impl("gather_", &ops::gather_musa_);
-}
+REGISTER_IMPL(
+    c10d,
+    AutogradPrivateUse1,
+    "gather_",
+    ops::gather_musa_,
+    ops_gather_musa_)
 
-TORCH_LIBRARY_IMPL(c10d, AutogradPrivateUse1, m) {
-  m.impl("scatter_", &ops::scatter_musa_);
-}
+REGISTER_IMPL(
+    c10d,
+    AutogradPrivateUse1,
+    "scatter_",
+    ops::scatter_musa_,
+    ops_scatter_musa_)
 
-TORCH_LIBRARY_IMPL(c10d, AutogradPrivateUse1, m) {
-  m.impl("alltoall_", &ops::alltoall_musa_);
-}
+REGISTER_IMPL(
+    c10d,
+    AutogradPrivateUse1,
+    "alltoall_",
+    ops::alltoall_musa_,
+    ops_alltoall_musa_)
 
-TORCH_LIBRARY_IMPL(c10d, AutogradPrivateUse1, m) {
-  m.impl("alltoall_base_", &ops::alltoall_base_musa_);
-}
+REGISTER_IMPL(
+    c10d,
+    AutogradPrivateUse1,
+    "alltoall_base_",
+    ops::alltoall_base_musa_,
+    ops_alltoall_base_musa_)
 
-TORCH_LIBRARY_IMPL(c10d, AutogradPrivateUse1, m) {
-  m.impl("barrier", &ops::barrier_musa);
-}
+REGISTER_IMPL(
+    c10d,
+    AutogradPrivateUse1,
+    "barrier",
+    ops::barrier_musa,
+    ops_barrier_musa)
 
 } // namespace ops
 

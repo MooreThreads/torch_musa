@@ -7,6 +7,10 @@ spec:
   volumes:
   - name: artifacts
     emptyDir: { }
+  - name: shm-volume
+    emptyDir:
+      medium: Memory
+      sizeLimit: 500M
   affinity:
     nodeAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
@@ -19,7 +23,7 @@ spec:
   containers:
   - name: main
     tty: true
-    image: sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev:latest
+    image: sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py38:latest
     imagePullPolicy: Always
     env:
     - name: TARGET_DEVICE
@@ -27,7 +31,9 @@ spec:
     - name: PYTORCH_REPO_PATH
       value: /home/pytorch
     - name: MUSA_VISIBLE_DEVICES
-      value: 1,2,3
+      value: 0,1
+    - name: MTHREADS_VISIBLE_DEVICES
+      value: all
     command:
     - sleep
     securityContext:
@@ -43,6 +49,8 @@ spec:
     - mountPath: /artifacts
       name: artifacts
       readOnly: false
+    - mountPath: /dev/shm
+      name: shm-volume
   # Container named "release".
   - name: release
     image: sh-harbor.mthreads.com/mt-ai/ops/torch_musa_oss_release:latest

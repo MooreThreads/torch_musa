@@ -1,0 +1,13 @@
+diff --git a/aten/src/ATen/native/group_norm.cpp b/aten/src/ATen/native/group_norm.cpp
+index f1a15cf..08d7744 100644
+--- a/aten/src/ATen/native/group_norm.cpp
++++ b/aten/src/ATen/native/group_norm.cpp
+@@ -197,7 +197,7 @@ Tensor group_norm(
+ 
+   const Tensor kEmpty;
+   auto memory_format = input.suggest_memory_format();
+-  const auto& X = input.device().is_cpu() || input.device().is_xpu() ?
++  const auto& X = input.device().is_cpu() || input.device().is_xpu() || input.device().is_privateuseone() ?
+       input.contiguous(memory_format) : input.contiguous();
+   const auto& gamma = weight.defined() ? weight.contiguous() : kEmpty;
+   const auto& beta = bias.defined() ? bias.contiguous() : kEmpty;

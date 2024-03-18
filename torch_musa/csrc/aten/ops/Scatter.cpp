@@ -1,10 +1,16 @@
 #include <ATen/Config.h>
-#include <ATen/NativeFunctions.h>
 #include <torch/library.h>
-#include <iostream>
+
+#ifndef AT_PER_OPERATOR_HEADERS
+#include <ATen/Functions.h>
+#include <ATen/NativeFunctions.h>
+#else
+#include <ATen/ops/scatter.h>
+#endif
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
@@ -70,10 +76,11 @@ Tensor& ScatterAddOut(
       out.device());
 
   TORCH_CHECK(
-      self.scalar_type() == at::ScalarType::Float,
-      "Dtype of input tensor of scatter_add only support Float32, but "
-      "now it is ",
-      self.scalar_type());
+      self.scalar_type() == out.scalar_type(),
+      "Dtype of input tensor of scatter_add should be same as out, which is ",
+      self.scalar_type(),
+      ", and out dtype is ",
+      out.scalar_type());
   TORCH_CHECK(
       index.scalar_type() == at::ScalarType::Long ||
           index.scalar_type() == at::ScalarType::Int,
@@ -81,20 +88,22 @@ Tensor& ScatterAddOut(
       "now it is ",
       index.scalar_type());
   TORCH_CHECK(
-      src.scalar_type() == at::ScalarType::Float,
-      "Dtype of src tensor of scatter_add only support Float32, but now it is ",
+      src.scalar_type() == at::ScalarType::Float ||
+          src.scalar_type() == at::ScalarType::Long,
+      "Dtype of src tensor of scatter_add only support Float32/Long, but now it is ",
       src.scalar_type());
   TORCH_CHECK(
-      out.scalar_type() == at::ScalarType::Float,
-      "Dtype of out tensor of scatter_add only support Float32, but now it is ",
+      out.scalar_type() == at::ScalarType::Float ||
+          out.scalar_type() == at::ScalarType::Long,
+      "Dtype of out tensor of scatter_add only support Float32/Long, but now it is ",
       out.scalar_type());
   c10::musa::MUSAGuard device_guard(self.device());
   if (dim < 0) {
     dim += self.dim();
   }
-  Tensor self_ = Contiguous(self);
-  Tensor src_ = Contiguous(src);
-  Tensor contiguous_index = Contiguous(index);
+  Tensor self_ = self.contiguous();
+  Tensor src_ = src.contiguous();
+  Tensor contiguous_index = index.contiguous();
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Scatter op;
   CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Scatter::Mode::ADD), "SetMode");
@@ -144,9 +153,9 @@ Tensor& ScatterAddU(
   if (dim < 0) {
     dim += self.dim();
   }
-  Tensor self_ = Contiguous(self);
-  Tensor src_ = Contiguous(src);
-  Tensor contiguous_index = Contiguous(index);
+  Tensor self_ = self.contiguous();
+  Tensor src_ = src.contiguous();
+  Tensor contiguous_index = index.contiguous();
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Scatter op;
   CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Scatter::Mode::ADD), "SetMode");
@@ -171,13 +180,11 @@ at::Tensor& ScatterValueOut(
   return out;
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("scatter.src_out", &musaScatterOut);
-  m.impl("scatter.src", &musaScatter);
-  m.impl("scatter.value_out", &ScatterValueOut);
-  m.impl("scatter_add.out", &ScatterAddOut);
-  m.impl("scatter_add_", &ScatterAddU);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "scatter.src_out", musaScatterOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "scatter.src", musaScatter)
+ADVANCED_REGISTER(aten, PrivateUse1, "scatter.value_out", ScatterValueOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "scatter_add.out", ScatterAddOut)
+ADVANCED_REGISTER(aten, PrivateUse1, "scatter_add_", ScatterAddU)
 
 } // namespace musa
 } // namespace at

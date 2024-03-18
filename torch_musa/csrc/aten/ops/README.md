@@ -3,14 +3,17 @@ there ares some ops that implemented on CPU:
  - remainder.Scalar_Tensor
  - convolution_overrideable   # input.dim() != 4 ||  weight.dim()  (rn50 doesn't hit this case)
  - cast  # double
- - \_index_put_impl_  # index's type == bool (rn50 doesn't hit this case)
  - scatter.src_out
  - scatter.src
  - native_group_norm_backward
  - min, max # double
  - mul, div # double, bool
  - fill # double
+ - linalg_lstsq.out
+ - linalg_inv_ex.inverse
+ - stft, stft.center # _fft_r2c/_fft_c2c and complex tensor transpose
 
+ need to compare mudnn uncontiguous Unay/Binary vs contiguous + contiguous Unary/Binary performance
 
 ## Use device guard rightly
 
@@ -24,7 +27,7 @@ Tensor NativeDropoutBackward(const Tensor& grad_output, const Tensor& mask, doub
   muHandle& h = GetMudnnHandle();
 }
 
-  m.impl("native_dropout", &NativeDropout);
+  m.impl("native_dropout", &NativeDropout);  // or ADVANCED_REGISTER(...), see torch_musa/csrc/utils/register_wrapper.h
 ```
 Note: set device guard in `NativeDropout` then substack will in `input.device()` context.
 
@@ -45,9 +48,9 @@ Note: advise to use `at::empty_like` with options that include device info to cr
   ```
   at::empty_like(input, input.options())
   ```
-Don't advise to use `empty_mtgpu` like this,
+Don't advise to use `empty_musa` like this,
   ```
-  Tensor result = empty_mtgpu(
+  Tensor result = empty_musa(
     {mat1.size(0), mat2.size(1)},
     self.scalar_type(),
     c10::nullopt,

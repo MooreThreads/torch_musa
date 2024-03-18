@@ -53,3 +53,17 @@ def _dummy_type(name: str) -> type:
     return type(
         name, (object,), {"__init__": get_err_fn(True), "__new__": get_err_fn(False)}
     )
+
+def _get_musa_arch() -> int:
+    try:
+        properties = torch_musa.get_device_properties(0)
+        major = properties.major
+        minor = properties.minor
+        musa_arch_string = int(major * 10 + minor)
+    except Exception as err:  # pylint: disable=W0718
+        print("get_devie_properties failed, reason:")
+        print(err)
+        print("Default musa arch properties is: 21")  # depend on CI machine
+        musa_arch_string = 21
+
+    return musa_arch_string

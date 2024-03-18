@@ -4,6 +4,7 @@
 
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
+#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -33,9 +34,7 @@ Scalar LocalScalarDense_(const Tensor& self) {
   return r;
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("_local_scalar_dense", &LocalScalarDense_);
-}
+ADVANCED_REGISTER(aten, PrivateUse1, "_local_scalar_dense", LocalScalarDense_)
 
 } // namespace musa
 } // namespace at

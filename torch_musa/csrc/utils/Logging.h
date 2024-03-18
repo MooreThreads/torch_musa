@@ -6,7 +6,8 @@
 #include <sstream>
 #include <string>
 
-namespace torch_musa {
+namespace torch {
+namespace musa {
 namespace logging {
 
 // Define the severity for logging.
@@ -90,11 +91,10 @@ DEFINE_COMPARISON_CHECKER(GE, >=)
 DEFINE_COMPARISON_CHECKER(EQ, ==)
 DEFINE_COMPARISON_CHECKER(NE, !=)
 
-#define CHECK_BINARY_OP(name, op, x, y)                          \
-  if (auto msg = torch_musa::logging::ToString##name(x, y))      \
-  torch_musa::logging::LogMessage(                               \
-      __FILE__, __LINE__, torch_musa::logging::Severity::kFatal) \
-          .stream()                                              \
+#define CHECK_BINARY_OP(name, op, x, y)                                  \
+  if (auto msg = ToString##name(x, y))                                   \
+  LogMessage(__FILE__, __LINE__, torch::musa::logging::Severity::kFatal) \
+          .stream()                                                      \
       << "Check failed: " << #x " " #op " " #y << *msg << ": "
 
 #define TORCH_MUSA_CHECK_LT(x, y) CHECK_BINARY_OP(LT, <, x, y)
@@ -132,31 +132,23 @@ DEFINE_COMPARISON_CHECKER(NE, !=)
   DCHECK_GT(val1, val2)
 #endif // NDEBUG
 
-#define LOG_INFO                                                \
-  torch_musa::logging::LogMessage(                              \
-      __FILE__, __LINE__, torch_musa::logging::Severity::kInfo) \
+#define LOG_INFO \
+  LogMessage(__FILE__, __LINE__, torch::musa::logging::Severity::kInfo).stream()
+#define LOG_WARNING                                                        \
+  LogMessage(__FILE__, __LINE__, torch::musa::logging::Severity::kWarning) \
       .stream()
-#define LOG_WARNING                                                \
-  torch_musa::logging::LogMessage(                                 \
-      __FILE__, __LINE__, torch_musa::logging::Severity::kWarning) \
-      .stream()
-#define LOG_FATAL                                                \
-  torch_musa::logging::LogMessage(                               \
-      __FILE__, __LINE__, torch_musa::logging::Severity::kFatal) \
+#define LOG_FATAL                                                        \
+  LogMessage(__FILE__, __LINE__, torch::musa::logging::Severity::kFatal) \
       .stream()
 
 #ifndef NDEBUG
-#define DLOG_INFO                                               \
-  torch_musa::logging::LogMessage(                              \
-      __FILE__, __LINE__, torch_musa::logging::Severity::kInfo) \
+#define DLOG_INFO \
+  LogMessage(__FILE__, __LINE__, torch::musa::logging::Severity::kInfo).stream()
+#define DLOG_WARNING                                                       \
+  LogMessage(__FILE__, __LINE__, torch::musa::logging::Severity::kWarning) \
       .stream()
-#define DLOG_WARNING                                               \
-  torch_musa::logging::LogMessage(                                 \
-      __FILE__, __LINE__, torch_musa::logging::Severity::kWarning) \
-      .stream()
-#define DLOG_FATAL                                               \
-  torch_musa::logging::LogMessage(                               \
-      __FILE__, __LINE__, torch_musa::logging::Severity::kFatal) \
+#define DLOG_FATAL                                                       \
+  LogMessage(__FILE__, __LINE__, torch::musa::logging::Severity::kFatal) \
       .stream()
 #else // !NDEBUG
 #define DLOG_INFO \
@@ -170,6 +162,7 @@ DEFINE_COMPARISON_CHECKER(NE, !=)
   LOG_FATAL
 #endif // NDEBUG
 } // namespace logging
-} // namespace torch_musa
+} // namespace musa
+} // namespace torch
 
 #endif // TORCH_MUSA_CSRC_UTILS_LOGGING_H_

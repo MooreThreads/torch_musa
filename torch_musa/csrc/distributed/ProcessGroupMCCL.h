@@ -10,7 +10,6 @@
 #include <torch/csrc/distributed/c10d/Backend.hpp>
 #include <chrono>
 #include <exception>
-#include <iostream>
 #include <map>
 #include <string>
 #include <thread>
@@ -21,7 +20,6 @@
 #include "torch_musa/csrc/core/MUSAGuard.h"
 #include "torch_musa/csrc/core/MUSAStream.h"
 #include "torch_musa/csrc/distributed/MCCLUtils.h"
-#include "torch_musa/csrc/utils/Logging.h"
 
 #include <torch/csrc/distributed/c10d/ParamCommsUtils.hpp>
 #include <torch/csrc/distributed/c10d/PrefixStore.hpp>
@@ -97,7 +95,7 @@ class TORCH_API ProcessGroupMCCL : public Backend {
     void synchronizeStreams();
 
     // Helper function used in MUSA Stream callbacks to complete WorkMCCL
-    // objects and throw exceptions when neeeded.
+    // objects and throw exceptions when needed.
     void handleMCCLGuard(ErrorHandlingMode asyncErrorHandling);
 
     // Helper function that checks if the MCCL kernels have finished
