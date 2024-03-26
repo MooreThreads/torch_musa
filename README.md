@@ -40,7 +40,7 @@
 - [Package Download Link](https://github.com/MooreThreads/torch_musa/releases)
 
 ```bash
-# Please remove the "-S80_S3000" or "-S4000" at the end of the whl package to form a standard Python whl package, then "pip install" it.
+# Please remove the "-S80_S3000" or "-S4000" at the end of the file name of the whl package to form a standard Python whl package, then "pip install" it.
 # for Python3.8
 pip install torch-2.0.0-cp38-cp38-linux_x86_64.whl
 pip install torch_musa-1.1.0-cp38-cp38-linux_x86_64.whl
