@@ -40,21 +40,21 @@
 - [Package Download Link](https://github.com/MooreThreads/torch_musa/releases)
 
 ```bash
-# To install the packages for S4000, simply replace 'S80_S3000' with 'S4000' in the following command.
+# Please remove the "-S80_S3000" or "-S4000" at the end of the whl package to form a standard Python whl package, then "pip install" it.
 # for Python3.8
-pip install torch-2.0.0-cp38-cp38-linux_x86_64-S80_S3000.whl
-pip install torch_musa-1.1.0-cp38-cp38-linux_x86_64-S80_S3000.whl
-pip install torchvision-0.15.2a0+fa99a53-cp38-cp38-linux_x86_64-S80_S3000.whl
+pip install torch-2.0.0-cp38-cp38-linux_x86_64.whl
+pip install torch_musa-1.1.0-cp38-cp38-linux_x86_64.whl
+pip install torchvision-0.15.2a0+fa99a53-cp38-cp38-linux_x86_64.whl
 
 # for Python3.9
-pip install torch-2.0.0-cp39-cp39-linux_x86_64-S80_S3000.whl
-pip install torch_musa-1.1.0-cp39-cp39-linux_x86_64-S80_S3000.whl
-pip install torchvision-0.15.2a0+fa99a53-cp39-cp39-linux_x86_64-S80_S3000.whl
+pip install torch-2.0.0-cp39-cp39-linux_x86_64.whl
+pip install torch_musa-1.1.0-cp39-cp39-linux_x86_64.whl
+pip install torchvision-0.15.2a0+fa99a53-cp39-cp39-linux_x86_64.whl
 
 # for python3.10
-pip install torch-2.0.0-cp310-cp310-linux_x86_64-S80_S3000.whl
-pip install torch_musa-1.1.0-cp310-cp310-linux_x86_64-S80_S3000.whl
-pip install torchvision-0.15.2a0+fa99a53-cp310-cp310-linux_x86_64-S80_S3000.whl
+pip install torch-2.0.0-cp310-cp310-linux_x86_64.whl
+pip install torch_musa-1.1.0-cp310-cp310-linux_x86_64.whl
+pip install torchvision-0.15.2a0+fa99a53-cp310-cp310-linux_x86_64.whl
 ```
 
 ### From Source
