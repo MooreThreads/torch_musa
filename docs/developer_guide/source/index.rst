@@ -20,4 +20,5 @@
    ./8_build_musa_extensions/index
    ./9_optimize_performance/index
    ./10_debug_tools/index
-   ./11_FAQ/index
+   ./11_model_porting_example_yolov5/index
+   ./12_FAQ/index
