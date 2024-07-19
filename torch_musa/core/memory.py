@@ -1,16 +1,22 @@
 """This package adds the memory utilities. These APIs are borrowed from cuda memory."""
-# pylint: disable=unused-import, invalid-name, too-many-statements, too-many-locals
+
+# pylint: disable=unused-import, invalid-name, too-many-statements, too-many-locals, unused-argument, unspecified-encoding
 import collections
-from typing import Any, Union,Tuple
+import pickle
+from typing import Any, Union, Tuple
 import torch
 from torch.types import Device
 from torch._utils import _get_device_index
+from torch.cuda._memory_viz import segments as _segments
 import torch_musa
 from torch_musa.core.device import _get_musa_device_index
 from ._lazy_init import _lazy_init, is_initialized
 from ._utils import _get_musa_device_index
 
-def set_per_process_memory_fraction(fraction, device: Union[Device, int] = None) -> None:
+
+def set_per_process_memory_fraction(
+    fraction, device: Union[Device, int] = None
+) -> None:
     """Set memory fraction for a process.
     The fraction is used to limit an caching allocator to allocated memory on a MUSA device.
     The allowed value equals the total visible memory multiplied fraction.
@@ -29,12 +35,12 @@ def set_per_process_memory_fraction(fraction, device: Union[Device, int] = None)
         device = torch_musa.current_device()
     device = _get_musa_device_index(device)
     if not isinstance(fraction, float):
-        raise TypeError('Invalid type for fraction argument, must be `float`')
+        raise TypeError("Invalid type for fraction argument, must be `float`")
     if fraction < 0 or fraction > 1:
-        raise ValueError(f'Invalid fraction value: {fraction}. '
-                         'Allowed range: 0~1')
+        raise ValueError(f"Invalid fraction value: {fraction}. " "Allowed range: 0~1")
 
     torch_musa._MUSAC._musa_setMemoryFraction(fraction, device)
+
 
 def empty_cache():
     """Releases all unoccupied cached memory currently held by the caching
@@ -153,6 +159,71 @@ def memory_stats_all():
             else:
                 ret_dict[k] += v
     return ret_dict
+
+
+def _record_memory_history(
+    enabled: bool,
+    record_context=True,
+    trace_alloc_max_entries=1,
+    trace_alloc_record_context=False,
+    device: Union[Device, int] = None,
+    _enable_expensive_cpp=False,
+):
+    """Enables recording of Python stack traces to be associated with memory
+    allocations, so you can tell what allocated any piece of memory in
+    :func:`torch.memory_snapshot`.
+
+    The Python trace collection is fast (2us per trace), so you may consider
+    enabling this on production jobs if you anticipate ever having to debug
+    memory issues.
+
+    .. warning:
+        The :attr:`_enable_expensive_cpp` arguments lets you enable also
+        collecting C++ stack traces.  This collection is VERY SLOW and should
+        only be used if you are debugging framework problems on a minified
+        example.  In principle, it should be possible to implement fast C++
+        stack trace collection; file an issue with us if you need it.
+    """
+    torch_musa._MUSAC._musa_recordMemoryHistory(
+        enabled,
+        record_context,
+        _enable_expensive_cpp,
+        trace_alloc_max_entries,
+        trace_alloc_record_context,
+    )
+
+
+def _snapshot(device: Union[Device, int] = None):
+    return torch_musa._MUSAC._musa_memorySnapshot()
+
+
+def _dump_snapshot(filename="dump_snapshot.pickle"):
+    """
+    Save a pickled version of the `torch.memory._snapshot()` dictionary to a file.
+
+    This file can be opened by the interactive snapshot viewer at pytorch.org/memory_viz
+
+    Args:
+        filename (str, optional): Name of the file to create. Defaults to "dump_snapshot.pickle".
+    """
+    s = _snapshot()
+    with open(filename, "wb") as f:
+        pickle.dump(s, f)
+
+
+def _save_segment_usage(filename="output.svg", snapshot=None):
+    if snapshot is None:
+        snapshot = _snapshot()
+
+    with open(filename, "w") as f:
+        f.write(_segments(snapshot))
+
+
+def _save_memory_usage(filename="output.svg", snapshot=None):
+    if snapshot is None:
+        snapshot = _snapshot()
+    with open(filename, "w") as f:
+        f.write(_memory(snapshot))
 
 
 def memory_snapshot():
@@ -312,7 +383,7 @@ def memory_allocated(
         device (torch.device or int, optional): selected device. Returns
             statistic for the current device, given by :func:`~torch_musa.current_device`,
             if :attr:`device` is ``None`` (default).
-        all_devcie (bool, optional): aggregate all devices' stats if `device` is ``None``
+        all_device (bool, optional): aggregate all devices' stats if `device` is ``None``
             and `all_device` is ``True``.
 
     .. note::
@@ -417,6 +488,7 @@ def mem_get_info(device: Union[Device, int] = None) -> Tuple[int, int]:
         device = torch.musa.current_device()
     device = _get_musa_device_index(device)
     return torch.musa._MUSAC._musart.musaMemGetInfo(device)
+
 
 def reset_peak_memory_stats(device: Union[Device, int] = None) -> None:
     r"""Resets the "peak" stats tracked by the MUSA memory allocator.

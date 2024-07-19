@@ -1,4 +1,5 @@
 """logger util"""
+
 import logging.config
 import sys
 from logging import Formatter, StreamHandler
@@ -24,9 +25,9 @@ def create_logger():
 
 LOGGER = create_logger()
 
-if __name__ == '__main__':
-    LOGGER.debug('debug')
-    LOGGER.info('info')
-    LOGGER.warning('warn')
-    LOGGER.error('error')
-    LOGGER.critical('critical')
+if __name__ == "__main__":
+    LOGGER.debug("debug")
+    LOGGER.info("info")
+    LOGGER.warning("warn")
+    LOGGER.error("error")
+    LOGGER.critical("critical")

@@ -10,7 +10,6 @@
 #include <torch/library.h>
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
@@ -139,64 +138,6 @@ Tensor ReflectPad1D(const Tensor& self, IntArrayRef pad) {
   return PadInternal(contiguous_self, pad, op);
 }
 
-namespace {
-struct structured_reflection_pad1d_backward_out_cuda_out final
-    : public at::native::structured_reflection_pad1d_backward_out_cuda {
-  structured_reflection_pad1d_backward_out_cuda_out(Tensor& out0)
-      : outputs_{std::ref(out0)} {}
-  void set_output_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    auto current_device = guard_.current_device();
-    if (C10_UNLIKELY(current_device.has_value())) {
-      TORCH_INTERNAL_ASSERT(
-          *current_device == options.device(),
-          "structured kernels don't support multi-device outputs");
-    } else {
-      guard_.reset_device(options.device());
-    }
-    const auto& out = outputs_[output_idx].get();
-    resize_out(out, sizes, strides, options);
-  }
-  void set_output_raw_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    auto current_device = guard_.current_device();
-    if (C10_UNLIKELY(current_device.has_value())) {
-      TORCH_INTERNAL_ASSERT(
-          *current_device == options.device(),
-          "structured kernels don't support multi-device outputs");
-    } else {
-      guard_.reset_device(options.device());
-    }
-    const auto& out = outputs_[output_idx].get();
-    resize_out(out, sizes, strides, options);
-  }
-  const Tensor& maybe_get_output(int64_t output_idx) override {
-    return outputs_[output_idx].get();
-  }
-  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
-  c10::musa::OptionalMUSAGuard guard_;
-};
-} // namespace
-
-at::Tensor& ReflectionPad1dBackwardOutGradInput(
-    const at::Tensor& grad_output,
-    const at::Tensor& self,
-    at::IntArrayRef padding,
-    at::Tensor& grad_input) {
-  structured_reflection_pad1d_backward_out_cuda_out op(grad_input);
-  op.meta(grad_output, self, padding);
-  op.impl(grad_output, self, padding, op.maybe_get_output(0));
-  return grad_input;
-}
-
 Tensor ReflectionPad2d(const Tensor& self, IntArrayRef padding) {
   c10::optional<Device> common_device = nullopt;
   c10::impl::check_and_update_common_device(
@@ -204,15 +145,6 @@ Tensor ReflectionPad2d(const Tensor& self, IntArrayRef padding) {
   const OptionalDeviceGuard device_guard(device_of(self));
   return at::native::reflection_pad2d_cuda(self, padding);
 }
-
-ADVANCED_REGISTER(aten, PrivateUse1, "reflection_pad2d", ReflectionPad2d)
-ADVANCED_REGISTER(aten, PrivateUse1, "reflection_pad1d", ReflectPad1D)
-ADVANCED_REGISTER(aten, PrivateUse1, "reflection_pad1d.out", ReflectPad1DOut)
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "reflection_pad1d_backward.grad_input",
-    ReflectionPad1dBackwardOutGradInput)
 
 } // namespace musa
 } // namespace at

@@ -8,12 +8,91 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
 namespace at {
 namespace musa {
+
+namespace {
+
+C10_ALWAYS_INLINE bool IsMudnnSupportedUpSampleNdDtype(c10::ScalarType dtype) {
+  return dtype == c10::ScalarType::Float || dtype == c10::ScalarType::Half ||
+      dtype == c10::ScalarType::BFloat16;
+}
+
+void UpSampleNdDtypeCheck(
+    const char* test_from,
+    const Tensor& test,
+    const char* func_from) {
+  const auto test_dtype = test.scalar_type();
+  if (C10_UNLIKELY(!IsMudnnSupportedUpSampleNdDtype(test_dtype))) {
+    TORCH_CHECK(
+        false,
+        func_from,
+        " expects dtype of ",
+        test_from,
+        " in [float, half, bfloat16], but got ",
+        test_dtype);
+  }
+}
+
+void UpSampleNdCommonDtypeCheck(
+    const char* ref_from,
+    const Tensor& ref,
+    const char* test_from,
+    const Tensor& test,
+    const char* func_from) {
+  const auto ref_dtype = ref.scalar_type();
+  const auto test_dtype = test.scalar_type();
+  if (C10_UNLIKELY(ref_dtype != test_dtype)) {
+    TORCH_CHECK(
+        false,
+        func_from,
+        " expects the same dtype for ",
+        ref_from,
+        " and ",
+        test_from,
+        ", but got ",
+        ref_dtype,
+        " and ",
+        test_dtype);
+  }
+}
+
+void UpSampleNdCommonDeviceCheck(
+    const char* ref_from,
+    const Tensor& ref,
+    const char* test_from,
+    const Tensor& test,
+    const char* func_from) {
+  const auto ref_device = ref.device();
+  const auto test_device = test.device();
+  if (C10_UNLIKELY(ref_device != test_device)) {
+    TORCH_CHECK(
+        false,
+        func_from,
+        " expects the same device for ",
+        ref_from,
+        " and ",
+        test_from,
+        ", but got ",
+        ref_device,
+        " and ",
+        test_device);
+  }
+}
+
+C10_ALWAYS_INLINE float ComputeScalesValueBwd(
+    const c10::optional<double> scale,
+    int64_t src_size,
+    int64_t dst_size) {
+  return (scale.has_value() && scale.value() > 0.)
+      ? static_cast<float>(scale.value())
+      : static_cast<float>(src_size) / static_cast<float>(dst_size);
+}
+
+} // anonymous namespace
 
 Tensor& UpSampleNearest2dOut(
     const Tensor& self,
@@ -180,160 +259,6 @@ Tensor UpSampleNearest2dBwd(
   return grad_input;
 }
 
-// TODO(chen.feng): cuda porting when align_corners = true
-namespace {
-struct structured_upsample_bilinear2d_out_musa_out final
-    : public at::native::structured_upsample_bilinear2d_out_cuda {
-  structured_upsample_bilinear2d_out_musa_out(Tensor& out0)
-      : outputs_{std::ref(out0)} {}
-
-  void set_output_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    auto current_device = guard_.current_device();
-    if (C10_UNLIKELY(current_device.has_value())) {
-      TORCH_INTERNAL_ASSERT(
-          *current_device == options.device(),
-          "structured kernels don't support multi-device outputs");
-    } else {
-      guard_.reset_device(options.device());
-    }
-    const auto& out = outputs_[output_idx].get();
-    at::musa::resize_out(out, sizes, strides, options);
-  }
-
-  void set_output_raw_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    auto current_device = guard_.current_device();
-    if (C10_UNLIKELY(current_device.has_value())) {
-      TORCH_INTERNAL_ASSERT(
-          *current_device == options.device(),
-          "structured kernels don't support multi-device outputs");
-    } else {
-      guard_.reset_device(options.device());
-    }
-    const auto& out = outputs_[output_idx].get();
-    at::musa::resize_out(out, sizes, strides, options);
-  }
-
-  const Tensor& maybe_get_output(int64_t output_idx) override {
-    return proxy_outputs_[output_idx].has_value() ? **proxy_outputs_[output_idx]
-                                                  : outputs_[output_idx].get();
-  }
-
-  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
-  std::array<c10::optional<c10::ExclusivelyOwned<Tensor>>, 1> proxy_outputs_;
-  c10::musa::OptionalMUSAGuard guard_;
-};
-
-struct structured_upsample_bilinear2d_backward_out_musa_out final
-    : public at::native::structured_upsample_bilinear2d_backward_out_cuda {
-  structured_upsample_bilinear2d_backward_out_musa_out(Tensor& out0)
-      : outputs_{std::ref(out0)} {}
-
-  void set_output_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    auto current_device = guard_.current_device();
-    if (C10_UNLIKELY(current_device.has_value())) {
-      TORCH_INTERNAL_ASSERT(
-          *current_device == options.device(),
-          "structured kernels don't support multi-device outputs");
-    } else {
-      guard_.reset_device(options.device());
-    }
-    const auto& out = outputs_[output_idx].get();
-    at::musa::resize_out(out, sizes, strides, options);
-    // super must happen after, so that downstream can use maybe_get_output
-    // to retrieve the output
-  }
-
-  void set_output_raw_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    auto current_device = guard_.current_device();
-    if (C10_UNLIKELY(current_device.has_value())) {
-      TORCH_INTERNAL_ASSERT(
-          *current_device == options.device(),
-          "structured kernels don't support multi-device outputs");
-    } else {
-      guard_.reset_device(options.device());
-    }
-    const auto& out = outputs_[output_idx].get();
-    at::musa::resize_out(out, sizes, strides, options);
-    // super must happen after, so that downstream can use maybe_get_output
-    // to retrieve the output
-  }
-
-  const Tensor& maybe_get_output(int64_t output_idx) override {
-    return proxy_outputs_[output_idx].has_value() ? **proxy_outputs_[output_idx]
-                                                  : outputs_[output_idx].get();
-  }
-
-  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
-  std::array<c10::optional<c10::ExclusivelyOwned<Tensor>>, 1> proxy_outputs_;
-  c10::musa::OptionalMUSAGuard guard_;
-};
-} // namespace
-
-at::Tensor& UpsampleBilinear2dOutPorting(
-    const at::Tensor& self,
-    at::IntArrayRef output_size,
-    bool align_corners,
-    c10::optional<double> scales_h,
-    c10::optional<double> scales_w,
-    at::Tensor& out) {
-  structured_upsample_bilinear2d_out_musa_out op(out);
-  op.meta(self, output_size, align_corners, scales_h, scales_w);
-  op.impl(
-      self,
-      output_size,
-      align_corners,
-      scales_h,
-      scales_w,
-      op.maybe_get_output(0));
-  if (op.proxy_outputs_[0].has_value())
-    op.outputs_[0].get().copy_(**op.proxy_outputs_[0]);
-  return out;
-}
-
-at::Tensor& UpsampleBilinear2dBwdOutPorting(
-    const at::Tensor& grad_output,
-    at::IntArrayRef output_size,
-    at::IntArrayRef input_size,
-    bool align_corners,
-    c10::optional<double> scales_h,
-    c10::optional<double> scales_w,
-    at::Tensor& grad_input) {
-  structured_upsample_bilinear2d_backward_out_musa_out op(grad_input);
-  op.meta(
-      grad_output, output_size, input_size, align_corners, scales_h, scales_w);
-  op.impl(
-      grad_output,
-      output_size,
-      input_size,
-      align_corners,
-      scales_h,
-      scales_w,
-      op.maybe_get_output(0));
-  if (op.proxy_outputs_[0].has_value())
-    op.outputs_[0].get().copy_(**op.proxy_outputs_[0]);
-  return grad_input;
-}
-
 Tensor& UpSampleBilinear2dOut(
     const Tensor& self,
     IntArrayRef output_size,
@@ -343,12 +268,6 @@ Tensor& UpSampleBilinear2dOut(
     Tensor& result) {
   MUSA_TENSOR_TYPE_CHECK(self);
   c10::musa::MUSAGuard device_guard(self.device());
-
-  // TODO(chen.feng): cuda porting when align_corners = true
-  if (align_corners) {
-    return UpsampleBilinear2dOutPorting(
-        self, output_size, align_corners, scales_h, scales_w, result);
-  }
 
   int output_height = output_size[0];
   int output_width = output_size[1];
@@ -410,18 +329,6 @@ Tensor& UpSampleBilinear2dBwdOut(
   MUSA_TENSOR_TYPE_CHECK(grad_output);
   c10::musa::MUSAGuard device_guard(grad_output.device());
 
-  // TODO(chen.feng): cuda porting when align_corners = true
-  if (align_corners) {
-    return UpsampleBilinear2dBwdOutPorting(
-        grad_output,
-        output_size,
-        contiguous_inputsize,
-        align_corners,
-        scales_h,
-        scales_w,
-        grad_input);
-  }
-
   int output_height = output_size[0];
   int output_width = output_size[1];
 
@@ -477,395 +384,190 @@ Tensor UpSampleBilinear2dBwd(
   return grad_input;
 }
 
-struct structured_upsample_bicubic2d_out_cuda_out final
-    : public at::native::structured_upsample_bicubic2d_out_cuda {
-  structured_upsample_bicubic2d_out_cuda_out(Tensor& out0)
-      : outputs_{std::ref(out0)} {}
-
-  void set_output_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    auto current_device = guard_.current_device();
-    if (C10_UNLIKELY(current_device.has_value())) {
-      TORCH_INTERNAL_ASSERT(
-          *current_device == options.device(),
-          "structured kernels don't support multi-device outputs");
-    } else {
-      guard_.reset_device(options.device());
-    }
-    const auto& out = outputs_[output_idx].get();
-    resize_out(out, sizes, strides, options);
-    auto maybe_proxy = maybe_create_proxy(out, sizes, strides, options);
-    if (C10_UNLIKELY(maybe_proxy.has_value())) {
-      proxy_outputs_[output_idx] =
-          c10::ExclusivelyOwned<Tensor>(std::move(maybe_proxy).value());
-    }
-    if (!names.empty()) {
-      namedinference::propagate_names(outputs_[output_idx], names);
-    }
-    // super must happen after, so that downstream can use maybe_get_output
-    // to retrieve the output
-  }
-
-  void set_output_raw_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    auto current_device = guard_.current_device();
-    if (C10_UNLIKELY(current_device.has_value())) {
-      TORCH_INTERNAL_ASSERT(
-          *current_device == options.device(),
-          "structured kernels don't support multi-device outputs");
-    } else {
-      guard_.reset_device(options.device());
-    }
-    const auto& out = outputs_[output_idx].get();
-    resize_out(out, sizes, strides, options);
-    if (!names.empty()) {
-      namedinference::propagate_names(outputs_[output_idx], names);
-    }
-    // super must happen after, so that downstream can use maybe_get_output
-    // to retrieve the output
-  }
-
-  const Tensor& maybe_get_output(int64_t output_idx) override {
-    return proxy_outputs_[output_idx].has_value() ? **proxy_outputs_[output_idx]
-                                                  : outputs_[output_idx].get();
-  }
-
-  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
-  std::array<c10::optional<c10::ExclusivelyOwned<Tensor>>, 1> proxy_outputs_;
-  c10::musa::OptionalMUSAGuard guard_;
-};
-
-at::Tensor& UpSampleBicubic2dOut(
-    const at::Tensor& self,
-    at::IntArrayRef output_size,
-    bool align_corners,
-    c10::optional<double> scales_h,
-    c10::optional<double> scales_w,
-    at::Tensor& out) {
-  c10::optional<Device> common_device = nullopt;
-  (void)common_device; // Suppress unused variable warning
-  c10::impl::check_and_update_common_device(
-      common_device, out, "UpSampleBicubic2dOut", "out");
-  c10::impl::check_and_update_common_device(
-      common_device, self, "UpSampleBicubic2dOut", "self");
-  structured_upsample_bicubic2d_out_cuda_out op(out);
-  op.meta(self, output_size, align_corners, scales_h, scales_w);
-  op.impl(
-      self,
-      output_size,
-      align_corners,
-      scales_h,
-      scales_w,
-      op.maybe_get_output(0));
-  if (op.proxy_outputs_[0].has_value())
-    op.outputs_[0].get().copy_(**op.proxy_outputs_[0]);
-  return out;
-}
-
-struct structured_upsample_linear1d_out_cuda_out final
-    : public at::native::structured_upsample_linear1d_out_cuda {
-  structured_upsample_linear1d_out_cuda_out(Tensor& out0)
-      : outputs_{std::ref(out0)} {}
-  void set_output_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    auto current_device = guard_.current_device();
-    if (C10_UNLIKELY(current_device.has_value())) {
-      TORCH_INTERNAL_ASSERT(
-          *current_device == options.device(),
-          "structured kernels don't support multi-device outputs");
-    } else {
-      guard_.reset_device(options.device());
-    }
-    const auto& out = outputs_[output_idx].get();
-    resize_out(out, sizes, strides, options);
-    auto maybe_proxy = maybe_create_proxy(out, sizes, strides, options);
-    if (C10_UNLIKELY(maybe_proxy.has_value())) {
-      proxy_outputs_[output_idx] =
-          c10::ExclusivelyOwned<Tensor>(std::move(maybe_proxy).value());
-    }
-    if (!names.empty()) {
-      namedinference::propagate_names(outputs_[output_idx], names);
-    }
-    // super must happen after, so that downstream can use maybe_get_output
-    // to retrieve the output
-  }
-
-  void set_output_raw_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    auto current_device = guard_.current_device();
-    if (C10_UNLIKELY(current_device.has_value())) {
-      TORCH_INTERNAL_ASSERT(
-          *current_device == options.device(),
-          "structured kernels don't support multi-device outputs");
-    } else {
-      guard_.reset_device(options.device());
-    }
-    const auto& out = outputs_[output_idx].get();
-    resize_out(out, sizes, strides, options);
-    if (!names.empty()) {
-      namedinference::propagate_names(outputs_[output_idx], names);
-    }
-    // super must happen after, so that downstream can use maybe_get_output
-    // to retrieve the output
-  }
-
-  const Tensor& maybe_get_output(int64_t output_idx) override {
-    return proxy_outputs_[output_idx].has_value() ? **proxy_outputs_[output_idx]
-                                                  : outputs_[output_idx].get();
-  }
-
-  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
-  std::array<c10::optional<c10::ExclusivelyOwned<Tensor>>, 1> proxy_outputs_;
-  c10::musa::OptionalMUSAGuard guard_;
-};
-
-at::Tensor& UpSampleLinear1dOut(
-    const at::Tensor& self,
-    at::IntArrayRef output_size,
-    bool align_corners,
-    c10::optional<double> scales,
-    at::Tensor& out) {
-  c10::optional<Device> common_device = nullopt;
-  c10::impl::check_and_update_common_device(
-      common_device, out, "UpSampleLinear1dOut", "out");
-  c10::impl::check_and_update_common_device(
-      common_device, self, "UpSampleLinear1dOut", "self");
-  structured_upsample_linear1d_out_cuda_out op(out);
-  op.meta(self, output_size, align_corners, scales);
-  op.impl(self, output_size, align_corners, scales, op.maybe_get_output(0));
-  if (op.proxy_outputs_[0].has_value())
-    op.outputs_[0].get().copy_(**op.proxy_outputs_[0]);
-  return out;
-}
-
-struct structured_upsample_nearest3d_out_cuda_out final
-    : public at::native::structured_upsample_nearest3d_out_cuda {
-  structured_upsample_nearest3d_out_cuda_out(Tensor& out0)
-      : outputs_{std::ref(out0)} {}
-
-  void set_output_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    auto current_device = guard_.current_device();
-    if (C10_UNLIKELY(current_device.has_value())) {
-      TORCH_INTERNAL_ASSERT(
-          *current_device == options.device(),
-          "structured kernels don't support multi-device outputs");
-    } else {
-      guard_.reset_device(options.device());
-    }
-    const auto& out = outputs_[output_idx].get();
-    resize_out(out, sizes, strides, options);
-    auto maybe_proxy = maybe_create_proxy(out, sizes, strides, options);
-    if (C10_UNLIKELY(maybe_proxy.has_value())) {
-      proxy_outputs_[output_idx] =
-          c10::ExclusivelyOwned<Tensor>(std::move(maybe_proxy).value());
-    }
-    if (!names.empty()) {
-      namedinference::propagate_names(outputs_[output_idx], names);
-    }
-    // super must happen after, so that downstream can use maybe_get_output
-    // to retrieve the output
-  }
-
-  void set_output_raw_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    auto current_device = guard_.current_device();
-    if (C10_UNLIKELY(current_device.has_value())) {
-      TORCH_INTERNAL_ASSERT(
-          *current_device == options.device(),
-          "structured kernels don't support multi-device outputs");
-    } else {
-      guard_.reset_device(options.device());
-    }
-    const auto& out = outputs_[output_idx].get();
-    resize_out(out, sizes, strides, options);
-    if (!names.empty()) {
-      namedinference::propagate_names(outputs_[output_idx], names);
-    }
-    // super must happen after, so that downstream can use maybe_get_output
-    // to retrieve the output
-  }
-
-  const Tensor& maybe_get_output(int64_t output_idx) override {
-    return proxy_outputs_[output_idx].has_value() ? **proxy_outputs_[output_idx]
-                                                  : outputs_[output_idx].get();
-  }
-
-  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
-  std::array<c10::optional<c10::ExclusivelyOwned<Tensor>>, 1> proxy_outputs_;
-  c10::musa::OptionalMUSAGuard guard_;
-};
-
-at::Tensor& UpSampleNearest3dOut(
+Tensor& UpSampleNearest3dOut(
     const at::Tensor& self,
     at::IntArrayRef output_size,
     c10::optional<double> scales_d,
     c10::optional<double> scales_h,
     c10::optional<double> scales_w,
-    at::Tensor& out) {
-  c10::optional<Device> common_device = nullopt;
-  c10::impl::check_and_update_common_device(
-      common_device, out, "UpSampleNearest3dOut", "out");
-  c10::impl::check_and_update_common_device(
-      common_device, self, "UpSampleNearest3dOut", "self");
-  structured_upsample_nearest3d_out_cuda_out op(out);
-  op.meta(self, output_size, scales_d, scales_h, scales_w);
-  op.impl(
-      self, output_size, scales_d, scales_h, scales_w, op.maybe_get_output(0));
-  if (op.proxy_outputs_[0].has_value())
-    op.outputs_[0].get().copy_(**op.proxy_outputs_[0]);
-  return out;
+    at::Tensor& output) {
+  UpSampleNdCommonDeviceCheck("self", self, "output", output, __func__);
+  UpSampleNdDtypeCheck("self", self, __func__);
+  UpSampleNdCommonDtypeCheck("self", self, "output", output, __func__);
+
+  if (C10_UNLIKELY(self.numel() == 0)) {
+    return output;
+  }
+  const c10::musa::MUSAGuard device_guard(self.device());
+  if (C10_UNLIKELY(self.sizes() == output.sizes())) {
+    output.copy_(self);
+    return output;
+  }
+
+  const auto input_depth = self.size(2);
+  const auto output_depth = output_size[0];
+  const auto depth_scale =
+      native::compute_scales_value<float>(scales_d, input_depth, output_depth);
+
+  const auto input_height = self.size(3);
+  const auto output_height = output_size[1];
+  const auto height_scale = native::compute_scales_value<float>(
+      scales_h, input_height, output_height);
+
+  const auto input_width = self.size(4);
+  const auto output_width = output_size[2];
+  const auto width_scale =
+      native::compute_scales_value<float>(scales_w, input_width, output_width);
+
+  const auto output_format = output.suggest_memory_format();
+  const bool is_output_format_contig = output.is_contiguous(output_format);
+
+  const auto contig_input = FormatContiguous(self, output_format);
+  const auto contig_output = FormatContiguous(output, output_format);
+
+  auto in = CreateMUTensor(contig_input);
+  auto out = CreateMUTensor(contig_output);
+
+  muHandle& h = GetMudnnHandle();
+  ::musa::dnn::Interpolate op;
+  CHECK_MUDNN_STATUS(
+      op.SetMode(::musa::dnn::Interpolate::Mode::NEAREST), "SetMode");
+  CHECK_MUDNN_STATUS(
+      op.SetScaleInfo({depth_scale, height_scale, width_scale}),
+      "SetScaleInfo");
+  CHECK_MUDNN_STATUS(op.Run(h, out, in), "Run");
+
+  if (C10_UNLIKELY(!is_output_format_contig)) {
+    output.copy_(contig_output);
+  }
+  return output;
 }
 
-struct structured_upsample_nearest1d_out_cuda_out final
-    : public at::native::structured_upsample_nearest1d_out_cuda {
-  structured_upsample_nearest1d_out_cuda_out(Tensor& out0)
-      : outputs_{std::ref(out0)} {}
-  void set_output_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    auto current_device = guard_.current_device();
-    if (C10_UNLIKELY(current_device.has_value())) {
-      TORCH_INTERNAL_ASSERT(
-          *current_device == options.device(),
-          "structured kernels don't support multi-device outputs");
-    } else {
-      guard_.reset_device(options.device());
-    }
-    const auto& out = outputs_[output_idx].get();
-    resize_out(out, sizes, strides, options);
-    // super must happen after, so that downstream can use maybe_get_output
-    // to retrieve the output
-  }
-  void set_output_raw_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    auto current_device = guard_.current_device();
-    if (C10_UNLIKELY(current_device.has_value())) {
-      TORCH_INTERNAL_ASSERT(
-          *current_device == options.device(),
-          "structured kernels don't support multi-device outputs");
-    } else {
-      guard_.reset_device(options.device());
-    }
-    const auto& out = outputs_[output_idx].get();
-    resize_out(out, sizes, strides, options);
-    if (!names.empty()) {
-      namedinference::propagate_names(outputs_[output_idx], names);
-    }
-    // super must happen after, so that downstream can use maybe_get_output
-    // to retrieve the output
-  }
-  const Tensor& maybe_get_output(int64_t output_idx) override {
-    return proxy_outputs_[output_idx].has_value() ? **proxy_outputs_[output_idx]
-                                                  : outputs_[output_idx].get();
-  }
-  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
-  std::array<c10::optional<c10::ExclusivelyOwned<Tensor>>, 1> proxy_outputs_;
-  c10::musa::OptionalMUSAGuard guard_;
-};
-
-at::Tensor& UpSampleNearest1dOut(
+Tensor UpSampleNearest3d(
     const at::Tensor& self,
     at::IntArrayRef output_size,
-    c10::optional<double> scales,
-    at::Tensor& out) {
-  c10::optional<Device> common_device = nullopt;
-  (void)common_device; // Suppress unused variable warning
-  c10::impl::check_and_update_common_device(
-      common_device, out, "UpSampleNearest1dOut", "out");
-  c10::impl::check_and_update_common_device(
-      common_device, self, "UpSampleNearest1dOut", "self");
-  structured_upsample_nearest1d_out_cuda_out op(out);
-  op.meta(self, output_size, scales);
-  op.impl(self, output_size, scales, op.maybe_get_output(0));
-  if (op.proxy_outputs_[0].has_value())
-    op.outputs_[0].get().copy_(**op.proxy_outputs_[0]);
-  return out;
+    c10::optional<double> scales_d,
+    c10::optional<double> scales_h,
+    c10::optional<double> scales_w) {
+  const auto input_sizes = self.sizes();
+  // Allow for empty batch size but not other dimensions
+  TORCH_CHECK(
+      self.numel() != 0 ||
+          c10::multiply_integers(input_sizes.cbegin() + 1, input_sizes.cend()),
+      "Non-empty 5D data tensor expected but got a tensor with sizes ",
+      input_sizes);
+
+  auto output = at::empty(
+      at::native::upsample_3d_common_check(input_sizes, output_size),
+      self.options().memory_format(self.suggest_memory_format()));
+  UpSampleNearest3dOut(self, output_size, scales_d, scales_h, scales_w, output);
+  return output;
 }
 
-ADVANCED_REGISTER(aten, PrivateUse1, "upsample_nearest2d", UpSampleNearest2d)
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "upsample_nearest2d.out",
-    UpSampleNearest2dOut)
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "upsample_nearest2d_backward",
-    UpSampleNearest2dBwd)
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "upsample_nearest2d_backward.grad_input",
-    UpSampleNearest2dBwdOut)
-ADVANCED_REGISTER(aten, PrivateUse1, "upsample_bilinear2d", UpSampleBilinear2d)
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "upsample_bilinear2d.out",
-    UpSampleBilinear2dOut)
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "upsample_bilinear2d_backward",
-    UpSampleBilinear2dBwd)
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "upsample_bilinear2d_backward.grad_input",
-    UpSampleBilinear2dBwdOut)
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "upsample_bicubic2d.out",
-    UpSampleBicubic2dOut)
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "upsample_linear1d.out",
-    UpSampleLinear1dOut)
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "upsample_nearest3d.out",
-    UpSampleNearest3dOut)
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "upsample_nearest1d.out",
-    UpSampleNearest1dOut)
+Tensor& UpSampleNearest3dBwdOut(
+    const at::Tensor& grad_output,
+    at::IntArrayRef output_size,
+    at::IntArrayRef input_size,
+    c10::optional<double> scales_d,
+    c10::optional<double> scales_h,
+    c10::optional<double> scales_w,
+    at::Tensor& grad_input) {
+  UpSampleNdCommonDeviceCheck(
+      "grad_output", grad_output, "grad_input", grad_input, __func__);
+  UpSampleNdDtypeCheck("grad_output", grad_output, __func__);
+  UpSampleNdCommonDtypeCheck(
+      "grad_output", grad_output, "grad_input", grad_input, __func__);
+
+  if (C10_UNLIKELY(grad_input.numel() == 0)) {
+    return grad_input;
+  }
+  const c10::musa::MUSAGuard device_guard(grad_output.device());
+
+  const int64_t output_depth = output_size[0];
+  const int64_t input_depth = input_size[2];
+  const auto depth_scale =
+      ComputeScalesValueBwd(scales_d, output_depth, input_depth);
+
+  const int64_t output_height = output_size[1];
+  const int64_t input_height = input_size[3];
+  const auto height_scale =
+      ComputeScalesValueBwd(scales_h, output_height, input_height);
+
+  const int64_t output_width = output_size[2];
+  const int64_t input_width = input_size[4];
+  const auto width_scale =
+      ComputeScalesValueBwd(scales_w, output_width, input_width);
+
+  const auto grad_input_format = grad_input.suggest_memory_format();
+  const bool is_grad_input_format_contig =
+      grad_input.is_contiguous(grad_input_format);
+  const auto contig_grad_input =
+      FormatContiguous(grad_input, grad_input_format);
+  const auto contig_grad_output =
+      FormatContiguous(grad_output, grad_input_format);
+
+  auto in = CreateMUTensor(contig_grad_output);
+  auto out = CreateMUTensor(contig_grad_input);
+
+  muHandle& h = GetMudnnHandle();
+  ::musa::dnn::Interpolate op;
+  CHECK_MUDNN_STATUS(
+      op.SetMode(::musa::dnn::Interpolate::Mode::NEAREST), "SetMode");
+  CHECK_MUDNN_STATUS(
+      op.SetScaleInfo({depth_scale, height_scale, width_scale}),
+      "SetScaleInfo");
+  CHECK_MUDNN_STATUS(op.RunBackward(h, out, in), "RunBackward");
+
+  if (C10_UNLIKELY(!is_grad_input_format_contig)) {
+    grad_input.copy_(contig_grad_input);
+  }
+  return grad_input;
+}
+
+Tensor UpSampleNearest3dBwd(
+    const at::Tensor& grad_output,
+    at::IntArrayRef output_size,
+    at::IntArrayRef input_size,
+    c10::optional<double> scales_d,
+    c10::optional<double> scales_h,
+    c10::optional<double> scales_w) {
+  const auto grad_output_dim = grad_output.dim();
+  TORCH_CHECK(
+      grad_output_dim == 5,
+      "Expected grad_output to be a tensor of dimension 5 but got: dimension ",
+      grad_output_dim);
+
+  const auto full_output_sizes =
+      at::native::upsample_3d_common_check(input_size, output_size);
+  for (auto i : c10::irange(5)) {
+    const auto grad_output_dim_i = grad_output.size(i);
+    const auto full_output_dim_i = full_output_sizes[i];
+    TORCH_CHECK(
+        grad_output_dim_i == full_output_dim_i,
+        "Expected grad_output to have the same shape as output;",
+        " output.size(",
+        i,
+        ") = ",
+        full_output_dim_i,
+        " but got grad_output.size(",
+        i,
+        ") = ",
+        grad_output_dim_i);
+  }
+
+  auto grad_input = at::empty(
+      input_size,
+      grad_output.options().memory_format(grad_output.suggest_memory_format()));
+  UpSampleNearest3dBwdOut(
+      grad_output,
+      output_size,
+      input_size,
+      scales_d,
+      scales_h,
+      scales_w,
+      grad_input);
+  return grad_input;
+}
 
 } // namespace musa
 } // namespace at

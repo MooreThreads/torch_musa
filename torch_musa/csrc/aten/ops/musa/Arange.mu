@@ -25,17 +25,19 @@ __global__ void arange_kernel(T* out_ptr, T start, T step, int nthreads) {
   int vec_idx = idx * 4;
   vec4* out_vec4_ptr = (vec4*)(out_ptr);
   vec4 vec_o;
+
   while (vec_idx < nthreads) {
     if (vec_idx + 4 <= nthreads) {
-      vec_o.x = start + (vec_idx + 0) * step;
-      vec_o.y = start + (vec_idx + 1) * step;
-      vec_o.z = start + (vec_idx + 2) * step;
-      vec_o.w = start + (vec_idx + 3) * step;
+      vec_o.x = start + static_cast<T>(vec_idx + 0) * step;
+      vec_o.y = start + static_cast<T>(vec_idx + 1) * step;
+      vec_o.z = start + static_cast<T>(vec_idx + 2) * step;
+      vec_o.w = start + static_cast<T>(vec_idx + 3) * step;
 
       out_vec4_ptr[idx] = vec_o;
+
     } else {
       for (int i = vec_idx; i < nthreads; ++i) {
-        out_ptr[i] = start + i * step;
+        out_ptr[i] = start + static_cast<T>(i) * step;
       }
     }
     idx += global_stride;
@@ -47,12 +49,14 @@ void CheckParams(double start, double end, double step, Tensor& out) {
   TORCH_CHECK(
       out.scalar_type() == at::ScalarType::Float ||
           out.scalar_type() == at::ScalarType::Int ||
-          out.scalar_type() == at::ScalarType::Long,
+          out.scalar_type() == at::ScalarType::Long ||
+          out.scalar_type() == at::ScalarType::Half ||
+          out.scalar_type() == at::ScalarType::BFloat16,
       "unsupported data type ",
       out.scalar_type());
   TORCH_CHECK(step > 0 || step < 0, "step mustn't be zero.");
   TORCH_CHECK(
-      (step > 0 && start < end) || (step < 0 && end < start),
+      (step > 0 && start <= end) || (step < 0 && end <= start),
       "upper and lower bound inconsistent with step");
   double size_d = std::ceil((end - start) / step);
   int64_t size = static_cast<int64_t>(size_d);
@@ -92,6 +96,20 @@ void launch(
           step.toFloat(),
           nthreads);
       break;
+    case at::ScalarType::Half:
+      arange_kernel<float16_t><<<nr_block, thread_per_block, 0, stream>>>(
+          static_cast<float16_t*>(out.data_ptr()),
+          static_cast<float16_t>(start.toFloat()),
+          static_cast<float16_t>(step.toFloat()),
+          nthreads);
+      break;
+    case at::ScalarType::BFloat16:
+      arange_kernel<bfloat16_t><<<nr_block, thread_per_block, 0, stream>>>(
+          static_cast<bfloat16_t*>(out.data_ptr()),
+          static_cast<bfloat16_t>(start.toFloat()),
+          static_cast<bfloat16_t>(step.toFloat()),
+          nthreads);
+      break;
     case at::ScalarType::Int:
       arange_kernel<int32_t><<<nr_block, thread_per_block, 0, stream>>>(
           static_cast<int32_t*>(out.data_ptr()),
@@ -117,7 +135,9 @@ void ArangeRun(
     const Scalar& end,
     const Scalar& step,
     Tensor& out) {
-  if (out.scalar_type() == at::ScalarType::Float) {
+  if (out.scalar_type() == at::ScalarType::Float ||
+      out.scalar_type() == at::ScalarType::Half ||
+      out.scalar_type() == at::ScalarType::BFloat16) {
     CheckParams(start.toDouble(), end.toDouble(), step.toDouble(), out);
   } else {
     CheckParams(

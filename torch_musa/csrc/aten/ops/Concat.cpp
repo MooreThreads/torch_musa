@@ -6,7 +6,6 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -100,7 +99,7 @@ Tensor& CatOut(const at::ITensorListRef& tensors, int64_t dim, Tensor& out) {
   return out;
 }
 
-Tensor Cat(const at::ITensorListRef& tensors, int64_t dim = 0) {
+Tensor Cat(const at::ITensorListRef& tensors, int64_t dim) {
   const auto& materialized = tensors.materialize();
   const Tensor& ref = materialized[0].get();
 
@@ -127,10 +126,6 @@ Tensor Cat(const at::ITensorListRef& tensors, int64_t dim = 0) {
 
   return output;
 }
-
-ADVANCED_REGISTER(aten, PrivateUse1, "cat", Cat)
-REDEFINE_REGISTER(aten, PrivateUse1, "_cat", Cat)
-ADVANCED_REGISTER(aten, PrivateUse1, "cat.out", CatOut)
 
 } // namespace musa
 } // namespace at

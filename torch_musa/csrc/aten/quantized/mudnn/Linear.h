@@ -13,7 +13,6 @@
 #endif
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 struct PackedLinearWeightMudnn : public LinearPackedParamsBase {
   PackedLinearWeightMudnn(

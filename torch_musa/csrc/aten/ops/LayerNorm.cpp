@@ -6,7 +6,6 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -365,13 +364,6 @@ at::Tensor RMSNormMUDNN(
       op.Run(h, mt_output, mt_square, mt_input, mt_gamma), "Run");
   return output;
 }
-
-ADVANCED_REGISTER(aten, PrivateUse1, "native_layer_norm", NativeLayerNorm)
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "native_layer_norm_backward",
-    NativeLayerNormBwd)
 
 } // namespace musa
 } // namespace at

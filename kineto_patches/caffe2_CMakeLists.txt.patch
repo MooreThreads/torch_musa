@@ -1,0 +1,21 @@
+diff --git a/caffe2/CMakeLists.txt b/caffe2/CMakeLists.txt
+index 221e3f3..5e0c6b3 100644
+--- a/caffe2/CMakeLists.txt
++++ b/caffe2/CMakeLists.txt
+@@ -1310,6 +1310,16 @@ if($ENV{TH_BINARY_BUILD})
+   endif()
+ endif()
+ 
++if(DEFINED ENV{MUSA_HOME})
++  set(MUSA_HOME $ENV{MUSA_HOME})
++else()
++  set(MUSA_HOME "/usr/local/musa")
++endif()
++
++target_link_libraries(torch_cpu PUBLIC ${MUSA_HOME}/lib/libmupti.so.0.2)
++target_link_libraries(torch_cpu PUBLIC ${MUSA_HOME}/lib/libmusa.so)
++target_link_libraries(torch_cpu PUBLIC ${MUSA_HOME}/lib/libmusart.so)
++
+ target_link_libraries(torch_cpu PUBLIC c10)
+ target_link_libraries(torch_cpu PUBLIC ${Caffe2_PUBLIC_DEPENDENCY_LIBS})
+ target_link_libraries(torch_cpu PRIVATE ${Caffe2_DEPENDENCY_LIBS})

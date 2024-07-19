@@ -5,7 +5,6 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
@@ -18,12 +17,6 @@ Tensor RepeatInterleaveTensor(
   const OptionalDeviceGuard device_guard(device_of(repeats));
   return at::native::repeat_interleave_cuda(repeats, output_size);
 }
-
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "repeat_interleave.Tensor",
-    RepeatInterleaveTensor)
 
 } // namespace musa
 } // namespace at

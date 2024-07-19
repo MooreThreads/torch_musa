@@ -53,10 +53,5 @@ Tensor PinMemoryMusa(const Tensor& self, c10::optional<Device> device) {
   return tensor;
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("is_pinned", &IsPinnedMusa);
-  m.impl("_pin_memory", &PinMemoryMusa);
-}
-
 } // namespace musa
 } // namespace at

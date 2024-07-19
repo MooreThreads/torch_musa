@@ -2,19 +2,11 @@
 #include <ATen/MemoryOverlap.h>
 #include <ATen/NamedTensorUtils.h>
 #include <ATen/NativeFunctions.h>
-#include <ATen/core/List.h>
 #include <ATen/core/op_registration/adaption.h>
 #include <ATen/native/IndexKernel.h>
 #include <ATen/native/IndexingUtils.h>
 #include <ATen/native/TensorAdvancedIndexing.h>
 #include <ATen/native/TensorAdvancedIndexingUtils.h>
-#include <ATen/ops/_reshape_alias_native.h>
-#include <ATen/ops/arange.h>
-#include <ATen/ops/as_strided_native.h>
-#include <ATen/ops/unfold_native.h>
-#include <ATen/ops/view_native.h>
-#include <c10/util/irange.h>
-#include <torch/library.h>
 
 #ifndef AT_PER_OPERATOR_HEADERS
 #include <ATen/Functions.h>
@@ -44,151 +36,12 @@
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/ops/TensorShape.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace native {
 
-DEFINE_DISPATCH(indexput_stub);
-REGISTER_NO_CPU_DISPATCH(indexput_stub);
-DEFINE_DISPATCH(indexes_stub);
-REGISTER_NO_CPU_DISPATCH(indexes_stub);
 DEFINE_DISPATCH(indexselect_stub);
 REGISTER_NO_CPU_DISPATCH(indexselect_stub);
-
-// borrowed from Aten/native/TensorAdvancedIndexing.cpp
-// directly include cpp file will cause undefined symbols error.
-static std::string shapes_as_str(TensorList tensors) {
-  std::ostringstream os;
-  bool first = true;
-  for (auto& tensor : tensors) {
-    if (tensor.defined()) {
-      if (!first) {
-        os << ", ";
-      }
-      os << tensor.sizes();
-      first = false;
-    }
-  }
-  return os.str();
-}
-
-static C10_UNUSED std::vector<Tensor> ExpandTensorsMusa(
-    const Tensor& self,
-    const torch::List<c10::optional<Tensor>>& indices,
-    bool& is_mask) {
-  // If indices come in as ByteTensor or BoolTensor (masks), expand them into
-  // the equivalent indexing by LongTensors
-  std::vector<Tensor> result;
-  for (c10::optional<Tensor> index_opt : indices) {
-    if (!index_opt.has_value()) {
-      result.emplace_back();
-    } else {
-      Tensor index = std::move(*index_opt);
-      if (index.scalar_type() == kByte || index.scalar_type() == kBool) {
-        if (index.scalar_type() == kByte) {
-          TORCH_WARN(
-              "indexing with dtype torch.uint8 is now deprecated,"
-              " please use a dtype torch.bool instead.");
-        }
-        is_mask = true;
-        // The sizes of the ByteTensor mask or bool tensor must match the sizes
-        // of the corresponding dimensions in self
-        for (const auto j : c10::irange(index.dim())) {
-          int64_t src_idx = result.size() + j;
-          if (index.size(j) != self.size(src_idx)) {
-            at::native::invalid_mask(self, src_idx, index, j);
-          }
-        }
-        // Replace with nonzeros
-        auto nonzero = index.nonzero();
-        for (const auto j : c10::irange(index.dim())) {
-          result.emplace_back(nonzero.select(1, j));
-        }
-      } else {
-        result.emplace_back(std::move(index));
-      }
-    }
-  }
-  return result;
-}
-
-std::vector<Tensor> MakeIndices(
-    Tensor self,
-    const torch::List<c10::optional<at::Tensor>>& orig,
-    bool& is_mask) {
-  at::native::checkIndexTensorTypes(orig);
-  // first expand BoolTensor (masks) or ByteTensor (masks) into 1 or more
-  // LongTensors
-  auto indices = ExpandTensorsMusa(self, orig, is_mask);
-  // next broadcast all index tensors together
-  try {
-    indices = expand_outplace(indices);
-
-    // after expand indices shape to be same, need Contiguous check !!!
-    for (auto& indice : indices) {
-      indice = indice.contiguous();
-      if (indice.numel() > 0 && indice.device() != self.device()) {
-        indice = indice.to(self.device());
-      }
-    }
-  } catch (std::exception& e) {
-    TORCH_CHECK_INDEX(
-        false,
-        "shape mismatch: indexing tensors could not be broadcast together"
-        " with shapes ",
-        at::native::shapes_as_str(indices));
-  }
-  // add missing null Tensors so that it matches self.dim()
-  while (indices.size() < static_cast<size_t>(self.dim())) {
-    indices.emplace_back();
-  }
-  return indices;
-}
-
-static std::tuple<bool, Tensor> CanDispatchToMaskedFill(
-    const Tensor& self,
-    const torch::List<c10::optional<at::Tensor>>& indices,
-    const Tensor& value) {
-  if (!(value.numel() == 1 && value.device().is_cpu())) {
-    return std::make_tuple(false, Tensor());
-  }
-  int64_t num_idx = 0;
-  Tensor mask;
-  auto self_device = self.device();
-  for (const c10::optional<Tensor> i : indices) {
-    if (!i.has_value() || !(*i).defined()) {
-      num_idx++;
-    } else {
-      Tensor index = std::move(*i);
-      if ((index.scalar_type() != kByte && index.scalar_type() != kBool) ||
-          index.device() != self_device || mask.defined()) {
-        return std::make_tuple(false, Tensor());
-      } else {
-        mask = index;
-        for (const auto j : c10::irange(index.dim())) {
-          int64_t src_idx = num_idx + j;
-          TORCH_CHECK_INDEX(
-              index.size(j) == self.size(src_idx),
-              "The shape of the mask ",
-              index.sizes(),
-              " at index ",
-              j,
-              " does not match the shape of the indexed tensor ",
-              self.sizes(),
-              " at index ",
-              src_idx);
-        }
-        num_idx += mask.ndimension();
-      }
-    }
-  }
-  for (const auto i : c10::irange(num_idx, self.ndimension())) {
-    (void)i; // Suppress unused variable warning
-    mask = mask.unsqueeze(-1);
-  }
-  return std::make_tuple(true, mask);
-}
 
 static bool all_strides_match(TensorList tensors) {
   TORCH_CHECK(!tensors.empty());
@@ -278,9 +131,7 @@ AdvancedIndex::AdvancedIndex(const Tensor& src, TensorList indices_list) {
 
   // For MUSA tensors, force all index tensors to have the same striding to
   // simplify the MUSA kernel.
-  if (indices.size() >= 2 &&
-      (this->src.device().type() == kMUSA ||
-       this->src.device().type() == kMPS)) {
+  if (indices.size() >= 2 && this->src.device().type() == kMUSA) {
     if (!all_strides_match(indices)) {
       for (auto& indice : indices) {
         indice = indice.contiguous();
@@ -289,47 +140,40 @@ AdvancedIndex::AdvancedIndex(const Tensor& src, TensorList indices_list) {
   }
 }
 
+static TensorIterator make_index_put_iterator(
+    const AdvancedIndex& info,
+    const Tensor& value) {
+  TORCH_CHECK(
+      is_expandable_to(value.sizes(), info.src.sizes()),
+      "shape mismatch: value tensor of shape ",
+      value.sizes(),
+      " cannot be broadcast to indexing result of shape ",
+      info.src.sizes());
+  TORCH_CHECK(
+      value.scalar_type() == info.src.scalar_type(),
+      "Index put requires the source and destination dtypes match, "
+      "got ",
+      info.src.scalar_type(),
+      " for the destination "
+      "and ",
+      value.scalar_type(),
+      " for the source.");
+  TensorIteratorConfig config;
+  // info.src is restrided by restride_src with 0 strided dimensions
+  config.set_check_mem_overlap(false);
+  config.resize_outputs(false);
+  config.check_all_same_dtype(false);
+  config.add_output(info.src);
+  config.add_input(value);
+  for (auto& index : info.indices) {
+    config.add_input(index);
+  }
+  return config.build();
+}
+
 } // namespace native
 
 namespace musa {
-
-inline void IndicesDTypeCheck(
-    const std::vector<c10::optional<Tensor>>& indices) {
-  for (const auto& ind : indices) {
-    if (ind.has_value() && ind.value().numel() > 0) {
-      TORCH_CHECK(
-          ind.value().scalar_type() == at::ScalarType::Int ||
-              ind.value().scalar_type() == at::ScalarType::Long ||
-              ind.value().scalar_type() == at::ScalarType::Bool,
-          "indices dtype should be int32/64 or bool");
-    }
-  }
-}
-
-std::vector<int64_t> compute_shapes(Tensor self, std::vector<Tensor> indices) {
-  std::vector<int64_t> output_dims;
-  auto self_dims = self.sizes().vec();
-  auto indices_num = indices.size();
-  std::vector<int64_t> indice_size;
-
-  // check if defined indice has been calculated
-  bool has_defined = false;
-
-  // calculate output dims for indices
-  for (size_t j = 0; j < indices_num; ++j) {
-    if (indices[j].defined()) {
-      if (!has_defined) {
-        indice_size = indices[j].sizes().vec();
-        output_dims.insert(
-            output_dims.end(), indice_size.begin(), indice_size.end());
-        has_defined = true;
-      }
-    } else {
-      output_dims.emplace_back(self_dims[j]);
-    }
-  }
-  return output_dims;
-}
 
 Tensor& IndexSelectOutPorting(
     const Tensor& self,
@@ -339,11 +183,11 @@ Tensor& IndexSelectOutPorting(
   c10::optional<Device> common_device = nullopt;
   (void)common_device; // Suppress unused variable warning
   c10::impl::check_and_update_common_device(
-      common_device, out, "wrapper_CUDA_out_index_select_out", "out");
+      common_device, out, "IndexSelectOutPorting", "out");
   c10::impl::check_and_update_common_device(
-      common_device, self, "wrapper_CUDA_out_index_select_out", "self");
+      common_device, self, "IndexSelectOutPorting", "self");
   c10::impl::check_and_update_common_device(
-      common_device, index, "wrapper_CUDA_out_index_select_out", "index");
+      common_device, index, "IndexSelectOutPorting", "index");
   const OptionalDeviceGuard device_guard(device_of(self));
   return at::native::index_select_out_cuda(self, dim, index, out);
 }
@@ -373,6 +217,7 @@ Tensor& IndexSelectOut(
           index.scalar_type() == at::ScalarType::Long,
       "Unsupported IndexSelect index dtype: ",
       index.scalar_type());
+  TORCH_CHECK(index.device().type() == kMUSA, "Index should be on GPU device");
   c10::musa::MUSAGuard device_guard(self.device());
   Tensor contiguous_self = self.contiguous();
   Tensor contiguous_other = index.contiguous();
@@ -400,71 +245,13 @@ Tensor IndexSelect(const Tensor& self, int64_t dim, const Tensor& index) {
   return out;
 }
 
-Tensor IndexTensor(
-    const Tensor& self,
-    const c10::List<c10::optional<at::Tensor>>& orig) {
-  TORCH_CHECK_INDEX(
-      orig.size() <= (size_t)self.dim(),
-      "too many indices for tensor of dimension ",
-      self.dim(),
-      " (got ",
-      orig.size(),
-      ")");
-  IndicesDTypeCheck(orig.vec());
-  bool is_mask = false;
-
-  // For self.numel() == 0, we will still broadcast it when indices
-  // are provided.
-  std::vector<Tensor> indices = at::native::MakeIndices(self, orig, is_mask);
-  std::vector<int> dims;
-
-  int i = 0;
-  for (const auto& indice : indices) {
-    if (indice.numel() > 0) {
-      dims.push_back(i);
-    }
-    i++;
-  }
-
-  auto out_shape = compute_shapes(self, indices);
-  if (!dims.size()) {
-    // when dim.size() == 0, out_shape = in_shape expected out_shape[dim] = 0
-    return at::empty(out_shape, self.options());
-  }
-  if (dims.size() == 1 && indices[dims[0]].dim() == 1) {
-    return IndexSelect(self, dims[0], indices[dims[0]]);
-  }
-  Tensor out = at::empty(out_shape, self.options());
-  at::native::indexes_stub(kMUSA, out, indices.size(), indices, self);
-
-  return out;
-}
-
 Tensor& IndexPut(
     Tensor& self,
     const torch::List<c10::optional<Tensor>>& indices,
     const Tensor& value,
     const bool accumulate,
     const bool unsafe) {
-  // Note: Tensors in "indices" are not on the same device, which is allowed.
-  // such as: self-cpu, indices0-cpu, indices1-musa, value-cpu
-  if (self.device() == DeviceType::CPU) {
-    torch::List<c10::optional<Tensor>> indices_cpu;
-    // Ensure indices are on the same device as self
-    for (const c10::optional<Tensor>& index : indices) {
-      auto index_cpu = c10::optional<Tensor>(index.value().to("cpu"));
-      indices_cpu.push_back(index_cpu);
-    }
-    at::_index_put_impl_(self, indices_cpu, value, accumulate, unsafe);
-    return self;
-  }
-
-  if (self.numel() == 0) {
-    return self;
-  }
-
-  // borrowed from TensorAdvacedIndexing.cpp
-  c10::musa::MUSAGuard device_guard(self.device());
+  const OptionalDeviceGuard device_guard(device_of(self));
   TORCH_CHECK_INDEX(
       indices.size() <= (size_t)self.dim(),
       "too many indices for tensor of dimension ",
@@ -472,7 +259,6 @@ Tensor& IndexPut(
       " (got ",
       indices.size(),
       ")");
-  IndicesDTypeCheck(indices.vec());
   if (at::has_internal_overlap(self) == MemOverlap::Yes) {
     TORCH_WARN(
         "Use of index_put_ on expanded tensors is deprecated. "
@@ -481,7 +267,7 @@ Tensor& IndexPut(
   }
   if (!accumulate) {
     auto masked_fill_dispatch =
-        at::native::CanDispatchToMaskedFill(self, indices, value);
+        at::native::canDispatchToMaskedFill(self, indices, value);
     if (std::get<0>(masked_fill_dispatch)) {
       return self.masked_fill_(std::get<1>(masked_fill_dispatch), value.item());
     }
@@ -492,42 +278,25 @@ Tensor& IndexPut(
     value_ = value.to(self.device());
   }
   at::assert_no_overlap(self, value);
+  // NOLINTNEXTLINE(performance-implicit-conversion-in-loop)
   for (const c10::optional<Tensor>& index : indices) {
     if (index.has_value()) {
       at::assert_no_overlap(self, *index);
     }
   }
 
-  bool is_mask = false;
-  std::vector<Tensor> cgs_indices =
-      at::native::MakeIndices(self, indices, is_mask);
-
-  // IndexPut kernel doesn't support uncontiguous input yet.
-  Tensor cgs_self = Contiguous(self);
-  at::native::indexput_stub(kMUSA, cgs_self, cgs_indices, value_, accumulate);
-  self.copy_(cgs_self);
-
+  // for device check and broadcast, we use tensor_iterator to warp input
+  // tensors here.
+  auto info = at::native::make_info(self, indices);
+  auto iter = at::native::make_index_put_iterator(info, value_);
+  at::native::index_put_stub(
+      iter.device_type(),
+      iter,
+      info.indexed_sizes,
+      info.indexed_strides,
+      accumulate);
   return self;
 }
-
-REGISTER_IMPL(
-    aten,
-    PrivateUse1,
-    "as_strided",
-    at::native::as_strided_tensorimpl,
-    at_native_as_strided_tensorimpl)
-REGISTER_IMPL(aten, PrivateUse1, "view", at::native::view, at_native_view)
-REGISTER_IMPL(
-    aten,
-    PrivateUse1,
-    "_reshape_alias",
-    at::native::_reshape_alias,
-    at_native__reshape_alias)
-ADVANCED_REGISTER(aten, PrivateUse1, "index_select", IndexSelect)
-ADVANCED_REGISTER(aten, PrivateUse1, "index_select.out", IndexSelectOut)
-ADVANCED_REGISTER(aten, PrivateUse1, "index.Tensor", IndexTensor)
-ADVANCED_REGISTER(aten, PrivateUse1, "_index_put_impl_", IndexPut)
-REGISTER_IMPL(aten, PrivateUse1, "unfold", at::native::unfold, at_native_unfold)
 
 } // namespace musa
 } // namespace at

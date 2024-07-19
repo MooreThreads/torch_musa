@@ -1,4 +1,5 @@
 """Implement stream class and releated APIs"""
+
 # pylint: disable=invalid-name, R1705, E1123, E1120, C0325, W0621, W0622, W0222, W0246
 import ctypes
 from typing import Any, Optional
@@ -222,6 +223,7 @@ class StreamContext:
             ``None``.
     .. note:: Streams are per-device.
     """
+
     cur_stream: Optional["torch_musa.Stream"]
 
     def __init__(self, stream: Optional["torch_musa.Stream"]):

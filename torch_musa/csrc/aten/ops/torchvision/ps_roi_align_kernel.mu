@@ -1,6 +1,8 @@
 #include <ATen/ATen.h>
+#include <ATen/core/dispatch/Dispatcher.h>
 #include <torch/library.h>
 #include <ATen/native/musa/KernelUtils.muh>
+#include "torch_musa/csrc/amp/autocast_mode.h"
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 
@@ -461,6 +463,47 @@ at::Tensor ps_roi_align_backward_kernel(
 
 } // namespace
 
+namespace {
+
+std::tuple<at::Tensor, at::Tensor> ps_roi_align(
+    const at::Tensor& input,
+    const at::Tensor& rois,
+    double spatial_scale,
+    int64_t pooled_height,
+    int64_t pooled_width,
+    int64_t sampling_ratio) {
+  C10_LOG_API_USAGE_ONCE(
+      "torch_musa.csrc.aten.ops.torchvision.ps_roi_align_kernel.ps_roi_align");
+  static auto op = c10::Dispatcher::singleton()
+                       .findSchemaOrThrow("torchvision::ps_roi_align", "")
+                       .typed<decltype(ps_roi_align)>();
+  return op.call(
+      input, rois, spatial_scale, pooled_height, pooled_width, sampling_ratio);
+}
+
+std::tuple<at::Tensor, at::Tensor> ps_roi_align_autocast(
+    const at::Tensor& input,
+    const at::Tensor& rois,
+    double spatial_scale,
+    int64_t pooled_height,
+    int64_t pooled_width,
+    int64_t sampling_ratio) {
+  c10::impl::ExcludeDispatchKeyGuard no_autocast(
+      c10::DispatchKey::AutocastPrivateUse1);
+  auto result = ps_roi_align(
+      at::musa::autocast::cached_cast(at::kFloat, input),
+      at::musa::autocast::cached_cast(at::kFloat, rois),
+      spatial_scale,
+      pooled_height,
+      pooled_width,
+      sampling_ratio);
+
+  return std::make_tuple(
+      std::get<0>(result).to(input.scalar_type()),
+      std::get<1>(result).to(input.scalar_type()));
+}
+} // namespace
+
 TORCH_LIBRARY_IMPL(torchvision, PrivateUse1, m) {
   m.impl(
       TORCH_SELECTIVE_NAME("torchvision::ps_roi_align"),
@@ -468,6 +511,12 @@ TORCH_LIBRARY_IMPL(torchvision, PrivateUse1, m) {
   m.impl(
       TORCH_SELECTIVE_NAME("torchvision::_ps_roi_align_backward"),
       TORCH_FN(ps_roi_align_backward_kernel));
+}
+
+TORCH_LIBRARY_IMPL(torchvision, AutocastPrivateUse1, m) {
+  m.impl(
+      TORCH_SELECTIVE_NAME("torchvision::ps_roi_align"),
+      TORCH_FN(ps_roi_align_autocast));
 }
 
 } // namespace ops

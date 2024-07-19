@@ -1,0 +1,31 @@
+diff --git a/aten/src/ATen/TensorIterator.h b/aten/src/ATen/TensorIterator.h
+index 5c5595d..04e67be 100644
+--- a/aten/src/ATen/TensorIterator.h
++++ b/aten/src/ATen/TensorIterator.h
+@@ -28,6 +28,10 @@ class OptionalTensorRef;
+ using NameVector = SmallVector<Dimname, kDimVectorStaticSize>;
+ } // namespace at
+ 
++namespace at::musa {
++class MusaTensorIterator;
++} // namespace at::musa
++
+ // TensorIterator is a helper class for element-wise operations, such as
+ // arithmetic, comparisons, and trigonometric functions. It handles
+ // broadcasting and type conversions of operands.
+@@ -225,6 +229,7 @@ enum class FastSetupType : uint8_t {
+   NONE,
+   CONTIGUOUS,
+   CHANNELS_LAST,
++  CHANNELS_LAST_3D,
+   NON_OVERLAPPING_DENSE
+ };
+ 
+@@ -737,6 +742,7 @@ class TORCH_API TensorIteratorConfig final {
+  public:
+   friend struct TensorIteratorBase;
+   friend struct TensorIterator;
++  friend class musa::MusaTensorIterator;
+ 
+   TensorIteratorConfig() = default;
+ 

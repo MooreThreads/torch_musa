@@ -38,7 +38,6 @@
 
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace native {
@@ -110,30 +109,52 @@ REGISTER_MUSA_DISPATCH(aminmax_allreduce_stub, &AMinMaxAllReduceKernel);
 
 namespace musa {
 
-at::Tensor& AMaxOut(
+using Mode = ::musa::dnn::Reduce::Mode;
+
+at::Tensor& ReduceOp(
     const at::Tensor& self,
     at::IntArrayRef dim,
     bool keepdim,
-    at::Tensor& out) {
+    at::Tensor& out,
+    Mode mode) {
+  if (C10_UNLIKELY(self.numel() == 0)) {
+    return out;
+  }
   c10::musa::MUSAGuard device_guard(self.device());
   DimVector dims_vec(dim);
   maybe_wrap_dims(dims_vec, self.dim());
   namedinference::propagate_names_for_reduction(out, self, dims_vec, keepdim);
 
-  at::Tensor input = self.contiguous();
-
+  at::Tensor input = FormatContiguous(self, MemoryFormat::Contiguous);
   auto in_m = CreateMUTensor(input);
   auto out_m = CreateMUTensor(out);
 
   std::vector<int> dims(dims_vec.data(), dims_vec.data() + dims_vec.size());
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Reduce r;
-  ::musa::dnn::Reduce::Mode m = ::musa::dnn::Reduce::Mode::MAX;
-  CHECK_MUDNN_STATUS(r.SetMode(m), "SetMode");
+  CHECK_MUDNN_STATUS(r.SetMode(mode), "SetMode");
   CHECK_MUDNN_STATUS(r.SetDim(dims.size(), dims.data()), "SetDim");
   CHECK_MUDNN_STATUS(r.Run(h, out_m, in_m, InternalMemAlloc), "Run");
 
   return out;
+}
+
+at::Tensor& AMinOut(
+    const at::Tensor& self,
+    at::IntArrayRef dim,
+    bool keepdim,
+    at::Tensor& out) {
+  Mode mode = ::musa::dnn::Reduce::Mode::MIN;
+  return ReduceOp(self, dim, keepdim, out, mode);
+}
+
+at::Tensor& AMaxOut(
+    const at::Tensor& self,
+    at::IntArrayRef dim,
+    bool keepdim,
+    at::Tensor& out) {
+  Mode mode = ::musa::dnn::Reduce::Mode::MAX;
+  return ReduceOp(self, dim, keepdim, out, mode);
 }
 
 std::tuple<at::Tensor&, at::Tensor&> AMinMaxOut(
@@ -171,9 +192,6 @@ std::tuple<at::Tensor&, at::Tensor&> AMinMaxOut(
 
   return std::forward_as_tuple(min, max);
 }
-
-ADVANCED_REGISTER(aten, PrivateUse1, "amax.out", AMaxOut)
-ADVANCED_REGISTER(aten, PrivateUse1, "aminmax.out", AMinMaxOut)
 
 } // namespace musa
 } // namespace at

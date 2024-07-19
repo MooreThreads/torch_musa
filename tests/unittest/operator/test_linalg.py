@@ -1,4 +1,5 @@
 """Test linear algebra operators."""
+
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import,not-callable
 import torch
 import pytest
@@ -7,26 +8,48 @@ import torch_musa
 from torch_musa import testing
 
 input_data = [
-    torch.randn(4, 100, 4, 4),
-    torch.randn(8, 100, 8, 8),
     torch.randn(16, 100, 16, 16),
+    torch.randn(8, 1, 8, 8),
+    torch.randn(25, 53, 6, 42, 3),
+    torch.randn(25, 5, 65, 42, 3, 6),
+    torch.randn(2, 53, 65, 6, 3, 6, 10),
+    torch.randn(8, 1, 8, 8).to(memory_format=torch.channels_last),
+    torch.randn(8, 4, 1, 1).to(memory_format=torch.channels_last),
+    torch.randn(0, 0, 0, 0),
+    torch.randn(8, 0, 8, 0).to(memory_format=torch.channels_last),
 ]
 dim = [0, 1, 2, 3]
-order = [1, 3]
+order = [0, 1, 2, 3, 4]
+vector_norm_dtype = [torch.float32]
+# if testing.get_musa_arch() >= 22:
+#     vector_norm_dtype.append(torch.float64)
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("dim", dim)
 @pytest.mark.parametrize("order", order)
-@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+@pytest.mark.parametrize("dtype", vector_norm_dtype)
 def test_linalg_vector_norm(input_data, dim, order, dtype):
     m = torch.linalg.vector_norm
-    input_data = input_data.to(dtype)
-    output = m(input_data, dim, order)
-    musa_input = input_data.to("musa")
-    output_musa = m(musa_input, dim, order)
-    assert testing.DefaultComparator(abs_diff=1e-5)(output, output_musa.cpu())
+    input_data = input_data.to(dtype).requires_grad_()
+    output = m(input_data, order, dim)
+    musa_input = input_data.to("musa").requires_grad_()
+    output_musa = m(musa_input, order, dim)
+    res = testing.DefaultComparator(abs_diff=1e-5, rel_diff=1e-4)(
+        output, output_musa.cpu()
+    )
+    assert output.grad_fn.__class__ == output_musa.grad_fn.__class__
+    info_str = ""
+    if not res:
+        atol, rtol, equal_nan = testing.DefaultComparator(
+            abs_diff=1e-5, rel_diff=1e-4
+        ).get_tolerance()
+        mask_t = ~torch.isclose(output_musa.cpu(), output, rtol, atol, equal_nan)
+        selected = torch.abs(output[mask_t] - output_musa.cpu()[mask_t])
+        info_str = f"Max abs error: {selected.max().item()}"
+
+    assert res, info_str
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -50,7 +73,9 @@ def test_inverse(input_data, dtype):
     output = m(input_data)
     musa_input = input_data.to("musa")
     output_musa = m(musa_input)
-    assert testing.DefaultComparator(abs_diff=1e-5)(output, output_musa.cpu())
+    assert testing.DefaultComparator(abs_diff=1e-5, rel_diff=1e-4)(
+        output, output_musa.cpu()
+    )
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)

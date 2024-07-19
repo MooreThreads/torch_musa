@@ -1,4 +1,5 @@
 """Test cast operators."""
+
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
 import numpy as np
 import torch
@@ -15,7 +16,7 @@ all_dtypes = [
     torch.float32,
     torch.int32,
     torch.float64,
-    torch.int64
+    torch.int64,
 ]
 
 

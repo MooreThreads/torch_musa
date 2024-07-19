@@ -6,7 +6,6 @@
 
 #include "torch_musa/csrc/aten/quantized/TensorFactories.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
@@ -41,11 +40,6 @@ std::tuple<Tensor, Tensor> QMin(const Tensor& self, int64_t dim, bool keepdim) {
       at::musa::MakePerTensorQuantizedTensor(
           min, self.q_scale(), self.q_zero_point()),
       min_indices);
-}
-
-TORCH_LIBRARY_IMPL(aten, QuantizedPrivateUse1, m) {
-  m.impl("max.dim", TORCH_FN(QMax));
-  m.impl("min.dim", TORCH_FN(QMin));
 }
 
 } // namespace musa

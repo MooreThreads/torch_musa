@@ -1,0 +1,105 @@
+diff --git a/torch/csrc/profiler/kineto_shim.cpp b/torch/csrc/profiler/kineto_shim.cpp
+index e8cb031..8b1a81e 100644
+--- a/torch/csrc/profiler/kineto_shim.cpp
++++ b/torch/csrc/profiler/kineto_shim.cpp
+@@ -22,16 +22,16 @@ const std::set<libkineto::ActivityType> cpuTypes{
+     libkineto::ActivityType::CPU_INSTANT_EVENT,
+     libkineto::ActivityType::USER_ANNOTATION,
+     libkineto::ActivityType::EXTERNAL_CORRELATION,
+-    libkineto::ActivityType::CUDA_RUNTIME,
++    libkineto::ActivityType::MUSA_RUNTIME,
+     libkineto::ActivityType::PYTHON_FUNCTION,
+ };
+ 
+-const std::set<libkineto::ActivityType> cudaTypes = {
++const std::set<libkineto::ActivityType> musaTypes = {
+     libkineto::ActivityType::GPU_MEMCPY,
+     libkineto::ActivityType::GPU_MEMSET,
+     libkineto::ActivityType::CONCURRENT_KERNEL,
+-    // CUDA_RUNTIME appears in both cpuTypes and cudaTypes.
+-    libkineto::ActivityType::CUDA_RUNTIME,
++    // MUSA_RUNTIME appears in both cpuTypes and musaTypes.
++    libkineto::ActivityType::MUSA_RUNTIME,
+ };
+ } // namespace
+ #endif // USE_KINETO
+@@ -162,10 +162,34 @@ class ExperimentalConfigWrapper {
+     return cupti_range_profiler;
+   }
+ 
++  void prepareTraceWithExperimentalOptions(std::set<libkineto::ActivityType>& k_activities) {
++    const size_t num_metrics = config_.profiler_metrics.size();
++    std::stringstream configss;
++
++    LOG(INFO) << "MUPTI profiler metrics size = " << num_metrics;
++
++    configss << "ACTIVITIES_WARMUP_PERIOD_SECS=0\n"
++             << "MUPTI_PROFILER_METRICS=kineto__musa_core_flops\n";
++
++    for (int i = 0; i < num_metrics; i++) {
++      configss << config_.profiler_metrics[i];
++      if (num_metrics > 1 && i < (num_metrics - 1)) {
++        configss << ",";
++      }
++    }
++    configss << "\nMUPTI_PROFILER_ENABLE_PER_KERNEL="
++             << (config_.profiler_measure_per_kernel ? "true" : "false")
++             << "\n";
++    LOG(INFO) << "Generated config = " << configss.str();
++
++    libkineto::api().activityProfiler().prepareTrace(
++        k_activities, configss.str());
++  }
++
+   void prepareTraceWithExperimentalOptions() {
+ #ifdef USE_KINETO
+     std::set<libkineto::ActivityType> k_activities{
+-        libkineto::ActivityType::CUDA_PROFILER_RANGE};
++        libkineto::ActivityType::MUSA_PROFILER_RANGE};
+ 
+     const size_t num_metrics = config_.profiler_metrics.size();
+     std::stringstream configss;
+@@ -202,7 +226,7 @@ void prepareTrace(
+     const torch::profiler::impl::ExperimentalConfig& config) {
+ #ifdef USE_KINETO
+   if (!libkineto::api().isProfilerRegistered()) {
+-    libkineto_init(/*cpuOnly=*/cpuOnly, /*logOnError=*/true);
++    libkineto_init(/*cpuOnly=*/false, /*logOnError=*/true);
+     libkineto::api().suppressLogMessages();
+   }
+ 
+@@ -214,15 +238,12 @@ void prepareTrace(
+   if (activities.count(torch::autograd::profiler::ActivityType::CPU)) {
+     k_activities.insert(cpuTypes.begin(), cpuTypes.end());
+   }
+-  if (activities.count(torch::autograd::profiler::ActivityType::CUDA)) {
+-    k_activities.insert(cudaTypes.begin(), cudaTypes.end());
+-  }
+-
++  k_activities.insert(musaTypes.begin(), musaTypes.end());
+   ExperimentalConfigWrapper configWrap(config);
+ 
+   // Experimental Configuration options are present
+-  if (config && configWrap.assertValid(activities)) {
+-    configWrap.prepareTraceWithExperimentalOptions();
++  if (config) {
++    configWrap.prepareTraceWithExperimentalOptions(k_activities);
+     return;
+   }
+ 
+@@ -302,12 +323,12 @@ c10::DeviceType deviceTypeFromActivity(libkineto::ActivityType activity_type) {
+     case libkineto::ActivityType::GPU_MEMSET:
+     case libkineto::ActivityType::CONCURRENT_KERNEL:
+     case libkineto::ActivityType::GPU_USER_ANNOTATION:
+-    case libkineto::ActivityType::CUDA_PROFILER_RANGE:
+-      return c10::DeviceType::CUDA;
++    case libkineto::ActivityType::MUSA_PROFILER_RANGE:
++      return c10::DeviceType::PrivateUse1;
+     case libkineto::ActivityType::CPU_OP:
+     case libkineto::ActivityType::USER_ANNOTATION:
+     case libkineto::ActivityType::EXTERNAL_CORRELATION:
+-    case libkineto::ActivityType::CUDA_RUNTIME:
++    case libkineto::ActivityType::MUSA_RUNTIME:
+     case libkineto::ActivityType::CPU_INSTANT_EVENT:
+     case libkineto::ActivityType::GLOW_RUNTIME:
+     case libkineto::ActivityType::PYTHON_FUNCTION:

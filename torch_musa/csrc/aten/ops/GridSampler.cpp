@@ -8,7 +8,6 @@
 #include <mudnn_image.h>
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #define TORCH_ASSERT_ONLY_METHOD_OPERATORS
 #include <ATen/native/musa/GridSampler.h>
@@ -207,9 +206,6 @@ at::Tensor GridSampler3d(
       align_corners,
       output_mask);
 }
-
-ADVANCED_REGISTER(aten, PrivateUse1, "grid_sampler_2d", GridSampler2d)
-ADVANCED_REGISTER(aten, PrivateUse1, "grid_sampler_3d", GridSampler3d)
 
 } // namespace musa
 } // namespace at

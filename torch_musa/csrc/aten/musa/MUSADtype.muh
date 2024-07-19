@@ -57,6 +57,8 @@ typedef int16_t bfloat16_t;
   }
 
 SELF_VEC_DEF(float16_t, Half2, Half4)
+SELF_VEC_DEF(at::Half, ATHalf2, ATHalf4)
+SELF_VEC_DEF(at::BFloat16, ATBhalf2, ATBhalf4)
 #if defined(__MUSACC__) && (__MUSA_ARCH__ >= 220 || !defined(__MUSA_ARCH__))
 SELF_VEC_DEF(bfloat16_t, Bhalf2, Bhalf4)
 #endif
@@ -73,6 +75,7 @@ SELF_VEC_DEF(bfloat16_t, Bhalf2, Bhalf4)
     _CTYPE arr[_VLEN];                               \
   }
 GEN_VECTYPE(float16_t, Half8, 16, 8);
+GEN_VECTYPE(at::Half, ATHalf8, 16, 8);
 GEN_VECTYPE(signed char, Char8, 8, 8);
 GEN_VECTYPE(uint8_t, Uint8, 8, 8);
 GEN_VECTYPE(int16_t, Short8, 16, 8);
@@ -85,10 +88,14 @@ GEN_VECTYPE(bfloat16_t, Bhalf8, 16, 8);
 GEN_VECTYPE(bfloat16_t, Bhalf16, 32, 16);
 GEN_VECTYPE(bfloat16_t, Bhalf32, 64, 32);
 #endif
+GEN_VECTYPE(at::BFloat16, ATBhalf8, 16, 8);
+GEN_VECTYPE(at::BFloat16, ATBhalf16, 32, 16);
+GEN_VECTYPE(at::BFloat16, ATBhalf32, 64, 32);
 GEN_VECTYPE(int32_t, Int8, 32, 8);
 GEN_VECTYPE(int64_t, Long8, 64, 8);
 GEN_VECTYPE(signed char, Char16, 16, 16);
 GEN_VECTYPE(float16_t, Half16, 32, 16);
+GEN_VECTYPE(at::Half, ATHalf16, 32, 16);
 GEN_VECTYPE(float, Float16, 64, 16);
 GEN_VECTYPE(int32_t, Int16, 64, 16);
 
@@ -113,9 +120,11 @@ class Dtype;
 
 INST(float, float2, float4);
 INST(float16_t, Half2, Half4);
+INST(at::Half, ATHalf2, ATHalf4);
 #if defined(__MUSACC__) && (__MUSA_ARCH__ >= 220 || !defined(__MUSA_ARCH__))
 INST(bfloat16_t, Bhalf2, Bhalf4);
 #endif
+INST(at::BFloat16, ATBhalf2, ATBhalf4);
 INST(bool, char2, char4);
 INST(int32_t, int2, int4);
 INST(uint32_t, uint2, uint4);
@@ -242,6 +251,11 @@ DEF_VECT(float16_t, Half2);
 DEF_VECT(float16_t, Half4);
 DEF_VECT(float16_t, Half8);
 DEF_VECT(float16_t, Half16);
+DEF_VECT(at::Half, at::Half);
+DEF_VECT(at::Half, ATHalf2);
+DEF_VECT(at::Half, ATHalf4);
+DEF_VECT(at::Half, ATHalf8);
+DEF_VECT(at::Half, ATHalf16);
 #if defined(__MUSACC__) && (__MUSA_ARCH__ >= 220 || !defined(__MUSA_ARCH__))
 DEF_VECT(bfloat16_t, bfloat16_t);
 DEF_VECT(bfloat16_t, Bhalf2);
@@ -250,16 +264,24 @@ DEF_VECT(bfloat16_t, Bhalf8);
 DEF_VECT(bfloat16_t, Bhalf16);
 DEF_VECT(bfloat16_t, Bhalf32);
 #endif
+DEF_VECT(at::BFloat16, at::BFloat16);
+DEF_VECT(at::BFloat16, ATBhalf2);
+DEF_VECT(at::BFloat16, ATBhalf4);
+DEF_VECT(at::BFloat16, ATBhalf8);
+DEF_VECT(at::BFloat16, ATBhalf16);
+DEF_VECT(at::BFloat16, ATBhalf32);
 DEF_VECT(bool, char);
 DEF_VECT(bool, char2);
 DEF_VECT(bool, char3);
 DEF_VECT(bool, char4);
 DEF_VECT(bool, Char8);
+DEF_VECT(bool, Char16);
 DEF_VECT(int8_t, int8_t);
 DEF_VECT(int8_t, char2);
 DEF_VECT(int8_t, char3);
 DEF_VECT(int8_t, char4);
 DEF_VECT(int8_t, Char8);
+DEF_VECT(int8_t, Char16);
 DEF_VECT(uint8_t, uint8_t);
 DEF_VECT(uint8_t, uchar2);
 DEF_VECT(uint8_t, uchar3);
@@ -308,6 +330,26 @@ DEF_VECT(double, double4);
 
 #undef DEF_VECT
 #undef MACRO_UNROLL
+
+template <typename scalar_t, int vec_size>
+struct alignas(sizeof(scalar_t) * vec_size) aligned_vector {
+  scalar_t val[vec_size];
+};
+
+template <typename scalar_t>
+inline __device__ __host__ int can_vectorize_up_to(char* pointer) {
+  uint64_t address = reinterpret_cast<uint64_t>(pointer);
+  constexpr int vec2_alignment =
+      std::alignment_of<aligned_vector<scalar_t, 2>>::value;
+  constexpr int vec4_alignment =
+      std::alignment_of<aligned_vector<scalar_t, 4>>::value;
+  if (address % vec4_alignment == 0) {
+    return 4;
+  } else if (address % vec2_alignment == 0) {
+    return 2;
+  }
+  return 1;
+}
 
 } // namespace musa
 

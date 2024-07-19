@@ -1,0 +1,23 @@
+#include <ATen/core/Tensor.h>
+
+namespace at {
+namespace musa {
+
+template <typename scalar_t>
+std::tuple<Tensor, Tensor, Tensor> unique_dim_musa_template(
+    const Tensor& self,
+    const int64_t dim,
+    const bool consecutive,
+    const bool return_inverse,
+    const bool return_counts);
+
+template <typename scalar_t>
+std::tuple<Tensor, Tensor, Tensor> compute_unique(
+    const Tensor& sorted,
+    const Tensor& sorted_indices,
+    const bool return_inverse,
+    const bool return_counts,
+    const bool consecutive);
+
+} // namespace musa
+} // namespace at

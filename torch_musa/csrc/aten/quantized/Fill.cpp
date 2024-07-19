@@ -18,7 +18,6 @@
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/quantized/QTensor.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
@@ -61,13 +60,6 @@ Tensor& MaskedFillQuantizeTensor(
     const Tensor& value) {
   c10::musa::MUSAGuard device_guard(self.device());
   return at::native::masked_fill__quantized_cuda(self, mask, value);
-}
-
-TORCH_LIBRARY_IMPL(aten, QuantizedPrivateUse1, m) {
-  m.impl("fill_.Scalar", TORCH_FN(FillQuantizedScalar));
-  m.impl("fill_.Tensor", TORCH_FN(FillQuantizedTensor));
-  m.impl("masked_fill_.Scalar", TORCH_FN(MaskedFillQuantize));
-  m.impl("masked_fill_.Tensor", TORCH_FN(MaskedFillQuantizeTensor));
 }
 
 } // namespace musa

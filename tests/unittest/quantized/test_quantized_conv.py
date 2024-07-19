@@ -1,4 +1,5 @@
 """Test quantized operators."""
+
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
 import torch
 import torch.ao.nn.quantized as nnq
@@ -82,7 +83,7 @@ conv_input_data = [
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.skipif(
     testing.get_musa_arch() < 22,
-    reason="Quantized conv supported in S4000 or later",
+    reason="Quantized conv supported in QY2 or later",
 )
 @pytest.mark.parametrize("input_data", conv_input_data)
 def test_qconv2d(input_data):
@@ -152,7 +153,7 @@ def test_qconv2d(input_data):
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.skipif(
     testing.get_musa_arch() < 22,
-    reason="Quantized conv supported in S4000 or later",
+    reason="Quantized conv supported in QY2 or later",
 )
 @pytest.mark.parametrize("input_data", conv_input_data)
 def test_qconv2d_add(input_data):
@@ -229,7 +230,7 @@ def test_qconv2d_add(input_data):
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.skipif(
     testing.get_musa_arch() < 22,
-    reason="Quantized conv supported in S4000 or later",
+    reason="Quantized conv supported in QY2 or later",
 )
 @pytest.mark.parametrize("input_data", conv_input_data)
 def test_qconv2d_silu(input_data):
@@ -294,7 +295,7 @@ def test_qconv2d_silu(input_data):
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.skipif(
     testing.get_musa_arch() < 22,
-    reason="Quantized conv supported in S4000 or later",
+    reason="Quantized conv supported in QY2 or later",
 )
 @pytest.mark.parametrize("input_data", conv_input_data)
 def test_qconv2d_silu_add(input_data):

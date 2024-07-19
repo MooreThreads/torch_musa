@@ -25,7 +25,7 @@ Tensor empty_strided_musa(
     IntArrayRef size,
     IntArrayRef stride,
     const TensorOptions& options) {
-  return at::musa::empty_strided_musa(
+  return at::musa::EmptyStridedMUSA(
       size,
       stride,
       optTypeMetaToScalarType(options.dtype_opt()),
@@ -39,6 +39,10 @@ void ConfigFormat(
     const Tensor& t,
     muTensor& mt,
     bool permute_if_not_contiguous) {
+  TORCH_CHECK(
+      t.dim() <= 8,
+      "mudnn only support intput tensors'dim <= 8, but it is ",
+      t.dim());
   const auto t_dim = t.dim();
   const auto memory_format = t.suggest_memory_format();
   muTensor::Format mudnn_format = muTensor::Format::NCHW;
@@ -72,9 +76,8 @@ void ConfigFormat(
   mt.SetNdInfo(mu_t.dim(), mu_t.sizes().data(), mu_t.strides().data());
 }
 
-inline void SetTensorTypeAndAddr(const Tensor& t, muTensor& m_t) {
-  auto t_type = t.scalar_type();
-  switch (t_type) {
+void SetMUTensorDType(ScalarType dtype, muTensor& m_t) {
+  switch (dtype) {
     case ScalarType::Half:
       m_t.SetType(muTensor::Type::HALF);
       break;
@@ -115,15 +118,67 @@ inline void SetTensorTypeAndAddr(const Tensor& t, muTensor& m_t) {
       m_t.SetType(muTensor::Type::BFLOAT16);
       break;
     default:
-      TORCH_CHECK(false, "Unsupported tensor dtype: ", t.dtype());
+      TORCH_CHECK(false, "Unsupported tensor dtype: ", dtype);
       throw;
   }
-  m_t.SetAddr(t.data_ptr());
+}
+
+void SetMUTensorAddr(void* addr, muTensor& m_t) {
+  m_t.SetAddr(addr);
+}
+
+muTensor CreateMUTensorByCompressDim(const Tensor& t) {
+  // mudnn only support dim <= 8, need to compress the shapes
+  TORCH_CHECK(t.dim() > 8, "Now only compress the tensor whose dim > 8");
+  muTensor rst;
+  SetMUTensorDType(t.scalar_type(), rst);
+  SetMUTensorAddr(t.data_ptr(), rst);
+  // init reverse shapes and strides, easier to compress.
+  DimVector shape(t.sizes().rbegin(), t.sizes().rend());
+  DimVector stride(t.strides().rbegin(), t.strides().rend());
+
+  auto can_compress = [&](int dim0, int dim1) {
+    auto shape0 = shape[dim0];
+    auto shape1 = shape[dim1];
+    if (shape0 == 1 || shape1 == 1) {
+      return true;
+    }
+    if (shape0 * stride[dim0] != stride[dim1]) {
+      return false;
+    }
+    return true;
+  };
+
+  int prev_dim = 0;
+  for (const auto dim : c10::irange(1, t.dim())) {
+    if (can_compress(prev_dim, dim)) {
+      if (shape[prev_dim] == 1) {
+        stride[prev_dim] = stride[dim];
+      }
+      shape[prev_dim] *= shape[dim];
+    } else {
+      prev_dim++;
+      if (prev_dim != dim) {
+        stride[prev_dim] = stride[dim];
+        shape[prev_dim] = shape[dim];
+      }
+    }
+  }
+  int ndim = prev_dim + 1;
+  TORCH_CHECK(ndim <= 8, "mudnn only support dim <= 8, but it is ", ndim);
+  shape.resize(ndim);
+  stride.resize(ndim);
+  // reverse back
+  std::reverse(shape.begin(), shape.end());
+  std::reverse(stride.begin(), stride.end());
+  rst.SetNdInfo(ndim, shape.data(), stride.data());
+  return rst;
 }
 
 muTensor CreateMUTensor(const Tensor& t, bool permute_if_not_contiguous) {
   muTensor rst;
-  SetTensorTypeAndAddr(t, rst);
+  SetMUTensorDType(t.scalar_type(), rst);
+  SetMUTensorAddr(t.data_ptr(), rst);
   ConfigFormat(t, rst, permute_if_not_contiguous);
   return rst;
 }
@@ -196,7 +251,6 @@ Tensor FormatContiguous(const Tensor& t, at::MemoryFormat memory_format) {
 size_t DTypeSize(c10::ScalarType type) {
   size_t size;
   switch (type) {
-    case at::ScalarType::Half:
     case at::ScalarType::Bool:
     case at::ScalarType::Char:
     case at::ScalarType::Byte:
@@ -204,11 +258,13 @@ size_t DTypeSize(c10::ScalarType type) {
     case at::ScalarType::QUInt8:
       size = 1;
       break;
-    case at::ScalarType::Float:
+    case at::ScalarType::Half:
+    case at::ScalarType::BFloat16:
     case at::ScalarType::Short:
       size = 2;
       break;
     case at::ScalarType::Int:
+    case at::ScalarType::Float:
     case at::ScalarType::QInt32:
       size = 4;
       break;

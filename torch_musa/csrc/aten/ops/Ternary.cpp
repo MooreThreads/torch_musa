@@ -7,17 +7,16 @@
 #include <ATen/Functions.h>
 #include <ATen/NativeFunctions.h>
 #else
-#include <ATen/ops/addcdiv_native.h>
-#include <ATen/ops/addcmul_native.h>
 #include <ATen/ops/full_like.h>
 #include <ATen/ops/result_type.h>
 #include <ATen/ops/result_type_native.h>
 #include <ATen/ops/where_native.h>
 #endif
 
+#include <ATen/TensorIterator.h>
+
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -32,6 +31,10 @@ void TernaryCall(
     const Tensor& input2,
     TERNARY_MODE m,
     const Scalar& alpha_scalar) {
+  if (C10_UNLIKELY(
+          input1.numel() == 0 || input2.numel() == 0 || self.numel() == 0)) {
+    return;
+  }
   c10::musa::MUSAGuard device_guard(self.device());
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Ternary top;
@@ -49,12 +52,9 @@ void TernaryCall(
     }
   }
 
-  auto contiguous_input1 = input1.contiguous();
-  auto contiguous_input2 = input2.contiguous();
-  auto contiguous_self = self.contiguous();
-  auto input1_mt = CreateMUTensor(contiguous_input1);
-  auto input2_mt = CreateMUTensor(contiguous_input2);
-  auto self_mt = CreateMUTensor(contiguous_self);
+  auto input1_mt = CreateMUTensor(input1);
+  auto input2_mt = CreateMUTensor(input2);
+  auto self_mt = CreateMUTensor(self);
   // output should be contiguous, caller should be responsible for this
   auto om_mt = CreateMUTensor(output);
   CHECK_MUDNN_STATUS(top.SetMode(m), "SetMode");
@@ -81,18 +81,28 @@ void TernarycommonDtypeCall(
     TERNARY_MODE m) {
   auto common_dtype = at::result_type(input1, input2);
   at::native::alpha_check(common_dtype, alpha_scalar);
+
   // WARN: output created by torch, which could be non-contiguous.
-  output = output.contiguous();
-  Tensor contiguous_self = self.to(common_dtype).contiguous();
-  Tensor contiguous_input1 = input1.to(common_dtype).contiguous();
-  Tensor contiguous_input2 = input2.to(common_dtype).contiguous();
+  Tensor contiguous_output =
+      FormatContiguous(output, at::MemoryFormat::Contiguous);
+
+  Tensor contiguous_self = FormatContiguous(self, at::MemoryFormat::Contiguous);
+  Tensor contiguous_input1 =
+      FormatContiguous(input1, at::MemoryFormat::Contiguous);
+  Tensor contiguous_input2 =
+      FormatContiguous(input2, at::MemoryFormat::Contiguous);
+
   TernaryCall(
-      output,
+      contiguous_output,
       contiguous_self,
       contiguous_input1,
       contiguous_input2,
       m,
       alpha_scalar);
+
+  if (output.data_ptr() != contiguous_output.data_ptr()) {
+    output.copy_(contiguous_output);
+  }
 }
 
 Tensor& TernaryOut(
@@ -106,10 +116,12 @@ Tensor& TernaryOut(
       self.scalar_type() == other.scalar_type(),
       "input scalar type must the same");
 
-  Tensor contiguous_out = output.contiguous();
-  Tensor contiguous_cond = cond.contiguous();
-  Tensor contiguous_self = self.contiguous();
-  Tensor contiguous_other = other.contiguous();
+  Tensor contiguous_out =
+      FormatContiguous(output, at::MemoryFormat::Contiguous);
+  Tensor contiguous_cond = FormatContiguous(cond, at::MemoryFormat::Contiguous);
+  Tensor contiguous_self = FormatContiguous(self, at::MemoryFormat::Contiguous);
+  Tensor contiguous_other =
+      FormatContiguous(other, at::MemoryFormat::Contiguous);
 
   // 1. deal with other and self tensor shape isn't same
   if (other.dim() == 0) {
@@ -118,6 +130,7 @@ Tensor& TernaryOut(
   if (self.dim() == 0) {
     contiguous_self = at::full_like(contiguous_other, self.item());
   }
+
   TernaryCall(
       contiguous_out,
       contiguous_cond,
@@ -134,14 +147,27 @@ Tensor& WhereSelfOut(
     const Tensor& other,
     Tensor& out) {
   c10::musa::MUSAGuard device_guard(self.device());
+  // check if shapes can be broadcastable and compute output shape
+  DimVector output_shape;
+  std::vector<std::vector<int64_t>> operands_shape = {
+      condition.sizes().vec(), self.sizes().vec(), other.sizes().vec()};
+  for (const auto& shape : operands_shape) {
+    if (output_shape.empty()) {
+      output_shape = DimVector(shape.begin(), shape.end());
+    }
+    if (output_shape != DimVector(shape.begin(), shape.end())) {
+      output_shape = infer_size_dimvector(output_shape, shape);
+    }
+  }
+
   Tensor contiguous_self, contiguous_other;
   auto result_type = at::native::result_type(self, other);
   if (self.dtype() != other.dtype()) {
-    contiguous_self = self.to(result_type);
-    contiguous_other = other.to(result_type);
+    contiguous_self = self.to(result_type).contiguous();
+    contiguous_other = other.to(result_type).contiguous();
   } else {
-    contiguous_self = self;
-    contiguous_other = other;
+    contiguous_self = self.contiguous();
+    contiguous_other = other.contiguous();
   }
   if (condition.scalar_type() == ScalarType::Byte) {
     TORCH_WARN_ONCE(
@@ -158,30 +184,56 @@ Tensor& WhereSelfOut(
   Tensor cond_bool = condition.scalar_type() == ScalarType::Byte
       ? condition.to(ScalarType::Bool)
       : condition;
-  // compute output shape
-  std::vector<int64_t> condition_shape = condition.sizes().vec();
-  DimVector output_shape =
-      DimVector(condition_shape.begin(), condition_shape.end());
+
+  // Keep self, other and condition's shape consistent
+  int64_t max_dim = std::max(contiguous_self.dim(), contiguous_other.dim());
+  max_dim = std::max(max_dim, cond_bool.dim());
+
+  std::vector<int64_t> expanded_sizes_self(max_dim, 1);
+  std::vector<int64_t> expanded_sizes_other(max_dim, 1);
+  std::vector<int64_t> expanded_sizes_condition(max_dim, 1);
+
+  int self_len = contiguous_self.dim();
+  int other_len = contiguous_other.dim();
+  int cond_len = cond_bool.dim();
+  for (int i = 0; i < max_dim; ++i) {
+    if (i < self_len) {
+      expanded_sizes_self[max_dim - 1 - i] =
+          contiguous_self.sizes()[self_len - 1 - i];
+    }
+    if (i < other_len) {
+      expanded_sizes_other[max_dim - 1 - i] =
+          contiguous_other.sizes()[other_len - 1 - i];
+    }
+    if (i < cond_len) {
+      expanded_sizes_condition[max_dim - 1 - i] =
+          cond_bool.sizes()[cond_len - 1 - i];
+    }
+  }
+
   if (!out.sizes().equals(output_shape)) {
     out.resize_(output_shape);
   }
+
   if (!out.numel()) {
     return out;
   }
-  Tensor contiguous_out = out.contiguous();
 
-  if (other.dim() == 0) {
-    contiguous_other = at::full_like(contiguous_out, contiguous_other.item());
-  }
-  if (self.dim() == 0) {
-    contiguous_self = at::full_like(contiguous_out, contiguous_self.item());
-  }
-  // we should keep self, other and out's shape consistent
+  // Manually broadcast tensor to match the maximum dimensions, 1.add new
+  // axis 2.expand
+  Tensor broadcasted_self =
+      contiguous_self.reshape(expanded_sizes_self).expand(output_shape);
+  Tensor broadcasted_other =
+      contiguous_other.reshape(expanded_sizes_other).expand(output_shape);
+  Tensor broadcasted_condition =
+      cond_bool.reshape(expanded_sizes_condition).expand(output_shape);
+
+  Tensor contiguous_out = out.contiguous();
   return TernaryOut(
       out,
-      cond_bool,
-      contiguous_self,
-      contiguous_other,
+      broadcasted_condition,
+      broadcasted_self,
+      broadcasted_other,
       TERNARY_MODE::SELECT,
       1);
 }
@@ -254,39 +306,50 @@ Tensor& AddcDivOut(
   c10::musa::MUSAGuard device_guard(self.device());
 
   TORCH_CHECK(
+      self.scalar_type() == input1.scalar_type() &&
+          self.scalar_type() == input2.scalar_type() &&
+          self.scalar_type() == output.scalar_type(),
+      "Dtype of self, input1, input2, output should be the same");
+  TORCH_CHECK(
       self.scalar_type() == at::ScalarType::Float ||
           self.scalar_type() == at::ScalarType::Half ||
+          self.scalar_type() == at::ScalarType::Int ||
+          self.scalar_type() == at::ScalarType::Long ||
           self.scalar_type() == at::ScalarType::BFloat16,
-      "Dtype of input tensor of addcdiv only support fp32/fp16/bf16, but now it is ",
+      "Dtype of input tensor of addcdiv only support int32/64, fp32/fp16/bf16, but now it is ",
       self.scalar_type());
-  TORCH_CHECK(
-      input1.scalar_type() == at::ScalarType::Float ||
-          input1.scalar_type() == at::ScalarType::Half ||
-          input1.scalar_type() == at::ScalarType::BFloat16,
-      "Dtype of input1 tensor of addcdiv only support fp32/fp16/bf16, but now it is ",
-      input1.scalar_type());
-  TORCH_CHECK(
-      input2.scalar_type() == at::ScalarType::Float ||
-          input2.scalar_type() == at::ScalarType::Half ||
-          input2.scalar_type() == at::ScalarType::BFloat16,
-      "Dtype of input2 tensor of addcdiv only support fp32/fp16/bf16 but now it is ",
-      input2.scalar_type());
-  TORCH_CHECK(
-      output.dtype() == at::ScalarType::Float ||
-          output.dtype() == at::ScalarType::Half ||
-          output.dtype() == at::ScalarType::BFloat16,
-      "Dtype of output tensor of addcdiv only support fp32/fp16/bf16, but now it is ",
-      output.dtype());
   TernarycommonDtypeCall(
       self, input1, input2, alpha_scalar, output, TERNARY_MODE::ADDCDIV);
+
   return output;
 }
 
-ADVANCED_REGISTER(aten, PrivateUse1, "where.self", WhereSelf)
-ADVANCED_REGISTER(aten, PrivateUse1, "where.self_out", WhereSelfOut)
+at::Tensor& AddcDiv_(
+    at::Tensor& self,
+    const at::Tensor& tensor1,
+    const at::Tensor& tensor2,
+    const at::Scalar& value) {
+  at::Tensor output = at::empty_like(
+      self, self.options().memory_format(at::MemoryFormat::Contiguous));
 
-ADVANCED_REGISTER(aten, PrivateUse1, "addcdiv.out", AddcDivOut)
-ADVANCED_REGISTER(aten, PrivateUse1, "addcmul.out", AddcMulOut)
+  AddcDivOut(self, tensor1, tensor2, value, output);
+
+  self.copy_(output);
+  return self;
+}
+
+at::Tensor AddcDiv(
+    const at::Tensor& self,
+    const at::Tensor& tensor1,
+    const at::Tensor& tensor2,
+    const at::Scalar& value) {
+  at::TensorIterator iter;
+  iter.build_ternary_op(at::Tensor(), self, tensor1, tensor2);
+  at::Tensor output = iter.output();
+  AddcDivOut(self, tensor1, tensor2, value, output);
+
+  return output;
+}
 
 } // namespace musa
 } // namespace at

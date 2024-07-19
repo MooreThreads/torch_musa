@@ -1,4 +1,5 @@
 """Test jit features"""
+
 # pylint: disable=redefined-builtin, unused-import, not-callable
 import pytest
 import torch

@@ -1,7 +1,9 @@
 """Unit tests for serialization."""
+
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
 import os
 import tempfile
+import pytest
 
 import torch
 
@@ -40,5 +42,22 @@ def test_module_save_load():
     with tempfile.TemporaryDirectory() as temp_dir:
         model_path = os.path.join(temp_dir, "model.pt")
         torch.save(model, model_path)
-        reloaded_model = torch.load(model_path, map_location="musa")
-        reloaded_model.eval()
+        reloaded_model = torch.load(model_path)
+        # Ensure model loaded on MUSA
+        assert (
+            next(reloaded_model.parameters()).device == next(model.parameters()).device
+        )
+
+        # Ensure model loaded on CPU
+        reloaded_model = torch.load(model_path, map_location="cpu")
+        assert next(reloaded_model.parameters()).device == torch.device("cpu")
+
+        # Ensure raise readable error when model loaded to CUDA
+        with pytest.raises(
+            RuntimeError,
+            match=r"Attempting to deserialize object on a CUDA device but "
+            r"torch.cuda.is_available\(\) is False. If you are running on a MUSA enabled "
+            r"machine, please use torch.load with map_location=torch.device\('musa'\) or "
+            r"map_location=torch.device\('cpu'\) to map your storages to the MUSA or CPU.",
+        ):
+            reloaded_model = torch.load(model_path, map_location="cuda")

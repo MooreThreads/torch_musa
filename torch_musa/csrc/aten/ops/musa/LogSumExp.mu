@@ -9,7 +9,7 @@
 #include <ATen/NativeFunctions.h>
 #endif
 
-#include <musa_fp16.h>
+#include "torch_musa/csrc/aten/musa/MUSADtype.muh"
 #include "torch_musa/csrc/aten/ops/Reduce.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 
@@ -49,7 +49,12 @@ __inline__ __device__ double Inf() {
 }
 
 template <>
-__inline__ __device__ __half Inf() {
+__inline__ __device__ float16_t Inf() {
+  return MUSART_INF_F;
+}
+
+template <>
+__inline__ __device__ bfloat16_t Inf() {
   return MUSART_INF_F;
 }
 
@@ -135,7 +140,8 @@ void LogSumExpImpl(Tensor& result, const Tensor& self, const int dim) {
     std::vector<int64_t> range_vec(range.begin(), range.end());
     range_vec.erase(range_vec.begin() + dim);
     range_vec.push_back(dim);
-    self_tensor = self_tensor.permute(range_vec).contiguous();
+    self_tensor = musa::FormatContiguous(
+        self_tensor.permute(range_vec), at::MemoryFormat::Contiguous);
   }
 
   int64_t reduce_size = std::min<uint32_t>(shape[dim], THREAD_PER_BLOCK);
@@ -170,15 +176,15 @@ void LogSumExpImpl(Tensor& result, const Tensor& self, const int dim) {
 void LogSumExpMusa(Tensor& result, const Tensor& self, int64_t dim) {
   TORCH_CHECK(
       self.scalar_type() == at::ScalarType::Float ||
+          self.scalar_type() == at::ScalarType::Half ||
+          self.scalar_type() == at::ScalarType::BFloat16 ||
           self.scalar_type() == at::ScalarType::Double,
-      "musa logsumexp currently only supports float32/doulbe dtype");
+      "musa logsumexp currently only supports float16, bfloat16, float32 and doulbe dtype");
   TORCH_CHECK(
       self.size(dim) <= THREAD_PER_BLOCK,
       "musa logsumexp currently doesn't support reduce size greater than ",
       THREAD_PER_BLOCK);
   auto data_type = self.scalar_type();
-  // TODO(@fan.mo): Half dtype supporting meets a compiling error of
-  // __shfl_xor_sync, will check it soon
   switch (data_type) {
     case at::ScalarType::Float:
       LogSumExpImpl<float>(result, self, dim);
@@ -186,6 +192,14 @@ void LogSumExpMusa(Tensor& result, const Tensor& self, int64_t dim) {
     case at::ScalarType::Double:
       LogSumExpImpl<double>(result, self, dim);
       break;
+    case at::ScalarType::Half:
+      LogSumExpImpl<float16_t>(result, self, dim);
+      break;
+#if TORCH_MUSA_ARCH > 210
+    case at::ScalarType::BFloat16:
+      LogSumExpImpl<bfloat16_t>(result, self, dim);
+      break;
+#endif
     default:
       break;
   }

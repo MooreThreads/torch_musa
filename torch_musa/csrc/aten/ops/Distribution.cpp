@@ -6,7 +6,6 @@
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/utils/musa_lazy_init.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
@@ -65,12 +64,6 @@ Tensor& Uniform(
   c10::musa::MUSAGuard device_guard(self.device());
   return at::native::uniform_(self, from, to, gen);
 }
-
-ADVANCED_REGISTER(aten, PrivateUse1, "bernoulli_.float", BernoulliFloat)
-ADVANCED_REGISTER(aten, PrivateUse1, "bernoulli_.Tensor", BernoulliTensor)
-ADVANCED_REGISTER(aten, PrivateUse1, "bernoulli.out", BernoulliOut)
-ADVANCED_REGISTER(aten, PrivateUse1, "normal_", Normal)
-ADVANCED_REGISTER(aten, PrivateUse1, "uniform_", Uniform)
 
 } // namespace musa
 } // namespace at

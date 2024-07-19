@@ -3,7 +3,6 @@
 #include <torch/library.h>
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #ifndef AT_PER_OPERATOR_HEADERS
 #include <ATen/Functions.h>
@@ -34,72 +33,113 @@ void TriCallOut(
     TriangularMode mode,
     const int64_t diag,
     const std::string name) {
-  // TODO(@mt-ai/mt-sw-compute): this kernel now doesn't support bool dtype and
-  // tensor with dim>=8
+  // TODO(@mt-ai/mt-sw-compute): this kernel now doesn't support dim>=8
   TORCH_CHECK(
       input.device().type() == kMUSA,
       "Device of input tensor of " + name + " must be MUSA");
   TORCH_CHECK(
       input.dim() < 8, "For dim>=8, float64 and int64 dtype would fail to run");
 
-  Tensor input_contiguous = input.contiguous();
-
+  // NOTE: since this kernel doesn't support non-contiguous tensors,
+  // we have to make sure output and input are both contiguous tensors
   if (mode == TriangularMode::TRIU) {
-    at::native::triu_stub(kMUSA, out, input_contiguous, diag);
+    at::native::triu_stub(kMUSA, out, input, diag);
   } else {
-    at::native::tril_stub(kMUSA, out, input_contiguous, diag);
+    at::native::tril_stub(kMUSA, out, input, diag);
   }
 }
 
-Tensor Triu(const Tensor& self, int64_t diagonal = 0) {
+Tensor Triu(const Tensor& self, int64_t diagonal) {
   c10::musa::MUSAGuard device_guard(self.device());
+
   Tensor output = at::empty_like(
       self, self.options().memory_format(c10::MemoryFormat::Contiguous));
-  TriCallOut(output, self, TriangularMode::TRIU, diagonal, "Triu");
+  if (!self.is_contiguous()) {
+    Tensor self_contig = self.contiguous();
+    TriCallOut(output, self_contig, TriangularMode::TRIU, diagonal, "Triu");
+  } else {
+    TriCallOut(output, self, TriangularMode::TRIU, diagonal, "Triu");
+  }
   return output;
 }
 
-Tensor& Triu_(Tensor& self, int64_t diagonal = 0) {
+Tensor& Triu_(Tensor& self, int64_t diagonal) {
   c10::musa::MUSAGuard device_guard(self.device());
-  TriCallOut(self, self, TriangularMode::TRIU, diagonal, "Triu");
+
+  if (!self.is_contiguous()) {
+    Tensor self_contig = self.contiguous();
+    TriCallOut(
+        self_contig, self_contig, TriangularMode::TRIU, diagonal, "Triu");
+    self.copy_(self_contig);
+  } else {
+    TriCallOut(self, self, TriangularMode::TRIU, diagonal, "Triu");
+  }
+
   return self;
 }
 
 Tensor& TriuOut(const Tensor& self, int64_t diagonal, Tensor& output) {
   c10::musa::MUSAGuard device_guard(self.device());
+
   output.resize_(self.sizes());
-  TriCallOut(output, self, TriangularMode::TRIU, diagonal, "Triu");
+  Tensor out_contig = output.contiguous();
+
+  if (!self.is_contiguous()) {
+    Tensor self_contig = self.contiguous();
+    TriCallOut(out_contig, self_contig, TriangularMode::TRIU, diagonal, "Triu");
+  } else {
+    TriCallOut(out_contig, self, TriangularMode::TRIU, diagonal, "Triu");
+  }
+
+  output.copy_(out_contig);
   return output;
 }
 
-Tensor Tril(const Tensor& self, int64_t diagonal = 0) {
+Tensor Tril(const Tensor& self, int64_t diagonal) {
   c10::musa::MUSAGuard device_guard(self.device());
+
   Tensor output = at::empty_like(
       self, self.options().memory_format(c10::MemoryFormat::Contiguous));
-  TriCallOut(output, self, TriangularMode::TRIL, diagonal, "Tril");
+  if (!self.is_contiguous()) {
+    Tensor self_contig = self.contiguous();
+    TriCallOut(output, self_contig, TriangularMode::TRIL, diagonal, "Tril");
+  } else {
+    TriCallOut(output, self, TriangularMode::TRIL, diagonal, "Tril");
+  }
   return output;
 }
 
-Tensor& Tril_(Tensor& self, int64_t diagonal = 0) {
+Tensor& Tril_(Tensor& self, int64_t diagonal) {
   c10::musa::MUSAGuard device_guard(self.device());
-  TriCallOut(self, self, TriangularMode::TRIL, diagonal, "Tril");
+
+  if (!self.is_contiguous()) {
+    Tensor self_contig = self.contiguous();
+    TriCallOut(
+        self_contig, self_contig, TriangularMode::TRIL, diagonal, "Tril");
+    self.copy_(self_contig);
+  } else {
+    TriCallOut(self, self, TriangularMode::TRIL, diagonal, "Tril");
+  }
+
   return self;
 }
 
 Tensor& TrilOut(const Tensor& self, int64_t diagonal, Tensor& output) {
   c10::musa::MUSAGuard device_guard(self.device());
+
   output.resize_(self.sizes());
-  TriCallOut(output, self, TriangularMode::TRIL, diagonal, "Tril");
+  Tensor out_contig = output.contiguous();
+
+  if (!self.is_contiguous()) {
+    Tensor self_contig = self.contiguous();
+    TriCallOut(out_contig, self_contig, TriangularMode::TRIL, diagonal, "Tril");
+  } else {
+    TriCallOut(out_contig, self, TriangularMode::TRIL, diagonal, "Tril");
+  }
+
+  output.copy_(out_contig);
   return output;
 }
-
-ADVANCED_REGISTER(aten, PrivateUse1, "triu", Triu)
-ADVANCED_REGISTER(aten, PrivateUse1, "triu_", Triu_)
-ADVANCED_REGISTER(aten, PrivateUse1, "triu.out", TriuOut)
-
-ADVANCED_REGISTER(aten, PrivateUse1, "tril_", Tril_)
-ADVANCED_REGISTER(aten, PrivateUse1, "tril.out", TrilOut)
-ADVANCED_REGISTER(aten, PrivateUse1, "tril", Tril)
 
 } // namespace musa
 } // namespace at

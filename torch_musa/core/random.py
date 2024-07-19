@@ -1,4 +1,5 @@
 """This file is about random number generator."""
+
 # pylint: disable=C0103, W0621
 from typing import cast, Iterable, List, Union
 import torch

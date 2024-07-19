@@ -1,6 +1,9 @@
 """Unittest for memory APIs."""
+
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import, unused-variable, unexpected-keyword-arg
-# pylint: disable=invalid-name
+# pylint: disable=invalid-name, import-outside-toplevel, unspecified-encoding, too-many-nested-block, unused-argument
+# pylint: disable=too-many-nested-blocks, unrecognized-inline-option
+
 import pytest
 import torch
 from torch import nn
@@ -209,6 +212,7 @@ def test_pin_memory_empty():
 
 def test_pin_memory_with_operator():
     """Test pin memory using operator constructors"""
+
     def _generate_tensors(**kwargs):
         return [
             torch.arange(2, 3, **kwargs),
@@ -219,7 +223,8 @@ def test_pin_memory_with_operator():
             torch.randn(2, 3, **kwargs),
             torch.randperm(3, **kwargs),
             torch.tensor([2, 3], **kwargs),
-            torch.zeros(3, **kwargs)]
+            torch.zeros(3, **kwargs),
+        ]
 
     pinned_tensors = _generate_tensors(pin_memory=True)
     for x in pinned_tensors:
@@ -292,3 +297,90 @@ def test_matmul_memory_use():
 
     assert matmul_expand_mem == matmul_mem
     assert bmm_mem == matmul_mem
+
+
+def test_memory_snapshot():
+    try:
+        from random import randint
+
+        torch.musa.memory.empty_cache()
+        torch.musa.memory._record_memory_history(True)
+        x = torch.rand(311, 411, device="musa")
+
+        # create a bunch of tensors that all will tile into the
+        # same segment to  exercise the history merging code
+        # 512B is the minimum block size,
+        # so we allocate all the tensors to this size to make sure
+        # they tile evenly
+        tensors = [torch.rand(128, device="musa") for _ in range(1000)]
+        while tensors:
+            del tensors[randint(0, len(tensors) - 1)]
+
+        # exercise the history trimming code
+        torch.rand(128 * 5, device="musa")
+
+        ss = torch.musa.memory._snapshot()
+        found_it = False
+        for seg in ss["segments"]:
+            for b in seg["blocks"]:
+                if "history" in b:
+                    for h in b["history"]:
+                        if h["real_size"] == 311 * 411 * 4:
+                            assert "test_memory" in h["frames"][0]["filename"]
+                            found_it = True
+        assert found_it
+
+        import tempfile
+
+        with tempfile.NamedTemporaryFile() as f:
+            torch.musa.memory._save_segment_usage(f.name)
+            with open(f.name, "r") as f2:
+                assert "test_memory.py" in f2.read()
+
+        del x
+        torch.musa.empty_cache()
+        ss = torch.musa.memory._snapshot()
+        assert ss["device_traces"][0][-1]["action"] == "segment_free"
+
+    finally:
+        torch.musa.memory._record_memory_history(False)
+
+
+def test_memory_snapshot_with_cpp():
+    try:
+        torch.musa.memory.empty_cache()
+        torch.musa.memory._record_memory_history(True, _enable_expensive_cpp=True)
+        x = torch.rand(311, 411, device="musa")
+
+        ss = torch.musa.memory._snapshot()["segments"]
+        found_it = False
+        for seg in ss:
+            for b in seg["blocks"]:
+                if "history" in b:
+                    for h in b["history"]:
+                        if h["real_size"] == 311 * 411 * 4:
+                            assert len(h["cpp_frames"]) > 0
+                            found_it = True
+        assert found_it
+
+    finally:
+        torch.musa.memory._record_memory_history(False)
+
+
+def test_notifies_oom():
+    x = False
+
+    def cb(device, alloc, device_alloc, device_free):
+        nonlocal x
+        x = True
+
+    torch.musa._MUSAC._musa_attach_out_of_memory_observer(cb)
+    with pytest.raises(RuntimeError, match="out of memory"):
+        torch.empty(1024 * 1024 * 1024 * 1024, device="musa")
+    assert x
+
+
+def test_storage_resize():
+    test_tensor = torch.randn(1024 * 1024).to("musa")
+    test_tensor.storage().resize_(0)
+    test_tensor.storage().resize_(test_tensor.numel())

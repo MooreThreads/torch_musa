@@ -1,6 +1,8 @@
 #include <ATen/ATen.h>
 #include <ATen/core/Tensor.h>
 
+#include <ATen/ops/one_hot_native.h>
+
 #include "torch_musa/csrc/aten/mudnn/Handle.h"
 #include "torch_musa/csrc/aten/musa/MUSAMath.muh"
 #include "torch_musa/csrc/aten/ops/OneHot.h"
@@ -25,7 +27,7 @@ __global__ void OneHot(
   const int stride = blockDim.x * gridDim.x;
 
   for (int index = tid; index < n; index += stride) {
-    int prefix_idx, prefix_off, depth_idx, suffix_idx;
+    uint32_t prefix_idx, prefix_off, depth_idx, suffix_idx;
     fdm_ds(prefix_idx, prefix_off, index);
     fdm_su(depth_idx, suffix_idx, prefix_off);
 

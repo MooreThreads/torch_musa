@@ -1,4 +1,5 @@
 """Test cat operator."""
+
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import, C0103
 import torch
 import pytest
@@ -16,6 +17,67 @@ inputdata = [
     },
     {
         "input": [torch.randn(1, 2, 3, 4), torch.randn(1, 2, 3, 4)],
+        "dim": 2,
+    },
+    {
+        "input": [torch.randn(1, 2, 3, 0), torch.randn(1, 2, 3, 0)],
+        "dim": 2,
+    },
+    {
+        "input": [torch.randn(1, 0, 3, 4), torch.randn(1, 0, 3, 4)],
+        "dim": 2,
+    },
+    {
+        "input": [torch.randn(1, 0, 0, 4), torch.randn(1, 0, 0, 4)],
+        "dim": 2,
+    },
+    {
+        "input": [
+            torch.randn(2, 1, 2, 3).to(memory_format=torch.channels_last),
+            torch.randn(2, 1, 2, 3).to(memory_format=torch.channels_last),
+        ],
+        "dim": 2,
+    },
+    {
+        "input": [
+            torch.randn(2, 1, 0, 3).to(memory_format=torch.channels_last),
+            torch.randn(2, 1, 0, 3).to(memory_format=torch.channels_last),
+        ],
+        "dim": 2,
+    },
+    {
+        "input": [
+            torch.randn(2, 0, 2, 3).to(memory_format=torch.channels_last),
+            torch.randn(2, 0, 2, 3).to(memory_format=torch.channels_last),
+        ],
+        "dim": 2,
+    },
+    {
+        "input": [
+            torch.randn(2, 3, 1, 1).to(memory_format=torch.channels_last),
+            torch.randn(2, 3, 1, 1).to(memory_format=torch.channels_last),
+        ],
+        "dim": 2,
+    },
+    {
+        "input": [
+            torch.randn(2, 3, 6, 4).to(memory_format=torch.channels_last),
+            torch.randn(2, 3, 6, 4).to(memory_format=torch.channels_last),
+        ],
+        "dim": 2,
+    },
+    {
+        "input": [
+            torch.randn(2, 3, 1, 1).to(memory_format=torch.channels_last),
+            torch.randn(2, 3, 1, 1),
+        ],
+        "dim": 2,
+    },
+    {
+        "input": [
+            torch.randn(2, 3, 1, 1),
+            torch.randn(2, 3, 1, 1).to(memory_format=torch.channels_last),
+        ],
         "dim": 2,
     },
     {
@@ -38,6 +100,8 @@ def test_cat(input_data):
         input_args=inputs,
     )
     test.check_result()
+    test.check_out_ops()
+    test.check_grad_fn()
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -52,6 +116,8 @@ def test_cat_with_nhwc(input_data):
         input_args=inputs,
     )
     test.check_result()
+    test.check_out_ops()
+    test.check_grad_fn()
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -87,6 +153,22 @@ inputdata = [
         ],
         "dim": 3,
     },
+    {
+        "input": [
+            torch.randn(1, 0, 3, 4).half(),
+            torch.randn(1, 0, 3, 4),
+            torch.randn(1, 0, 3, 4).half(),
+        ],
+        "dim": 3,
+    },
+    {
+        "input": [
+            torch.randn(1, 2, 0, 4).half(),
+            torch.randn(1, 2, 0, 4),
+            torch.randn(1, 2, 0, 4).half(),
+        ],
+        "dim": 3,
+    },
 ]
 
 
@@ -99,3 +181,5 @@ def test_cat_with_different_dtype(input_data):
         input_args=inputs,
     )
     test.check_result()
+    test.check_out_ops()
+    test.check_grad_fn()

@@ -1,7 +1,7 @@
 本节主要介绍如何对PyTorch生态的第三方库进行MUSA扩展的构建(MUSAExtension)，对应于CUDAExtension。
 
-为什么要对第三方库进行MUSA扩展的构建？
-======================
+为什么要对第三方库进行MUSA扩展的构建
+==================================
 
 以mmcv库(commit id为0a2f60ba0198f8d567b536313bfba329588f9c3f)为例，当我们的测试代码有如下报错log，则说明mmcv中没有构建MUSA扩展。此时，我们需要对mmcv库进行MUSA扩展，从而使得mmcv库运行在摩尔线程显卡上。
 
@@ -30,15 +30,15 @@
 
 注意以上测试不要在mmcv根目录下进行，以免将当前目录下的mmcv包导入。
 
-如何对第三方库进行MUSA扩展？
-==============
+如何对第三方库进行MUSA扩展
+=========================
 
 了解MUSAExtension这个API
--------------
+-----------------------
 阅读torch_musa/utils/README.md中关于MUSAExtension的介绍。
 
 CUDA-Porting
--------------
+------------
 
 我们需要先找到与CUDA相关文件所在的位置，在mmcv中，有如下几处：
 
@@ -58,18 +58,18 @@ CUDA-Porting
 
 之后从mmcv根目录全局搜索cu、nv、cuda和对应的大写关键词。搜索关键词的目的在于梳理自定义的映射规则，本次对搜索结果的映射规则提取如下：
 
-- _CU_H_ -> _MU_H_
-- _CUH -> _MUH
-- __NVCC__ -> __MUSACC__
-- MMCV_WITH_CUDA -> MMCV_WITH_MUSA
-- AT_DISPATCH_FLOATING_TYPES_AND_HALF -> AT_DISPATCH_FLOATING_TYPES
-- #include <ATen/cuda/CUDAContext.h> -> #include \"torch_musa/csrc/aten/musa/MUSAContext.h\"
-- #include <c10/cuda/CUDAGuard.h> -> #include \"torch_musa/csrc/core/MUSAGuard.h\"
-- ::cuda:: -> ::musa::
-- /cuda/ -> /musa/
-- , CUDA, -> , PrivateUse1,
-- .cuh -> .muh
-- .is_cuda() -> .is_privateuseone()
+- 1: _CU_H_ -> _MU_H_
+- 2: _CUH -> _MUH
+- 3: __NVCC__ -> __MUSACC__
+- 4: MMCV_WITH_CUDA -> MMCV_WITH_MUSA
+- 5: AT_DISPATCH_FLOATING_TYPES_AND_HALF -> AT_DISPATCH_FLOATING_TYPES
+- 6: #include <ATen/cuda/CUDAContext.h> -> #include \"torch_musa/csrc/aten/musa/MUSAContext.h\"
+- 7: #include <c10/cuda/CUDAGuard.h> -> #include \"torch_musa/csrc/core/MUSAGuard.h\"
+- 8: "::cuda:: -> ::musa::"
+- 9: /cuda/ -> /musa/
+- 10: , CUDA, -> , PrivateUse1,
+- 11: .cuh -> .muh
+- 12: .is_cuda() -> .is_privateuseone()
 
 大多数情况下，有一些基本的映射规则即cu->mu、nv->mt、cuda->musa、cuh->muh及对应的大写映射。如果在编译过程中遇到HALF相关的编译报错，
 可以如上所示将HALF相关的宏取消掉。然后我们将搜索出来的关键词拓展，形成单词边界然后进行
@@ -110,7 +110,7 @@ PrivateUse1是PyTorch中对于扩展的自定义backend默认名字，is_private
 想在代码里添加映射规则，也可以在extra.json文件中添加条目或者自行添加新的json文件。
 
 分析mmcv的构建脚本setup.py
--------------
+-------------------------
 
 .. code-block:: python
   
@@ -136,7 +136,8 @@ PrivateUse1是PyTorch中对于扩展的自定义backend默认名字，is_private
 在CUDA扩展的构建逻辑中，我们可以看到有环境变量'FORCE_CUDA'来控制是否构建，也可以看到有CUDA相关的宏定义'MMCV_WITH_CUDA'，赋值extension
 为CUDAExtension，然后就是源文件以及头文件的设置。因此我们也可以加一个elif分支并利用环境变量'FORCE_MUSA'来控制是否构建，然后添加宏定义
 'MMCV_WITH_MUSA'。为了方便，我们直接对mmcv/mmcv/ops/csrc这个目录进行CUDA-porting，会生成mmcv/mmcv/ops/csrc_musa。所以我们在设置源
-文件以及头文件的路径时只需将csrc改为csrc_musa，最后将extension赋值为MUSAExtension就可以了。增加的分支如下所示：
+文件以及头文件的路径时只需将csrc改为csrc_musa，最后将extension赋值为MUSAExtension，同时还需要将cmd_class中的build_ext设置为musa的BuildExtension。
+另外需要设置MUSA_ARCH宏和MUSA_ARCH环境变量。增加的分支如下所示：
 
 .. code-block:: python
 
@@ -171,50 +172,26 @@ PrivateUse1是PyTorch中对于扩展的自定义backend默认名字，is_private
         glob.glob('./mmcv/ops/csrc_musa/pytorch/cpu/*.cpp') + \
         glob.glob('./mmcv/ops/csrc_musa/pytorch/cuda/*.mu') + \
         glob.glob('./mmcv/ops/csrc_musa/pytorch/cuda/*.cpp')
-    define_macros += [
-        ('MMCV_WITH_MUSA', None)
-        ]
-        
+    from torch_musa.testing import get_musa_arch
+    define_macros += [('MMCV_WITH_MUSA', None),
+                      ('MUSA_ARCH', str(get_musa_arch()))]
+    os.environ['MUSA_ARCH'] = str(get_musa_arch())
+
     extension = MUSAExtension
     include_dirs.append(os.path.abspath('./mmcv/ops/csrc_musa/pytorch'))
     include_dirs.append(os.path.abspath('./mmcv/ops/csrc_musa/common'))
     include_dirs.append(os.path.abspath('./mmcv/ops/csrc_musa/common/cuda'))
+    from torch_musa.utils.musa_extension import MUSAExtension,BuildExtension
+    cmd_class = {'build_ext': BuildExtension}
   elif (hasattr(torch, 'is_mlu_available') and  
   ...
 
-
-由于构建MUSA扩展时生成了额外的共享库，然后它会被链接到最终的目标库，因此在安装包时它需要被一起打包，
-具体示例见torch_musa/utils/README.md。mmcv中是以设置'include_package_data=True'和配置MANIFEST.in
-文件来控制需要打包的数据的，原始MANIFEST.in文件如下所示：
-
-.. code-block:: python
-
-  include requirements/runtime.txt
-  include mmcv/ops/csrc/common/cuda/*.cuh mmcv/ops/csrc/common/cuda/*.hpp mmcv/ops/csrc/common/*.hpp
-  include mmcv/ops/csrc/pytorch/*.cpp mmcv/ops/csrc/pytorch/cuda/*.cu mmcv/ops/csrc/pytorch/cuda/*.cpp mmcv/ops/csrc/pytorch/cpu/*.cpp
-  include mmcv/ops/csrc/parrots/*.h mmcv/ops/csrc/parrots/*.cpp
-  include mmcv/ops/csrc/pytorch/mps/*.mm mmcv/ops/csrc/common/mps/*.h mmcv/ops/csrc/common/mps/*.mm
-  recursive-include mmcv/ops/csrc/ *.h *.hpp *.cpp *.cuh *.cu *.mm
-
-修改之后如下所示：
-
-.. code-block:: python
-
-  include requirements/runtime.txt
-  include mmcv/ops/csrc_musa/common/cuda/*.cuh mmcv/ops/csrc_musa/common/cuda/*.hpp mmcv/ops/csrc_musa/common/*.hpp
-  include mmcv/ops/csrc_musa/pytorch/*.cpp mmcv/ops/csrc_musa/pytorch/cuda/*.cu mmcv/ops/csrc_musa/pytorch/cuda/*.cpp mmcv/ops/csrc_musa/pytorch/cpu/*.cpp
-  include mmcv/ops/csrc_musa/parrots/*.h mmcv/ops/csrc_musa/parrots/*.cpp
-  include mmcv/ops/csrc_musa/pytorch/mps/*.mm mmcv/ops/csrc_musa/common/mps/*.h mmcv/ops/csrc_musa/common/mps/*.mm
-  recursive-include mmcv/ops/csrc_musa/ *.h *.hpp *.cpp *.cuh *.cu *.mm
-
-仅仅将csrc批量替换成csrc_musa即可。
-
 尝试构建并测试
 -------------
-由于本次实验是在MTT S3000上进行，对应的MUSA架构版本为21，而mmcv中涉及到fp64的使用，所以我们也要打开这个选项。对于这些额外的环境变量，可以参
+由于本次实验是在MTT S3000上进行，mmcv中涉及到fp64的使用，所以我们要打开这个选项。对于这些额外的环境变量，可以参
 考torch_musa根目录下的CMakeLists.txt和build.sh。
 
-接下来，我们尝试执行'MUSA_ARCH=21 ENABLE_COMPILE_FP64=1 FORCE_MUSA=1 python setup.py install > build.log'构建mmcv并记录构建日志。
+接下来，我们尝试执行'ENABLE_COMPILE_FP64=1 FORCE_MUSA=1 python setup.py install > build.log'构建mmcv并记录构建日志。
 很不幸，在第一次构建时遇到了一些编译错误，其中一个如下图所示：
 
 .. figure:: ../doc_image/shared_memory_exceed_limit_error.*
@@ -322,54 +299,3 @@ PrivateUse1是PyTorch中对于扩展的自定义backend默认名字，is_private
 我们进入到mmcv/tests/test_ops目录下，然后执行'pytest -s test_box_iou_quadri.py'就可以测试该单元测试用例了，测试结果如下所示：
 
 .. figure:: ../doc_image/ut_passed.*
-
-
-基于MUSAExtension构建定制化算子
-======================
-
-本小节以构建swintransformer中的 `window_process_kernel算子 <https://github.com/microsoft/Swin-Transformer/tree/main/kernels/window_process>`_ 为例介绍如何通过cuda-porting和MUSAExtension完成CUDA代码到MUSA代码的转译及构建。
-
-
-原始目录结构如下：
-
-:: 
-
-    window_process
-    ├── setup.py
-    ├── swin_window_process.cpp
-    ├── swin_window_process_kernel.cu
-    ├── unit_test.py
-    └── window_process.py
-
-首先在window_process同级目录下执行cuda-porting命令将CUDA代码转化为MUSA代码：``python -m torch_musa.utils.simple_porting --cuda-dir-path ./window_process --mapping-rule "{\"cuda\":\"musa\",\"torch::kCUDA\":\"torch::kPrivateUse1\", \"type().is_cuda\":\"is_privateuseone\"}"``，命令执行完毕后会在当前目录下生成名为window_process_musa的新目录，该目录结构如下：
-
-::
-
-    window_process_musa
-    ├── swin_window_process.cpp
-    └── swin_window_process_kernel.mu
-
-之后基于MUSAExtension编写setup.py文件，该文件写法与CUDAExtension类似，其代码如下：
-
-.. code-block:: python
-
-    from setuptools import setup
-    from torch.utils.cpp_extension import BuildExtension
-    from torch_musa.utils.musa_extension import MUSAExtension
-
-
-    setup(
-        name="swin_window_process",
-        ext_modules=[
-            MUSAExtension(
-                "swin_window_process",
-                [
-                    "swin_window_process.cpp",
-                    "swin_window_process_kernel.mu",
-                ],
-            )
-        ],
-        cmdclass={"build_ext": BuildExtension},
-    )
-
-在编译并安装MUSA扩展时需要通过MUSA_ARCH环境变量指定架构号，在S80或S3000机器上可执行 ``MUSA_ARCH=21 python setup.py install`` ,在S4000机器上可执行 ``MUSA_ARCH=22 python setup.py install`` 完成window_process_kernel扩展的安装，之后在python解释器中尝试 ``import swin_window_process`` 若无错误出现则表示定制化算子构建并安装成功。

@@ -1,7 +1,12 @@
 #include <ATen/ATen.h>
+#include <ATen/core/dispatch/Dispatcher.h>
 #include <torch/library.h>
 #include <ATen/native/musa/KernelUtils.muh>
+#include "torch_musa/csrc/amp/autocast_mode.h"
+#include "torch_musa/csrc/aten/mudnn/Handle.h"
+#include "torch_musa/csrc/aten/musa/MUSAAtomic.muh"
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
+#include "torch_musa/csrc/aten/musa/MUSAMath.muh"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 
 #include "musa_helpers.h"
@@ -64,7 +69,7 @@ __device__ T bilinear_interpolate(
   return val;
 }
 
-template <typename T>
+template <typename T, bool Aligned, bool SampleRatio>
 __global__ void roi_align_forward_kernel_impl(
     int nthreads,
     const T* input,
@@ -74,22 +79,30 @@ __global__ void roi_align_forward_kernel_impl(
     int width,
     int pooled_height,
     int pooled_width,
+    T inverse_pooled_height,
+    T inverse_pooled_width,
     int sampling_ratio,
-    bool aligned,
     const T* rois,
-    T* output) {
+    T* output,
+    at::musa::FastDivmod fdm_c,
+    at::musa::FastDivmod fdm_ph,
+    at::musa::FastDivmod fdm_pw) {
   MUSA_1D_KERNEL_LOOP(index, nthreads) {
     // (n, c, ph, pw) is an element in the pooled output
-    int pw = index % pooled_width;
-    int ph = (index / pooled_width) % pooled_height;
-    int c = (index / pooled_width / pooled_height) % channels;
-    int n = index / pooled_width / pooled_height / channels;
+    uint32_t n, c, ph, pw;
+    uint32_t temp = index;
+    fdm_pw(ph, pw, temp);
+    fdm_ph(c, ph, ph);
+    fdm_c(n, c, c);
 
     const T* offset_rois = rois + n * 5;
     int roi_batch_ind = offset_rois[0];
 
     // Do not using rounding; this implementation detail is critical
-    T offset = aligned ? (T)0.5 : (T)0.0;
+    T offset = (T)0.0;
+    if constexpr (Aligned) {
+      offset = (T)0.5;
+    }
     T roi_start_w = offset_rois[1] * spatial_scale - offset;
     T roi_start_h = offset_rois[2] * spatial_scale - offset;
     T roi_end_w = offset_rois[3] * spatial_scale - offset;
@@ -97,24 +110,27 @@ __global__ void roi_align_forward_kernel_impl(
 
     T roi_width = roi_end_w - roi_start_w;
     T roi_height = roi_end_h - roi_start_h;
-    if (!aligned) {
+    if constexpr (!Aligned) {
       // Force malformed ROIs to be 1x1
       roi_width = max(roi_width, (T)1.);
       roi_height = max(roi_height, (T)1.);
     }
 
-    T bin_size_h = static_cast<T>(roi_height) / static_cast<T>(pooled_height);
-    T bin_size_w = static_cast<T>(roi_width) / static_cast<T>(pooled_width);
+    T bin_size_h = roi_height * inverse_pooled_height;
+    T bin_size_w = roi_width * inverse_pooled_width;
 
     const T* offset_input =
         input + (roi_batch_ind * channels + c) * height * width;
 
     // We use roi_bin_grid to sample the grid and mimic integral
-    int roi_bin_grid_h = (sampling_ratio > 0)
-        ? sampling_ratio
-        : ceil(roi_height / pooled_height); // e.g., = 2
-    int roi_bin_grid_w =
-        (sampling_ratio > 0) ? sampling_ratio : ceil(roi_width / pooled_width);
+    int roi_bin_grid_h = ceil(bin_size_h);
+    if constexpr (SampleRatio) {
+      roi_bin_grid_h = sampling_ratio;
+    }
+    int roi_bin_grid_w = ceil(bin_size_w);
+    if constexpr (SampleRatio) {
+      roi_bin_grid_w = sampling_ratio;
+    }
 
     // We do average (integral) pooling inside a bin
     // When the grid is empty, output zeros.
@@ -123,11 +139,11 @@ __global__ void roi_align_forward_kernel_impl(
     T output_val = 0.;
     for (int iy = 0; iy < roi_bin_grid_h; iy++) // e.g., iy = 0, 1
     {
-      const T y = roi_start_h + ph * bin_size_h +
+      const T y = roi_start_h + static_cast<T>(ph) * bin_size_h +
           static_cast<T>(iy + .5f) * bin_size_h /
               static_cast<T>(roi_bin_grid_h); // e.g., 0.5, 1.5
       for (int ix = 0; ix < roi_bin_grid_w; ix++) {
-        const T x = roi_start_w + pw * bin_size_w +
+        const T x = roi_start_w + static_cast<T>(pw) * bin_size_w +
             static_cast<T>(ix + .5f) * bin_size_w /
                 static_cast<T>(roi_bin_grid_w);
 
@@ -200,7 +216,7 @@ __device__ void bilinear_interpolate_gradient(
   w1 = hy * hx, w2 = hy * lx, w3 = ly * hx, w4 = ly * lx;
 }
 
-template <typename T>
+template <typename T, bool Aligned, bool SampleRatio>
 __global__ void roi_align_backward_kernel_impl(
     int nthreads,
     const T* grad_output,
@@ -210,27 +226,35 @@ __global__ void roi_align_backward_kernel_impl(
     int width,
     int pooled_height,
     int pooled_width,
+    T inverse_pooled_height,
+    T inverse_pooled_width,
     int sampling_ratio,
-    bool aligned,
     T* grad_input,
     const T* rois,
     int n_stride,
     int c_stride,
     int h_stride,
     int w_stride,
-    const int memory_span) {
+    const int memory_span,
+    at::musa::FastDivmod fdm_c,
+    at::musa::FastDivmod fdm_ph,
+    at::musa::FastDivmod fdm_pw) {
   MUSA_1D_KERNEL_LOOP(index, nthreads) {
     // (n, c, ph, pw) is an element in the pooled output
-    int pw = index % pooled_width;
-    int ph = (index / pooled_width) % pooled_height;
-    int c = (index / pooled_width / pooled_height) % channels;
-    int n = index / pooled_width / pooled_height / channels;
+    uint32_t n, c, ph, pw;
+    uint32_t temp = index;
+    fdm_pw(ph, pw, temp);
+    fdm_ph(c, ph, ph);
+    fdm_c(n, c, c);
 
     const T* offset_rois = rois + n * 5;
     int roi_batch_ind = offset_rois[0];
 
     // Do not using rounding; this implementation detail is critical
-    T offset = aligned ? (T)0.5 : (T)0.0;
+    T offset = (T)0.0;
+    if constexpr (Aligned) {
+      offset = (T)0.5;
+    }
     T roi_start_w = offset_rois[1] * spatial_scale - offset;
     T roi_start_h = offset_rois[2] * spatial_scale - offset;
     T roi_end_w = offset_rois[3] * spatial_scale - offset;
@@ -238,14 +262,14 @@ __global__ void roi_align_backward_kernel_impl(
 
     T roi_width = roi_end_w - roi_start_w;
     T roi_height = roi_end_h - roi_start_h;
-    if (!aligned) {
+    if constexpr (!Aligned) {
       // Force malformed ROIs to be 1x1
       roi_width = max(roi_width, (T)1.);
       roi_height = max(roi_height, (T)1.);
     }
 
-    T bin_size_h = static_cast<T>(roi_height) / static_cast<T>(pooled_height);
-    T bin_size_w = static_cast<T>(roi_width) / static_cast<T>(pooled_width);
+    T bin_size_h = roi_height * inverse_pooled_height;
+    T bin_size_w = roi_width * inverse_pooled_width;
 
     // We need to index the gradient using the tensor strides to access the
     // correct values.
@@ -255,11 +279,14 @@ __global__ void roi_align_backward_kernel_impl(
         offset_grad_output[ph * h_stride + pw * w_stride];
 
     // We use roi_bin_grid to sample the grid and mimic integral
-    int roi_bin_grid_h = (sampling_ratio > 0)
-        ? sampling_ratio
-        : ceil(roi_height / pooled_height); // e.g., = 2
-    int roi_bin_grid_w =
-        (sampling_ratio > 0) ? sampling_ratio : ceil(roi_width / pooled_width);
+    int roi_bin_grid_h = ceil(bin_size_h);
+    if constexpr (SampleRatio) {
+      roi_bin_grid_h = sampling_ratio;
+    }
+    int roi_bin_grid_w = ceil(bin_size_w);
+    if constexpr (SampleRatio) {
+      roi_bin_grid_w = sampling_ratio;
+    }
 
     // We do average (integral) pooling inside a bin
     const T count = roi_bin_grid_h * roi_bin_grid_w; // e.g. = 4
@@ -268,11 +295,11 @@ __global__ void roi_align_backward_kernel_impl(
 
     for (int iy = 0; iy < roi_bin_grid_h; iy++) // e.g., iy = 0, 1
     {
-      const T y = roi_start_h + ph * bin_size_h +
+      const T y = roi_start_h + static_cast<T>(ph) * bin_size_h +
           static_cast<T>(iy + .5f) * bin_size_h /
               static_cast<T>(roi_bin_grid_h); // e.g., 0.5, 1.5
       for (int ix = 0; ix < roi_bin_grid_w; ix++) {
-        const T x = roi_start_w + pw * bin_size_w +
+        const T x = roi_start_w + static_cast<T>(pw) * bin_size_w +
             static_cast<T>(ix + .5f) * bin_size_w /
                 static_cast<T>(roi_bin_grid_w);
 
@@ -330,6 +357,221 @@ __global__ void roi_align_backward_kernel_impl(
   } // MUSA_1D_KERNEL_LOOP
 }
 
+template <typename T>
+__global__ void rois_reorder_kernel(
+    T* reorderd_rois,
+    const T* rois,
+    int num_rois,
+    int batch_size) {
+  __shared__ int smem[4096];
+
+  int tid = threadIdx.x;
+  for (int i = tid; i < 4096; i += blockDim.x) {
+    smem[i] = 0;
+  }
+  __syncthreads();
+
+  for (int i = tid; i < num_rois; i += blockDim.x) {
+    int roi_batch_ind = *(rois + i * 5);
+    at::musa::gpuAtomicAdd(&smem[roi_batch_ind], 1);
+  }
+  __syncthreads();
+
+  // num of each batch
+  for (int i = tid; i < batch_size; i += blockDim.x) {
+    reorderd_rois[i] = smem[i];
+  }
+  __syncthreads();
+
+#pragma unroll
+  for (int i = 0; i < 4; i++) {
+    if (i > 0) {
+      smem[i * 1024] += smem[i * 1024 - 1];
+    }
+    __syncthreads();
+#pragma unroll
+    for (int j = 1; j < 1024; j <<= 1) {
+      if (tid >= j) {
+        smem[i * 1024 + tid] += smem[i * 1024 + tid - j];
+      }
+      __syncthreads();
+    }
+  }
+
+  // start_from where
+  reorderd_rois[0 + batch_size] = 0;
+  for (int i = tid + 1; i < batch_size; i += blockDim.x) {
+    reorderd_rois[i + batch_size] = smem[i - 1];
+  }
+  __syncthreads();
+
+  // reorder
+  T* offset_rois_out = reorderd_rois + batch_size * 2;
+  for (int i = tid; i < num_rois; i += blockDim.x) {
+    int roi_batch_ind = *(rois + i * 5);
+    int new_pos = at::musa::gpuAtomicAdd(&smem[roi_batch_ind], -1) - 1;
+    *(offset_rois_out + new_pos * 5) = i;
+    *(offset_rois_out + new_pos * 5 + 1) = *(rois + i * 5 + 1);
+    *(offset_rois_out + new_pos * 5 + 2) = *(rois + i * 5 + 2);
+    *(offset_rois_out + new_pos * 5 + 3) = *(rois + i * 5 + 3);
+    *(offset_rois_out + new_pos * 5 + 4) = *(rois + i * 5 + 4);
+  }
+}
+
+template <typename T, bool Aligned, bool SampleRatio>
+__global__ void __attribute__((mtgpu_workgroup_atomic))
+roi_align_backward_kernel_workgroup_atomic_impl(
+    int nthreads,
+    const T* grad_output,
+    const T spatial_scale,
+    int grad_in_nc,
+    int num_rois,
+    int batch_size,
+    int channels,
+    int height,
+    int width,
+    int pooled_height,
+    int pooled_width,
+    T inverse_pooled_height,
+    T inverse_pooled_width,
+    int sampling_ratio,
+    T* grad_input,
+    const T* reorderd_rois,
+    int n_stride,
+    int c_stride,
+    int h_stride,
+    int w_stride,
+    const int memory_span,
+    at::musa::FastDivmod fdm_c,
+    at::musa::FastDivmod fdm_ph,
+    at::musa::FastDivmod fdm_pw) {
+  for (uint32_t i = blockIdx.x; i < grad_in_nc; i += gridDim.x) {
+    // (n, c, ph, pw) is an element in the pooled output
+    // int c = i % channels;
+    // int n = i / channels;
+    uint32_t n, c;
+    fdm_c(n, c, i);
+
+    int nr_batches = *(reorderd_rois + n);
+    int n_start = *(reorderd_rois + n + batch_size);
+    const T* rois = reorderd_rois + batch_size * 2;
+    for (int r = n_start; r < n_start + nr_batches; r++) {
+      const T* offset_rois = rois + r * 5;
+      int grad_out_batch_ind = offset_rois[0];
+
+      const int input_offset = (n * channels + c) * height * width;
+
+      // Do not using rounding; this implementation detail is critical
+      T offset = (T)0.0;
+      if constexpr (Aligned) {
+        offset = (T)0.5;
+      }
+      T roi_start_w = offset_rois[1] * spatial_scale - offset;
+      T roi_start_h = offset_rois[2] * spatial_scale - offset;
+      T roi_end_w = offset_rois[3] * spatial_scale - offset;
+      T roi_end_h = offset_rois[4] * spatial_scale - offset;
+
+      T roi_width = roi_end_w - roi_start_w;
+      T roi_height = roi_end_h - roi_start_h;
+      if constexpr (!Aligned) {
+        // Force malformed ROIs to be 1x1
+        roi_width = max(roi_width, (T)1.);
+        roi_height = max(roi_height, (T)1.);
+      }
+
+      T bin_size_h = roi_height * inverse_pooled_height;
+      T bin_size_w = roi_width * inverse_pooled_width;
+
+      // We use roi_bin_grid to sample the grid and mimic integral
+      int roi_bin_grid_h = ceil(bin_size_h);
+      if constexpr (SampleRatio) {
+        roi_bin_grid_h = sampling_ratio;
+      }
+      int roi_bin_grid_w = ceil(bin_size_w);
+      if constexpr (SampleRatio) {
+        roi_bin_grid_w = sampling_ratio;
+      }
+
+      // We do average (integral) pooling inside a bin
+      const T count = roi_bin_grid_h * roi_bin_grid_w; // e.g. = 4
+
+      // We need to index the gradient using the tensor strides to access the
+      // correct values.
+      const int output_offset = grad_out_batch_ind * n_stride + c * c_stride;
+      const T* offset_grad_output = grad_output + output_offset;
+      for (uint32_t phw = threadIdx.x; phw < pooled_height * pooled_width;
+           phw += blockDim.x) {
+        uint32_t ph, pw;
+        fdm_pw(ph, pw, phw);
+
+        const T grad_output_this_bin =
+            offset_grad_output[ph * h_stride + pw * w_stride];
+
+        for (int iy = 0; iy < roi_bin_grid_h; iy++) { // e.g., iy = 0, 1
+          const T y = roi_start_h + static_cast<T>(ph) * bin_size_h +
+              static_cast<T>(iy + .5f) * bin_size_h /
+                  static_cast<T>(roi_bin_grid_h); // e.g., 0.5, 1.5
+          for (int ix = 0; ix < roi_bin_grid_w; ix++) {
+            const T x = roi_start_w + static_cast<T>(pw) * bin_size_w +
+                static_cast<T>(ix + .5f) * bin_size_w /
+                    static_cast<T>(roi_bin_grid_w);
+
+            T w1, w2, w3, w4;
+            int x_low, x_high, y_low, y_high;
+            int index = i * pooled_height * pooled_width + phw;
+            bilinear_interpolate_gradient(
+                height,
+                width,
+                y,
+                x,
+                w1,
+                w2,
+                w3,
+                w4,
+                x_low,
+                x_high,
+                y_low,
+                y_high,
+                index);
+
+            T g1 = grad_output_this_bin * w1 / count;
+            T g2 = grad_output_this_bin * w2 / count;
+            T g3 = grad_output_this_bin * w3 / count;
+            T g4 = grad_output_this_bin * w4 / count;
+
+            if (x_low >= 0 && x_high >= 0 && y_low >= 0 && y_high >= 0) {
+              at::native::fastAtomicAdd(
+                  grad_input,
+                  input_offset + y_low * width + x_low,
+                  memory_span,
+                  static_cast<T>(g1),
+                  true);
+              at::native::fastAtomicAdd(
+                  grad_input,
+                  input_offset + y_low * width + x_high,
+                  memory_span,
+                  static_cast<T>(g2),
+                  true);
+              at::native::fastAtomicAdd(
+                  grad_input,
+                  input_offset + y_high * width + x_low,
+                  memory_span,
+                  static_cast<T>(g3),
+                  true);
+              at::native::fastAtomicAdd(
+                  grad_input,
+                  input_offset + y_high * width + x_high,
+                  memory_span,
+                  static_cast<T>(g4),
+                  true);
+            } // if
+          } // ix
+        } // iy
+      } // thread
+    }
+  } // block
+}
+
 at::Tensor roi_align_forward_kernel(
     const at::Tensor& input,
     const at::Tensor& rois,
@@ -364,27 +606,58 @@ at::Tensor roi_align_forward_kernel(
     return output;
   }
 
+  at::musa::FastDivmod fdm_c(channels);
+  at::musa::FastDivmod fdm_ph(pooled_height);
+  at::musa::FastDivmod fdm_pw(pooled_width);
+
+  double inverse_pooled_height = (double)1 / (double)pooled_height;
+  double inverse_pooled_width = (double)1 / (double)pooled_width;
+
   auto input_ = input.contiguous(), rois_ = rois.contiguous();
-  AT_DISPATCH_FLOATING_TYPES_AND_HALF(
-      input.scalar_type(), "roi_align_forward_kernel", [&] {
-        roi_align_forward_kernel_impl<scalar_t><<<grid, block, 0, stream>>>(
-            output_size,
-            input_.data_ptr<scalar_t>(),
-            spatial_scale,
-            channels,
-            height,
-            width,
-            pooled_height,
-            pooled_width,
-            sampling_ratio,
-            aligned,
-            rois_.data_ptr<scalar_t>(),
-            output.data_ptr<scalar_t>());
+
+#define LAUNCH_ROI_ALIGN_FWD_KERNEL(ALIGNED, SAMPLE_RATIO)             \
+  AT_DISPATCH_FLOATING_TYPES_AND_HALF(                                 \
+      input.scalar_type(), "roi_align_forward_kernel", [&] {           \
+        roi_align_forward_kernel_impl<scalar_t, ALIGNED, SAMPLE_RATIO> \
+            <<<grid, block, 0, stream>>>(                              \
+                output_size,                                           \
+                input_.data_ptr<scalar_t>(),                           \
+                spatial_scale,                                         \
+                channels,                                              \
+                height,                                                \
+                width,                                                 \
+                pooled_height,                                         \
+                pooled_width,                                          \
+                inverse_pooled_height,                                 \
+                inverse_pooled_width,                                  \
+                sampling_ratio,                                        \
+                rois_.data_ptr<scalar_t>(),                            \
+                output.data_ptr<scalar_t>(),                           \
+                fdm_c,                                                 \
+                fdm_ph,                                                \
+                fdm_pw);                                               \
       });
+
+  if (aligned) {
+    if (sampling_ratio > 0) {
+      LAUNCH_ROI_ALIGN_FWD_KERNEL(true, true)
+    } else {
+      LAUNCH_ROI_ALIGN_FWD_KERNEL(true, false)
+    }
+  } else {
+    if (sampling_ratio > 0) {
+      LAUNCH_ROI_ALIGN_FWD_KERNEL(false, true)
+    } else {
+      LAUNCH_ROI_ALIGN_FWD_KERNEL(false, false)
+    }
+  }
+
   // Empty rois will raise invalid configuration argument error but output is
   // accurate
   AT_MUSA_CHECK(musaGetLastError());
   return output;
+
+#undef LAUNCH_ROI_ALIGN_FWD_KERNEL
 }
 
 at::Tensor roi_align_backward_kernel(
@@ -431,32 +704,176 @@ at::Tensor roi_align_backward_kernel(
   int h_stride = grad.stride(2);
   int w_stride = grad.stride(3);
 
+  at::musa::FastDivmod fdm_c(channels);
+  at::musa::FastDivmod fdm_ph(pooled_height);
+  at::musa::FastDivmod fdm_pw(pooled_width);
+
+  double inverse_pooled_height = (double)1 / (double)pooled_height;
+  double inverse_pooled_width = (double)1 / (double)pooled_width;
+
+  auto num_rois = rois.size(0);
+  auto grad_in_nc = batch_size * channels;
+
+  // device info
+  musaDeviceProp device_prop;
+  at::musa::muHandle& h = at::GetMudnnHandle();
+  int device_id = h.GetDeviceId();
+  TORCH_CHECK(
+      musaSuccess == musaGetDeviceProperties(&device_prop, device_id),
+      "musaGetDeviceProperties error");
+  int device_major_version = device_prop.major;
+
   at::globalContext().alertNotDeterministic("roi_align_backward_kernel");
 
   auto rois_ = rois.contiguous();
-  AT_DISPATCH_FLOATING_TYPES_AND_HALF(
-      grad.scalar_type(), "roi_align_backward_kernel", [&] {
-        roi_align_backward_kernel_impl<scalar_t><<<grid, block, 0, stream>>>(
-            grad.numel(),
-            grad.data_ptr<scalar_t>(),
-            spatial_scale,
-            channels,
-            height,
-            width,
-            pooled_height,
-            pooled_width,
-            sampling_ratio,
-            aligned,
-            grad_input.data_ptr<scalar_t>(),
-            rois_.data_ptr<scalar_t>(),
-            n_stride,
-            c_stride,
-            h_stride,
-            w_stride,
-            grad_input.numel());
-      });
+  at::Tensor reordered_rois =
+      at::empty({batch_size * 2 + rois_.numel()}, rois_.options());
+
+  bool run_with_global_atomic = batch_size > 4096 || device_major_version >= 3;
+
+#define LAUNCH_ROI_ALIGN_BWD_KERNEL(ALIGNED, SAMPLE_RATIO)                                                          \
+  if (run_with_global_atomic) {                                                                                     \
+    AT_DISPATCH_FLOATING_TYPES_AND_HALF(                                                                            \
+        grad.scalar_type(), "roi_align_backward_kernel", [&] {                                                      \
+          roi_align_backward_kernel_impl<scalar_t, ALIGNED, SAMPLE_RATIO>                                           \
+              <<<grid, block, 0, stream>>>(                                                                         \
+                  grad.numel(),                                                                                     \
+                  grad.data_ptr<scalar_t>(),                                                                        \
+                  spatial_scale,                                                                                    \
+                  channels,                                                                                         \
+                  height,                                                                                           \
+                  width,                                                                                            \
+                  pooled_height,                                                                                    \
+                  pooled_width,                                                                                     \
+                  inverse_pooled_height,                                                                            \
+                  inverse_pooled_width,                                                                             \
+                  sampling_ratio,                                                                                   \
+                  grad_input.data_ptr<scalar_t>(),                                                                  \
+                  rois_.data_ptr<scalar_t>(),                                                                       \
+                  n_stride,                                                                                         \
+                  c_stride,                                                                                         \
+                  h_stride,                                                                                         \
+                  w_stride,                                                                                         \
+                  grad_input.numel(),                                                                               \
+                  fdm_c,                                                                                            \
+                  fdm_ph,                                                                                           \
+                  fdm_pw);                                                                                          \
+        });                                                                                                         \
+  } else {                                                                                                          \
+    AT_DISPATCH_FLOATING_TYPES_AND_HALF(                                       \                                   
+        rois_.scalar_type(),                                                   \                                          
+        "rois_reorder_kernel",                                                 \                 
+        [&] {                                                                  \                                              
+          rois_reorder_kernel<                                                 \      
+              scalar_t><<<1, 1024, 0, stream>>>(                               \         
+              reordered_rois.data_ptr<scalar_t>(),                             \                              
+              rois_.data_ptr<scalar_t>(),                                      \                                  
+              num_rois,                                                        \                                              
+              batch_size);                                                     \                                                 
+        }); \
+    block.x = 512;                                                                                                  \
+    grid.x = std::min(grad_in_nc, (int64_t)4096);                                                                   \
+    AT_DISPATCH_FLOATING_TYPES_AND_HALF(                                                                            \
+        grad.scalar_type(),                                                                                         \
+        "roi_align_backward_kernel_workgroup_atomic_impl",                                                          \
+        [&] {                                                                                                       \
+          roi_align_backward_kernel_workgroup_atomic_impl<                                                          \
+              scalar_t,                                                                                             \
+              ALIGNED,                                                                                              \
+              SAMPLE_RATIO><<<grid, block, 0, stream>>>(                                                            \
+              grad.numel(),                                                                                         \
+              grad.data_ptr<scalar_t>(),                                                                            \
+              spatial_scale,                                                                                        \
+              grad_in_nc,                                                                                           \
+              num_rois,                                                                                             \
+              batch_size,                                                                                           \
+              channels,                                                                                             \
+              height,                                                                                               \
+              width,                                                                                                \
+              pooled_height,                                                                                        \
+              pooled_width,                                                                                         \
+              inverse_pooled_height,                                                                                \
+              inverse_pooled_width,                                                                                 \
+              sampling_ratio,                                                                                       \
+              grad_input.data_ptr<scalar_t>(),                                                                      \
+              reordered_rois.data_ptr<scalar_t>(),                                                                  \
+              n_stride,                                                                                             \
+              c_stride,                                                                                             \
+              h_stride,                                                                                             \
+              w_stride,                                                                                             \
+              grad_input.numel(),                                                                                   \
+              fdm_c,                                                                                                \
+              fdm_ph,                                                                                               \
+              fdm_pw);                                                                                              \
+        });                                                                                                         \
+  }
+
+  if (aligned) {
+    if (sampling_ratio > 0) {
+      LAUNCH_ROI_ALIGN_BWD_KERNEL(true, true)
+    } else {
+      LAUNCH_ROI_ALIGN_BWD_KERNEL(true, false)
+    }
+  } else {
+    if (sampling_ratio > 0) {
+      LAUNCH_ROI_ALIGN_BWD_KERNEL(false, true)
+    } else {
+      LAUNCH_ROI_ALIGN_BWD_KERNEL(false, false)
+    }
+  }
+
   AT_MUSA_CHECK(musaGetLastError());
   return grad_input;
+
+#undef LAUNCH_ROI_ALIGN_BWD_KERNEL
+}
+
+} // namespace
+
+namespace {
+
+at::Tensor roi_align(
+    const at::Tensor& input,
+    const at::Tensor& rois,
+    double spatial_scale,
+    int64_t pooled_height,
+    int64_t pooled_width,
+    int64_t sampling_ratio,
+    bool aligned) {
+  C10_LOG_API_USAGE_ONCE(
+      "torch_musa.csrc.aten.ops.torchvision.roi_align_kernel.roi_align");
+  static auto op = c10::Dispatcher::singleton()
+                       .findSchemaOrThrow("torchvision::roi_align", "")
+                       .typed<decltype(roi_align)>();
+  return op.call(
+      input,
+      rois,
+      spatial_scale,
+      pooled_height,
+      pooled_width,
+      sampling_ratio,
+      aligned);
+}
+
+at::Tensor roi_align_autocast(
+    const at::Tensor& input,
+    const at::Tensor& rois,
+    double spatial_scale,
+    int64_t pooled_height,
+    int64_t pooled_width,
+    int64_t sampling_ratio,
+    bool aligned) {
+  c10::impl::ExcludeDispatchKeyGuard no_autocast(
+      c10::DispatchKey::AutocastPrivateUse1);
+  return roi_align(
+             at::musa::autocast::cached_cast(at::kFloat, input),
+             at::musa::autocast::cached_cast(at::kFloat, rois),
+             spatial_scale,
+             pooled_height,
+             pooled_width,
+             sampling_ratio,
+             aligned)
+      .to(input.scalar_type());
 }
 
 } // namespace
@@ -468,6 +885,12 @@ TORCH_LIBRARY_IMPL(torchvision, PrivateUse1, m) {
   m.impl(
       TORCH_SELECTIVE_NAME("torchvision::_roi_align_backward"),
       TORCH_FN(roi_align_backward_kernel));
+}
+
+TORCH_LIBRARY_IMPL(torchvision, AutocastPrivateUse1, m) {
+  m.impl(
+      TORCH_SELECTIVE_NAME("torchvision::roi_align"),
+      TORCH_FN(roi_align_autocast));
 }
 
 } // namespace ops

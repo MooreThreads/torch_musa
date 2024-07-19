@@ -9,7 +9,6 @@
 #include <torch/library.h>
 
 #include "torch_musa/csrc/aten/quantized/QTensor.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
@@ -50,10 +49,6 @@ Tensor UpsampleNearest2dQuantized(
         toString(qscheme));
   }
   return output;
-}
-
-TORCH_LIBRARY_IMPL(aten, QuantizedPrivateUse1, m) {
-  m.impl("upsample_nearest2d", TORCH_FN(UpsampleNearest2dQuantized));
 }
 
 } // namespace musa

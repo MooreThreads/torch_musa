@@ -9,7 +9,9 @@ from typing import Dict, IO, Optional, Union
 CMakeValue = Optional[Union[bool, str]]
 
 
-def convert_cmake_value_to_python_value(cmake_value: str, cmake_type: str) -> CMakeValue:
+def convert_cmake_value_to_python_value(
+    cmake_value: str, cmake_type: str
+) -> CMakeValue:
     r"""Convert a CMake value in a string form to a Python value.
 
     Args:
@@ -24,8 +26,10 @@ def convert_cmake_value_to_python_value(cmake_value: str, cmake_type: str) -> CM
     up_val = cmake_value.upper()
     if cmake_type == "BOOL":
         # https://gitlab.kitware.com/cmake/community/wikis/doc/cmake/VariablesListsStrings#boolean-values-in-cmake
-        return not (up_val in ("FALSE", "OFF", "N", "NO", "0", "", "NOTFOUND") or up_val.endswith(
-            "-NOTFOUND"))
+        return not (
+            up_val in ("FALSE", "OFF", "N", "NO", "0", "", "NOTFOUND")
+            or up_val.endswith("-NOTFOUND")
+        )
     if cmake_type == "FILEPATH":
         if up_val.endswith("-NOTFOUND"):
             return None
@@ -33,7 +37,9 @@ def convert_cmake_value_to_python_value(cmake_value: str, cmake_type: str) -> CM
     return cmake_value
 
 
-def get_cmake_cache_variables_from_file(cmake_cache_file: IO[str], ) -> Dict[str, CMakeValue]:
+def get_cmake_cache_variables_from_file(
+    cmake_cache_file: IO[str],
+) -> Dict[str, CMakeValue]:
     r"""Gets values in CMakeCache.txt into a dictionary.
 
     Args:
@@ -59,7 +65,9 @@ def get_cmake_cache_variables_from_file(cmake_cache_file: IO[str], ) -> Dict[str
         #   USE_CUDA:=ON
         #   Intel(R) MKL-DNN_SOURCE_DIR:STATIC=/path/to/pytorch/third_party/ideep/mkl-dnn
         #   "OpenMP_COMPILE_RESULT_CXX_openmp:experimental":INTERNAL=FALSE
-        matched = re.match(r'("?)(.+?)\1(?::\s*([a-zA-Z_-][a-zA-Z0-9_-]*)?)?\s*=\s*(.*)', line)
+        matched = re.match(
+            r'("?)(.+?)\1(?::\s*([a-zA-Z_-][a-zA-Z0-9_-]*)?)?\s*=\s*(.*)', line
+        )
         if matched is None:  # Illegal line
             raise ValueError(f"Unexpected line {i} in {repr(cmake_cache_file)}: {line}")
         _, variable, type_, value = matched.groups()

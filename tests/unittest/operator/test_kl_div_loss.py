@@ -1,4 +1,5 @@
 """Test kl_div operator."""
+
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
 import pytest
 import torch
@@ -7,20 +8,44 @@ from torch_musa import testing
 
 
 input_datas = [
-    {"input": torch.randn([1, 10]),
-     "target": torch.randn([1, 10])},
-    {"input": torch.randn([2, 3, 6]),
-     "target": torch.randn([2, 3, 6])},
-     {"input": torch.randn([2, 3, 6, 10]),
-     "target": torch.randn([2, 3, 6, 10])},
-     {"input": torch.randn([2, 3, 6, 10, 20]),
-     "target": torch.randn([2, 3, 6, 10, 20])},
-     {"input": torch.randn([4, 5, 6, 7, 8, 9]),
-     "target": torch.randn([4, 5, 6, 7, 8, 9])},
-     {"input": torch.randn([4, 5, 6, 7, 8, 9, 16]),
-     "target": torch.randn([4, 5, 6, 7, 8, 9, 16])},
-     {"input": torch.randn([4, 5, 6, 7, 8, 9, 16, 2]),
-     "target": torch.randn([4, 5, 6, 7, 8, 9, 16, 2])},
+    {"input": torch.randn([1, 10]), "target": torch.randn([1, 10])},
+    {"input": torch.randn([2, 3, 6]), "target": torch.randn([2, 3, 6])},
+    {"input": torch.randn([0, 0, 0]), "target": torch.randn([0, 0, 0])},
+    {"input": torch.randn([2, 3, 6, 10]), "target": torch.randn([2, 3, 6, 10])},
+    {
+        "input": torch.randn([2, 3, 6, 10]).to(memory_format=torch.channels_last),
+        "target": torch.randn([2, 3, 6, 10]).to(memory_format=torch.channels_last),
+    },
+    {
+        "input": torch.randn([0, 3, 0, 10]).to(memory_format=torch.channels_last),
+        "target": torch.randn([0, 3, 0, 10]).to(memory_format=torch.channels_last),
+    },
+    {
+        "input": torch.randn([2, 3, 1, 1]).to(memory_format=torch.channels_last),
+        "target": torch.randn([2, 3, 1, 1]).to(memory_format=torch.channels_last),
+    },
+    {
+        "input": torch.randn([2, 1, 7, 4]).to(memory_format=torch.channels_last),
+        "target": torch.randn([2, 1, 7, 4]).to(memory_format=torch.channels_last),
+    },
+    {
+        "input": torch.randn([2, 0, 7, 4]).to(memory_format=torch.channels_last),
+        "target": torch.randn([2, 0, 7, 4]).to(memory_format=torch.channels_last),
+    },
+    {"input": torch.randn([2, 3, 6, 10, 20]), "target": torch.randn([2, 3, 6, 10, 20])},
+    {"input": torch.randn([2, 3, 6, 0, 20]), "target": torch.randn([2, 3, 6, 0, 20])},
+    {
+        "input": torch.randn([4, 5, 6, 7, 8, 9]),
+        "target": torch.randn([4, 5, 6, 7, 8, 9]),
+    },
+    {
+        "input": torch.randn([4, 5, 6, 7, 8, 9, 16]),
+        "target": torch.randn([4, 5, 6, 7, 8, 9, 16]),
+    },
+    {
+        "input": torch.randn([4, 5, 6, 7, 8, 9, 16, 2]),
+        "target": torch.randn([4, 5, 6, 7, 8, 9, 16, 2]),
+    },
 ]
 
 reduction = ["batchmean", "sum"]
@@ -40,7 +65,21 @@ def test_kl_div(input_data, dtype, reduction):
     input_tensor.requires_grad_(True)
     target_tensor = F.softmax(input_data["target"], dim=reduction_dim)
 
-    test = testing.OpTest(func=torch.nn.KLDivLoss,
-                          input_args={"reduction": reduction},
-                          comparators=testing.DefaultComparator())
+    test = testing.OpTest(
+        func=torch.nn.KLDivLoss,
+        input_args={"reduction": reduction},
+        comparators=testing.DefaultComparator(equal_nan=True),
+    )
     test.check_result({"input": input_tensor, "target": target_tensor}, train=True)
+
+    class_musa = torch.nn.KLDivLoss(reduction=reduction)(
+        input_tensor.clone().musa().requires_grad_(),
+        target_tensor.clone().musa().requires_grad_(),
+    ).grad_fn.__class__
+
+    class_cpu = torch.nn.KLDivLoss(reduction=reduction)(
+        input_tensor.clone().cpu().requires_grad_(),
+        target_tensor.clone().cpu().requires_grad_(),
+    ).grad_fn.__class__
+
+    assert class_cpu == class_musa

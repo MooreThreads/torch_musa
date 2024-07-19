@@ -15,11 +15,6 @@
 #include <ATen/ops/zeros.h>
 #endif
 
-#include <torch/library.h>
-
-#include "ComplexHelper.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
-
 namespace at {
 namespace musa {
 
@@ -255,9 +250,6 @@ Tensor Stft(
       onesidedOpt,
       return_complexOpt);
 }
-
-ADVANCED_REGISTER(aten, PrivateUse1, "stft", Stft)
-ADVANCED_REGISTER(aten, PrivateUse1, "stft.center", StftCenter)
 
 } // namespace musa
 } // namespace at

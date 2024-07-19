@@ -1,4 +1,5 @@
 """Test quantized binary operators."""
+
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
 import torch
 import torch.ao.nn.quantized as nnq

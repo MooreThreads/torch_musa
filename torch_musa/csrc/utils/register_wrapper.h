@@ -6,6 +6,7 @@ Use config files or Environment to Enable/Disable print of operator info.
 */
 
 #include <ATen/core/Formatting.h>
+#include <c10/core/QScheme.h>
 #include <c10/core/Scalar.h>
 #include <c10/core/ScalarType.h>
 #include <sys/stat.h>
@@ -350,6 +351,13 @@ inline void ProcessArgs(Scalar& item) {
   } else {
       arg_stream << item.to<float>() << std::endl;
   }*/
+  arg_stream.close();
+}
+
+template <>
+inline void ProcessArgs(c10::QScheme& item) {
+  std::ofstream arg_stream(GlobalConfig.arg_log_name, std::ios::app);
+  arg_stream << "QScheme : " << c10::toString(item) << std::endl;
   arg_stream.close();
 }
 

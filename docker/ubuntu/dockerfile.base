@@ -1,0 +1,47 @@
+# base image for torch_musa dev docker image
+# this image contains pytorch source code and conda environment
+ARG UBUNTU_VERSION=20.04
+
+FROM ubuntu:${UBUNTU_VERSION}
+
+SHELL ["/bin/bash", "-c"]
+
+ENV LANG=C.UTF-8
+ENV DEBIAN_FRONTEND=noninteractive
+COPY ./common/change_ubuntu_mirror.sh change_ubuntu_mirror.sh
+COPY ./common/install_base.sh install_base.sh
+RUN UBUNTU_VERSION=${UBUNTU_VERSION} bash change_ubuntu_mirror.sh && \
+    rm -f change_ubuntu_mirror.sh && \
+    bash install_base.sh && \
+    rm -f install_base.sh
+
+# install conda
+ARG ENV_NAME="py38"
+ARG PYTHON_VERSION="3.8"
+# ARG CONDA_FILE="Miniconda3-py38_4.12.0-Linux-x86_64.sh"
+COPY ./common/install_conda.sh install_conda.sh
+RUN bash install_conda.sh && \
+    rm install_conda.sh
+ENV PATH=/opt/conda/bin:${PATH}
+RUN conda init bash
+
+RUN source $(conda info --base)/etc/profile.d/conda.sh && \
+    conda create -n ${ENV_NAME} python=${PYTHON_VERSION} --yes && \
+    conda activate ${ENV_NAME} && \
+    pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
+    pip install numpy==1.23.1 && \
+    echo -e "conda activate ${ENV_NAME}" >> ~/.bashrc
+
+ENV PATH=/opt/conda/envs/${ENV_NAME}/bin:${PATH}
+COPY ./pytorch /home/pytorch
+COPY ./vision /home/vision
+COPY ./audio /home/audio
+
+RUN rm -rf ~/.bashrc && \
+    echo -e ". /opt/conda/etc/profile.d/conda.sh" >> ~/.bashrc && \
+    echo -e "conda activate ${ENV_NAME}" >> ~/.bashrc && \
+    echo -e "export CMAKE_PREFIX_PATH=\${CONDA_PREFIX:-\"\$(dirname \$(which conda))/../\"}""" >> ~/.bashrc
+
+# create render group
+# Only users in render group can use MooreThreads GPU
+RUN groupadd -o -g 109 render

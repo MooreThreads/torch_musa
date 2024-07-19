@@ -1,4 +1,5 @@
 """Test tensor_factory operators."""
+
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
 import random
 import torch
@@ -9,7 +10,9 @@ from torch_musa import testing
 
 input_data = testing.get_raw_data()
 input_data.append(torch.tensor(random.uniform(-10, 10)))
-support_dtypes = testing.get_all_support_types()
+support_dtypes = testing.get_all_support_types_withfp16()
+if testing.get_musa_arch() >= 22:
+    support_dtypes.append(torch.bfloat16)
 
 
 def _check_result(musa_res, cpu_res):
@@ -83,13 +86,17 @@ size_strides = [
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@ pytest.mark.parametrize("size_strides", size_strides)
-@ pytest.mark.parametrize("dtype", support_dtypes)
+@pytest.mark.parametrize("size_strides", size_strides)
+@pytest.mark.parametrize("dtype", support_dtypes)
 def test_empty_strided(size_strides, dtype):
     size, stride = size_strides
     musa_res = torch.empty_strided(size, stride, dtype=dtype, device="musa")
     cpu_res = torch.empty_strided(size, stride, dtype=dtype, device="cpu")
     _check_result(musa_res, cpu_res)
+
+
+# @MTAI(TODO): torch.eye doesn't support the dtype of bf16 in musa.
+support_dtypes = testing.get_all_support_types_withfp16()
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)

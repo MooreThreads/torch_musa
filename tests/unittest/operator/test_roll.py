@@ -1,4 +1,5 @@
 """Test roll operator."""
+
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
 import torch
 import pytest
@@ -11,10 +12,35 @@ inputdata = [
     {"input": torch.randn(4, 2), "shifts": (2, 1), "dims": (0, 1)},
     {"input": torch.randn(1, 2, 3), "shifts": 1, "dims": 1},
     {"input": torch.randn(4, 5, 6, 7), "shifts": (2, 1), "dims": (0, 1)},
+    {
+        "input": torch.randn(4, 5, 6, 7).to(memory_format=torch.channels_last),
+        "shifts": (2, 1),
+        "dims": (0, 1),
+    },
+    {
+        "input": torch.randn(4, 1, 6, 7).to(memory_format=torch.channels_last),
+        "shifts": (2, 1),
+        "dims": (0, 1),
+    },
+    {
+        "input": torch.randn(4, 5, 1, 1).to(memory_format=torch.channels_last),
+        "shifts": (2, 1),
+        "dims": (0, 1),
+    },
     {"input": torch.randn(1, 2, 3, 4, 3), "shifts": (3, 2, 1), "dims": (0, 1, 2)},
     {"input": torch.randn(1, 2, 3, 4, 3, 2), "shifts": 1, "dims": 1},
-    {"input": torch.randn(1, 2, 3, 4, 3, 2, 4), "shifts": (4, 3, 2, 1), "dims": (0, 1, 2, 3)},
+    {
+        "input": torch.randn(1, 2, 3, 4, 3, 2, 4),
+        "shifts": (4, 3, 2, 1),
+        "dims": (0, 1, 2, 3),
+    },
+    {
+        "input": torch.randn(1, 0, 3, 4, 3, 2, 4),
+        "shifts": (4, 3, 2, 1),
+        "dims": (0, 1, 2, 3),
+    },
     {"input": torch.randn(1, 2, 3, 4, 3, 2, 4, 2), "shifts": 1, "dims": 1},
+    {"input": torch.randn(0, 2, 3, 4, 3, 2, 4, 2), "shifts": 1, "dims": 1},
 ]
 
 
@@ -24,8 +50,11 @@ inputdata = [
 def test_roll(input_data, data_type):
     test = testing.OpTest(
         func=torch.roll,
-        input_args={"input":input_data["input"].to(data_type),
-                    "shifts": input_data["shifts"],
-                    "dims":input_data["dims"]}
+        input_args={
+            "input": input_data["input"].to(data_type),
+            "shifts": input_data["shifts"],
+            "dims": input_data["dims"],
+        },
     )
     test.check_result()
+    test.check_grad_fn()

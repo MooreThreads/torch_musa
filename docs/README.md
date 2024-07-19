@@ -1,5 +1,6 @@
 ### Install Dependencies
 ```bash
+apt-get update
 apt-get install texlive-xetex
 apt-get install latexmk
 apt-get install latex-cjk-all

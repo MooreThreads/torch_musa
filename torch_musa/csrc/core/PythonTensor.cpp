@@ -451,6 +451,8 @@ static THPObjectPtr GetTensorDict() {
   return res;
 }
 
+static std::vector<PyTensorType> tensor_types;
+
 static void InitializeMusaAtenTypes(std::vector<PyTensorType>& tensor_types) {
   std::vector<std::pair<at::Backend, at::ScalarType>> declared_types;
   std::vector<at::ScalarType> scalar_types = {
@@ -473,6 +475,7 @@ static void InitializeMusaAtenTypes(std::vector<PyTensorType>& tensor_types) {
   tensor_types.resize(declared_types.size());
 
   for (size_t i = 0; i != declared_types.size(); i++) {
+    tensor_types[i] = PyTensorType();
     auto& tensor_type = tensor_types[i];
     at::Backend backend = declared_types[i].first;
     at::ScalarType scalar_type = declared_types[i].second;
@@ -542,7 +545,6 @@ PyMethodDef* GetTensorMethods() {
 void InitializePythonBindings() {
   // Initialize the at::Type* pointers, name, and properties of the PyTensorType
   // vector. After this call, the vector must not be resized.
-  static std::vector<PyTensorType> tensor_types;
   InitializeMusaAtenTypes(tensor_types);
 
   // Initialize the Python metaclass for the torch.FloatTensor, etc. types.
@@ -566,6 +568,74 @@ void InitializePythonBindings() {
   // torch.musa.FloatTensor is added to the `torch` module as `FloatTensor`.
   // Also add all the type objects to the set torch_musa._tensor_classes.
   PyBindTensorTypes(tensor_types);
+}
+
+static c10::Backend default_backend = c10::Backend::CPU;
+
+static THPObjectPtr GetStorageObj(c10::Backend backend, c10::ScalarType dtype) {
+  auto module_name = GetBackendName(backend);
+  auto module_obj = THPObjectPtr(PyImport_ImportModule(module_name));
+  if (!module_obj)
+    throw python_error();
+
+  auto storage_name = std::string(toString(dtype)) + "Storage";
+  THPObjectPtr storage(
+      PyObject_GetAttrString(module_obj.get(), storage_name.c_str()));
+  if (!storage.get()) {
+    throw TypeError("couldn't find storage object %s", storage_name.c_str());
+  }
+  return storage;
+}
+
+void SetDefaultStorageType(c10::Backend backend, c10::ScalarType dtype) {
+  THPObjectPtr storage = GetStorageObj(backend, dtype);
+
+  auto torch_module = THPObjectPtr(PyImport_ImportModule("torch"));
+  if (!torch_module)
+    throw python_error();
+
+  if (PyObject_SetAttrString(torch_module.get(), "Storage", storage) != 0) {
+    throw python_error();
+  }
+}
+
+void SetDefaultTensorType(
+    c10::optional<c10::Backend> backend,
+    c10::optional<c10::ScalarType> dtype) {
+  if (backend.has_value()) {
+    TORCH_CHECK_TYPE(
+        *backend != c10::Backend::Undefined,
+        "default type cannot be undefined");
+    TORCH_CHECK_TYPE(
+        !c10::isSparse(*backend),
+        "only dense types are supported as the default type");
+  }
+  if (dtype.has_value()) {
+    TORCH_CHECK_TYPE(
+        at::isFloatingType(*dtype),
+        "only floating-point types are supported as the default type");
+  }
+
+  // Try setting default storage in python first as it's the only operation that
+  // can fail
+  SetDefaultStorageType(
+      backend.value_or(default_backend),
+      dtype.value_or(at::get_default_dtype_as_scalartype()));
+
+  if (dtype.has_value()) {
+    at::set_default_dtype(c10::scalarTypeToTypeMeta(*dtype));
+  }
+  if (backend.has_value()) {
+    default_backend = *backend;
+  }
+}
+
+void PySetDefaultDtype(PyObject* obj) {
+  TORCH_CHECK_TYPE(
+      THPDtype_Check(obj),
+      "invalid dtype object: only floating-point types are supported as the default type");
+  auto scalar_type = ((THPDtype*)obj)->scalar_type;
+  SetDefaultTensorType(/*backend=*/c10::nullopt, scalar_type);
 }
 
 } // namespace musa

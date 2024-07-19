@@ -1,4 +1,5 @@
 """Generator for CMakeLists.txt"""
+
 from os.path import realpath, dirname, join
 from typing import List, Tuple
 
@@ -8,9 +9,16 @@ class CMakeListsGenerator:
     Generator for CMakeLists.txt for musa backend project
     """
 
-    def __init__(self, sources: List[str], include_dirs: List[str], link_libraries: List[str],
-                 define_macros: List[Tuple] = None, project_name: str = "DEMO_MUSA",
-                 plugin_name: str = "demo_musa", customized_cmake_lists: str = None):
+    def __init__(
+        self,
+        sources: List[str],
+        include_dirs: List[str],
+        link_libraries: List[str],
+        define_macros: List[Tuple] = None,
+        project_name: str = "DEMO_MUSA",
+        plugin_name: str = "demo_musa",
+        customized_cmake_lists: str = None,
+    ):
         self.project_name = project_name
         self.plugin_name = plugin_name
         self.define_macros = define_macros
@@ -31,36 +39,40 @@ class CMakeListsGenerator:
             sources_paths = "\n".join([realpath(source) for source in self.sources])
             if not sources_paths:
                 raise RuntimeError("Please provide sources.")
-            include_dir_paths = "\n".join([realpath(include_dir) for include_dir
-                                           in self.include_dirs])
-            link_libraries_paths = "\n".join([realpath(library) for library in self.link_libraries])
+            include_dir_paths = "\n".join(
+                [realpath(include_dir) for include_dir in self.include_dirs]
+            )
+            link_libraries_paths = "\n".join(
+                [realpath(library) for library in self.link_libraries]
+            )
 
             temp_define_macros = []
             temp_define_mcc_macros = []
-            for (k, v) in self.define_macros:
+            for k, v in self.define_macros:
                 if v is None:
                     temp_define_macros += [f"-D{k}"]
-                    temp_define_mcc_macros += [f"\" -D{k}\""]
+                    temp_define_mcc_macros += [f'" -D{k}"']
                 else:
                     temp_define_macros += [f"-D{k}={v}"]
-                    temp_define_mcc_macros += [f"\" -D{k}={v}\""]
+                    temp_define_mcc_macros += [f'" -D{k}={v}"']
             define_macros = "\n".join(temp_define_macros)
             define_mcc_macros = "\n".join(temp_define_mcc_macros)
 
-            self.cmake_lists = "".join([
-                """cmake_minimum_required(VERSION 3.13 FATAL_ERROR)
+            self.cmake_lists = "".join(
+                [
+                    """cmake_minimum_required(VERSION 3.13 FATAL_ERROR)
                 """,
-                f"""
+                    f"""
 project({self.project_name} CXX C)
                 """,
-                """
+                    """
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
     set(LINUX TRUE)
 else()
     message(FATAL_ERROR, "could be built only on Linux now!")
 endif()
                 """,
-                """
+                    """
 string(FIND "${CMAKE_CXX_FLAGS}" "-std=c++" env_cxx_standard)
 
 if(env_cxx_standard GREATER -1) 
@@ -105,10 +117,10 @@ if(USE_CCACHE)
     endif() 
 endif() 
                 """,
-                f"""
+                    f"""
 include({torch_musa_path}/share/cmake/utils.cmake)
                 """,
-                """
+                    """
 if(NOT CMAKE_BUILD_TYPE)
     message(STATUS "Build type not set - defaulting to Release")
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING 
@@ -185,7 +197,7 @@ if(USE_TSAN)
     string(APPEND CMAKE_LINKER_FLAGS_DEBUG " -fsanitize=thread")
 endif()
                 """,
-"""
+                    """
 if(DEFINED ENV{MUSA_ARCH})
   set(MUSA_ARCH $ENV{MUSA_ARCH})
   string(APPEND MUSA_MCC_FLAGS " --cuda-gpu-arch=mp_${MUSA_ARCH}")
@@ -201,22 +213,26 @@ if(DEFINED ENV{MUSA_ARCH})
   endif()
 endif()
 """,
-                f"""
+                    (
+                        f"""
 add_definitions(
 {define_macros}
 )
-""" if define_macros else "",
-                f"""
+"""
+                        if define_macros
+                        else ""
+                    ),
+                    f"""
 set(PLUGIN_NAME "{self.plugin_name}")
                 """,
-                f"""
+                    f"""
 set(MUSA_CSRCS)
 set(CMAKE_MODULE_PATH {torch_musa_path}/share/cmake/modules)
 set(DEPENDENT_LIBRARIES "")
 set(DEPENDENT_INCLUDE_DIRS "")
 find_package(MUDNN)
                 """,
-                """
+                    """
 if(MUDNN_FOUND)
     list(APPEND DEPENDENT_INCLUDE_DIRS ${MUDNN_INCLUDE_DIRS})
     list(APPEND DEPENDENT_LIBRARIES ${MUDNN_LIBRARIES})
@@ -255,18 +271,18 @@ endif()
 list(APPEND CMAKE_MODULE_PATH $ENV{MUSA_HOME}/cmake)
 find_package(MUSA REQUIRED)
                 """,
-                f"""
+                    f"""
 FILE(GLOB MU_SRCS
 {sources_paths}
 )
                 """,
-"""
+                    """
 append_cxx_flag_if_supported("-Wno-unused-parameter" CMAKE_CXX_FLAGS)
 append_cxx_flag_if_supported("-Wno-unused-variable" CMAKE_CXX_FLAGS)
 append_cxx_flag_if_supported("-Wno-sign-compare" CMAKE_CXX_FLAGS)
 append_cxx_flag_if_supported("-w" CMAKE_CXX_FLAGS)
 """,
-                f"""
+                    f"""
 string(APPEND MUSA_MCC_FLAGS 
 {define_mcc_macros}
 )
@@ -274,27 +290,30 @@ string(APPEND MUSA_MCC_FLAGS " -U__CUDA__")
 
 set(MUSA_VERBOSE_BUILD ON)
 
-                """
-                ,
-                f"""
+                """,
+                    (
+                        f"""
 musa_include_directories(
 {include_dir_paths}
 )
-                """ if include_dir_paths else "",
-                "\n",
-                f"musa_add_library({self.plugin_name}" + " STATIC ${MU_SRCS})",
                 """
+                        if include_dir_paths
+                        else ""
+                    ),
+                    "\n",
+                    f"musa_add_library({self.plugin_name}" + " STATIC ${MU_SRCS})",
+                    """
 set(INSTALL_BIN_DIR "bin")
 set(INSTALL_LIB_DIR "lib64")
 set(INSTALL_INC_DIR "include")
 set(INSTALL_SHARE_DIR "share")
 set(INSTALL_DOC_DIR "docs")
                 """,
-                f"""
+                    f"""
 set_target_properties({self.plugin_name} PROPERTIES
 OUTPUT_NAME {self.plugin_name}
                 """,
-                """
+                    """
 POSITION_INDEPENDENT_CODE true
 INSTALL_RPATH_USE_LINK_PATH false
 RUNTIME_OUTPUT_DIRECTORY ${INSTALL_BIN_DIR}
@@ -304,25 +323,31 @@ ARCHIVE_OUTPUT_DIRECTORY ${INSTALL_LIB_DIR}
                 
 set(CUBLAS_LIB $ENV{MUSA_HOME}/lib/libmublas.so)
                 """,
-                "\n",
-                f"""
+                    "\n",
+                    (
+                        f"""
 target_link_libraries({self.plugin_name} 
 {link_libraries_paths}
 )
-                """ if link_libraries_paths else "",
-                "\n",
-                f"target_link_libraries({self.plugin_name}" + " ${DEPENDENT_LIBRARIES})",
-                "\n",
-                f"target_link_libraries({self.plugin_name}" + " ${CUBLAS_LIB})",
-                "\n",
-                f"""
+                """
+                        if link_libraries_paths
+                        else ""
+                    ),
+                    "\n",
+                    f"target_link_libraries({self.plugin_name}"
+                    + " ${DEPENDENT_LIBRARIES})",
+                    "\n",
+                    f"target_link_libraries({self.plugin_name}" + " ${CUBLAS_LIB})",
+                    "\n",
+                    f"""
 target_link_libraries({self.plugin_name} "{join(torch_musa_path, 
 "lib/libmusa_python.so")}")
 
 install(TARGETS {self.plugin_name})
                 """,
-                f"""
+                    f"""
 include({torch_musa_path}/share/cmake/summary.cmake)
 torch_musa_build_configuration_summary()
-"""
-            ])
+""",
+                ]
+            )

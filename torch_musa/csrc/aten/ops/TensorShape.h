@@ -12,12 +12,6 @@ namespace native {
 // signature is kind different from what it was, so we define our
 // stubs here
 DECLARE_DISPATCH(
-    void (*)(Tensor&, const std::vector<Tensor>&, const Tensor&, const bool),
-    indexput_stub);
-DECLARE_DISPATCH(
-    void (*)(Tensor&, int, const std::vector<Tensor>&, const Tensor&),
-    indexes_stub);
-DECLARE_DISPATCH(
     void (*)(const int, Tensor&, const Tensor&, const Tensor&),
     indexselect_stub);
 } // namespace native

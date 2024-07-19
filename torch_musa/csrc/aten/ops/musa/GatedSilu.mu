@@ -75,7 +75,7 @@ void gated_silu_output(const at::Tensor& input, at::Tensor& out) {
       });
 }
 
-at::Tensor gated_silu(const at::Tensor& input) {
+at::Tensor GatedSilu(const at::Tensor& input) {
   c10::musa::MUSAGuard device_guard(input.device());
   std::vector<int64_t> size;
   for (int i = 0; i < input.dim(); ++i) {

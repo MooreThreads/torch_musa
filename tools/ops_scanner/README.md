@@ -6,6 +6,7 @@
 - scan_musa_full_ops.py
 - scan_mudnn_support_ops.py
 - check_cuda_ops_in_mudnn.py
+- parse_musa_functions.py
 - README.md
 
 ## Usage
@@ -49,6 +50,13 @@ python -m tools.ops_scanner.check_cuda_ops_in_mudnn  \
 --mudnn-ops-file-path ./mudnn_support_ops.xlsx  \
 --output-path ./check_cuda_ops_in_mudnn.xlsx
 ```
+
+5.parse musa_functions.yaml to collect all ops
+
+```
+python tools/ops_scanner/parse_musa_functions.py
+```
+
 
 ## Extension
 

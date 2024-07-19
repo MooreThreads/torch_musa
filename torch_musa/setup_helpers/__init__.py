@@ -1,4 +1,5 @@
 """This module is the setup helper for third party lib."""
+
 import os
 import sys
 from typing import Optional

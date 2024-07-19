@@ -35,8 +35,14 @@ __global__ void EmbeddingDenseBwdAtomicKernel(
     scalar_t* grad_weight_row = grad_weight + id * tbl_w;
     const scalar_t* grad_row = grad + oy * tbl_w;
     bool valid_id = (id >= 0 && id < tbl_h && id != padding_idx);
-    for (int i = ox; i < tbl_w; i += blockDim.x) {
-      if (valid_id && grad_row[i] != static_cast<scalar_t>(0)) {
+    for (int i = ox * 2; i < tbl_w; i += (blockDim.x * 2)) {
+      if (valid_id) {
+        at::musa::gpuAtomicAdd(grad_weight_row + i, grad_row[i]);
+      }
+    }
+
+    for (int i = ox * 2 + 1; i < tbl_w; i += (blockDim.x * 2)) {
+      if (valid_id) {
         at::musa::gpuAtomicAdd(grad_weight_row + i, grad_row[i]);
       }
     }
@@ -67,7 +73,9 @@ Tensor EmbeddingDenseBwdMUSA(
   auto contiguous_grad_output = grad_output.contiguous();
   musaStream_t stream = at::musa::getCurrentMUSAStream();
 
-  if (num_indices <= 1024 && !scale_grad_by_freq) {
+  // be careful for setting this value, there may be
+  // precision and efficiency drops when value gets larger.
+  if (num_indices <= 3072 && !scale_grad_by_freq) {
     Tensor grad_weight = at::zeros(
         {num_weights, grad_output.size(-1)},
         grad_output.options().memory_format(at::MemoryFormat::Contiguous));
@@ -124,29 +132,28 @@ Tensor EmbeddingDenseBwdMUSA(
       at::empty_like(indices, LEGACY_CONTIGUOUS_MEMORY_FORMAT);
   auto orig_indices = at::empty_like(indices, LEGACY_CONTIGUOUS_MEMORY_FORMAT);
 
-  AT_DISPATCH_INDEX_TYPES(
-      contiguous_indices.scalar_type(), "EmbeddingBwd", [&]() {
-        int32_t numel = contiguous_indices.numel();
-        at::musa::muHandle& h = GetMudnnHandle();
-        auto indices_ = at::musa::CreateMUTensor(contiguous_indices);
-        indices_.SetNdInfo({numel});
-        auto orig_indices_ = at::musa::CreateMUTensor(orig_indices);
-        orig_indices_.SetNdInfo({numel});
-        auto sorted_indices_ = at::musa::CreateMUTensor(sorted_indices);
-        sorted_indices_.SetNdInfo({numel});
-        ::musa::dnn::Sort op;
-        op.SetDim(0);
-        op.SetDescending(false);
-        op.SetStable(true);
-        CHECK_MUDNN_STATUS(
-            op.Run(
-                h,
-                sorted_indices_,
-                orig_indices_,
-                indices_,
-                at::musa::InternalMemAlloc),
-            "SortRun");
-      });
+  {
+    int64_t numel = contiguous_indices.numel();
+    at::musa::muHandle& h = GetMudnnHandle();
+    auto indices_ = at::musa::CreateMUTensor(contiguous_indices);
+    indices_.SetNdInfo({numel});
+    auto orig_indices_ = at::musa::CreateMUTensor(orig_indices);
+    orig_indices_.SetNdInfo({numel});
+    auto sorted_indices_ = at::musa::CreateMUTensor(sorted_indices);
+    sorted_indices_.SetNdInfo({numel});
+    ::musa::dnn::Sort op;
+    op.SetDim(0);
+    op.SetDescending(false);
+    op.SetStable(true);
+    CHECK_MUDNN_STATUS(
+        op.Run(
+            h,
+            sorted_indices_,
+            orig_indices_,
+            indices_,
+            at::musa::InternalMemAlloc),
+        "SortRun");
+  }
 
   return EmbeddingBackwardMUSAKernel(
       contiguous_grad_output,

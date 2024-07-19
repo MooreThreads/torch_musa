@@ -11,7 +11,8 @@ endif()
 set(CMAKE_INSTALL_MESSAGE NEVER)
 
 if(NOT DEFINED BUILD_PYTORCH_REPO_PATH)
-  message(FATAL_ERROR "torch_musa needs BUILD_PYTORCH_REPO_PATH set to find some modules in PyTorch repo.")
+  message(FATAL_ERROR "torch_musa needs BUILD_PYTORCH_REPO_PATH"
+                      "set to find some modules in PyTorch repo.")
 endif()
 
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/modules)
@@ -19,9 +20,11 @@ set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/modules)
 # We should include PyTorch customized cmake modules into our search path.
 list(APPEND CMAKE_MODULE_PATH ${BUILD_PYTORCH_REPO_PATH}/cmake/Modules)
 
-# CMake Build Options according to PyTorch. This cmake block are dedicated for these options.
+# CMake Build Options according to PyTorch. This cmake block are dedicated for
+# these options.
 include(cmake/cpu_flags.cmake)
-option(USE_PER_OPERATOR_HEADERS "Whether ATen should generate separate headers for each operator" ON)
+option(USE_PER_OPERATOR_HEADERS
+       "Whether ATen should generate separate headers for each operator" ON)
 
 # Build Options above shoud keep consistent with PyTorch
 
@@ -31,11 +34,16 @@ string(FIND "${CMAKE_CXX_FLAGS}" "-std=c++" env_cxx_standard)
 if(env_cxx_standard GREATER -1)
   message(
     WARNING "C++ standard version definition detected in environment variable."
-    "PyTorch requires -std=c++17. Please remove -std=c++ settings in your environment.")
+            "PyTorch requires -std=c++17."
+            "Please remove -std=c++ settings in your environment.")
 endif()
 
-set(CMAKE_CXX_STANDARD 17 CACHE STRING "The C++ standard whose features are requested to build this target.")
-set(CMAKE_C_STANDARD 11 CACHE STRING "The C standard whose features are requested to build this target.")
+set(CMAKE_CXX_STANDARD 17
+    CACHE STRING
+          "The C++ standard whose features are requested to build this target.")
+set(CMAKE_C_STANDARD 11
+    CACHE STRING
+          "The C standard whose features are requested to build this target.")
 
 if(DEFINED GLIBCXX_USE_CXX11_ABI)
   if(${GLIBCXX_USE_CXX11_ABI} EQUAL 1)
@@ -59,19 +67,30 @@ option(MUSA_VERBOSE_BUILD "Print Building details of musa compiling unit." OFF)
 include(CMakeDependentOption)
 
 cmake_dependent_option(
-  USE_MUDNN "Use muDNN" ON
-  "USE_MUSA" OFF)
+  USE_MUDNN
+  "Use muDNN"
+  ON
+  "USE_MUSA"
+  OFF)
 
-cmake_dependent_option(USE_CCACHE "Attempt using CCache to wrap the compilation" ON "UNIX" OFF)
+cmake_dependent_option(
+  USE_CCACHE
+  "Attempt using CCache to wrap the compilation"
+  ON
+  "UNIX"
+  OFF)
 
 if(USE_CCACHE)
   find_program(CCACHE_PROGRAM ccache)
 
   if(CCACHE_PROGRAM)
-    set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}" CACHE STRING "C compiler launcher")
-    set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}" CACHE STRING "CXX compiler launcher")
+    set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}"
+        CACHE STRING "C compiler launcher")
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}"
+        CACHE STRING "CXX compiler launcher")
   else()
-    message(STATUS "Could not find ccache. Consider installing ccache to speed up compilation.")
+    meassage(STATUS "Could not find ccache. \
+                   Consider installing ccache to speed up compilation.")
   endif()
 endif()
 
@@ -79,30 +98,39 @@ endif()
 file(READ version.txt TORCH_MUSA_DEFAULT_VERSION)
 
 # Strip trailing newline
-string(REGEX REPLACE "\n$" "" TORCH_MUSA_DEFAULT_VERSION "${TORCH_MUSA_DEFAULT_VERSION}")
+string(REGEX REPLACE "\n$" "" TORCH_MUSA_DEFAULT_VERSION
+                     "${TORCH_MUSA_DEFAULT_VERSION}")
 
 if("${TORCH_MUSA_DEFAULT_VERSION} " STREQUAL " ")
   message(WARNING "Could not get version from base 'version.txt'")
 
-  # If we can't get the version from the version file we should probably
-  # set it to something non-sensical like 0.0.0
+  # If we can't get the version from the version file we should probably set it
+  # to something non-sensical like 0.0.0
   set(TORCH_MUSA_DEFAULT_VERSION, "0.0.0")
 endif()
 
 if(NOT GENERATED_PORTING_DIR)
-  message(FATAL_ERROR "Generated porting musa files are needed for building torch_musa")
+  message(
+    FATAL_ERROR
+      "Generated porting musa files are needed for building torch_musa")
+endif()
+
+if(NOT CODE_GENERATED_DIR)
+  message(FATAL_ERROR "MUSA codegen files are needed for building torch_musa")
 endif()
 
 include(${PROJECT_SOURCE_DIR}/cmake/utils.cmake)
 torch_musa_parse_version_str(TORCH_MUSA ${TORCH_MUSA_DEFAULT_VERSION})
-set(TORCH_MUSA_SOVERSION "${TORCH_MUSA_VERSION_MAJOR}.${TORCH_MUSA_VERSION_MINOR}")
+set(TORCH_MUSA_SOVERSION
+    "${TORCH_MUSA_VERSION_MAJOR}.${TORCH_MUSA_VERSION_MINOR}")
 
 set(TORCH_MUSA_PYTHON_MINIMUM_VERSION 3.8)
 
 # Set default build type
 if(NOT CMAKE_BUILD_TYPE)
   message(STATUS "Build type not set - defaulting to Release")
-  set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the type of build from: Debug Release RelWithDebInfo MinSizeRel Coverage." FORCE)
+  set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Choose the type of build from: \
+         Debug Release RelWithDebInfo MinSizeRel Coverage." FORCE)
 endif()
 
 string(APPEND CMAKE_CXX_FLAGS " -O2 -fPIC")
@@ -113,43 +141,50 @@ string(APPEND CMAKE_CXX_FLAGS " -Wno-unused-parameter")
 string(APPEND CMAKE_CXX_FLAGS " -Wno-unused-variable")
 string(APPEND CMAKE_CXX_FLAGS " -Wno-unused-function")
 string(APPEND CMAKE_CXX_FLAGS " -Wno-unknown-pragmas")
+string(APPEND CMAKE_CXX_FLAGS " -Wno-attributes")
+string(APPEND CMAKE_CXX_FLAGS " -Wno-redundant-move")
 string(APPEND CMAKE_CXX_FLAGS " -Wno-sign-compare")
 string(APPEND CMAKE_CXX_FLAGS " -Wno-missing-field-initializers")
+# cmake-format: off
+# cmake-lint: disable=C0301
 string(APPEND CMAKE_CXX_FLAGS " -Wno-non-template-friend") # TODO(MT-AI): remove this CXX_FLAG after https://jira.mthreads.com/browse/SW-22268 resolved.
 string(APPEND CMAKE_CXX_FLAGS " -Wno-comment") # TODO(MT-AI): remove this CXX_FLAG after https://jira.mthreads.com/browse/SW-22268 resolved.
+# cmake-format: on
 
 # Use ld.gold if available, fall back to ld.bfd (the default ld) if not
 if(USE_GOLD_LINKER)
   if(USE_DISTRIBUTED AND USE_MPI)
     message(WARNING "Refusing to use gold when USE_MPI=1")
   else()
-    execute_process(
-      COMMAND
-      "${CMAKE_C_COMPILER}" -fuse-ld=gold -Wl,--version
-      ERROR_QUIET
-      OUTPUT_VARIABLE LD_VERSION)
+    execute_process(COMMAND "${CMAKE_C_COMPILER}" -fuse-ld=gold -Wl,--version
+                    ERROR_QUIET OUTPUT_VARIABLE LD_VERSION)
 
     if(NOT "${LD_VERSION}" MATCHES "GNU gold")
-      message(WARNING "USE_GOLD_LINKER was set but ld.gold isn't available, turning it off")
+      message(
+        WARNING
+          "USE_GOLD_LINKER was set but ld.gold isn't available, turning it off")
       set(USE_GOLD_LINKER OFF)
     else()
       message(STATUS "ld.gold is available, using it to link")
       set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=gold")
-      set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=gold")
-      set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -fuse-ld=gold")
+      set(CMAKE_SHARED_LINKER_FLAGS
+          "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=gold")
+      set(CMAKE_MODULE_LINKER_FLAGS
+          "${CMAKE_MODULE_LINKER_FLAGS} -fuse-ld=gold")
     endif()
   endif()
 endif()
-
 # These flags are not available in GCC-4.8.5. Set only when using clang.
-# Compared against https://gcc.gnu.org/onlinedocs/gcc-4.8.5/gcc/Option-Summary.html
+# Compared against
+# https://gcc.gnu.org/onlinedocs/gcc-4.8.5/gcc/Option-Summary.html
 if("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
   if(${COLORIZE_OUTPUT})
     string(APPEND CMAKE_CXX_FLAGS " -fcolor-diagnostics")
   endif()
 endif()
 
-if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 4.9)
+if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION
+                                                 VERSION_GREATER 4.9)
   if(${COLORIZE_OUTPUT})
     string(APPEND CMAKE_CXX_FLAGS " -fdiagnostics-color=always")
   endif()
@@ -166,7 +201,8 @@ if(HAS_WERROR_FORMAT)
   string(APPEND CMAKE_CXX_FLAGS " -Werror=format")
 endif()
 
-check_cxx_compiler_flag("-Werror=cast-function-type" HAS_WERROR_CAST_FUNCTION_TYPE)
+check_cxx_compiler_flag("-Werror=cast-function-type"
+                        HAS_WERROR_CAST_FUNCTION_TYPE)
 
 if(HAS_WERROR_CAST_FUNCTION_TYPE)
   string(APPEND CMAKE_CXX_FLAGS " -Werror=cast-function-type")
@@ -186,13 +222,14 @@ endif()
 
 if(DEFINED ENV{MUSA_ARCH})
   set(MUSA_ARCH $ENV{MUSA_ARCH})
-  
+
   string(APPEND MUSA_MCC_FLAGS " --cuda-gpu-arch=mp_${MUSA_ARCH}")
 
   if(${MUSA_ARCH} EQUAL 21)
     add_definitions(-DTORCH_MUSA_ARCH=210)
   elseif(${MUSA_ARCH} EQUAL 22)
     add_definitions(-DTORCH_MUSA_ARCH=220)
+    add_definitions(-DMARCH_TYPE=220)
   elseif(${MUSA_ARCH} EQUAL 31)
     add_definitions(-DTORCH_MUSA_ARCH=310)
   else()
@@ -214,7 +251,10 @@ if(MUDNN_FOUND)
   list(APPEND DEPENDENT_LIBRARIES ${MUDNN_LIBRARIES})
 else()
   # set default mudnn library path
-  message(WARNING " The environment variable MUSA_HOME may be not specified. Using default MUDNN PATH: /usr/local/musa")
+  message(
+    WARNING
+      " The environment variable MUSA_HOME may be not specified. Using default MUDNN PATH: /usr/local/musa"
+  )
   list(APPEND DEPENDENT_INCLUDE_DIRS "/usr/local/musa/include")
   list(APPEND DEPENDENT_LIBRARIES "/usr/local/musa/lib/libmudnn.so")
   set(MUDNN_PATH "/usr/local/musa")
@@ -245,7 +285,10 @@ if(MUSAToolkits_FOUND)
   list(APPEND DEPENDENT_LIBRARIES ${MUSAToolkits_LIBRARIES})
 else()
   # set default musa_toolkits path
-  message(WARNING " The environment variable MUSA_HOME may be not specified. Using default MUSATOOLKITS PATH: /usr/local/musa")
+  message(
+    WARNING
+      " The environment variable MUSA_HOME may be not specified. Using default MUSATOOLKITS PATH: /usr/local/musa"
+  )
   list(APPEND DEPENDENT_INCLUDE_DIRS "/usr/local/musa/include/")
   list(APPEND DEPENDENT_LIBRARIES "/usr/local/musa/lib/libmusart.so")
   set(ENV{MUSA_HOME} "/usr/local/musa")
@@ -264,9 +307,11 @@ include_directories(${DEPENDENT_INCLUDE_DIRS})
 include_directories(${GENERATED_PORTING_DIR}/include)
 include_directories(${GENERATED_PORTING_DIR}/aten/src)
 include_directories(${GENERATED_PORTING_DIR}/include/torch/csrc/api/include)
+include_directories(${CODE_GENERATED_DIR})
 
 # Set Python include dir, python version shoud be ge than 3.8
-find_package(Python3 ${TORCH_MUSA_PYTHON_MINIMUM_VERSION} REQUIRED COMPONENTS Development Interpreter)
+find_package(Python3 ${TORCH_MUSA_PYTHON_MINIMUM_VERSION} REQUIRED
+             COMPONENTS Development Interpreter)
 
 if(Python3_FOUND)
   include_directories(${Python3_INCLUDE_DIRS})
@@ -274,15 +319,33 @@ else()
   message(FATAL_ERROR "Cannot find installed Python3 header file directory")
 endif()
 
+set(CODEGEN_TARGET "musa_codegen")
+set(GENERATED_MUSA_CSRCS "${CODE_GENERATED_DIR}/ATen/RegisterMUSA.cpp",
+                         "${CODE_GENERATED_DIR}/ATen/RegisterQuantizedMUSA.cpp")
+add_custom_command(
+  OUTPUT ${GENERATED_MUSA_CSRCS}
+  COMMENT "Generating for musa op files ..."
+  COMMAND python tools/codegen/gen_torch_musa.py
+  WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+  DEPENDS ${PROJECT_SOURCE_DIR}/torch_musa/csrc/aten/ops/musa_functions.yaml
+          ${BUILD_PYTORCH_REPO_PATH}/aten/src/ATen/native/native_functions.yaml
+          ${BUILD_PYTORCH_REPO_PATH}/tools/autograd/derivatives.yaml
+  VERBATIM)
+set_source_files_properties(${GENERATED_MUSA_CSRCS} PROPERTIES GENERATED TRUE)
+add_custom_target(${CODEGEN_TARGET} DEPENDS ${GENERATED_MUSA_CSRCS})
+
 add_subdirectory(${PROJECT_SOURCE_DIR}/torch_musa/csrc)
 set(CPP_SRCS ${MUSA_CSRCS})
 add_library(${PLUGIN_NAME} SHARED ${CPP_SRCS})
 
-# keep consistent with PyTorch's ATen generating library, according to Codegen.cmake
+# keep consistent with PyTorch's ATen generating library, according to
+# Codegen.cmake
 if(USE_PER_OPERATOR_HEADERS)
   target_compile_definitions(${MUSA_KERNELS_LIB} PUBLIC AT_PER_OPERATOR_HEADERS)
   target_compile_definitions(${PLUGIN_NAME} PUBLIC AT_PER_OPERATOR_HEADERS)
 endif()
+
+add_dependencies(${MUSA_KERNELS_LIB} ${CODEGEN_TARGET})
 
 target_link_libraries(${PLUGIN_NAME} PUBLIC ${DEPENDENT_LIBRARIES})
 target_link_libraries(${PLUGIN_NAME} PUBLIC ${MUSA_KERNELS_LIB})
@@ -298,18 +361,17 @@ set(INSTALL_INC_DIR "include")
 set(INSTALL_SHARE_DIR "share")
 set(INSTALL_DOC_DIR "docs")
 
-set_target_properties(${PLUGIN_NAME} PROPERTIES
-  VERSION ${TORCH_MUSA_DEFAULT_VERSION}
-  SOVERSION ${TORCH_MUSA_VERSION_MAJOR}
-)
-set_target_properties(${PLUGIN_NAME} PROPERTIES
-  OUTPUT_NAME ${PLUGIN_NAME}
-  POSITION_INDEPENDENT_CODE true
-  INSTALL_RPATH_USE_LINK_PATH false
-  RUNTIME_OUTPUT_DIRECTORY ${INSTALL_BIN_DIR}
-  LIBRARY_OUTPUT_DIRECTORY ${INSTALL_LIB_DIR}
-  ARCHIVE_OUTPUT_DIRECTORY ${INSTALL_LIB_DIR}
-)
+set_target_properties(
+  ${PLUGIN_NAME} PROPERTIES VERSION ${TORCH_MUSA_VERSION}
+                            SOVERSION ${TORCH_MUSA_VERSION_MAJOR})
+set_target_properties(
+  ${PLUGIN_NAME}
+  PROPERTIES OUTPUT_NAME ${PLUGIN_NAME}
+             POSITION_INDEPENDENT_CODE true
+             INSTALL_RPATH_USE_LINK_PATH false
+             RUNTIME_OUTPUT_DIRECTORY ${INSTALL_BIN_DIR}
+             LIBRARY_OUTPUT_DIRECTORY ${INSTALL_LIB_DIR}
+             ARCHIVE_OUTPUT_DIRECTORY ${INSTALL_LIB_DIR})
 set_target_properties(${PLUGIN_NAME} PROPERTIES LINK_FLAGS "-Wl,-rpath,$ORIGIN")
 
 install(TARGETS ${PLUGIN_NAME})
@@ -317,25 +379,20 @@ install(TARGETS ${PLUGIN_NAME})
 include(${PROJECT_SOURCE_DIR}/cmake/summary.cmake)
 torch_musa_build_configuration_summary()
 
-configure_file(
-  ${PROJECT_SOURCE_DIR}/cmake/TorchMusaConfig.cmake.in
-  ${PROJECT_BINARY_DIR}/TorchMusaConfig.cmake
-  @ONLY)
-install(FILES
-  ${PROJECT_BINARY_DIR}/TorchMusaConfig.cmake
-  DESTINATION share/cmake/)
+configure_file(${PROJECT_SOURCE_DIR}/cmake/TorchMusaConfig.cmake.in
+               ${PROJECT_BINARY_DIR}/TorchMusaConfig.cmake @ONLY)
+install(FILES ${PROJECT_BINARY_DIR}/TorchMusaConfig.cmake
+        DESTINATION share/cmake/)
 
-install(FILES
-  ${PROJECT_SOURCE_DIR}/cmake/modules/FindMUDNN.cmake
-  ${PROJECT_SOURCE_DIR}/cmake/modules/FindMUSAToolkits.cmake
-  DESTINATION share/cmake/modules/)
+install(FILES ${PROJECT_SOURCE_DIR}/cmake/modules/FindMUDNN.cmake
+              ${PROJECT_SOURCE_DIR}/cmake/modules/FindMUSAToolkits.cmake
+        DESTINATION share/cmake/modules/)
 
-install(FILES
-  ${PROJECT_SOURCE_DIR}/cmake/cpu_flags.cmake
-  ${PROJECT_SOURCE_DIR}/cmake/utils.cmake
-  ${PROJECT_SOURCE_DIR}/cmake/summary.cmake
-  DESTINATION share/cmake)
+install(FILES ${PROJECT_SOURCE_DIR}/cmake/cpu_flags.cmake
+              ${PROJECT_SOURCE_DIR}/cmake/utils.cmake
+              ${PROJECT_SOURCE_DIR}/cmake/summary.cmake DESTINATION share/cmake)
 
-install(DIRECTORY
-  ${PROJECT_SOURCE_DIR}/build/generated_cuda_compatible
-  DESTINATION share/)
+install(DIRECTORY ${PROJECT_SOURCE_DIR}/build/generated_cuda_compatible
+        DESTINATION share/)
+
+install(DIRECTORY ${CODE_GENERATED_DIR} DESTINATION share/)

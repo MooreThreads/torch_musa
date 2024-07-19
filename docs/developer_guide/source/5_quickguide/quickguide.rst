@@ -18,7 +18,7 @@
    +-------------------------------------+-----------+---------------------------------------------------------------------+
    | export MUSA_VISIBLE_DEVICES=0,1,2,3 |   Driver  | 控制当前可见的显卡序号                                              |
    +-------------------------------------+-----------+---------------------------------------------------------------------+
-   | export MUSA_LAUNCH_BLOCKING=1       |   Driver  | 驱动以同步模式下发kernel，即当前kernel执行结束后再下发下一个kernel  |
+   | export MUSA_LAUNCH_BLOCKING=1       |   Driver  | 驱动以同步模式下发MUSA kernel，即当前kernel执行结束后再下发下一个kernel  |
    +-------------------------------------+-----------+---------------------------------------------------------------------+
 
 
@@ -326,4 +326,4 @@ C++部署示例代码
     return 0;
   }
 
-详细用法请参考 `examples/cpp <https://github.com/MooreThreads/torch_musa/tree/v1.1.0/examples/cpp>`_ 下内容。
+详细用法请参考 `examples/cpp <https://github.mthreads.com/mthreads/torch_musa/tree/main/examples/cpp>`_ 下内容。

@@ -1,4 +1,5 @@
 """simple porting tool for porting cuda files"""
+
 import argparse
 import json
 import os.path
@@ -22,9 +23,14 @@ def read_json(json_file_path: str) -> dict:
 class SimplePorting:
     """Simple porting tool, transform cuda files to musa files"""
 
-    def __init__(self, cuda_dir_path: str = None, ignore_dir_paths: list = None,
-                 mapping_rule: dict = None,
-                 drop_default_mapping: bool = False, mapping_dir_path: str = None):
+    def __init__(
+        self,
+        cuda_dir_path: str = None,
+        ignore_dir_paths: list = None,
+        mapping_rule: dict = None,
+        drop_default_mapping: bool = False,
+        mapping_dir_path: str = None,
+    ):
         self.overwrite_default_mapping = drop_default_mapping
         self.mapping_rule = mapping_rule
         self.mapping_dir_path = mapping_dir_path
@@ -35,7 +41,9 @@ class SimplePorting:
             self.cuda_dir_path = realpath(join(dirname(__file__), "cuda"))
 
         cuda_dirname = split(self.cuda_dir_path)[-1]
-        self.musa_dir_path = realpath(join(join(self.cuda_dir_path, ".."), cuda_dirname + "_musa"))
+        self.musa_dir_path = realpath(
+            join(join(self.cuda_dir_path, ".."), cuda_dirname + "_musa")
+        )
         if exists(self.musa_dir_path):
             shutil.rmtree(self.musa_dir_path)
         makedirs(self.musa_dir_path)
@@ -53,17 +61,24 @@ class SimplePorting:
 
         if self.overwrite_default_mapping:
             if not (self.mapping_rule and isinstance(self.mapping_rule, dict)):
-                LOGGER.error("set overwrite_default_mapping True but not give valid mapping_rule. "
-                             "got mapping_rule=%s", self.mapping_rule)
+                LOGGER.error(
+                    "set overwrite_default_mapping True but not give valid mapping_rule. "
+                    "got mapping_rule=%s",
+                    self.mapping_rule,
+                )
                 sys.exit(-1)
         else:
             if not self.mapping_dir_path:
                 self.mapping_dir_path = realpath(join(dirname(__file__), "mapping"))
             for name in os.listdir(self.mapping_dir_path):
                 if name.endswith(".json") and name != "general.json":
-                    self.mapping_rule.update(read_json(join(self.mapping_dir_path, name)))
+                    self.mapping_rule.update(
+                        read_json(join(self.mapping_dir_path, name))
+                    )
                     LOGGER.info("loading %s...", name)
-        self.mapping_rule = sorted(self.mapping_rule.items(), key=lambda x: len(x[0]), reverse=True)
+        self.mapping_rule = sorted(
+            self.mapping_rule.items(), key=lambda x: len(x[0]), reverse=True
+        )
         print(self.mapping_rule)
         LOGGER.info("Loading all mapping files success.")
 
@@ -100,7 +115,9 @@ class SimplePorting:
             try:
                 self.ignore_dir_paths = json.loads(self.ignore_dir_paths)
             except RuntimeError:
-                LOGGER.warning("json loads ignore_dir_paths failed. %s", self.ignore_dir_paths)
+                LOGGER.warning(
+                    "json loads ignore_dir_paths failed. %s", self.ignore_dir_paths
+                )
 
         self.ignore_dir_paths = [realpath(path) for path in self.ignore_dir_paths]
         LOGGER.info("Processing ignore dir paths success.")
@@ -126,29 +143,51 @@ class SimplePorting:
                 makedirs(dir_path, exist_ok=True)
                 musa_filepath = realpath(join(dir_path, musa_file))
                 self.modify_file(cuda_filepath, musa_filepath)
-                LOGGER.info("modify %s -> %s %s/%s content success.", cuda_filepath, musa_filepath,
-                            i + 1, total_len)
+                LOGGER.info(
+                    "modify %s -> %s %s/%s content success.",
+                    cuda_filepath,
+                    musa_filepath,
+                    i + 1,
+                    total_len,
+                )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Simple Porting")
-    parser.add_argument("--cuda-dir-path", help="Specify cuda directory to port, "
-                                                "e.g. /home/vision/torchvision/csrc/ops/cuda",
-                        default="cuda/")
-    parser.add_argument("--ignore-dir-paths", help="Specify cuda directory to port, "
-                                                   "e.g. /home/vision/torchvision/csrc/ops/cuda",
-                        default=[])
-    parser.add_argument("--mapping-rule", help="Specify mapping rule"
-                                               "e.g. {\"cuda\":\"musa\"}",
-                        default="{}")
-    parser.add_argument("--drop-default-mapping", action='store_true',
-                        help="Specify whether to drop default mapping")
-    parser.add_argument("--mapping-dir-path", help="Specify where mapping directory locate"
-                                                   "e.g. mapping/",
-                        default=None)
+    parser.add_argument(
+        "--cuda-dir-path",
+        help="Specify cuda directory to port, "
+        "e.g. /home/vision/torchvision/csrc/ops/cuda",
+        default="cuda/",
+    )
+    parser.add_argument(
+        "--ignore-dir-paths",
+        help="Specify cuda directory to port, "
+        "e.g. /home/vision/torchvision/csrc/ops/cuda",
+        default=[],
+    )
+    parser.add_argument(
+        "--mapping-rule",
+        help="Specify mapping rule" 'e.g. {"cuda":"musa"}',
+        default="{}",
+    )
+    parser.add_argument(
+        "--drop-default-mapping",
+        action="store_true",
+        help="Specify whether to drop default mapping",
+    )
+    parser.add_argument(
+        "--mapping-dir-path",
+        help="Specify where mapping directory locate" "e.g. mapping/",
+        default=None,
+    )
     args = parser.parse_args()
     print(vars(args))
-    simple_porting_test = SimplePorting(args.cuda_dir_path, args.ignore_dir_paths,
-                                        args.mapping_rule,
-                                        args.drop_default_mapping, args.mapping_dir_path)
+    simple_porting_test = SimplePorting(
+        args.cuda_dir_path,
+        args.ignore_dir_paths,
+        args.mapping_rule,
+        args.drop_default_mapping,
+        args.mapping_dir_path,
+    )
     simple_porting_test.run()

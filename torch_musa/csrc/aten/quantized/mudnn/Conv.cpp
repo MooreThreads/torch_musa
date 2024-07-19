@@ -133,6 +133,7 @@ void PackedConvWeightMudnn<kSpatialDim>::apply_impl_helper(
 }
 
 // weight and output Tensor will be a clampped int8 Tensor
+// while QY1 would cast weight to uint8 format
 /*
 Numerics:
 out_fp32  = conv_fp32(act_fp32, w_fp32, …)

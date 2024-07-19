@@ -8,7 +8,6 @@
 #include "torch_musa/csrc/aten/ops/Bucketize.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace native {
@@ -59,8 +58,6 @@ Tensor Bucketize(
 
   return out;
 }
-
-ADVANCED_REGISTER(aten, PrivateUse1, "bucketize.Tensor", Bucketize)
 
 } // namespace musa
 } // namespace at

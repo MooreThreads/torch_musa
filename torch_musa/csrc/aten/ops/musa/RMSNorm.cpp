@@ -2,7 +2,6 @@
 
 #include "torch_musa/csrc/aten/ops/musa/RMSNorm.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #ifndef AT_PER_OPERATOR_HEADERS
 #include <ATen/Functions.h>
@@ -140,10 +139,6 @@ namespace musa {
       eps);
   return {grad_input, grad_gamma};
 }
-
-ADVANCED_REGISTER(aten, PrivateUse1, "rms_norm_forward", RMSNormForward);
-
-ADVANCED_REGISTER(aten, PrivateUse1, "rms_norm_backward", RMSNormBackward);
 
 } // namespace musa
 } // namespace at

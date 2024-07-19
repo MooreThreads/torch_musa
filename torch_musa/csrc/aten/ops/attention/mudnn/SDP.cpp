@@ -12,7 +12,6 @@
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/Device.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
@@ -33,9 +32,6 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> MuDNNMathSDPAFwd(
   TORCH_CHECK(
       query.dim() == 4 && key.dim() == 4 && value.dim() == 4,
       "Expect all query, key, value has 4D shape!");
-  TORCH_CHECK(
-      query.size(1) == key.size(1),
-      "Expect query's sequence length same as key's sequence length!");
   if (is_causal) {
     TORCH_CHECK(
         !attn_mask.has_value(),
@@ -227,20 +223,10 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> MuDNNFlashSDPAFwd(
   TORCH_CHECK(
       query.dim() == 4 && key.dim() == 4 && value.dim() == 4,
       "Expect all query, key, value has 4D shape!");
-  TORCH_CHECK(
-      query.size(1) == key.size(1),
-      "Expect query's sequence length same as key's sequence length!");
   if (is_causal) {
-    TORCH_CHECK(
-        !attn_mask.has_value(),
-        "_scaled_dot_product_attention: Explicit attn_mask should not be set when is_causal=True");
     TORCH_CHECK(
         !query.is_nested() && !key.is_nested(),
         "_scaled_dot_product_attention: Nested tensors for query / key are not supported when is_causal=True");
-    const auto q_seq_len = query.sym_size(-2), kv_seq_len = key.sym_size(-2);
-    mask = at::ones_symint(
-               {q_seq_len, kv_seq_len}, query.options().dtype(at::kBool))
-               .tril();
   }
 
   c10::musa::MUSAGuard device_guard(query.device());
@@ -263,15 +249,15 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> MuDNNFlashSDPAFwd(
   musa_v = at::musa::CreateMUTensor(value);
 
   output = at::empty(
-      {batch_size, q_seq_len, head_num, head_dim},
-      query.options(),
-      at::MemoryFormat::Contiguous);
-  output = at::transpose(output, 1, 2);
+               {batch_size, q_seq_len, head_num, head_dim},
+               query.options(),
+               at::MemoryFormat::Contiguous)
+               .transpose(1, 2);
   musa_out = at::musa::CreateMUTensor(output);
 
   // check the mask
   auto contiguous_mask = at::empty({0}); // should we keep this tensor in host?
-  if (mask.has_value()) {
+  if (mask.has_value() and !is_causal) {
     contiguous_mask = mask.value().contiguous();
   }
   auto musa_mask = at::musa::CreateMUTensor(contiguous_mask);
@@ -292,6 +278,10 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> MuDNNFlashSDPAFwd(
 
   musa::muHandle& h = at::GetMudnnHandle();
   ::musa::dnn::ScaledDotProductAttention sdpa;
+
+  if (is_causal) {
+    CHECK_MUDNN_STATUS(sdpa.SetCausal(true), "SetCausalToTrue");
+  }
 
   // Config Mudnn
   CHECK_MUDNN_STATUS(sdpa.SetEmbedDim(head_dim * head_num), "SetEmbedDim");
@@ -340,6 +330,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> MuDNNFlashSDPABwd(
     const at::Tensor& output,
     const at::Tensor& logsumexp,
     const at::Tensor& dropout_mask,
+    bool is_causal,
     const c10::optional<Tensor>& mask) {
   c10::musa::MUSAGuard device_guard(query.device());
 
@@ -373,16 +364,17 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> MuDNNFlashSDPABwd(
   // check the mask
   auto contiguous_mask = at::empty({0}); // should we keep this tensor in host?
   // FIXME: (lms) temporarily check value defined.
-  if (mask.has_value() && mask.value().defined()) {
+  if (!is_causal && mask.has_value() && mask.value().defined()) {
     CHECK_MUDNN_STATUS(
         sdpa.SetMaskMode(is_pad_mask(mask.value(), query)), "SetMaskMode");
     contiguous_mask = mask.value().contiguous();
   }
+
   auto musa_mask = at::musa::CreateMUTensor(contiguous_mask);
 
   auto head_dim = query.sizes()[3]; // head_dim
   auto q_seq_len = query.sizes()[2]; // seq_len
-  auto head_num = query.sizes()[1]; // head_num
+  auto head_num = query.sizes()[1]; // q_head_num as the real head_num
   auto batch_size = query.sizes()[0]; // batch_size
   auto kv_seq_len = key.size(2);
 
@@ -390,6 +382,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> MuDNNFlashSDPABwd(
   CHECK_MUDNN_STATUS(sdpa.SetEmbedDim(head_num * head_dim), "SetEmbedDim");
   CHECK_MUDNN_STATUS(sdpa.SetHeadsNum(head_num), "SetHeadsNum");
   CHECK_MUDNN_STATUS(sdpa.SetTraining(true), "SetTraining");
+  CHECK_MUDNN_STATUS(sdpa.SetCausal(is_causal), "SetCausal");
 
   CHECK_MUDNN_STATUS(
       sdpa.RunFlashBwd(
@@ -410,30 +403,6 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> MuDNNFlashSDPABwd(
 
   return std::make_tuple(grad_query, grad_key, grad_value);
 }
-
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "_scaled_dot_product_attention_flash_musa",
-    MuDNNFlashSDPAFwd);
-
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "_scaled_dot_product_attention_flash_musa_backward",
-    MuDNNFlashSDPABwd);
-
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "_scaled_dot_product_attention_math_musa",
-    MuDNNMathSDPAFwd);
-
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "_scaled_dot_product_attention_math_musa_backward",
-    MuDNNMathSDPABwd);
 
 } // namespace musa
 } // namespace at

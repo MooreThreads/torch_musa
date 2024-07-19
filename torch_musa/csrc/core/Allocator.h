@@ -1,6 +1,7 @@
 #ifndef TORCH_MUSA_CSRC_CORE_ALLOCATOR_H_
 #define TORCH_MUSA_CSRC_CORE_ALLOCATOR_H_
 
+#include <c10/core/Allocator.h>
 #include <c10/core/CPUAllocator.h>
 #include <c10/core/DeviceType.h>
 #include <c10/musa/MUSA_PORT_Macros.h>
@@ -91,6 +92,8 @@ struct DeviceStats {
   StatArray active_bytes;
   // SUM: bytes within inactive, split memory blocks
   StatArray inactive_split_bytes;
+  // SUM: bytes requested by client code
+  StatArray requested_bytes;
 
   // COUNT: total number of failed calls to MUSA malloc necessitating cache
   // flushes.
@@ -109,13 +112,21 @@ struct DeviceStats {
   int64_t max_split_size = 0;
 };
 
+struct History {
+  void* addr;
+  size_t real_size; // unrounded, actually requested size
+  std::shared_ptr<Context> context; // per-watcher context
+};
+
 // Struct containing info of an allocation block (i.e. a fractional part of a
 // musaMalloc)..
 struct BlockInfo {
   int64_t size = 0;
+  int64_t requested_size = 0;
   int32_t gc_counter = 0;
   bool allocated = false;
   bool active = false;
+  std::vector<History> history;
 };
 
 // Struct containing info of a memory segment (i.e. one contiguous musaMalloc).
@@ -123,8 +134,10 @@ struct SegmentInfo {
   int64_t device = 0;
   int64_t address = 0;
   int64_t total_size = 0;
+  int64_t requested_size = 0;
   int64_t allocated_size = 0;
   int64_t active_size = 0;
+  musaStream_t stream = 0;
   bool is_large = false;
   std::vector<BlockInfo> blocks;
 };
@@ -211,8 +224,16 @@ void EmptyCache();
 void ResetPeakStats();
 void ResetPeakStats(int64_t device);
 DeviceStats GetDeviceStats(int64_t device);
-std::vector<SegmentInfo> GetMemorySnapshot();
+SnapshotInfo GetMemorySnapshot();
 void recordStream(const DataPtr& dataPtr, MUSAStream stream);
+void RecordHistory(
+    bool enabled,
+    CreateContextFn context_recorder,
+    size_t alloc_trace_max_entries,
+    bool alloc_trace_record_context);
+void AttachOutOfMemoryObserver(OutOfMemoryObserver observer);
+void* GetBaseAllocation(void* ptr, size_t* outSize);
+std::shared_ptr<void> GetIpcDevPtr(std::string handle);
 
 } // namespace MUSACachingAllocator
 } // namespace musa

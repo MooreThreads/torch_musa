@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include <ATen/Config.h>
 #include <ATen/native/ConvUtils.h>
 #include <ATen/native/Resize.h>
@@ -40,6 +42,7 @@
 #include <ATen/ops/mkldnn_convolution.h>
 #include <ATen/ops/mps_convolution_backward.h>
 #include <ATen/ops/mps_convolution_transpose_backward.h>
+#include <ATen/ops/pad.h>
 #include <ATen/ops/slow_conv3d.h>
 #include <ATen/ops/slow_conv_dilated2d.h>
 #include <ATen/ops/slow_conv_dilated3d.h>
@@ -56,7 +59,6 @@
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Context.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
@@ -214,10 +216,9 @@ Tensor Conv2d(
   return output;
 }
 
-Tensor Conv2dTranspose(
+Tensor Conv2dTransposeImpl(
     const Tensor& grad_output,
     const Tensor& weight,
-    const c10::optional<Tensor>& bias_opt,
     IntArrayRef stride,
     IntArrayRef padding,
     IntArrayRef output_padding,
@@ -248,6 +249,48 @@ Tensor Conv2dTranspose(
   c.GetRecommendBackwardDataAlgorithm(h, algo, gin, gout, w);
   CHECK_MUDNN_STATUS(
       c.RunBwdData(h, gin, gout, w, algo, InternalMemAlloc), "RunBwdData");
+
+  return grad_input_t;
+}
+
+Tensor Conv2dTranspose(
+    const Tensor& grad_output,
+    const Tensor& weight,
+    const c10::optional<Tensor>& bias_opt,
+    IntArrayRef stride,
+    IntArrayRef padding,
+    IntArrayRef output_padding,
+    int64_t groups,
+    IntArrayRef dilation) {
+  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(padding.size() == 2UL);
+  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(dilation.size() == 2UL);
+  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(weight.dim() == 4UL);
+
+  const int64_t dilation_h = dilation[0], dilation_w = dilation[1];
+  const int64_t w_r = weight.size(2), w_s = weight.size(3);
+  const int64_t pad_h = padding[0], pad_w = padding[1];
+
+  const auto pad_h_upperbound = dilation_h * (w_r - 1);
+  const auto pad_h_gap = std::min<int64_t>(pad_h_upperbound - pad_h, 0);
+  const bool not_shrink_pad_h = (pad_h_gap == 0);
+
+  const auto pad_w_upperbound = dilation_w * (w_s - 1);
+  const auto pad_w_gap = std::min<int64_t>(pad_w_upperbound - pad_w, 0);
+  const bool not_shrink_pad_w = (pad_w_gap == 0);
+
+  Tensor grad_input_t = Conv2dTransposeImpl(
+      grad_output,
+      weight,
+      stride,
+      {not_shrink_pad_h ? pad_h : pad_h_upperbound,
+       not_shrink_pad_w ? pad_w : pad_w_upperbound},
+      output_padding,
+      groups,
+      dilation);
+  if (C10_UNLIKELY(!(not_shrink_pad_h && not_shrink_pad_w))) {
+    grad_input_t =
+        at::pad(grad_input_t, {pad_w_gap, pad_w_gap, pad_h_gap, pad_h_gap});
+  }
 
   if (bias_opt.has_value()) {
     AddBias(grad_input_t, *bias_opt);
@@ -794,13 +837,6 @@ Tensor Conv1dWeightBwd(
       groups,
       output_mask);
 }
-
-ADVANCED_REGISTER(aten, PrivateUse1, "convolution_overrideable", Convolution)
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "convolution_backward_overrideable",
-    ConvolutionBwd)
 
 } // namespace musa
 } // namespace at

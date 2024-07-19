@@ -53,6 +53,19 @@ void __inline__ memcpy_and_sync(
 bool hasPrimaryContext(DeviceIndex device_index);
 c10::optional<DeviceIndex> getDeviceIndexWithPrimaryContext();
 
+void __inline__ stream_synchronize(musaStream_t stream) {
+  if (C10_UNLIKELY(
+          warning_state().get_sync_debug_mode() != SyncDebugMode::L_DISABLED)) {
+    warn_or_error_on_sync();
+  }
+  const c10::impl::PyInterpreter* interp = c10::impl::GPUTrace::get_trace();
+  if (C10_UNLIKELY(interp)) {
+    (*interp)->trace_gpu_stream_synchronization(
+        reinterpret_cast<uintptr_t>(stream));
+  }
+  C10_MUSA_CHECK(musaStreamSynchronize(stream));
+}
+
 } // namespace musa
 } // namespace c10
 #endif // TORCH_MUSA_CSRC_CORE_MUSAFUNCTIONS_H_

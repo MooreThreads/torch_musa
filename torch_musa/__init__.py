@@ -1,11 +1,15 @@
 """Imports the torch musa adaption facilities."""
-# pylint: disable=wrong-import-position, W0404, C0103
 
-import warnings
+# pylint: disable=wrong-import-position, W0404, C0103, C2801
+
 import sys
+import warnings
+import importlib
 from typing import Set, Type
-from packaging.version import Version
+
 import torch
+from packaging.version import Version
+
 try:
     from .version import __version__
 except ImportError:
@@ -35,12 +39,30 @@ try:
 except ImportError as err:
     raise ImportError("Please try running Python from a different directory!") from err
 
-torch.__setattr__("musa", sys.modules[__name__])  # pylint: disable=C2801
+torch.__setattr__("musa", sys.modules[__name__])
 
-from .core.device import Device as device
-from .core.device import DeviceOf as device_of
+# Hack torch profiler with our torch_musa version
+sys.modules["torch.autograd.profiler"] = importlib.import_module(
+    "torch_musa.autograd.profiler"
+)
+torch.autograd.__setattr__("profiler", sys.modules["torch.autograd.profiler"])
+
+sys.modules["torch.autograd.profiler_util"] = importlib.import_module(
+    "torch_musa.autograd.profiler_util"
+)
+torch.autograd.__setattr__("profiler_util", sys.modules["torch.autograd.profiler_util"])
+
+sys.modules["torch.profiler"] = importlib.import_module("torch_musa.profiler")
+torch.__setattr__("profiler", sys.modules["torch.profiler"])
+
+setattr(torch._C._autograd.DeviceType, "MUSA", 1)
+setattr(torch._C._profiler.ProfilerActivity, "MUSA", 1)
+
 from .core.device import (
+    Device as device,
+    DeviceOf as device_of,
     set_device,
+    set_default_dtype,
     current_device,
     is_available,
     device_count,
@@ -77,8 +99,11 @@ from .core.amp.common import (
     autocast_decrement_nesting,
 )
 
+torch.autocast = torch.musa.amp.AutocastBase
+
 from .core.serialization import register_deserialization
 
+from .core import memory
 from .core.memory import (
     set_per_process_memory_fraction,
     empty_cache,
@@ -92,11 +117,12 @@ from .core.memory import (
     max_memory_allocated,
     max_memory_reserved,
     mem_get_info,
-    reset_peak_memory_stats
+    reset_peak_memory_stats,
+    _record_memory_history,
+    _dump_snapshot,
 )
 
-
-from .core._lazy_init import _lazy_init
+from .core._lazy_init import _lazy_init, _initialized
 
 from .core.random import *
 
@@ -104,9 +130,12 @@ from .core.mudnn import *
 
 # A hack to get `torch.backends.mudnn` functions/attributes. This allows users to use cudnn
 # equivalent functions like `torch.backends.mudnn.allow_tf32 = True`
-torch.backends.__setattr__("mudnn", sys.modules["torch_musa.core.mudnn"])  # pylint: disable=C2801
+torch.backends.__setattr__("mudnn", sys.modules["torch_musa.core.mudnn"])
 
 register_deserialization()
+
+# A hack to get `torch.set_default_tensor_type` and `torch.set_default_dtype`
+torch.set_default_dtype = set_default_dtype
 
 
 def _sleep(cycles):
@@ -117,10 +146,33 @@ setattr(torch.version, "musa", torch_musa._MUSAC._musa_version)
 
 from .core.tensor_attrs import set_torch_attributes
 from .core.module_attrs import set_module_attributes
+from .core.storage import set_storage_attributes
+
+from .core.storage import set_storage_attributes
+
 
 def set_attributes():
     """Set attributes for torch."""
     set_torch_attributes()
     set_module_attributes()
+    set_storage_attributes()
+
 
 set_attributes()
+
+
+def ipc_collect():
+    _lazy_init()
+    return _MUSAC._musa_ipc_collect()
+
+
+from .core.reductions import init_reductions
+
+init_reductions()
+
+
+def overwrite_cuda_api():
+    torch.cuda._lazy_init = _lazy_init
+
+
+overwrite_cuda_api()

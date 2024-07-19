@@ -33,6 +33,7 @@ def flags(allow_tf32=True):
 
 class MudnnModule(PropModule):
     """A helper module that enables the hack for the frontend to get mudnn attributes."""
+
     __all__ = list(set(vars().keys()) - {"__module__", "__qualname__"})
 
     allow_tf32 = ContextProp(
