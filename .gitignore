@@ -156,4 +156,5 @@ download/
 release_mudnn_*/
 torch_musa/version.py
 
-
+# integration data root
+tests/integration/data/

@@ -1,20 +1,23 @@
+#
 """The setup file"""
+
 import os
 import glob
 import sys
 import sysconfig
+import multiprocessing
+import subprocess
 import distutils.command.clean
 
 from os.path import dirname, join
+from subprocess import PIPE, Popen
 from setuptools import setup, find_packages
 import setuptools.command.install
 
 from torch.utils.cpp_extension import CppExtension  # pylint: disable=C0411
 from torch.utils.cpp_extension import BuildExtension as Build  # pylint: disable=C0411
 from tools.cuda_porting.cuda_porting import port_cuda
-import subprocess
-from subprocess import PIPE, Popen
-import multiprocessing
+
 
 if os.getenv("MAX_JOBS") is None:
     os.environ["MAX_JOBS"] = str(multiprocessing.cpu_count())
@@ -27,31 +30,37 @@ if not CLEAN_MODE:
     pytorch_root = os.getenv("PYTORCH_REPO_PATH", default="")
     if pytorch_root == "":
         raise RuntimeError(
-            "Building error: PYTORCH_REPO_PATH must be set to PyTorch repository when building, but now it is empty!"
+            "Building error: PYTORCH_REPO_PATH must be set to"
+            " PyTorch repository when building, but now it is empty!"
         )
     sys.path.append(join(dirname(__file__), "torch_musa"))
     from setup_helpers.env import check_negative_env_flag, build_type
     from setup_helpers.cmake import CMake
 
-version_file = open("version.txt", "r")
-version = version_file.readlines()[0].strip()
-version_file.close()
+with open("version.txt", "r", encoding="utf-8") as version_file:
+    version = version_file.readlines()[0].strip()
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RERUN_CMAKE = False
 
 
 class Install(setuptools.command.install.install):
-    def run(self):
-        super().run()
+    """
+    Install class.
+    """
 
 
 class Clean(distutils.command.clean.clean):
+    """
+    Clean class.
+    """
+
     def run(self):
-        import glob
+        # pylint: disable=import-outside-toplevel
         import re
         import shutil
 
-        with open(".gitignore", "r") as f:
+        with open(".gitignore", "r", encoding="utf-8") as f:
             ignores = f.read()
             pat = re.compile(r"^#( BEGIN NOT-CLEAN-FILES )?")
             for wildcard in filter(None, ignores.split("\n")):
@@ -73,72 +82,90 @@ class Clean(distutils.command.clean.clean):
 
 
 def get_pytorch_install_path():
+    """
+    Get Pytorch installed path.
+    """
     try:
+        # pylint: disable=import-outside-toplevel
         import torch
 
         pytorch_install_root = os.path.dirname(os.path.abspath(torch.__file__))
-    except Exception:
+    except Exception as exe:
         raise RuntimeError(
-            "Building error: import torch failed when building!")
+            "Building error: import torch failed when building!"
+        ) from exe
     return pytorch_install_root
 
+
 def get_mtgpu_arch():
+    """
+    Get moorethreads gpu arch.
+    """
     mthreads_gmi = "mthreads-gmi"
-    
+
     # name and arch dict
-    name_arches={
-        "MTT S2000":"11",
-        "MTT S3000":"21",
-        "MTT S80":"21",
-        "MTT S80ES":"21",
-        "MTT S4000":"22",
-        "MTT S90":"22",        
+    name_arches = {
+        "MTT S2000": "11",
+        "MTT S3000": "21",
+        "MTT S80": "21",
+        "MTT S80ES": "21",
+        "MTT S4000": "22",
+        "MTT S90": "22",
     }
-    
+
     # Get ID, processing and memory utilization for all GPUs
     try:
-        p = Popen([mthreads_gmi,
-                   "-q -i 0"], stdout=PIPE)
-        stdout, stderror = p.communicate()
-    except:
-        raise RuntimeError("Unable to run the mthreads-gmi command")
-    output = stdout.decode('UTF-8')
+        with Popen([mthreads_gmi, "-q -i 0"], stdout=PIPE) as p:
+            stdout, _ = p.communicate()
+    except Exception as exception:
+        raise RuntimeError("Unable to run the mthreads-gmi command") from exception
+    output = stdout.decode("UTF-8")
 
     lines = output.split(os.linesep)
 
     for line in lines:
-        kvs = line.split(' : ')
+        kvs = line.split(" : ")
         if len(kvs) != 2:
             continue
         if kvs[0].strip().startswith("Product Name"):
             name = kvs[1].strip()
-            return name_arches[name] 
-    raise RuntimeError("Can not find Product Name in the output of 'mthreads-gmi -q -i 0'")
+            return name_arches[name]
+    raise RuntimeError(
+        "Can not find Product Name in the output of 'mthreads-gmi -q -i 0'"
+    )
 
 
 def build_musa_lib():
+    """
+    Build musa python lib.
+    """
     # generate code for CUDA porting
     build_dir = "build"
     gen_porting_dir = "generated_cuda_compatible"
+    code_generated_dir = "torch_musa_codegen"
     cuda_compatiable_path = os.path.join(BASE_DIR, build_dir, gen_porting_dir)
+    code_generated_path = os.path.join(BASE_DIR, build_dir, code_generated_dir)
     if not os.path.isdir(cuda_compatiable_path):
-        port_cuda(pytorch_root, get_pytorch_install_path(),
-                  cuda_compatiable_path)
-    
-    os.environ['MUSA_ARCH']=get_mtgpu_arch()
-    
+        port_cuda(pytorch_root, get_pytorch_install_path(), cuda_compatiable_path)
+
+    os.environ["MUSA_ARCH"] = get_mtgpu_arch()
+
     cmake = CMake(build_dir, install_dir_prefix="torch_musa")
-    env = os.environ.copy()
+    # use reference to os.environ first, because newly added env vars may be accessed in CMake.
+    env = os.environ
     env["GENERATED_PORTING_DIR"] = cuda_compatiable_path
+    env["CODE_GENERATED_DIR"] = code_generated_path
     # add `BUILD` prefix to avoid env being filtered.
     env["BUILD_PYTORCH_REPO_PATH"] = env["PYTORCH_REPO_PATH"]
     build_test = not check_negative_env_flag("BUILD_TEST")
-    cmake_python_library = "{}/{}".format(
-        sysconfig.get_config_var(
-            "LIBDIR"), sysconfig.get_config_var("INSTSONAME")
+    cmake_python_library = (
+        f"{sysconfig.get_config_var('LIBDIR')}/{sysconfig.get_config_var('INSTSONAME')}"
     )
-    cmake.generate(version, cmake_python_library,
-                   True, build_test, env, RERUN_CMAKE)
+    # NOTE: `version` passed to cmake.generate won't take effect.
+    # Because CMakeLists.txt will read the `version.txt` itself.
+    cmake.generate(
+        version, cmake_python_library, True, build_test, env.copy(), RERUN_CMAKE
+    )
     cmake.build(env)
 
 
@@ -147,8 +174,11 @@ if not CLEAN_MODE:
 
 
 def configure_extension_build():
+    """
+    Config the extension.
+    """
     if CLEAN_MODE:
-        return
+        return None
     extra_link_args = []
     extra_compile_args = [
         "-std=c++17",
@@ -194,7 +224,7 @@ def configure_extension_build():
         sources=glob.glob("torch_musa/csrc/extension/C_frontend.cpp"),
         libraries=["_ext_musa_kernels", "musa_python"],
         include_dirs=[],
-        extra_compile_args={"cxx": ['-std=c++17']},
+        extra_compile_args={"cxx": ["-std=c++17"]},
         library_dirs=[os.path.join(BASE_DIR, "torch_musa/lib")],
         extra_link_args=extra_link_args + ["-Wl,-rpath,$ORIGIN/lib"],
     )
@@ -203,23 +233,31 @@ def configure_extension_build():
 
 install_requires = ["packaging"]
 
+
 def package_files(directory):
     paths = []
-    for root, dirs, files in os.walk(directory):
+    for root, _, files in os.walk(directory):
         for file in files:
             paths.append(os.path.join("..", root, file))
     return paths
 
 
 def dump_version():
-    global BASE_DIR, version
+    """
+    Dump the torch_musa version.
+    """
     here = BASE_DIR
     version_file_path = os.path.join(here, "torch_musa", "version.py")
-    sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=here).decode("ascii").strip()
-    __version__ = version + f"+{sha[:7]}"    
-    with open(version_file_path, "w") as f:
+    sha = (
+        subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=here)
+        .decode("ascii")
+        .strip()
+    )
+    __version__ = version + f"+{sha[:7]}"
+    with open(version_file_path, "w", encoding="utf-8") as f:
         f.write(f"__version__ = '{__version__}'\n")
         f.write(f"git_version = {repr(sha)}\n")
+
 
 # Setup
 if __name__ == "__main__":
@@ -229,12 +267,15 @@ if __name__ == "__main__":
         name="torch_musa",
         version=version,
         description="A PyTorch backend extension for Moore Threads MUSA",
-        url="https://github.com/MooreThreads/torch_musa.git",
+        url="https://github.mthreads.com/mthreads/torch_musa",
         author="Moore Threads PyTorch AI Dev Team",
         packages=find_packages(exclude=["tools", "tools*"]),
         ext_modules=configure_extension_build(),
         include_package_data=True,
         install_requires=install_requires,
         extras_require={},
+        entry_points={
+            "console_scripts": ["musa-converter = torch_musa.utils.musa_converter:main"]
+        },
         cmdclass={"build_ext": Build, "clean": Clean, "install": Install},
     )

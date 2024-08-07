@@ -1,6 +1,7 @@
 """
 Tensor attributes that are obtained from C++.
 """
+
 from typing import Optional, Union
 from torch.types import _device
 from torch import Tensor
@@ -8,31 +9,37 @@ from torch import Tensor
 import torch
 import torch_musa
 
+
 def _type(self, *args, **kwargs):
     """Get the data type of a musa tensor"""
     return torch_musa._MUSAC._type(self, *args, **kwargs)
+
 
 def _musa(self, *args, **kwargs):
     """Returns a copy of this object in MUSA memory"""
     return torch_musa._MUSAC._musa(self, *args, **kwargs)
 
-def _pin_memory(self, device: Optional[Union[_device, str, None]]="musa"):
+
+def _pin_memory(self, device: Optional[Union[_device, str, None]] = "musa"):
     """Copies the tensor to pinned memory, if it’s not already pinned."""
     return self.orig_pin_memory(device)
 
-def _is_pinned(self, device: Optional[Union[_device, str, None]]="musa"):
+
+def _is_pinned(self, device: Optional[Union[_device, str, None]] = "musa"):
     """Returns true if this tensor resides in pinned memory."""
     return self.orig_is_pinned(device)
+
 
 def _to(self, *args, **kwargs) -> Tensor:
     """Performs Tensor dtype and/or device conversion."""
     if len(args) > 0 and isinstance(args[0], int):
-        device = torch.device("musa:"+str(args[0]))
+        device = torch.device("musa:" + str(args[0]))
         return self.orig_to(device, *args[1:], **kwargs)
     device = kwargs.get("device")
     if isinstance(device, int):
-        kwargs["device"] = torch.device("musa:"+str(device))
+        kwargs["device"] = torch.device("musa:" + str(device))
     return self.orig_to(*args, **kwargs)
+
 
 @property
 def _is_musa(self):

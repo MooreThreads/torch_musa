@@ -1,4 +1,5 @@
 """Test embedding_bag operators."""
+
 # pylint: disable=missing-function-docstring, global-variable-not-assigned, redefined-outer-name, unused-import
 import random
 import torch

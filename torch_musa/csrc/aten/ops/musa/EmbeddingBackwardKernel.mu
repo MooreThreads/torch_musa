@@ -1,5 +1,5 @@
 #include <ATen/ATen.h>
-//#include <ATen/AccumulateType.h>
+#include <ATen/AccumulateType.h>
 #include <ATen/Dispatch.h>
 #include <ATen/TensorUtils.h>
 #include <ATen/core/Tensor.h>
@@ -13,6 +13,7 @@
 #include <thrust/unique.h>
 
 #include "torch_musa/csrc/aten/musa/MUSADtype.muh"
+#include "torch_musa/csrc/aten/musa/MUSAMath.muh"
 #include "torch_musa/csrc/aten/ops/musa/EmbeddingBackwardKernel.muh"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/MUSAStream.h"
@@ -20,14 +21,17 @@
 namespace at {
 namespace native {
 
+using at::musa::FastDivmod;
+using at::musa::VecType;
+
 namespace {
 
 #if TORCH_MUSA_ARCH == 110
-constexpr int MAX_BLOCK_SIZE = 16;
+constexpr int MAX_BLOCK_NUM = 16;
 #elif TORCH_MUSA_ARCH == 210
-constexpr int MAX_BLOCK_SIZE = 32;
+constexpr int MAX_BLOCK_NUM = 32;
 #else
-constexpr int MAX_BLOCK_SIZE = 64;
+constexpr int MAX_BLOCK_NUM = 64;
 #endif
 
 constexpr int NROWS_PER_THREAD = 10;
@@ -103,69 +107,193 @@ __global__ void PartialsSegmentOffset(
   }
 }
 
-template <typename scalar_t, typename index_t>
-__global__ void ComputeDwSegment(
-    scalar_t* dw_seg,
+template <typename scalar_t, typename index_t, const int64_t vlen>
+__global__ void ComputeDwSegmentVector(
+    acc_type<scalar_t, true>* dw_seg,
     const scalar_t* dy,
     const index_t* origin_idx,
     const index_t* partials_segment_offset,
     const int num_of_partial_segments,
-    const int elements,
-    const int tbl_w) {
-  int m_idx = blockIdx.x;
-  int m_step = gridDim.x;
-  int n_idx = threadIdx.x;
-  int n_step = blockDim.x;
+    const int numel,
+    const int64_t stride,
+    FastDivmod stride_warped_fastdv) {
+  using accscalar_t = acc_type<scalar_t, true>;
+  using vec_dtype = VecType<scalar_t, vlen * sizeof(scalar_t) * 8>;
+  using vec_acc_dtype = VecType<accscalar_t, vlen * sizeof(accscalar_t) * 8>;
 
-  for (int m = m_idx; m < num_of_partial_segments; m += m_step) {
-    int idx_start = partials_segment_offset[m];
-    int idx_end = (m == num_of_partial_segments - 1)
-        ? elements
-        : partials_segment_offset[m + 1];
-    scalar_t* pdw = dw_seg + m * tbl_w;
+  const uint32_t gid = blockIdx.x * blockDim.x + threadIdx.x;
+  uint32_t id, feature_offset; // quotient, remainder
+  stride_warped_fastdv(id, feature_offset, gid);
+  uint32_t feature_offset_vlen = feature_offset * vlen;
+  if (feature_offset_vlen >= stride) {
+    return;
+  }
+  if (id >= num_of_partial_segments) {
+    return;
+  }
+
+  const int idx_start = partials_segment_offset[id];
+  const int idx_end = (id == num_of_partial_segments - 1)
+      ? numel
+      : partials_segment_offset[id + 1];
+  if (feature_offset_vlen + vlen <= stride) {
+    vec_acc_dtype weight;
     for (int i = idx_start; i < idx_end; i++) {
-      int origin_id = origin_idx[i];
-      const scalar_t* pdy = dy + origin_id * tbl_w;
-      for (int j = n_idx; j < tbl_w; j += n_step) {
-        pdw[j] += pdy[j];
+      const index_t origin_id = origin_idx[i];
+      vec_dtype reg_dy =
+          vec_dtype::load(dy, origin_id * stride + feature_offset_vlen);
+#pragma unroll
+      for (int k = 0; k < vlen; k++) {
+        weight.val_.elem[k] += (accscalar_t)reg_dy.val_.elem[k];
       }
+    }
+    vec_acc_dtype::store(dw_seg, id * stride + feature_offset_vlen, weight);
+  } else {
+    while (feature_offset_vlen < stride) {
+      accscalar_t weight = 0;
+      for (int i = idx_start; i < idx_end; i++) {
+        const index_t origin_id = origin_idx[i];
+        weight += dy[origin_id * stride + feature_offset_vlen];
+      }
+      dw_seg[id * stride + feature_offset_vlen] = weight;
+      feature_offset_vlen++;
     }
   }
 }
 
 template <typename scalar_t, typename index_t>
-__global__ void SumAndScater(
+__global__ void ComputeDwSegment(
+    acc_type<scalar_t, true>* dw_seg,
+    const scalar_t* dy,
+    const index_t* origin_idx,
+    const index_t* partials_segment_offset,
+    const int num_of_partial_segments,
+    const int numel,
+    const int64_t stride,
+    FastDivmod stride_warped_fastdv) {
+  using accscalar_t = acc_type<scalar_t, true>;
+  const uint32_t gid = blockIdx.x * blockDim.x + threadIdx.x;
+  uint32_t id, feature_offset; // quotient, remainder
+  stride_warped_fastdv(id, feature_offset, gid);
+  if (feature_offset >= stride) {
+    return;
+  }
+  if (id >= num_of_partial_segments) {
+    return;
+  }
+
+  const int idx_start = partials_segment_offset[id];
+  const int idx_end = (id == num_of_partial_segments - 1)
+      ? numel
+      : partials_segment_offset[id + 1];
+  accscalar_t weight = 0;
+  for (int i = idx_start; i < idx_end; i++) {
+    const index_t origin_id = origin_idx[i];
+    weight += dy[origin_id * stride + feature_offset];
+  }
+  dw_seg[id * stride + feature_offset] = weight;
+}
+
+template <typename scalar_t, typename index_t, const int64_t vlen>
+__global__ void SumAndScatterVector(
     scalar_t* dw,
-    const scalar_t* dw_segments,
+    const acc_type<scalar_t, true>* dw_segments,
     const index_t* idx,
-    const index_t* segment_offset,
+    const index_t* segment_offsets,
     const index_t* partials_per_segment_offset,
     const int num_of_segments,
     const int num_of_partial_segments,
-    const int tbl_h,
-    const int tbl_w,
+    const int stride,
+    FastDivmod stride_warped_fastdv,
     const int padding_idx) {
-  int m_idx = blockIdx.x;
-  int m_step = gridDim.x;
-  int n_idx = threadIdx.x;
-  int n_step = blockDim.x;
+  using accscalar_t = acc_type<scalar_t, true>;
+  using vec_dtype = VecType<scalar_t, vlen * sizeof(scalar_t) * 8>;
+  using vec_acc_dtype = VecType<accscalar_t, vlen * sizeof(accscalar_t) * 8>;
 
-  for (int m = m_idx; m < num_of_segments; m += m_step) {
-    int idx_start = partials_per_segment_offset[m];
-    int idx_end = (m == num_of_segments - 1)
-        ? num_of_partial_segments
-        : partials_per_segment_offset[m + 1];
-    index_t id = idx[segment_offset[m]];
-    scalar_t* pdw = dw + id * tbl_w;
-    bool valid_id = (id >= 0 && id < tbl_h && id != padding_idx);
-    for (int i = idx_start; i < idx_end; i++) {
-      const scalar_t* pdw_seg = dw_segments + i * tbl_w;
-      for (int j = n_idx; j < tbl_w; j += n_step) {
-        if (valid_id) {
-          pdw[j] += pdw_seg[j];
-        }
+  const uint32_t gid = blockIdx.x * blockDim.x + threadIdx.x;
+  uint32_t id, feature_offset; // quotient, remainder
+  stride_warped_fastdv(id, feature_offset, gid);
+  uint32_t feature_offset_vlen = feature_offset * vlen;
+  if (feature_offset_vlen >= stride) {
+    return;
+  }
+  if (id >= num_of_segments) {
+    return;
+  }
+  const int idx_start = partials_per_segment_offset[id];
+  const int idx_end = (id == num_of_segments - 1)
+      ? num_of_partial_segments
+      : partials_per_segment_offset[id + 1];
+  index_t target_row = idx[segment_offsets[id]];
+  if (feature_offset_vlen + vlen <= stride) {
+    vec_acc_dtype weight_acc;
+    vec_dtype weight;
+    for (int idx = idx_start; idx < idx_end; idx++) {
+      vec_acc_dtype reg_dw =
+          vec_acc_dtype::load(dw_segments, idx * stride + feature_offset_vlen);
+#pragma unroll
+      for (int k = 0; k < vlen; k++) {
+        weight_acc.val_.elem[k] += (accscalar_t)reg_dw.val_.elem[k];
       }
     }
+#pragma unroll
+    for (int k = 0; k < vlen; k++) {
+      weight.val_.elem[k] += (scalar_t)weight_acc.val_.elem[k];
+    }
+    if (target_row != padding_idx) {
+      // #pragma unroll
+      // for (int k = 0; k < vlen; k++) {
+      //   dw[target_row * stride + feature_offset_vlen + k] =
+      //   weight.val_.elem[k];
+      // }
+      vec_dtype::store(dw, target_row * stride + feature_offset_vlen, weight);
+    }
+  } else {
+    while (feature_offset_vlen < stride) {
+      acc_type<scalar_t, true> weight = 0;
+      for (int idx = idx_start; idx < idx_end; idx++) {
+        weight += dw_segments[idx * stride + feature_offset_vlen];
+      }
+      if (target_row != padding_idx) {
+        dw[target_row * stride + feature_offset_vlen] = weight;
+      }
+      feature_offset_vlen++;
+    }
+  }
+}
+
+template <typename scalar_t, typename index_t>
+__global__ void SumAndScatter(
+    scalar_t* dw,
+    const acc_type<scalar_t, true>* dw_segments,
+    const index_t* idx,
+    const index_t* segment_offsets,
+    const index_t* partials_per_segment_offset,
+    const int num_of_segments,
+    const int num_of_partial_segments,
+    const int stride,
+    FastDivmod stride_warped_fastdv,
+    const int padding_idx) {
+  const uint32_t gid = blockIdx.x * blockDim.x + threadIdx.x;
+  uint32_t id, feature_offset; // quotient, remainder
+  stride_warped_fastdv(id, feature_offset, gid);
+  if (feature_offset >= stride) {
+    return;
+  }
+  if (id >= num_of_segments) {
+    return;
+  }
+  const int idx_start = partials_per_segment_offset[id];
+  const int idx_end = (id == num_of_segments - 1)
+      ? num_of_partial_segments
+      : partials_per_segment_offset[id + 1];
+  acc_type<scalar_t, true> weight = 0;
+  for (int idx = idx_start; idx < idx_end; idx++) {
+    weight += dw_segments[idx * stride + feature_offset];
+  }
+  index_t target_row = idx[segment_offsets[id]];
+  if (target_row != padding_idx) {
+    dw[target_row * stride + feature_offset] = weight;
   }
 }
 } // namespace
@@ -197,7 +325,7 @@ Tensor EmbeddingBackwardMUSAKernel(
   // Compute the number partial-segments per segment
   int64_t max_segment = std::min<int64_t>(numel, num_weights);
   auto partials_per_segment = at::empty({max_segment}, orig_indices.options());
-  const int max_blocks = MAX_BLOCK_SIZE;
+  const int max_blocks = MAX_BLOCK_NUM;
   uint32_t threads = 1024;
   uint32_t blocks =
       std::min(ceil_div(numel, threads), static_cast<int64_t>(max_blocks));
@@ -253,70 +381,112 @@ Tensor EmbeddingBackwardMUSAKernel(
             stream);
         musaStreamSynchronize(stream);
 
-        threads = 128;
-        blocks =
-            std::min(static_cast<int>(num_of_partial_segments), max_blocks);
+        AT_DISPATCH_FLOATING_TYPES_AND2(
+            at::ScalarType::Half,
+            at::ScalarType::BFloat16,
+            grad.scalar_type(),
+            "embedding_backward_musa",
+            [&] {
+              using partial_weight_t = acc_type<scalar_t, true>;
+              TensorOptions op;
+              if (grad.dtype() == at::kHalf || grad.dtype() == at::kBFloat16) {
+                op = grad.options().dtype(at::kFloat);
+              } else {
+                op = grad.options();
+              }
+              auto grad_weight_per_segment =
+                  at::empty({num_of_partial_segments, tbl_w}, op);
 
-        // TODO: check if numerical stability needs to be maintained as in the
-        // CUDA implementation
-        auto grad_weight_per_segment = at::zeros(
-            {num_of_partial_segments, tbl_w}, grad.options().dtype(at::kFloat));
-    // auto grad_weight_per_segment =
-    //     at::zeros({num_of_partial_segments, tbl_w}, grad.options());
+              const int warp_size = at::musa::warp_size();
+              int64_t vlen = std::min(
+                  at::musa::can_vectorize_up_to<scalar_t>(
+                      (char*)grad.data_ptr()),
+                  at::musa::can_vectorize_up_to<partial_weight_t>(
+                      (char*)grad_weight_per_segment.data_ptr()));
+              // bool can_vectorize = vlen > 1 && (tbl_w % vlen == 0);
+              bool can_vectorize = vlen > 1;
+              vlen = can_vectorize ? vlen : 1;
+              const int stride_warped =
+                  ceil_div(tbl_w, warp_size * vlen) * warp_size;
+              const int block = std::min(stride_warped, 512);
+              const int grid =
+                  ceil_div(max_partial_segment * stride_warped, block);
+              const int grid2 = ceil_div(max_segment * stride_warped, block);
 
-// 1. Compute the grad of each partial-segment
-// 2. Sum all the partial-sums and scatter them into `grad_weight`
-// For better performance, using float16_t/bfloat16_t rather than Half/BFloat16
-#define DISPATCH_SEGMENT_KERNEL(SCALAR_TYPE)                        \
-  do {                                                              \
-    using scalar_t = SCALAR_TYPE;                                   \
-    ComputeDwSegment<<<blocks, threads, 0, stream>>>(               \
-        static_cast<scalar_t*>(grad_weight_per_segment.data_ptr()), \
-        static_cast<scalar_t*>(grad.data_ptr()),                    \
-        orig_indices.data_ptr<index_t>(),                           \
-        partial_segment_offset.data_ptr<index_t>(),                 \
-        num_of_partial_segments,                                    \
-        numel,                                                      \
-        tbl_w);                                                     \
-    C10_MUSA_KERNEL_LAUNCH_CHECK();                                 \
-                                                                    \
-    blocks = std::min(num_of_segments, max_blocks);                 \
-                                                                    \
-    SumAndScater<<<blocks, threads, 0, stream>>>(                   \
-        static_cast<scalar_t*>(grad_weight.data_ptr()),             \
-        static_cast<scalar_t*>(grad_weight_per_segment.data_ptr()), \
-        sorted_indices.data_ptr<index_t>(),                         \
-        segment_offsets.data_ptr<index_t>(),                        \
-        partials_per_segment_offset.data_ptr<index_t>(),            \
-        num_of_segments,                                            \
-        num_of_partial_segments,                                    \
-        tbl_h,                                                      \
-        tbl_w,                                                      \
-        padding_idx);                                               \
-    C10_MUSA_KERNEL_LAUNCH_CHECK();                                 \
-  } while (0)
+              // 1. Compute the grad of each partial-segment
+              // 2. Sum all the partial-sums and scatter them into `grad_weight`
+              auto stride_warped_fastdv = FastDivmod((uint32_t)stride_warped);
+#define VEC_CASE(_VLEN)                                      \
+  case (_VLEN):                                              \
+    ComputeDwSegmentVector<scalar_t, index_t, _VLEN>         \
+        <<<grid, block, 0, stream>>>(                        \
+            static_cast<partial_weight_t*>(                  \
+                grad_weight_per_segment.data_ptr()),         \
+            static_cast<scalar_t*>(grad.data_ptr()),         \
+            orig_indices.data_ptr<index_t>(),                \
+            partial_segment_offset.data_ptr<index_t>(),      \
+            num_of_partial_segments,                         \
+            numel,                                           \
+            tbl_w,                                           \
+            stride_warped_fastdv);                           \
+    C10_MUSA_KERNEL_LAUNCH_CHECK();                          \
+                                                             \
+    SumAndScatterVector<scalar_t, index_t, _VLEN>            \
+        <<<grid2, block, 0, stream>>>(                       \
+            static_cast<scalar_t*>(grad_weight.data_ptr()),  \
+            static_cast<partial_weight_t*>(                  \
+                grad_weight_per_segment.data_ptr()),         \
+            sorted_indices.data_ptr<index_t>(),              \
+            segment_offsets.data_ptr<index_t>(),             \
+            partials_per_segment_offset.data_ptr<index_t>(), \
+            num_of_segments,                                 \
+            num_of_partial_segments,                         \
+            tbl_w,                                           \
+            stride_warped_fastdv,                            \
+            padding_idx);                                    \
+    C10_MUSA_KERNEL_LAUNCH_CHECK();                          \
+    break
+              if (can_vectorize) {
+                switch (vlen) {
+                  VEC_CASE(2);
+                  VEC_CASE(4);
+                  default:
+                    TORCH_CHECK(
+                        false,
+                        "Not supported vectorized length ",
+                        vlen,
+                        "in EmbeddingDenseBwdMUSA Kernel");
+                }
+              } else {
+                ComputeDwSegment<<<grid, block, 0, stream>>>(
+                    static_cast<partial_weight_t*>(
+                        grad_weight_per_segment.data_ptr()),
+                    static_cast<scalar_t*>(grad.data_ptr()),
+                    orig_indices.data_ptr<index_t>(),
+                    partial_segment_offset.data_ptr<index_t>(),
+                    num_of_partial_segments,
+                    numel,
+                    tbl_w,
+                    stride_warped_fastdv);
+                C10_MUSA_KERNEL_LAUNCH_CHECK();
 
-        const auto& the_type = grad.scalar_type();
-        switch (the_type) {
-          case at::ScalarType::Double:
-            DISPATCH_SEGMENT_KERNEL(
-                c10::impl::ScalarTypeToCPPTypeT<at::ScalarType::Double>);
-            break;
-          case at::ScalarType::Float:
-            DISPATCH_SEGMENT_KERNEL(
-                c10::impl::ScalarTypeToCPPTypeT<at::ScalarType::Float>);
-            break;
-          case at::ScalarType::Half:
-            DISPATCH_SEGMENT_KERNEL(float16_t);
-            break;
-          case at::ScalarType::BFloat16:
-            DISPATCH_SEGMENT_KERNEL(bfloat16_t);
-            break;
-          default:
-            AT_ERROR("EmbeddingDenseBwd not support ", toString(the_type));
-        }
+                SumAndScatter<<<grid2, block, 0, stream>>>(
+                    static_cast<scalar_t*>(grad_weight.data_ptr()),
+                    static_cast<partial_weight_t*>(
+                        grad_weight_per_segment.data_ptr()),
+                    sorted_indices.data_ptr<index_t>(),
+                    segment_offsets.data_ptr<index_t>(),
+                    partials_per_segment_offset.data_ptr<index_t>(),
+                    num_of_segments,
+                    num_of_partial_segments,
+                    tbl_w,
+                    stride_warped_fastdv,
+                    padding_idx);
+                C10_MUSA_KERNEL_LAUNCH_CHECK();
+              }
+            });
       });
-#undef DISPATCH_SEGMENT_KERNEL
+#undef VEC_CASE
   return grad_weight;
 }
 

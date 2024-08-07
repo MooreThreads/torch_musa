@@ -67,7 +67,7 @@ int device_count_impl(bool fail_if_no_driver) {
       TORCH_CHECK(
           false,
           "Unexpected error from musaGetDeviceCount(). Did you run "
-          "some musa functions before calling NumCudaDevices() "
+          "some musa functions before calling NumMusaDevices() "
           "that might have already set an error? Error ",
           err,
           ": ",

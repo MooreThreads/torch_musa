@@ -4,10 +4,9 @@
 #include <torch/library.h>
 
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
-namespace {
+namespace musa {
 
 Tensor WrapQuantizedMusaIntRepr(const Tensor& self) {
   // No device check
@@ -15,9 +14,5 @@ Tensor WrapQuantizedMusaIntRepr(const Tensor& self) {
   return at::native::int_repr_quantized_cuda(self);
 }
 
-TORCH_LIBRARY_IMPL(aten, QuantizedPrivateUse1, m) {
-  m.impl("int_repr", TORCH_FN(WrapQuantizedMusaIntRepr));
-}
-
-} // namespace
+} // namespace musa
 } // namespace at

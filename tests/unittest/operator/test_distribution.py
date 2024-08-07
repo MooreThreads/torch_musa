@@ -1,13 +1,18 @@
 """Testing distribution operators: uniform, normal, bernoulli"""
+
 # pylint: disable=import-outside-toplevel, invalid-name
 
 import torch
 import pytest
 from torch_musa import testing
 
+float_dtypes = [torch.float32, torch.float16]
+if testing.get_musa_arch() >= 22:
+    float_dtypes.append(torch.bfloat16)
+
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@pytest.mark.parametrize("dtype_", [torch.float32, torch.half])
+@pytest.mark.parametrize("dtype_", float_dtypes)
 @pytest.mark.parametrize("from_", [-42, 0, 4.2])
 @pytest.mark.parametrize("to_", [-4.2, 0, 42])
 def test_uniform_kstest(dtype_, from_, to_):
@@ -24,7 +29,7 @@ def test_uniform_kstest(dtype_, from_, to_):
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@pytest.mark.parametrize("dtype", [torch.float32, torch.half])
+@pytest.mark.parametrize("dtype", float_dtypes)
 @pytest.mark.parametrize("mean", [-10, 0, 50])
 @pytest.mark.parametrize("std", [1, 5, 10])
 def test_normal_kstest(dtype, mean, std):
@@ -56,7 +61,7 @@ def test_bernoulli_self(dtype):
     t.bernoulli_(0.5)  # bernoulli_.float
     assert isBinary(t.cpu())
 
-    for p_dtype in [torch.float32, torch.half]:
+    for p_dtype in float_dtypes:
         p = torch.rand(10, dtype=p_dtype, device="musa").expand(10, 10)
         t.fill_(2)
         t.bernoulli_(p)

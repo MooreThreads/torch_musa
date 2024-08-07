@@ -1,13 +1,15 @@
 """
 Module attributes that are obtained from C++.
 """
+
 from typing import Optional, Union, TypeVar
 from torch.types import _device
 
 import torch
 
 
-T = TypeVar('T', bound='Module')
+T = TypeVar("T", bound="Module")
+
 
 def _musa(self: T, device: Optional[Union[int, _device]] = None) -> T:
     r"""Moves all model parameters and buffers to the GPU.
@@ -28,6 +30,10 @@ def _musa(self: T, device: Optional[Union[int, _device]] = None) -> T:
     """
     return self._apply(lambda t: t.musa(device))
 
+
 def set_module_attributes():
     """Set module attributes for torch musa."""
     torch.nn.Module.musa = _musa
+    torch.distributed.is_mccl_available = (
+        torch.distributed.distributed_c10d.is_mccl_available
+    )

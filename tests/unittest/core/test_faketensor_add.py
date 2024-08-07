@@ -1,4 +1,5 @@
 """Test device features."""
+
 # pylint: disable=invalid-name, comparison-with-itself, unused-variable, unused-import, C0303, C0114, C0116, R1703, R1705, W0611
 
 import torch
@@ -24,9 +25,8 @@ def validate_attributes(tensor_a, tensor_c):
 
 def test_faketensor_add():
     with FakeTensorMode():
-        a = torch.tensor([1.2, 2.3], dtype=torch.float32, device='musa')
-        b = torch.tensor([1.2, 2.3], dtype=torch.float32,
-                         device='cpu').to('musa')
+        a = torch.tensor([1.2, 2.3], dtype=torch.float32, device="musa")
+        b = torch.tensor([1.2, 2.3], dtype=torch.float32, device="cpu").to("musa")
         c = a + b
 
         assert validate_attributes(a, c)

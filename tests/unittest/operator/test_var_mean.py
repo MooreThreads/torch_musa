@@ -1,4 +1,5 @@
 """Test var_mean operator."""
+
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
 import torch
 import pytest
@@ -9,11 +10,50 @@ input_data = [
     {"input": torch.randn([1, 10]), "correction": 0, "keepdim": True, "dim": 1},
     {"input": torch.randn([1, 10, 5]), "correction": 0, "keepdim": False, "dim": 2},
     {"input": torch.randn([1, 10, 5, 5]), "correction": 1, "keepdim": True, "dim": 3},
-    {"input": torch.randn([1, 10, 5, 5, 10]), "correction": 1, "keepdim": False, "dim": 4},
-    {"input": torch.randn([9, 8, 7, 6, 5, 4]), "correction": 0, "keepdim": True, "dim": 5},
-    {"input": torch.randn([9, 8, 7, 6, 5, 4, 16]), "correction": 0, "keepdim": False, "dim": 5},
-    {"input": torch.randn([9, 8, 7, 6, 5, 4, 5, 20]), "correction": 1, "keepdim": True, "dim": 7}
+    {"input": torch.randn([0, 10, 5, 5]), "correction": 1, "keepdim": True, "dim": 3},
+    {
+        "input": torch.randn([1, 1, 5, 5]).to(memory_format=torch.channels_last),
+        "correction": 1,
+        "keepdim": True,
+        "dim": None,
+    },
+    {
+        "input": torch.randn([3, 2, 1, 1]).to(memory_format=torch.channels_last),
+        "correction": 1,
+        "keepdim": True,
+        "dim": None,
+    },
+    {
+        "input": torch.randn([1, 10, 5, 5, 10]),
+        "correction": 1,
+        "keepdim": False,
+        "dim": 4,
+    },
+    {
+        "input": torch.randn([9, 8, 7, 6, 5, 4]),
+        "correction": 0,
+        "keepdim": True,
+        "dim": 5,
+    },
+    {
+        "input": torch.randn([9, 8, 7, 6, 5, 4, 16]),
+        "correction": 0,
+        "keepdim": False,
+        "dim": 5,
+    },
+    {
+        "input": torch.randn([9, 8, 7, 6, 5, 4, 5, 20]),
+        "correction": 1,
+        "keepdim": True,
+        "dim": 7,
+    },
+    {
+        "input": torch.randn([1, 64, 2, 2, 2]).to(memory_format=torch.channels_last_3d),
+        "keepdim": True,
+        "dim": 1,
+    },
 ]
+
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
@@ -24,6 +64,8 @@ def test_var_mean(input_data, data_type):
     test = testing.OpTest(
         func=torch.var_mean,
         input_args=input_data,
-        comparators=testing.DefaultComparator(abs_diff=1e-5)
+        comparators=testing.DefaultComparator(abs_diff=1e-5),
     )
     test.check_result()
+    test.check_out_ops()
+    test.check_grad_fn()

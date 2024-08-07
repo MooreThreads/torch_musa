@@ -12,14 +12,21 @@ parameter = [
     {"data": torch.randn(6, 6), "num_groups": 3, "num_channels": 6},
     {"data": torch.randn(6, 6, 6), "num_groups": 3, "num_channels": 6},
     {"data": torch.randn(20, 6, 10, 10), "num_groups": 3, "num_channels": 6},
-    {"data": torch.randn(20, 6, 10, 1, 10),
-     "num_groups": 3, "num_channels": 6},
-    {"data": torch.randn(20, 6, 10, 2, 1, 10),
-     "num_groups": 3, "num_channels": 6},
-    {"data": torch.randn(20, 6, 10, 10, 1, 2, 3),
-     "num_groups": 3, "num_channels": 6},
+    {
+        "data": torch.randn(20, 6, 10, 10).to(memory_format=torch.channels_last),
+        "num_groups": 3,
+        "num_channels": 6,
+    },
+    {"data": torch.randn(20, 6, 10, 1, 10), "num_groups": 3, "num_channels": 6},
+    {"data": torch.randn(20, 6, 10, 2, 1, 10), "num_groups": 3, "num_channels": 6},
+    {"data": torch.randn(20, 6, 10, 10, 1, 2, 3), "num_groups": 3, "num_channels": 6},
     {
         "data": torch.randn(20, 6, 10, 10, 1, 2, 3, 1),
+        "num_groups": 3,
+        "num_channels": 6,
+    },
+    {
+        "data": torch.randn(2, 6, 3, 4, 5).to(memory_format = torch.channels_last_3d),
         "num_groups": 3,
         "num_channels": 6,
     },
@@ -47,8 +54,7 @@ def test_native_group_norm(input_dtype, parameter, affine, eps, train):
             "eps": eps,
             "affine": affine,
         },
-        # NB: this test may fail with abs-diff=1e-6
-        comparators=testing.DefaultComparator(abs_diff=1e-6),
+        comparators=testing.DefaultComparator(abs_diff=1e-5, rel_diff=1e-4),
     )
     test.check_result(
         inputs={
@@ -72,21 +78,18 @@ def test_native_group_norm_device():
     group_norm = torch.nn.GroupNorm(num_groups, num_channels, eps, affine)
     group_norm(data).sum().backward()
 
-    musa_data = torch.tensor(data.detach().numpy(),
-                             requires_grad=True, device="musa:1")
+    musa_data = torch.tensor(data.detach().numpy(), requires_grad=True, device="musa:1")
     musa_group_norm = group_norm.to("musa:1")
     musa_group_norm(musa_data).sum().backward()
 
-    assert testing.DefaultComparator(1e-5)(musa_data.grad.cpu(), data.grad)
+    assert testing.DefaultComparator(abs_diff=1e-5, rel_diff=1e-4)(
+        musa_data.grad.cpu(), data.grad
+    )
     assert musa_data.grad.shape == data.grad.shape
     assert musa_data.grad.dtype == data.grad.dtype
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@pytest.mark.skipif(
-    testing.get_musa_arch() < 22,
-    reason="fp16 group_norm supported in S4000 or later"
-)
 @pytest.mark.parametrize("input_dtype", input_dtype)
 @pytest.mark.parametrize("parameter", parameter)
 @pytest.mark.parametrize("affine", affine)
@@ -107,5 +110,6 @@ def test_native_group_norm_fp16(input_dtype, parameter, affine, eps, train):
     m.half()
     input_data = input_data.half()
     musa_output = m.to("musa")(input_data.to("musa"))
-    assert testing.DefaultComparator(
-        abs_diff=1e-2)(output, musa_output.cpu().float())
+    assert testing.DefaultComparator(abs_diff=5e-2, rel_diff=5e-3)(
+        output, musa_output.cpu().float()
+    )

@@ -34,7 +34,9 @@ USE_NINJA = not check_negative_env_flag("USE_NINJA") and which("ninja") is not N
 class CMake:
     """Manages cmake."""
 
-    def __init__(self, build_dir: str = BUILD_DIR, install_dir_prefix: str = "torch") -> None:
+    def __init__(
+        self, build_dir: str = BUILD_DIR, install_dir_prefix: str = "torch"
+    ) -> None:
         self._cmake_command = CMake._get_cmake_command()
         self.build_dir = build_dir
         self.install_dir_prefix = install_dir_prefix
@@ -60,10 +62,10 @@ class CMake:
 
         _cmake_min_version = LooseVersion("3.13.0")
         if all(
-                (
-                        ver is None or ver < _cmake_min_version
-                        for ver in [cmake_version, cmake3_version]
-                )
+            (
+                ver is None or ver < _cmake_min_version
+                for ver in [cmake_version, cmake3_version]
+            )
         ):
             raise RuntimeError("no cmake or cmake3 with version >= 3.13.0 found")
 
@@ -118,25 +120,18 @@ class CMake:
             return get_cmake_cache_variables_from_file(f)
 
     def generate(
-            self,
-            version: Optional[str],
-            cmake_python_library: Optional[str],
-            build_python: bool,
-            build_test: bool,
-            my_env: Dict[str, str],
-            rerun: bool,
+        self,
+        version: Optional[str],  # pylint: disable=unused-argument
+        cmake_python_library: Optional[str],
+        build_python: bool,
+        build_test: bool,
+        my_env: Dict[str, str],
+        rerun: bool,
     ) -> None:
         """Runs cmake to generate native build files."""
 
         if rerun and os.path.isfile(self._cmake_cache_file):
             os.remove(self._cmake_cache_file)
-
-        ninja_build_file = os.path.join(self.build_dir, "build.ninja")
-        if os.path.exists(self._cmake_cache_file) and not (
-                USE_NINJA and not os.path.exists(ninja_build_file)
-        ):
-            # Everything's in place. Do not rerun.
-            return
 
         args = []
         if USE_NINJA:
@@ -171,9 +166,7 @@ class CMake:
                     args.append("-Ax64")
                     toolset_dict["host"] = "x64"
             if toolset_dict:
-                toolset_expr = ",".join(
-                    [f"{k}={v}" for k, v in toolset_dict.items()]
-                )
+                toolset_expr = ",".join([f"{k}={v}" for k, v in toolset_dict.items()])
                 args.append("-T" + toolset_expr)
 
         base_dir = os.getcwd()
@@ -203,35 +196,35 @@ class CMake:
                 # adding a new build option, also make sure you add it to CMakeLists.txt.
                 var: var
                 for var in (
-                "BLAS",
-                "WITH_BLAS",
-                "BUILDING_WITH_TORCH_LIBS",
-                "CUDA_HOST_COMILER",
-                "CUDA_NVCC_EXECUTABLE",
-                "CUDA_SEPARABLE_COMPILATION",
-                "CUDNN_LIBRARY",
-                "CUDNN_INCLUDE_DIR",
-                "CUDNN_ROOT",
-                "EXPERIMENTAL_SINGLE_THREAD_POOL",
-                "INSTALL_TEST",
-                "JAVA_HOME",
-                "INTEL_MKL_DIR",
-                "INTEL_OMP_DIR",
-                "MKL_THREADING",
-                "MKLDNN_CPU_RUNTIME",
-                "MSVC_Z7_OVERRIDE",
-                "CAFFE2_USE_MSVC_STATIC_RUNTIME",
-                "Numa_INCLUDE_DIR",
-                "Numa_LIBRARIES",
-                "ONNX_ML",
-                "ONNX_NAMESPACE",
-                "ATEN_THREADING",
-                "WERROR",
-                "OPENSSL_ROOT_DIR",
-                "STATIC_DISPATCH_BACKEND",
-                "SELECTED_OP_LIST",
-                "TRACING_BASED",
-            )
+                    "BLAS",
+                    "WITH_BLAS",
+                    "BUILDING_WITH_TORCH_LIBS",
+                    "CUDA_HOST_COMILER",
+                    "CUDA_NVCC_EXECUTABLE",
+                    "CUDA_SEPARABLE_COMPILATION",
+                    "CUDNN_LIBRARY",
+                    "CUDNN_INCLUDE_DIR",
+                    "CUDNN_ROOT",
+                    "EXPERIMENTAL_SINGLE_THREAD_POOL",
+                    "INSTALL_TEST",
+                    "JAVA_HOME",
+                    "INTEL_MKL_DIR",
+                    "INTEL_OMP_DIR",
+                    "MKL_THREADING",
+                    "MKLDNN_CPU_RUNTIME",
+                    "MSVC_Z7_OVERRIDE",
+                    "CAFFE2_USE_MSVC_STATIC_RUNTIME",
+                    "Numa_INCLUDE_DIR",
+                    "Numa_LIBRARIES",
+                    "ONNX_ML",
+                    "ONNX_NAMESPACE",
+                    "ATEN_THREADING",
+                    "WERROR",
+                    "OPENSSL_ROOT_DIR",
+                    "STATIC_DISPATCH_BACKEND",
+                    "SELECTED_OP_LIST",
+                    "TRACING_BASED",
+                )
             }
         )
 
@@ -254,7 +247,7 @@ class CMake:
             if true_var is not None:
                 build_options[true_var] = val
             elif var.startswith(
-                ("BUILD_", "USE_", "CMAKE_", "GENERATED_", "ENABLE_")
+                ("BUILD_", "USE_", "CMAKE_", "GENERATED_", "ENABLE_", "CODE_")
             ) or var.endswith(("EXITCODE", "EXITCODE__TRYRUN_OUTPUT", "INSTALL_DIR")):
                 build_options[var] = val
 
@@ -268,7 +261,7 @@ class CMake:
         cmake_prefix_path = build_options.get("CMAKE_PREFIX_PATH", None)
         if cmake_prefix_path:
             build_options["CMAKE_PREFIX_PATH"] = (
-                    py_lib_path + ";" + cast(str, cmake_prefix_path)
+                py_lib_path + ";" + cast(str, cmake_prefix_path)
             )
         else:
             build_options["CMAKE_PREFIX_PATH"] = py_lib_path
@@ -305,7 +298,7 @@ class CMake:
             print(
                 ", ".join(specified_cmake__options)
                 + "should not be specified in the environment variable. They are directly set by "
-                  "PyTorch build script. "
+                "PyTorch build script. "
             )
             sys.exit(1)
         build_options.update(cmake__options)
@@ -315,7 +308,6 @@ class CMake:
             PYTHON_EXECUTABLE=sys.executable,
             PYTHON_LIBRARY=cmake_python_library,
             PYTHON_INCLUDE_DIR=sysconfig.get_path("include"),
-            TORCH_BUILD_VERSION=version,
             NUMPY_INCLUDE_DIR=NUMPY_INCLUDE_DIR,
             **build_options,
         )
@@ -325,9 +317,7 @@ class CMake:
             if "CMAKE_C_COMPILER" not in build_options and "CC" not in os.environ:
                 CMake.defines(args, CMAKE_C_COMPILER=f"{expected_wrapper}/gcc")
             if "CMAKE_CXX_COMPILER" not in build_options and "CXX" not in os.environ:
-                CMake.defines(
-                    args, CMAKE_CXX_COMPILER=f"{expected_wrapper}/g++"
-                )
+                CMake.defines(args, CMAKE_CXX_COMPILER=f"{expected_wrapper}/g++")
 
         for env_var_name in my_env:
             if env_var_name.startswith("gh"):
@@ -336,9 +326,7 @@ class CMake:
                 try:
                     my_env[env_var_name] = str(my_env[env_var_name].encode("utf-8"))
                 except UnicodeDecodeError as error:
-                    shex = ":".join(
-                        f"{ord(c):02x}" for c in my_env[env_var_name]
-                    )
+                    shex = ":".join(f"{ord(c):02x}" for c in my_env[env_var_name])
                     print(
                         f"Invalid ENV[{env_var_name}] = {shex}",
                         file=sys.stderr,

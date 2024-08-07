@@ -6,27 +6,37 @@ CUR_DIR=$(
 )
 TORCH_MUSA_HOME=$CUR_DIR
 PYTORCH_PATH=${PYTORCH_REPO_PATH:-${TORCH_MUSA_HOME}/../pytorch}
-PATCHES_DIR=${TORCH_MUSA_HOME}/torch_patches/
+KINETO_PATH=${PYTORCH_PATH}/third_party/kineto
+TORCH_PATCHES_DIR=${TORCH_MUSA_HOME}/torch_patches/
+KINETO_PATCHES_DIR=${TORCH_MUSA_HOME}/kineto_patches/
+KINETO_URL=${KINETO_URL:-https://github.com/MooreThreads/kineto.git}
 
 BUILD_WHEEL=0
 DEBUG_MODE=0
 ASAN_MODE=0
 BUILD_TORCH=1
 BUILD_TORCH_MUSA=1
+USE_KINETO=1
 ONLY_PATCH=0
 CLEAN=0
 COMPILE_FP64=1
 PYTORCH_TAG=v2.0.0
+KINETO_BASE_COMMIT_ID=2da532c
 PYTORCH_BUILD_VERSION="${PYTORCH_TAG:1}"
 PYTORCH_BUILD_NUMBER=0 # This is used for official torch distribution.
-USE_STATIC_MKL=${USE_STATIC_MKL:-0}
+USE_STATIC_MKL=${USE_STATIC_MKL:-1}
 USE_MCCL=${USE_MCCL:-1}
+MUSA_DIR="/usr/local/musa"
+UPDATE_MUSA=0
+UPDATE_DAILY_MUSA=0
 
 usage() {
   echo -e "\033[1;32mThis script is used to build PyTorch and Torch_MUSA. \033[0m"
   echo -e "\033[1;32mParameters usage: \033[0m"
   echo -e "\033[32m    --all         : Means building both PyTorch and Torch_MUSA. \033[0m"
   echo -e "\033[32m    --fp64        : Means compiling fp64 data type in kernels using mcc in Torch_MUSA. \033[0m"
+  echo -e "\033[32m    --update_musa : Update latest RELEASED MUSA software stack. \033[0m"
+  echo -e "\033[32m    --update_daily_musa : Update latest DAILY MUSA software stack. \033[0m"
   echo -e "\033[32m    -m/--musa     : Means building Torch_MUSA only. \033[0m"
   echo -e "\033[32m    -t/--torch    : Means building original PyTorch only. \033[0m"
   echo -e "\033[32m    -d/--debug    : Means building in debug mode. \033[0m"
@@ -34,11 +44,12 @@ usage() {
   echo -e "\033[32m    -c/--clean    : Means cleaning everything that has been built. \033[0m"
   echo -e "\033[32m    -p/--patch    : Means applying patches only. \033[0m"
   echo -e "\033[32m    -w/--wheel    : Means generating wheel after building. \033[0m"
+  echo -e "\033[32m    -n/--no_kineto : Disable kineto. \033[0m"
   echo -e "\033[32m    -h/--help     : Help information. \033[0m"
 }
 
 # parse paremters
-parameters=$(getopt -o +mtdacpwh --long all,fp64,musa,torch,debug,asan,clean,patch,wheel,help, -n "$0" -- "$@")
+parameters=$(getopt -o +mtdacpwnh --long all,fp64,update_musa,update_daily_musa,musa,torch,debug,asan,clean,patch,wheel,no_kineto,help, -n "$0" -- "$@")
 [ $? -ne 0 ] && {
   echo -e "\033[34mTry '$0 --help' for more information. \033[0m"
   exit 1
@@ -55,6 +66,14 @@ while true; do
     ;;
   --fp64)
     COMPILE_FP64=1
+    shift
+    ;;
+  --update_musa)
+    UPDATE_MUSA=1
+    shift
+    ;;
+  --update_daily_musa)
+    UPDATE_DAILY_MUSA=1
     shift
     ;;
   -m | --musa)
@@ -83,6 +102,10 @@ while true; do
     BUILD_WHEEL=1
     shift
     ;;
+  -n | --no_kineto)
+    USE_KINETO=0
+    shift
+    ;;
   -p | --patch)
     ONLY_PATCH=1
     shift
@@ -102,6 +125,28 @@ while true; do
   esac
 done
 
+cmd_check(){
+  cmd="$1"
+  if command -v ${cmd} >/dev/null 2>&1; then 
+    echo "- cmd exist  : ${cmd}"
+  else
+    echo -e "\033[34m- cmd does not exist, automatically install \"${cmd}\"\033[0m"
+    pip install -r ${TORCH_MUSA_HOME}/requirements.txt # extra requirements
+  fi
+}
+
+precommit_install(){
+  cmd_check "pre-commit"
+  root_dir="$(dirname "$(realpath "${BASH_SOURCE:-$0}" )")"
+  if [ ! -f ${root_dir}/.git/hooks/pre-commit ]; then
+    pushd $root_dir
+    pre-commit install 
+    popd
+  fi
+}
+
+precommit_install
+
 clone_pytorch() {
   # if PyTorch repo exists already, we skip gitting clone PyTorch
   if [ -d ${PYTORCH_PATH} ]; then
@@ -120,9 +165,12 @@ clone_pytorch() {
       popd
     fi
   fi
+  # to make sure submodules are fetched
+  pushd ${PYTORCH_PATH}
+  git submodule update --init --recursive
 }
 
-apply_patches() {
+apply_torch_patches() {
   # apply patches into PyTorch
   echo -e "\033[34mApplying patches to ${PYTORCH_PATH} ...\033[0m"
   # clean PyTorch before patching
@@ -134,7 +182,7 @@ apply_patches() {
     popd
   fi
 
-  for file in $(find ${PATCHES_DIR} -type f -print); do
+  for file in $(find ${TORCH_PATCHES_DIR} -type f -print); do
     if [ "${file##*.}"x = "patch"x ]; then
       echo -e "\033[34mapplying patch: $file \033[0m"
       pushd $PYTORCH_PATH
@@ -143,6 +191,28 @@ apply_patches() {
       popd
     fi
   done
+
+  # apply kineto-related patches into PyTorch
+  if [ ${USE_KINETO} -eq 1 ]; then
+    for file in $(find ${KINETO_PATCHES_DIR} -type f -print); do
+      if [ "${file##*.}"x = "patch"x ]; then
+        echo -e "\033[34mapplying kineto-related patch: $file \033[0m"
+        pushd $PYTORCH_PATH
+        git apply --check $file
+        git apply $file
+        popd
+      fi
+    done
+  fi
+}
+
+update_kineto_source() {
+  pushd ${PYTORCH_PATH}/third_party/kineto
+  git remote set-url origin ${KINETO_URL}
+  git fetch
+  git checkout main
+  git reset --hard origin/main
+  popd
 }
 
 build_pytorch() {
@@ -192,7 +262,6 @@ build_torch_musa() {
   pushd ${TORCH_MUSA_HOME}
   if [ $BUILD_WHEEL -eq 1 ]; then
     rm -rf dist build
-    pip uninstall torch_musa -y
     PYTORCH_REPO_PATH=${PYTORCH_PATH} DEBUG=${DEBUG_MODE} USE_ASAN=${ASAN_MODE} ENABLE_COMPILE_FP64=${COMPILE_FP64}  USE_MCCL=${USE_MCCL} python setup.py bdist_wheel
     status=$?
     rm -rf torch_musa.egg-info
@@ -201,18 +270,45 @@ build_torch_musa() {
     PYTORCH_REPO_PATH=${PYTORCH_PATH} DEBUG=${DEBUG_MODE} USE_ASAN=${ASAN_MODE} ENABLE_COMPILE_FP64=${COMPILE_FP64} USE_MCCL=${USE_MCCL} python setup.py install
     status=$?
   fi
+
+  if [ ${USE_KINETO} -eq 1 ]; then
+    echo -e "\033[31mInstalling tb_plugin... \033[0m"
+    pushd ${PYTORCH_PATH}/third_party/kineto/tb_plugin
+    python setup.py sdist bdist_wheel
+    pip install dist/torch_tb_profiler*.whl
+    popd
+  fi
+  # scan and output ops list for each building
+  bash ${CUR_DIR}/scripts/scan_ops.sh
   popd
   return $status
 }
 
 main() {
+  # ======== install MUSA ========
+  if [ ! -d ${MUSA_DIR} ] || [ -z "$(ls -A ${MUSA_DIR})" ]; then
+    echo -e "\033[34mStart installing MUSA software stack, including musatoolkits/mudnn/mccl/muThrust/muSparse/muAlg ... \033[0m"
+    . ${CUR_DIR}/docker/common/release/update_release_all.sh
+  fi
+  if [ ${UPDATE_MUSA} -eq 1 ]; then
+    echo -e "\033[34mStart updating MUSA software stack to latest released version ... \033[0m"
+    . ${CUR_DIR}/docker/common/release/update_release_all.sh
+    exit 0
+  fi
+  if [ ${UPDATE_DAILY_MUSA} -eq 1 ]; then
+    echo -e "\033[34mStart updating MUSA software stack to latest daily version ... \033[0m"
+    . ${CUR_DIR}/docker/common/daily/update_daily_all.sh
+    exit 0
+  fi
+  # ==============================
+
   if [[ ${CLEAN} -eq 1 ]] && [[ ${BUILD_TORCH} -ne 1 ]] && [[ ${BUILD_TORCH_MUSA} -ne 1 ]]; then
     clean_pytorch
     clean_torch_musa
     exit 0
   fi
   if [ ${ONLY_PATCH} -eq 1 ]; then
-    apply_patches
+    apply_torch_patches
     exit 0
   fi
   if [ ${BUILD_TORCH} -eq 1 ]; then
@@ -220,7 +316,10 @@ main() {
     if [ ${CLEAN} -eq 1 ]; then
       clean_pytorch
     fi
-    apply_patches
+    apply_torch_patches
+    if [ ${USE_KINETO} -eq 1 ]; then
+      update_kineto_source
+    fi
     build_pytorch
     build_pytorch_status=$?
     if [ $build_pytorch_status -ne 0 ]; then

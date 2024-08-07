@@ -190,9 +190,9 @@ class GradScaler:
             return outputs * self._scale.to(device=outputs.device, non_blocking=True)
 
         # Invoke the more complex machinery only if we're treating multiple outputs.
-        stash: List[
-            _MultiDeviceReplicator
-        ] = []  # holds a reference that can be overwritten by apply_scale
+        stash: List[_MultiDeviceReplicator] = (
+            []
+        )  # holds a reference that can be overwritten by apply_scale
 
         def apply_scale(val):
             if isinstance(val, torch.Tensor):
@@ -577,8 +577,8 @@ class GradScaler:
         is a no-op.
 
         Args:
-           state_dict(dict): scaler state.  Should be an object returned from a call
-           to :meth:`state_dict`.
+           state_dict(dict): scaler state.
+           Should be an object returned from a call to :meth:`state_dict`.
         """
         if not self._enabled:
             return
@@ -626,9 +626,9 @@ class GradScaler:
         )
         found_inf = torch.full((1,), 0.0, dtype=torch.float32, device=_scale.device)
 
-        self._per_optimizer_states[id(optimizer)][
-            "found_inf_per_device"
-        ] = self._unscale_grads_(optimizer, dummy_inv_scale, found_inf, True)
+        self._per_optimizer_states[id(optimizer)]["found_inf_per_device"] = (
+            self._unscale_grads_(optimizer, dummy_inv_scale, found_inf, True)
+        )
 
         return self._per_optimizer_states[id(optimizer)]["found_inf_per_device"]
 

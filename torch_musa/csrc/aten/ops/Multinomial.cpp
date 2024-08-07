@@ -34,7 +34,6 @@
 #include <math.h>
 #include <torch/library.h>
 #include <torch_musa/csrc/aten/ops/TensorFactory.h>
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 
@@ -153,9 +152,6 @@ at::Tensor Multinomial(
   Tensor result = at::empty({0}, self.options().dtype(at::kLong));
   return MultinomialOut(self, num_samples, replacement, generator, result);
 }
-
-ADVANCED_REGISTER(aten, PrivateUse1, "multinomial", Multinomial)
-ADVANCED_REGISTER(aten, PrivateUse1, "multinomial.out", MultinomialOut)
 
 } // namespace musa
 } // namespace at

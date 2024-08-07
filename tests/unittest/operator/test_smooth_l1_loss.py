@@ -1,6 +1,7 @@
-#pylint: disable=redefined-builtin
+# pylint: disable=redefined-builtin
 "Smooth L1 Loss Test"
 from itertools import product
+import random
 import pytest
 import torch.nn.functional as F
 import torch
@@ -10,12 +11,15 @@ integral_types = (torch.uint8, torch.int8, torch.int16, torch.int32, torch.int64
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@pytest.mark.parametrize("shape", [(2, 2), (64, 64)])
+@pytest.mark.parametrize(
+    "shape", [(2, 2), (64, 64), (2, 1, 4, 5), (2, 4, 1, 1), (2, 0, 1, 0), (64, 0)]
+)
 @pytest.mark.parametrize("dtype", [torch.half, torch.float])
 @pytest.mark.parametrize("beta", [0.5, 1.0, 1.5])
 @pytest.mark.parametrize("reduction", ["mean", "sum", "none"])
 def test_smoothl1loss(shape, dtype, beta, reduction):
     "Testing smooth l1 loss"
+
     def _make_test_tensor(shape, contiguous=True):
         if contiguous:
             test_tensor = torch.randn(shape).to(dtype=dtype)
@@ -26,6 +30,8 @@ def test_smoothl1loss(shape, dtype, beta, reduction):
             doubled_shape[-1] *= 2
             test_tensor = torch.randn(doubled_shape).to(dtype=dtype)
             test_tensor = test_tensor[..., ::2]
+            if test_tensor.dim() == 4 and random.random() < 0.5:
+                test_tensor = test_tensor.to(memory_format=torch.channels_last)
         return test_tensor
 
     # init smooth l1 loss model
@@ -49,6 +55,7 @@ def test_smoothl1loss(shape, dtype, beta, reduction):
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 def test_smoothl1loss_intergral_target():
     "Testing smooth l1 loss with int target"
+
     def _input_grad(input, target, reduction):
         output = F.smooth_l1_loss(input, target, reduction=reduction, beta=0.5)
         output.sum().backward()

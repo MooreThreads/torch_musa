@@ -53,7 +53,25 @@ struct MUSAGuardImpl final : public c10::impl::DeviceGuardImplInterface {
     }
     return Device(kMUSA, device);
   }
+
+  bool hasPrimaryContext(int64_t device_index) const {
+    TORCH_CHECK(
+        device_index >= 0 && device_index < deviceCount(),
+        "hasPrimaryContext expects a valid device index, but got device_index=",
+        device_index);
+    unsigned int ctx_flags;
+    int ctx_is_active = 0;
+    muDevicePrimaryCtxGetState(device_index, &ctx_flags, &ctx_is_active);
+    return ctx_is_active == 1;
+  }
+
   void setDevice(Device d) const override {
+    if (!hasPrimaryContext(d.index())) {
+      // To keep consistent logic with `Engine::thread_init`
+      // in pytorch/torch/csrc/autograd/engine.cpp
+      return;
+    }
+
     TORCH_INTERNAL_ASSERT(d.type() == kMUSA);
     Device current_device = getDevice();
     if (current_device != d) {

@@ -9,9 +9,11 @@
 #include <ATen/ops/ones_like.h>
 #include <ATen/ops/zeros_like.h>
 #endif
+#include "torch_musa/csrc/aten/musa/MUSAContext.h"
+#include "torch_musa/csrc/aten/musa/MUSAGeneratorImpl.h"
+#include "torch_musa/csrc/aten/musa/MUSAGraphsUtils.muh"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
@@ -65,9 +67,34 @@ namespace musa {
   auto musa_input = CreateMUTensor(contiguous_input);
   auto musa_output = CreateMUTensor(output);
   auto musa_mask = CreateMUTensor(mask);
-
+  const int UNROLL = 8;
+  const int64_t nelem = input.numel();
+  const int64_t block_size = 128;
+  auto gen = get_generator_or_default<MUSAGeneratorImpl>(
+      c10::nullopt, musa::detail::getDefaultMUSAGenerator());
+  unsigned int blocks_per_sm =
+      at::musa::getCurrentDeviceProperties()->maxThreadsPerMultiProcessor /
+      block_size;
+  unsigned int g_x = (nelem + block_size - 1) / block_size;
+  g_x = std::min(
+      (unsigned int)at::musa::getCurrentDeviceProperties()
+              ->multiProcessorCount *
+          blocks_per_sm,
+      g_x);
+  // number of times random will be generated per thread, to offset philox
+  // counter in thc random state
+  int64_t counter_offset =
+      ((nelem - 1) / (block_size * g_x * UNROLL) + 1) * UNROLL;
+  PhiloxMusaState rng_engine_inputs;
+  {
+    std::lock_guard<std::mutex> lock(gen->mutex_);
+    rng_engine_inputs = gen->philox_musa_state(counter_offset);
+  }
+  auto seeds = at::musa::philox::unpack(rng_engine_inputs);
   ::musa::dnn::Dropout dropout;
   CHECK_MUDNN_STATUS(dropout.SetP(p), "SetP");
+  CHECK_MUDNN_STATUS(dropout.SetSeed(std::get<0>(seeds)), "SetSeed");
+  CHECK_MUDNN_STATUS(dropout.SetOffset(std::get<1>(seeds)), "SetOffset");
   CHECK_MUDNN_STATUS(
       dropout.RunDropout(h, musa_output, musa_input, musa_mask), "RunDropout");
   return std::make_tuple(output, mask);
@@ -115,13 +142,6 @@ Tensor NativeDropoutBackward(
       "RunDropoutBwd");
   return output;
 }
-
-ADVANCED_REGISTER(aten, PrivateUse1, "native_dropout", NativeDropout)
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "native_dropout_backward",
-    NativeDropoutBackward)
 
 } // namespace musa
 } // namespace at

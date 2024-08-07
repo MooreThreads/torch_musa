@@ -10,6 +10,12 @@ namespace musa {
 void InitializePythonBindings();
 PyMethodDef* GetTensorMethods();
 
+// Same as set_default_tensor_type() but takes a PyObject*
+void PySetDefaultTensorType(PyObject* obj);
+
+// Same as py_set_default_tensor_type, but only changes the dtype (ScalarType).
+void PySetDefaultDtype(PyObject* obj);
+
 } // namespace musa
 } // namespace torch
 

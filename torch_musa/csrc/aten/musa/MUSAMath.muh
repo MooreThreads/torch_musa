@@ -135,19 +135,19 @@ __device__ __host__ __forceinline__ value_t find_log2(value_t x) {
  * Find divisor, using find_log2
  */
 __device__ __host__ __forceinline__ void find_divisor(
-    unsigned int& mul,
-    unsigned int& shr,
-    unsigned int denom) {
-  if (denom == 1) {
-    mul = 0;
-    shr = 0;
+    uint32_t& mul,
+    uint32_t& shr,
+    uint32_t denom) {
+  if ((denom & (denom - 1)) == 0) {
+    mul = 1;
+    shr = find_log2(denom);
   } else {
-    unsigned int p = 31 + find_log2(denom);
+    uint32_t p = 31 + find_log2(denom);
     unsigned m =
         unsigned(((1ull << p) + unsigned(denom) - 1) / unsigned(denom));
 
     mul = m;
-    shr = p - 32;
+    shr = p;
   }
 }
 
@@ -155,41 +155,16 @@ __device__ __host__ __forceinline__ void find_divisor(
  * Find quotient and remainder using device-side intrinsics
  */
 __device__ __host__ __forceinline__ void fast_divmod(
-    int& quo,
-    int& rem,
-    int src,
-    int div,
-    unsigned int mul,
-    unsigned int shr) {
-  quo = int((div != 1) ? int(((int64_t)src * mul) >> 32) >> shr : src);
+    uint32_t& quo,
+    uint32_t& rem,
+    uint32_t src,
+    uint32_t div,
+    uint32_t mul,
+    uint32_t shr) {
+  quo = (uint32_t)(((uint64_t)src * mul) >> shr);
 
   // The remainder.
   rem = src - (quo * div);
-}
-
-// For long int input
-__device__ __host__ __forceinline__ void fast_divmod(
-    int& quo,
-    int64_t& rem,
-    int64_t src,
-    int div,
-    unsigned int mul,
-    unsigned int shr) {
-  quo = int((div != 1) ? ((src * mul) >> 32) >> shr : src);
-  // The remainder.
-  rem = src - (quo * div);
-}
-
-__device__ __host__ __forceinline__ void fast_divmod(
-    int& quo,
-    int& rem,
-    int64_t src,
-    int div,
-    unsigned int mul,
-    unsigned int shr) {
-  quo = int((div != 1) ? ((src * mul) >> 32) >> shr : src);
-  // The remainder.
-  rem = (src - (quo * div));
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
@@ -214,9 +189,9 @@ __device__ __host__ __forceinline__ void fast_divmod(
 ///   // remainder = (dividend % divisor)
 ///
 struct FastDivmod {
-  int divisor;
-  unsigned int multiplier;
-  unsigned int shift_right;
+  uint32_t divisor;
+  uint32_t multiplier;
+  uint32_t shift_right;
 
   /// Construct the FastDivmod object, in host code ideally.
   ///
@@ -226,7 +201,7 @@ struct FastDivmod {
   __device__ __host__ __forceinline__ FastDivmod()
       : divisor(0), multiplier(0), shift_right(0) {}
 
-  __device__ __host__ __forceinline__ FastDivmod(int divisor_)
+  __device__ __host__ __forceinline__ FastDivmod(uint32_t divisor_)
       : divisor(divisor_) {
     find_divisor(multiplier, shift_right, divisor);
   }
@@ -234,9 +209,9 @@ struct FastDivmod {
   /// Computes integer division and modulus using precomputed values. This is
   /// computationally inexpensive.
   __device__ __host__ __forceinline__ void operator()(
-      int& quotient,
-      int& remainder,
-      int dividend) const {
+      uint32_t& quotient,
+      uint32_t& remainder,
+      uint32_t dividend) const {
     fast_divmod(
         quotient, remainder, dividend, divisor, multiplier, shift_right);
   }
@@ -245,65 +220,16 @@ struct FastDivmod {
   /// computationally inexpensive.
   ///
   /// Simply returns the quotient
-  __device__ __host__ __forceinline__ int divmod(int& remainder, int dividend)
-      const {
-    int quotient;
+  __device__ __host__ __forceinline__ uint32_t
+  divmod(uint32_t& remainder, uint32_t dividend) const {
+    uint32_t quotient;
     fast_divmod(
         quotient, remainder, dividend, divisor, multiplier, shift_right);
     return quotient;
   }
 
-  __device__ __host__ __forceinline__ int div(int dividend) const {
-    int quotient, remainder;
-    fast_divmod(
-        quotient, remainder, dividend, divisor, multiplier, shift_right);
-    return quotient;
-  }
-
-  /// Computes integer division and modulus using precomputed values. This is
-  /// computationally inexpensive.
-  __device__ __host__ __forceinline__ void operator()(
-      int& quotient,
-      int64_t& remainder,
-      int64_t dividend) const {
-    fast_divmod(
-        quotient, remainder, dividend, divisor, multiplier, shift_right);
-  }
-
-  /// Computes integer division and modulus using precomputed values. This is
-  /// computationally inexpensive.
-  __device__ __host__ __forceinline__ int divmod(
-      int64_t& remainder,
-      int64_t dividend) const {
-    int quotient;
-    fast_divmod(
-        quotient, remainder, dividend, divisor, multiplier, shift_right);
-    return quotient;
-  }
-
-  /// Computes integer division and modulus using precomputed values. This is
-  /// computationally inexpensive.
-  __device__ __host__ __forceinline__ void operator()(
-      int& quotient,
-      int& remainder,
-      int64_t dividend) const {
-    fast_divmod(
-        quotient, remainder, dividend, divisor, multiplier, shift_right);
-  }
-
-  /// Computes integer division and modulus using precomputed values. This is
-  /// computationally inexpensive.
-  __device__ __host__ __forceinline__ int divmod(
-      int& remainder,
-      int64_t dividend) const {
-    int quotient;
-    fast_divmod(
-        quotient, remainder, dividend, divisor, multiplier, shift_right);
-    return quotient;
-  }
-
-  __device__ __host__ __forceinline__ int div(int64_t dividend) const {
-    int quotient, remainder;
+  __device__ __host__ __forceinline__ uint32_t div(uint32_t dividend) const {
+    uint32_t quotient, remainder;
     fast_divmod(
         quotient, remainder, dividend, divisor, multiplier, shift_right);
     return quotient;

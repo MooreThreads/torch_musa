@@ -6,7 +6,6 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -89,18 +88,30 @@ Tensor& CatOut(const at::ITensorListRef& tensors, int64_t dim, Tensor& out) {
   at::musa::muTensor out_ = at::musa::CreateMUTensor(out);
   at::musa::muHandle& h = at::GetMudnnHandle();
   ::musa::dnn::Concat op;
-  if (dim == 1 && memory_format == at::MemoryFormat::ChannelsLast) {
-    CHECK_MUDNN_STATUS(op.SetAxis(3), "Set concat axis");
-  } else {
-    CHECK_MUDNN_STATUS(op.SetAxis(dim), "Set concat axis");
+
+  int axis = dim;
+  if (memory_format == at::MemoryFormat::ChannelsLast) {
+    if (axis == 1) {
+      axis = 3;
+    } else if (axis > 1) {
+      --axis;
+    }
+  } else if (memory_format == at::MemoryFormat::ChannelsLast3d) {
+    if (axis == 1) {
+      axis = 4;
+    } else if (axis > 1) {
+      --axis;
+    }
   }
+  CHECK_MUDNN_STATUS(op.SetAxis(axis), "Set concat axis");
+
   CHECK_MUDNN_STATUS(
       op.Run(h, out_, elements, mu_tensors.data()), "Run Concat");
 
   return out;
 }
 
-Tensor Cat(const at::ITensorListRef& tensors, int64_t dim = 0) {
+Tensor Cat(const at::ITensorListRef& tensors, int64_t dim) {
   const auto& materialized = tensors.materialize();
   const Tensor& ref = materialized[0].get();
 
@@ -127,10 +138,6 @@ Tensor Cat(const at::ITensorListRef& tensors, int64_t dim = 0) {
 
   return output;
 }
-
-ADVANCED_REGISTER(aten, PrivateUse1, "cat", Cat)
-REDEFINE_REGISTER(aten, PrivateUse1, "_cat", Cat)
-ADVANCED_REGISTER(aten, PrivateUse1, "cat.out", CatOut)
 
 } // namespace musa
 } // namespace at

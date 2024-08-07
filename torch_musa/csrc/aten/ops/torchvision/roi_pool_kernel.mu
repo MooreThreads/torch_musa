@@ -1,7 +1,9 @@
 #include <ATen/ATen.h>
+#include <ATen/core/dispatch/Dispatcher.h>
 #include <float.h>
 #include <torch/library.h>
 #include <ATen/native/musa/KernelUtils.muh>
+#include "torch_musa/csrc/amp/autocast_mode.h"
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 
@@ -265,6 +267,44 @@ at::Tensor roi_pool_backward_kernel(
 
 } // namespace
 
+namespace {
+
+std::tuple<at::Tensor, at::Tensor> roi_pool(
+    const at::Tensor& input,
+    const at::Tensor& rois,
+    double spatial_scale,
+    int64_t pooled_height,
+    int64_t pooled_width) {
+  C10_LOG_API_USAGE_ONCE(
+      "torch_musa.csrc.aten.ops.torchvision.roi_pool_kernel.roi_pool");
+  static auto op = c10::Dispatcher::singleton()
+                       .findSchemaOrThrow("torchvision::roi_pool", "")
+                       .typed<decltype(roi_pool)>();
+  return op.call(input, rois, spatial_scale, pooled_height, pooled_width);
+}
+
+std::tuple<at::Tensor, at::Tensor> roi_pool_autocast(
+    const at::Tensor& input,
+    const at::Tensor& rois,
+    double spatial_scale,
+    int64_t pooled_height,
+    int64_t pooled_width) {
+  c10::impl::ExcludeDispatchKeyGuard no_autocast(
+      c10::DispatchKey::AutocastPrivateUse1);
+  auto result = roi_pool(
+      at::musa::autocast::cached_cast(at::kFloat, input),
+      at::musa::autocast::cached_cast(at::kFloat, rois),
+      spatial_scale,
+      pooled_height,
+      pooled_width);
+
+  return std::make_tuple(
+      std::get<0>(result).to(input.scalar_type()),
+      std::get<1>(result).to(input.scalar_type()));
+}
+
+} // namespace
+
 TORCH_LIBRARY_IMPL(torchvision, PrivateUse1, m) {
   m.impl(
       TORCH_SELECTIVE_NAME("torchvision::roi_pool"),
@@ -272,6 +312,12 @@ TORCH_LIBRARY_IMPL(torchvision, PrivateUse1, m) {
   m.impl(
       TORCH_SELECTIVE_NAME("torchvision::_roi_pool_backward"),
       TORCH_FN(roi_pool_backward_kernel));
+}
+
+TORCH_LIBRARY_IMPL(torchvision, AutocastPrivateUse1, m) {
+  m.impl(
+      TORCH_SELECTIVE_NAME("torchvision::roi_pool"),
+      TORCH_FN(roi_pool_autocast));
 }
 
 } // namespace ops

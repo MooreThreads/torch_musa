@@ -1,6 +1,8 @@
 #include <ATen/ATen.h>
 #include <ATen/AccumulateType.h>
+#include <ATen/core/dispatch/Dispatcher.h>
 #include <torch/library.h>
+#include "torch_musa/csrc/amp/autocast_mode.h"
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 
@@ -166,8 +168,37 @@ at::Tensor nms_kernel(
 
 } // namespace
 
+namespace {
+
+at::Tensor nms(
+    const at::Tensor& dets,
+    const at::Tensor& scores,
+    double iou_threshold) {
+  C10_LOG_API_USAGE_ONCE("torch_musa.csrc.aten.ops.torchvision.nms_kernel.nms");
+  static auto op = c10::Dispatcher::singleton()
+                       .findSchemaOrThrow("torchvision::nms", "")
+                       .typed<decltype(nms)>();
+  return op.call(dets, scores, iou_threshold);
+}
+at::Tensor nms_autocast(
+    const at::Tensor& dets,
+    const at::Tensor& scores,
+    double iou_threshold) {
+  c10::impl::ExcludeDispatchKeyGuard no_autocast(
+      c10::DispatchKey::AutocastPrivateUse1);
+  return nms(
+      at::musa::autocast::cached_cast(at::kFloat, dets),
+      at::musa::autocast::cached_cast(at::kFloat, scores),
+      iou_threshold);
+}
+} // namespace
+
 TORCH_LIBRARY_IMPL(torchvision, PrivateUse1, m) {
   m.impl(TORCH_SELECTIVE_NAME("torchvision::nms"), TORCH_FN(nms_kernel));
+}
+
+TORCH_LIBRARY_IMPL(torchvision, AutocastPrivateUse1, m) {
+  m.impl(TORCH_SELECTIVE_NAME("torchvision::nms"), TORCH_FN(nms_autocast));
 }
 
 } // namespace ops

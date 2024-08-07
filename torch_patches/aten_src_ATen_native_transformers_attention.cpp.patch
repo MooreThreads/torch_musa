@@ -1,8 +1,8 @@
 diff --git a/aten/src/ATen/native/transformers/attention.cpp b/aten/src/ATen/native/transformers/attention.cpp
-index a5f0141..a690df9 100644
+index a5f0141..d998724 100644
 --- a/aten/src/ATen/native/transformers/attention.cpp
 +++ b/aten/src/ATen/native/transformers/attention.cpp
-@@ -483,6 +483,52 @@ std::tuple<Tensor, Tensor> native_multi_head_attention_cpu(
+@@ -483,6 +483,53 @@ std::tuple<Tensor, Tensor> native_multi_head_attention_cpu(
    return std::make_tuple(std::move(proj), std::move(qkt));
  }
  
@@ -37,6 +37,7 @@ index a5f0141..a690df9 100644
 +    const at::Tensor& out,
 +    const at::Tensor& logsumexp,
 +    const at::Tensor& dropout_mask,
++    bool is_casual,
 +    const c10::optional<Tensor>& mask) {
 +  TORCH_CHECK(false, "No CPU implemetation for this aten func yet!");
 +}
@@ -55,7 +56,7 @@ index a5f0141..a690df9 100644
  std::tuple<Tensor, Tensor, Tensor, Tensor> native_decoder_only_multi_head_attention(
      const Tensor& query,
      const Tensor& key,
-@@ -774,38 +820,71 @@ Tensor scaled_dot_product_attention(
+@@ -774,38 +821,71 @@ Tensor scaled_dot_product_attention(
      bool is_causal) {
    validate_sdpa_input(query_, key, value, attn_mask_, dropout_p, is_causal);
    int64_t choice_int = static_cast<int64_t>(sdp::SDPBackend::math);

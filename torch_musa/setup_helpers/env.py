@@ -1,4 +1,5 @@
 """env"""
+
 import os
 import platform
 import struct
@@ -12,8 +13,11 @@ IS_WINDOWS = platform.system() == "Windows"
 IS_DARWIN = platform.system() == "Darwin"
 IS_LINUX = platform.system() == "Linux"
 
-IS_CONDA = ("conda" in sys.version or "Continuum" in sys.version or any(
-    x.startswith("CONDA") for x in os.environ))
+IS_CONDA = (
+    "conda" in sys.version
+    or "Continuum" in sys.version
+    or any(x.startswith("CONDA") for x in os.environ)
+)
 CONDA_DIR = os.path.join(os.path.dirname(sys.executable), "..")
 
 IS_64BIT = struct.calcsize("P") == 8
@@ -59,7 +63,8 @@ class BuildType:
             return
 
         cmake_cache_txt = os.path.join(BUILD_DIR, "CMakeCache.txt")
-        if os.path.isfile(cmake_cache_txt):
+        # NOTE: Now if debug mode is set, we force it to reload CMake building.
+        if os.path.isfile(cmake_cache_txt) and not check_env_flag("DEBUG"):
             # Found CMakeCache.txt. Use the build type specified in it.
 
             with open(cmake_cache_txt, encoding="utf-8") as f:

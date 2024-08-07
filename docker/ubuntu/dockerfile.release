@@ -1,0 +1,129 @@
+ARG BASE_IMG
+FROM ${BASE_IMG}
+
+ARG MUSA_TOOLKITS_URL
+ARG MUDNN_URL
+ARG MCCL_URL
+ARG PYTHON_VERSION
+
+SHELL ["/bin/bash", "-c"]
+
+# setup time for system
+ENV LANG=C.UTF-8
+ENV DEBIAN_FRONTEND=noninteractive
+
+# using ubuntu official sources often fails to connect
+COPY ./common/change_ubuntu_mirror.sh change_ubuntu_mirror.sh
+RUN bash change_ubuntu_mirror.sh && \
+    rm -f change_ubuntu_mirror.sh
+
+# create render group
+# Only users in render group can use MooreThreads GPU
+RUN groupadd -o -g 109 render
+
+# install basic packages
+COPY ./common/install_base.sh install_base.sh
+RUN bash install_base.sh && \
+    rm -f install_base.sh
+
+# install gcc
+# ARG GCC_VERSION
+# COPY ./common/install_gcc.sh install_gcc.sh
+# RUN bash install_gcc.sh && \
+#     rm -f install_gcc.sh
+
+# install musa_toolkit, which includes musa_runtime and mcc
+RUN wget --no-check-certificate ${MUSA_TOOLKITS_URL} -O /home/musa_toolkits_install.tar.gz
+RUN cd /home && \
+    tar -zxf ./musa_toolkits_install.tar.gz && \
+    cd ./musa_toolkits_install && \
+    bash ./install.sh && \
+    rm -f ../musa_toolkits_install.tar.gz && \
+    rm -rf ../*musa_toolkit*
+
+# install muDNN
+RUN wget --no-check-certificate ${MUDNN_URL} -O /home/mudnn.tar && \
+    tar -xvf /home/mudnn.tar -C /home && \
+    pushd /home/mudnn && \
+    bash install_mudnn.sh && \
+    rm -f /home/mudnn.tar && \
+    rm -rf /home/*muDNN* /home/*mudnn* && \
+    popd
+
+# install mccl
+COPY ./common/install_mccl.sh install_mccl.sh
+RUN bash install_mccl.sh --mccl_url ${MCCL_URL} && \
+    rm -f install_mccl.sh 
+
+# install math libs, there are muSparse, muAlg and muThrust
+COPY ./common/release/update_release_math.sh install_math.sh
+RUN bash install_math.sh -w && \
+    rm -f install_math.sh 
+
+# install mupti
+COPY ./common/release/update_release_mupti.sh install_mupti.sh
+RUN bash install_mupti.sh && \
+    rm -f install_mupti.sh
+
+# install conda
+COPY ./common/install_conda.sh install_conda.sh
+RUN bash install_conda.sh && \
+    rm -f install_conda.sh
+ENV PATH=/opt/conda/bin:${PATH}
+RUN conda init bash
+
+# change source of conda
+COPY ./common/change_conda_mirror.sh change_conda_mirror.sh 
+RUN bash change_conda_mirror.sh && \
+    rm change_conda_mirror.sh && \
+    echo 'export LD_LIBRARY_PATH="/usr/local/musa/lib:${LD_LIBRARY_PATH}"'>>~/.bashrc
+
+# setup conda virtual environment for torch_musa
+RUN ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
+    conda create -n ${ENV_NAME} python=${PYTHON_VERSION} --yes && \
+    source activate ${ENV_NAME} && \
+    source deactivate && \
+    conda activate ${ENV_NAME} && \
+    pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
+    pip install numpy==1.23.1 protobuf==3.19.0 && \
+    conda install -y "llvm-openmp<16"
+
+# install torch and torch_musa from wheel packages
+# maybe we should also release whl of torchvision
+ARG TORCH_WHL_URL
+ARG TORCH_MUSA_WHL_URL
+ARG TORCHAUDIO_WHL_URL
+ARG TORCHVISION_WHL_URL
+ENV MUSA_HOME=/usr/local/musa
+ENV LD_LIBRARY_PATH=$MUSA_HOME/lib:$LD_LIBRARY_PATH
+ENV PATH=/usr/local/musa/bin:$PATH
+ENV MTHREADS_VISIBLE_DEVICES=all
+RUN ENV_NAME="py"$(echo ${PYTHON_VERSION} | tr -d '.') && \
+    sudo echo -e ". /opt/conda/etc/profile.d/conda.sh"                            >> ~/.bashrc && \
+    sudo echo "conda activate ${ENV_NAME}"                                        >> ~/.bashrc && \
+    source activate ${ENV_NAME} && \
+    source deactivate && \
+    conda activate ${ENV_NAME} && \
+    mkdir -p /home/whls && \
+    wget --no-check-certificate -P /home/whls $TORCH_WHL_URL && \
+    wget --no-check-certificate -P /home/whls $TORCH_MUSA_WHL_URL && \
+    wget --no-check-certificate -P /home/whls $TORCHAUDIO_WHL_URL && \
+    wget --no-check-certificate -P /home/whls $TORCHVISION_WHL_URL && \
+    WHLS=$(find /home/whls -name "*.whl") && \
+    pip install ${WHLS} && \
+    sudo rm -rf /home/whls && \
+    conda deactivate
+
+COPY ./common/check_status.sh /home/check_status.sh
+COPY ./common/test_musa.mu /home/test_musa.mu
+
+RUN chmod 777 /home/check_status.sh
+RUN line_number=$(grep -rn '[ -z "$PS1" ] && return'  ~/.bashrc | awk -F: '{print $1}') && \
+    sed -i "${line_number}s/.*/#[ -z \"\$PS1\" ] \&\& return/" ~/.bashrc
+
+RUN echo "rm /home/test_musa.mu" >> /home/check_status.sh && \  
+    echo "rm /home/check_status.sh" >> /home/check_status.sh  && \
+    echo "exec /bin/bash" >> /home/check_status.sh
+
+WORKDIR /home
+ENTRYPOINT ["/home/check_status.sh"]

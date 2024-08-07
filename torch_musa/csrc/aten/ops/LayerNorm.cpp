@@ -6,7 +6,6 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -43,9 +42,8 @@ namespace musa {
   muHandle& h = GetMudnnHandle();
   auto mt_input = CreateMUTensor(contiguous_input);
   auto mt_output = CreateMUTensor(output);
-  muTensor mt_gamma;
-  muTensor mt_beta;
-  Tensor gamma;
+  muTensor mt_gamma, mt_beta;
+  Tensor gamma, beta;
   if (weight.defined()) {
     gamma = weight.contiguous();
     mt_gamma = CreateMUTensor(gamma);
@@ -58,7 +56,7 @@ namespace musa {
         weight.scalar_type());
   }
   if (bias.defined()) {
-    auto beta = bias.contiguous();
+    beta = bias.contiguous();
     mt_beta = CreateMUTensor(beta);
     TORCH_CHECK(
         bias.scalar_type() == at::ScalarType::Float ||
@@ -67,6 +65,11 @@ namespace musa {
         "Dtype of bias tensor of LayerNorm only support Float32, Half and BFloat16",
         "but now it is ",
         bias.scalar_type());
+  } else if (weight.defined()) {
+    // TODO(MTAI): if weight != None && bias == None
+    // mudnn not support in rc3.0.1, so initialize bias to zeros temporarily.
+    beta = at::zeros_like(weight);
+    mt_beta = CreateMUTensor(beta);
   }
 
   std::vector<int32_t> norm_axis;
@@ -365,13 +368,6 @@ at::Tensor RMSNormMUDNN(
       op.Run(h, mt_output, mt_square, mt_input, mt_gamma), "Run");
   return output;
 }
-
-ADVANCED_REGISTER(aten, PrivateUse1, "native_layer_norm", NativeLayerNorm)
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "native_layer_norm_backward",
-    NativeLayerNormBwd)
 
 } // namespace musa
 } // namespace at

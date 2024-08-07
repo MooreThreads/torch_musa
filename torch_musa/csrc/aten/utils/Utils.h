@@ -54,12 +54,13 @@ constexpr c10::DispatchKey kMUSAKey = c10::DispatchKey::PrivateUse1;
 
 #define MUSA_TENSOR_TYPE_CHECK(self)                   \
   TORCH_CHECK(                                         \
-      ((self.scalar_type() == ScalarType::Float) ||    \
+      ((self.scalar_type() == ScalarType::Double) ||   \
+       (self.scalar_type() == ScalarType::Float) ||    \
        (self.scalar_type() == ScalarType::Half) ||     \
        (self.scalar_type() == ScalarType::BFloat16) || \
        (self.scalar_type() == ScalarType::Int) ||      \
        (self.scalar_type() == ScalarType::Long)),      \
-      "Now muDNN only support float32, half, bfloat16, int32, and int64");
+      "Now muDNN only support float64, float32, half, bfloat16, int32, and int64");
 
 #define CHECK_MUDNN_STATUS(rst, msg)       \
   TORCH_CHECK(                             \
@@ -69,6 +70,8 @@ constexpr c10::DispatchKey kMUSAKey = c10::DispatchKey::PrivateUse1;
       msg);
 
 muTensor CreateMUTensor(const Tensor& t, bool permute_if_not_contiguous = true);
+
+muTensor CreateMUTensorByCompressDim(const Tensor& t);
 
 inline muTensor CreateEmptyMUTensor() {
   return muTensor();
@@ -80,6 +83,10 @@ void ConfigFormat(
     const Tensor& t,
     muTensor& mt,
     bool permute_if_not_contiguous = true);
+
+void SetMUTensorDType(ScalarType dtype, muTensor& m_t);
+
+void SetMUTensorAddr(void* addr, muTensor& m_t);
 
 // Set quantized mudnn tensor info
 void inline SetMudnnQuantizationInfo(

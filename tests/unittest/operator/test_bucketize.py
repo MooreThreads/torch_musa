@@ -1,4 +1,5 @@
 """Test bucketize operators."""
+
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
 import torch
 import pytest
@@ -22,3 +23,6 @@ def test_bucketize(input_data, dtype, right):
     input_args["right"] = right
     test = testing.OpTest(func=torch.bucketize, input_args=input_args)
     test.check_result()
+    test.check_grad_fn()
+    # TODO(@mt-ai): out ops is not implemented!
+    # test.check_out_ops()

@@ -19,7 +19,6 @@
 #include "torch_musa/csrc/core/MUSAGuard.h"
 #include "torch_musa/csrc/core/PeerToPeerAccess.h"
 #include "torch_musa/csrc/utils/musa_lazy_init.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -61,6 +60,46 @@ TensorBase empty_musa(IntArrayRef size, const TensorOptions& options) {
       options.device_opt(),
       options.pinned_memory_opt(),
       options.memory_format_opt());
+}
+
+Tensor empty_strided_musa(
+    IntArrayRef size,
+    IntArrayRef stride,
+    c10::optional<ScalarType> dtype_opt,
+    c10::optional<Layout> layout_opt,
+    c10::optional<Device> device_opt,
+    c10::optional<bool> pin_memory_opt) {
+  at::musa::lazyInitMUSA();
+  check_size_nonnegative(size);
+
+  TORCH_CHECK(
+      !pin_memory_opt.has_value() || !*pin_memory_opt,
+      "Only dense CPU tensors can be pinned");
+  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(
+      layout_or_default(layout_opt) == Layout::Strided);
+
+  auto dtype = dtype_or_default(dtype_opt);
+  auto device = device_or_default(device_opt);
+
+  TORCH_CHECK(device.type() == at::musa::kMUSA, "Device isn't MUSA!");
+  c10::musa::OptionalMUSAGuard guard(device);
+  c10::Allocator* allocator = c10::musa::MUSACachingAllocator::get();
+  constexpr c10::DispatchKeySet musa_dispatch_key(at::musa::kMUSAKey);
+  return at::detail::empty_strided_generic(
+      size, stride, allocator, musa_dispatch_key, dtype);
+}
+
+Tensor empty_strided_musa(
+    IntArrayRef size,
+    IntArrayRef stride,
+    const TensorOptions& options) {
+  return at::detail::empty_strided_musa(
+      size,
+      stride,
+      optTypeMetaToScalarType(options.dtype_opt()),
+      options.layout_opt(),
+      options.device_opt(),
+      options.pinned_memory_opt());
 }
 
 } // namespace detail
@@ -147,7 +186,7 @@ inline TensorImpl* resize_impl_musa_(
   return self;
 }
 
-Tensor empty_musa(
+Tensor EmptyMUSA(
     IntArrayRef size,
     c10::optional<ScalarType> dtype_opt,
     c10::optional<Layout> layout_opt,
@@ -164,31 +203,16 @@ Tensor empty_musa(
       memory_format_opt);
 }
 
-Tensor empty_strided_musa(
+Tensor EmptyStridedMUSA(
     IntArrayRef size,
     IntArrayRef stride,
     c10::optional<ScalarType> dtype_opt,
     c10::optional<Layout> layout_opt,
     c10::optional<Device> device_opt,
     c10::optional<bool> pin_memory_opt) {
-  at::musa::lazyInitMUSA();
-  check_size_nonnegative(size);
-
-  TORCH_CHECK(
-      !pin_memory_opt.has_value() || !*pin_memory_opt,
-      "Only dense CPU tensors can be pinned");
-  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(
-      layout_or_default(layout_opt) == Layout::Strided);
-
-  auto dtype = dtype_or_default(dtype_opt);
-  auto device = device_or_default(device_opt);
-
-  TORCH_CHECK(device.type() == at::musa::kMUSA, "Device isn't MUSA!");
-  const DeviceGuard device_guard(device);
-  c10::Allocator* allocator = c10::musa::MUSACachingAllocator::get();
-  constexpr c10::DispatchKeySet musa_dispatch_key(at::musa::kMUSAKey);
-  return at::detail::empty_strided_generic(
-      size, stride, allocator, musa_dispatch_key, dtype);
+  c10::musa::OptionalMUSAGuard guard(device_opt);
+  return at::detail::empty_strided_musa(
+      size, stride, dtype_opt, layout_opt, device_opt, pin_memory_opt);
 }
 
 void check_inplace(
@@ -274,7 +298,7 @@ Tensor create_out(
         options.memory_format_opt());
   } else {
     // TODO(mt-ai): use memory_format in options
-    return empty_strided_musa(
+    return EmptyStridedMUSA(
         sizes,
         strides,
         optTypeMetaToScalarType(options.dtype_opt()),
@@ -284,7 +308,7 @@ Tensor create_out(
   }
 }
 
-const Tensor& resize_musa_(
+const Tensor& ResizeMUSA_(
     const Tensor& self,
     IntArrayRef size,
     c10::optional<c10::MemoryFormat> optional_memory_format) {
@@ -304,7 +328,7 @@ const Tensor& resize_musa_(
   return self;
 }
 
-Tensor& set_musa_(Tensor& result) {
+Tensor& SetMUSA_(Tensor& result) {
   caffe2::TypeMeta dtype = result.dtype();
   Storage storage(
       Storage::use_byte_size_t(),
@@ -316,13 +340,13 @@ Tensor& set_musa_(Tensor& result) {
   return result;
 }
 
-Tensor& set_source_(Tensor& result, Storage source) {
+Tensor& SetSource_(Tensor& result, Storage source) {
   int64_t new_size =
       static_cast<int64_t>(source.nbytes() / result.dtype().itemsize());
   return result.set_(source, 0, new_size, {});
 }
 
-Tensor& set_storage_musa_(
+Tensor& SetStorageMUSA_(
     Tensor& result,
     Storage storage,
     int64_t storage_offset,
@@ -338,7 +362,7 @@ Tensor& set_storage_musa_(
   return result;
 }
 
-Tensor& set_tensor_(Tensor& result, const Tensor& source) {
+Tensor& SetTensor_(Tensor& result, const Tensor& source) {
   if (result.unsafeGetTensorImpl() != source.unsafeGetTensorImpl()) {
     return result.set_(
         source.storage(),
@@ -377,12 +401,30 @@ Tensor ContiguousRef(
   return ref;
 }
 
+namespace {
+
+static at::Tensor& EyeOutImpl(int64_t n, int64_t m, Tensor& result) {
+  TORCH_CHECK(n >= 0, "n must be greater or equal to 0, got ", n);
+  TORCH_CHECK(m >= 0, "m must be greater or equal to 0, got ", m);
+  result.resize_({n, m});
+  result.zero_();
+
+  int64_t sz = std::min<int64_t>(n, m);
+  int64_t stride = result.stride(0) + result.stride(1);
+
+  Tensor diag = result.as_strided({sz}, {stride});
+  diag.fill_(1);
+  return result;
+}
+
+} // anonymous namespace
+
 at::Tensor& EyeOut(int64_t n, at::Tensor& out) {
   c10::optional<Device> common_device = nullopt;
   c10::impl::check_and_update_common_device(
       common_device, out, "EyeOut", "out");
   const OptionalDeviceGuard device_guard(device_of(out));
-  return at::native::eye_out_cuda(n, out);
+  return EyeOutImpl(n, n, out);
 }
 
 at::Tensor& EyeMOut(int64_t n, int64_t m, at::Tensor& out) {
@@ -390,22 +432,36 @@ at::Tensor& EyeMOut(int64_t n, int64_t m, at::Tensor& out) {
   c10::impl::check_and_update_common_device(
       common_device, out, "EyeMOut", "out");
   const OptionalDeviceGuard device_guard(device_of(out));
-  return at::native::eye_out_cuda(n, m, out);
+  return EyeOutImpl(n, m, out);
 }
 
-ADVANCED_REGISTER(aten, PrivateUse1, "empty.memory_format", empty_musa)
-ADVANCED_REGISTER(aten, PrivateUse1, "empty_strided", empty_strided_musa)
-ADVANCED_REGISTER(aten, PrivateUse1, "resize_", resize_musa_)
-ADVANCED_REGISTER(aten, PrivateUse1, "set_", set_musa_)
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "set_.source_Storage_storage_offset",
-    set_storage_musa_)
-ADVANCED_REGISTER(aten, PrivateUse1, "set_.source_Storage", set_source_)
-ADVANCED_REGISTER(aten, PrivateUse1, "set_.source_Tensor", set_tensor_)
-ADVANCED_REGISTER(aten, PrivateUse1, "eye.out", EyeOut)
-ADVANCED_REGISTER(aten, PrivateUse1, "eye.m_out", EyeMOut)
+at::Tensor Take(const at::Tensor& self, const at::Tensor& index) {
+  c10::optional<Device> common_device = nullopt;
+  (void)common_device; // Suppress unused variable warning
+  c10::impl::check_and_update_common_device(
+      common_device, self, "Take", "self");
+  c10::impl::check_and_update_common_device(
+      common_device, index, "Take", "index");
+  const OptionalDeviceGuard device_guard(device_of(self));
+  return at::native::take(self, index);
+}
+
+at::Tensor& Put_(
+    at::Tensor& self,
+    const at::Tensor& index,
+    const at::Tensor& source,
+    bool accumulate) {
+  c10::optional<Device> common_device = nullopt;
+  (void)common_device; // Suppress unused variable warning
+  c10::impl::check_and_update_common_device(
+      common_device, self, "Put_", "self");
+  c10::impl::check_and_update_common_device(
+      common_device, index, "Put_", "index");
+  c10::impl::check_and_update_common_device(
+      common_device, source, "Put_", "source");
+  const OptionalDeviceGuard device_guard(device_of(self));
+  return at::native::put_(self, index, source, accumulate);
+}
 
 } // namespace musa
 } // namespace at

@@ -1,4 +1,5 @@
 """Test optimizers, some of these code was borrowed from pytorch official unit test"""
+
 # pylint: disable=missing-class-docstring, missing-function-docstring
 import copy
 import numbers
@@ -19,7 +20,10 @@ _DTYPE_PRECISIONS = {
     torch.float32: (1.3e-6, 1e-5),
 }
 
-def default_tolerances(*inputs: Union[torch.Tensor, torch.dtype]) -> Tuple[float, float]:
+
+def default_tolerances(
+    *inputs: Union[torch.Tensor, torch.dtype]
+) -> Tuple[float, float]:
     dtypes = []
     for _input in inputs:
         if isinstance(_input, torch.Tensor):
@@ -38,7 +42,7 @@ def default_tolerances(*inputs: Union[torch.Tensor, torch.dtype]) -> Tuple[float
 def get_tolerances(
     *inputs: Union[torch.Tensor, torch.dtype],
     rtol: Optional[float],
-    atol: Optional[float]
+    atol: Optional[float],
 ) -> Tuple[float, float]:
     if (rtol is None) ^ (atol is None):
         raise ValueError("Both 'rtol' and 'atol' must be either specified or omitted")
@@ -54,7 +58,9 @@ class TestOptim:
 
     def assert_equal(self, golen, result, equal_nan=False):
         rtol, atol = get_tolerances(*[result, golen], rtol=self.rtol, atol=self.atol)
-        matches = torch.isclose(result, golen, rtol=rtol, atol=atol, equal_nan=equal_nan)
+        matches = torch.isclose(
+            result, golen, rtol=rtol, atol=atol, equal_nan=equal_nan
+        )
         assert torch.all(matches)
 
     def _test_multi_tensor_optimizers(self, configs):
@@ -79,9 +85,7 @@ class TestOptim:
                 params_with_flag = copy.deepcopy(params)
                 params_with_flag["foreach"] = foreach
 
-                optimizer = optim_ctr(
-                    model.parameters(), **params_with_flag
-                )
+                optimizer = optim_ctr(model.parameters(), **params_with_flag)
                 for _ in range(k_iterations):
                     optimizer.zero_grad()
                     output = model(input_t)
@@ -104,7 +108,9 @@ class TestOptim:
                     if k == "step" and isinstance(actual, numbers.Number):
                         actual = torch.Tensor([actual])
                         golden = torch.Tensor([golden])
-                    assert isinstance(golden, torch.Tensor) and isinstance(actual, torch.Tensor)
+                    assert isinstance(golden, torch.Tensor) and isinstance(
+                        actual, torch.Tensor
+                    )
                     self.assert_equal(golden.cpu(), actual.cpu())
                     # assert torch.allclose(golden.cpu(), actual.cpu())
 
@@ -124,16 +130,28 @@ class TestOptim:
             (optim.NAdam, {"weight_decay": 0.01, "momentum_decay": 4e-3}),
             (
                 optim.SGD,
-                {"lr": 0.2, "momentum": 1, "dampening": 0.5, "weight_decay": 1, "nesterov": False}
+                {
+                    "lr": 0.2,
+                    "momentum": 1,
+                    "dampening": 0.5,
+                    "weight_decay": 1,
+                    "nesterov": False,
+                },
             ),
             (
                 optim.SGD,
-                {"lr": 0.2, "momentum": 1, "dampening": 0, "weight_decay": 1, "nesterov": True}
+                {
+                    "lr": 0.2,
+                    "momentum": 1,
+                    "dampening": 0,
+                    "weight_decay": 1,
+                    "nesterov": True,
+                },
             ),
-            (optim.RAdam, {"weight_decay": 0., "eps": 1e-6}),
-            (optim.RAdam, {"weight_decay": 0.}),
-            (optim.RAdam, {"weight_decay": 1., "eps": 1e-6}),
-            (optim.RAdam, {"weight_decay": 1.}),
+            (optim.RAdam, {"weight_decay": 0.0, "eps": 1e-6}),
+            (optim.RAdam, {"weight_decay": 0.0}),
+            (optim.RAdam, {"weight_decay": 1.0, "eps": 1e-6}),
+            (optim.RAdam, {"weight_decay": 1.0}),
             (optim.RMSprop, {"weight_decay": 1, "momentum": 1, "centered": True}),
             (optim.RMSprop, {"weight_decay": 1, "momentum": 0, "centered": True}),
             (optim.RMSprop, {"weight_decay": 1, "momentum": 1, "centered": False}),

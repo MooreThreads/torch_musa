@@ -1,0 +1,13 @@
+diff --git a/torch/multiprocessing/reductions.py b/torch/multiprocessing/reductions.py
+index 6389fc9..0f40bab 100644
+--- a/torch/multiprocessing/reductions.py
++++ b/torch/multiprocessing/reductions.py
+@@ -250,7 +250,7 @@ def reduce_tensor(tensor):
+     # eliminated it so that we could just use tensor views to implement the same
+     # thing.
+     #
+-    if storage._untyped_storage.device.type == 'cuda':
++    if storage._untyped_storage.device.type in ['cuda', 'musa']:
+         (device,
+          handle,
+          storage_size_bytes,

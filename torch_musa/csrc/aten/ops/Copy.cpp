@@ -143,8 +143,23 @@ bool require_copy_backup(const Tensor& src, const Tensor& self) {
 void permute_to_contiguous(const Tensor& self, const Tensor& src) {
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Permute op;
-  auto contiguous_out = CreateMUTensor(self, false);
-  auto contiguous_in = CreateMUTensor(src, false);
+  const auto memory_format = self.suggest_memory_format();
+  const bool is_channels_last =
+      memory_format == at::MemoryFormat::ChannelsLast ||
+      memory_format == at::MemoryFormat::ChannelsLast3d;
+  Tensor channels_last_src = src;
+  if (is_channels_last) {
+    channels_last_src = src.dim() == 4 ? src.permute({0, 2, 3, 1})
+                                       : src.permute({0, 2, 3, 4, 1});
+  }
+  muTensor contiguous_out, contiguous_in;
+  if (self.dim() <= 8) {
+    contiguous_out = CreateMUTensor(self, is_channels_last);
+    contiguous_in = CreateMUTensor(channels_last_src, is_channels_last);
+  } else {
+    contiguous_out = CreateMUTensorByCompressDim(self);
+    contiguous_in = CreateMUTensorByCompressDim(channels_last_src);
+  }
   CHECK_MUDNN_STATUS(op.Run(h, contiguous_out, contiguous_in), "Run");
 }
 
@@ -231,6 +246,9 @@ void mtgpu_impl_copy_d2d(
 
 void mtgpu_impl_datacast(const Tensor& tensor_self, const Tensor& tensor_src) {
   c10::musa::MUSAGuard device_guard(tensor_src.device());
+  if (C10_UNLIKELY(tensor_src.numel() == 0)) {
+    return;
+  }
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Unary op;
 
@@ -252,10 +270,7 @@ static bool maybe_enable_p2p_access(Device dst_device, Device src_device) {
   return at::musa::get_p2p_access(src_device.index(), dst_device.index());
 }
 
-Tensor mtgpu_copy_from(
-    const Tensor& src,
-    const Tensor& self,
-    bool non_blocking) {
+Tensor MUSACopyFrom(const Tensor& src, const Tensor& self, bool non_blocking) {
   // At least one of src and dst should be MUSA, otherwise it is impossible
   // to fall into this function!
   TORCH_INTERNAL_ASSERT(is_musa(self) || is_musa(src));
@@ -270,6 +285,10 @@ Tensor mtgpu_copy_from(
     }
 
     if (src.device() == self.device()) {
+      if (src.numel() == 0) {
+        self.zero_();
+        return self;
+      }
       mtgpu_impl_datacast(self, src);
       return self;
     }
@@ -356,12 +375,8 @@ Tensor mtgpu_copy_from(
   return self;
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("_copy_from", &mtgpu_copy_from);
-}
-
 TORCH_LIBRARY_IMPL(aten, QuantizedPrivateUse1, m) {
-  m.impl(TORCH_SELECTIVE_NAME("aten::_copy_from"), TORCH_FN(mtgpu_copy_from));
+  m.impl(TORCH_SELECTIVE_NAME("aten::_copy_from"), TORCH_FN(MUSACopyFrom));
 }
 
 } // namespace musa

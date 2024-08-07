@@ -1,4 +1,5 @@
 """Test bmm operators."""
+
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
 import torch
 import pytest
@@ -10,6 +11,10 @@ input_data = [
     {
         "input": torch.randn(4, 10, 5),
         "mat2": torch.randn(4, 5, 10),
+    },
+    {
+        "input": torch.randn(4, 10, 0),
+        "mat2": torch.randn(4, 0, 10),
     },
     {
         "input": torch.randn(4, 4).T.unsqueeze(0),
@@ -43,3 +48,5 @@ def test_bmm(input_data):
         comparators=testing.DefaultComparator(abs_diff=1e-6),
     )
     test.check_result()
+    test.check_out_ops()
+    test.check_grad_fn()

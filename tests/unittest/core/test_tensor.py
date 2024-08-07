@@ -1,4 +1,5 @@
 """Test binary operators."""
+
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
 import pytest
 import torch
@@ -33,7 +34,9 @@ def test_tensor_new(input_data, data_type):
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("data_type", data_type)
 def test_tensor_a_new(input_data, data_type):
-    mtgpu_tensor = torch.tensor(data=input_data["input"], dtype=data_type, device="musa")
+    mtgpu_tensor = torch.tensor(
+        data=input_data["input"], dtype=data_type, device="musa"
+    )
     new_mtgpu_result = mtgpu_tensor.new(input_data["input"])
 
     cpu_tensor = torch.tensor(data=input_data["input"], dtype=data_type, device="cpu")
@@ -44,7 +47,9 @@ def test_tensor_a_new(input_data, data_type):
 
     if testing.MULTIGPU_AVAILABLE:
         with torch.musa.device(1):
-            mtgpu_tensor = torch.tensor(data=input_data["input"], dtype=data_type, device="musa")
+            mtgpu_tensor = torch.tensor(
+                data=input_data["input"], dtype=data_type, device="musa"
+            )
             new_mtgpu_result = mtgpu_tensor.new(input_data["input"])
 
             assert new_mtgpu_result.shape == new_cpu_result.shape
@@ -97,17 +102,17 @@ def test_tensor_type():
 
 def test_set_dtype():
     dtype_dict = {
-        torch.musa.BoolTensor : "torch.musa.BoolTensor",
-        torch.musa.CharTensor : "torch.musa.CharTensor",
-        torch.musa.ByteTensor : "torch.musa.ByteTensor",
-        torch.musa.HalfTensor : "torch.musa.HalfTensor",
-        torch.musa.FloatTensor : "torch.musa.FloatTensor",
-        torch.musa.DoubleTensor : "torch.musa.DoubleTensor",
+        torch.musa.BoolTensor: "torch.musa.BoolTensor",
+        torch.musa.CharTensor: "torch.musa.CharTensor",
+        torch.musa.ByteTensor: "torch.musa.ByteTensor",
+        torch.musa.HalfTensor: "torch.musa.HalfTensor",
+        torch.musa.FloatTensor: "torch.musa.FloatTensor",
+        torch.musa.DoubleTensor: "torch.musa.DoubleTensor",
     }
 
     for dtype, type_str in dtype_dict.items():
         x = torch.randn(3, 3)
         y = x.type(dtype)
-        assert x.device == torch.device('cpu')
+        assert x.device == torch.device("cpu")
         assert y.type() == type_str
-        assert y.device == torch.device('musa:0')
+        assert y.device == torch.device("musa:0")

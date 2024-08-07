@@ -1,0 +1,2123 @@
+# torch_musa codegen functions
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
+#
+#                         STRUCTURED FUNCTIONS
+#
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
+
+
+- func: bitwise_right_shift.Tensor
+- func: bitwise_right_shift_.Tensor
+- func: bitwise_right_shift.Tensor_out
+
+- func: bitwise_left_shift.Tensor
+- func: bitwise_left_shift_.Tensor
+- func: bitwise_left_shift.Tensor_out
+
+- func: softplus
+- func: softplus.out
+
+- func: softplus_backward
+- func: softplus_backward.grad_input
+
+- func: leaky_relu_backward
+- func: leaky_relu_backward.grad_input
+
+- func: bitwise_not
+- func: bitwise_not_
+- func: bitwise_not.out
+
+- func: sgn
+- func: sgn_
+- func: sgn.out
+
+- func: sign
+- func: sign_
+- func: sign.out
+
+- func: hardsigmoid_backward
+- func: hardsigmoid_backward.grad_input
+
+- func: xlogy_.Tensor
+- func: xlogy.Tensor
+- func: xlogy.OutTensor
+
+- func: atan2_
+- func: atan2
+- func: atan2.out
+
+- func: linalg_cross
+- func: linalg_cross.out
+
+- func: expm1
+- func: expm1_
+- func: expm1.out
+
+- func: frac
+- func: frac_
+- func: frac.out
+
+- func: gather
+- func: gather.out
+
+- func: index_add_
+- func: index_add
+- func: index_add.out
+
+- func: linalg_vector_norm
+- func: linalg_vector_norm.out
+
+- func: nll_loss_forward
+- func: nll_loss_forward.output
+
+- func: nll_loss_backward
+- func: nll_loss_backward.grad_input
+
+- func: mse_loss
+- func: mse_loss.out
+
+- func: avg_pool3d
+- func: avg_pool3d.out
+
+- func: replication_pad1d
+- func: replication_pad1d.out
+
+- func: smooth_l1_loss
+- func: smooth_l1_loss.out
+
+- func: upsample_bicubic2d
+- func: upsample_bicubic2d.out
+
+- func: upsample_linear1d
+- func: upsample_linear1d.out
+
+- func: upsample_nearest1d
+- func: upsample_nearest1d.out
+
+- func: upsample_bicubic2d_backward
+- func: upsample_bicubic2d_backward.grad_input
+
+- func: upsample_trilinear3d
+- func: upsample_trilinear3d.out
+
+- func: upsample_trilinear3d_backward
+- func: upsample_trilinear3d_backward.grad_input
+
+- func: bitwise_xor.Tensor
+- func: bitwise_xor_.Tensor
+- func: bitwise_xor.Tensor_out
+
+- func: bitwise_or.Tensor
+- func: bitwise_or_.Tensor
+- func: bitwise_or.Tensor_out
+
+- func: bitwise_and.Tensor
+- func: bitwise_and_.Tensor
+- func: bitwise_and.Tensor_out
+
+- func: reflection_pad1d_backward
+- func: reflection_pad1d_backward.grad_input
+
+- func: scatter_reduce.two
+- func: scatter_reduce_.two
+- func: scatter_reduce.two_out
+
+- func: erf
+- func: erf_
+- func: erf.out
+
+- func: erfinv
+- func: erfinv_
+- func: erfinv.out
+
+- func: threshold
+- func: threshold_
+- func: threshold.out
+
+- func: index.Tensor
+- func: index.Tensor_out
+
+- func: lerp.Scalar_out
+- func: lerp.Scalar
+- func: lerp_.Scalar
+
+- func: lerp.Tensor_out
+- func: lerp.Tensor
+- func: lerp_.Tensor
+
+- func: isin.Tensor_Tensor_out
+- func: isin.Tensor_Tensor
+
+- func: isin.Tensor_Scalar_out
+- func: isin.Tensor_Scalar
+
+- func: isin.Scalar_Tensor_out
+- func: isin.Scalar_Tensor
+
+- func: index_copy.out
+- func: index_copy_
+- func: index_copy
+
+- func: adaptive_max_pool2d
+- func: adaptive_max_pool2d.out
+  dispatch:
+    PrivateUse1: adaptive_max_pool2d_out_musa
+
+- func: adaptive_max_pool2d_backward
+- func: adaptive_max_pool2d_backward.grad_input
+  dispatch:
+    PrivateUse1: adaptive_max_pool2d_backward_out_musa
+
+- func: adaptive_max_pool3d
+- func: adaptive_max_pool3d.out
+
+- func: adaptive_max_pool3d_backward
+- func: adaptive_max_pool3d_backward.grad_input
+
+- func: pow.Scalar
+- func: pow.Scalar_out
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
+#
+#                         UNSTRUCTURED FUNCTIONS
+#
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
+
+- func: _scaled_dot_product_attention_flash_musa
+  dispatch:
+    PrivateUse1: MuDNNFlashSDPAFwd
+
+- func: _scaled_dot_product_attention_flash_musa_backward
+  dispatch:
+    PrivateUse1: MuDNNFlashSDPABwd
+
+- func: _scaled_dot_product_attention_math_musa
+  dispatch:
+    PrivateUse1: MuDNNMathSDPAFwd
+
+- func: _scaled_dot_product_attention_math_musa_backward
+  dispatch:
+    PrivateUse1: MuDNNMathSDPABwd
+
+- func: rms_norm_forward
+  dispatch:
+    PrivateUse1: RMSNormForward
+
+- func: rms_norm_backward
+  dispatch:
+    PrivateUse1: RMSNormBackward
+
+- func: abs
+  dispatch:
+    PrivateUse1: Abs
+
+- func: abs_
+  dispatch:
+    PrivateUse1: Abs_
+
+- func: abs.out
+  dispatch:
+    PrivateUse1: AbsOut
+
+- func: logical_not
+  dispatch:
+    PrivateUse1: LogicalNot
+
+- func: logical_not_
+  dispatch:
+    PrivateUse1: LogicalNot_
+
+- func: logical_not.out
+  dispatch:
+    PrivateUse1: LogicalNotOut
+
+- func: eq.Scalar
+  dispatch:
+    PrivateUse1: EqScalar
+- func: eq_.Scalar
+  dispatch:
+    PrivateUse1: EqScalar_
+- func: eq.Scalar_out
+  structured: false
+  dispatch:
+    PrivateUse1: EqScalarOut
+
+- func: relu
+  dispatch:
+    PrivateUse1: Relu
+
+- func: relu_
+  dispatch:
+    PrivateUse1: Relu_
+
+- func: relu.out
+  dispatch:
+    PrivateUse1: ReluOut
+
+- func: lt.Scalar
+  dispatch:
+    PrivateUse1: LtScalar
+- func: lt_.Scalar
+  dispatch:
+    PrivateUse1: LtScalar_
+- func: lt.Scalar_out
+  structured: false
+  dispatch:
+    PrivateUse1: LtScalarOut
+
+- func: le.Scalar
+  dispatch:
+    PrivateUse1: LeScalar
+- func: le_.Scalar
+  dispatch:
+    PrivateUse1: LeScalar_
+- func: le.Scalar_out
+  structured: false
+  dispatch:
+    PrivateUse1: LeScalarOut
+
+- func: ne.Scalar
+  dispatch:
+    PrivateUse1: NeScalar
+- func: ne_.Scalar
+  dispatch:
+    PrivateUse1: NeScalar_
+- func: ne.Scalar_out
+  structured: false
+  dispatch:
+    PrivateUse1: NeScalarOut
+
+- func: gt.Scalar
+  dispatch:
+    PrivateUse1: GtScalar
+- func: gt_.Scalar
+  dispatch:
+    PrivateUse1: GtScalar_
+- func: gt.Scalar_out
+  structured: false
+  dispatch:
+    PrivateUse1: GtScalarOut
+
+- func: ge.Scalar
+  dispatch:
+    PrivateUse1: GeScalar
+- func: ge_.Scalar
+  dispatch:
+    PrivateUse1: GeScalar_
+- func: ge.Scalar_out
+  structured: false
+  dispatch:
+    PrivateUse1: GeScalarOut
+
+- func: sqrt
+  dispatch:
+    PrivateUse1: Sqrt
+- func: sqrt_
+  dispatch:
+    PrivateUse1: Sqrt_
+- func: sqrt.out
+  structured: false
+  dispatch:
+    PrivateUse1: SqrtOut
+
+- func: round
+  dispatch:
+    PrivateUse1: Round
+- func: round_
+  dispatch:
+    PrivateUse1: Round_
+- func: round.out
+  structured: false
+  dispatch:
+    PrivateUse1: RoundOut
+
+- func: rsqrt
+  dispatch:
+    PrivateUse1: Rsqrt
+- func: rsqrt_
+  dispatch:
+    PrivateUse1: Rsqrt_
+- func: rsqrt.out
+  structured: false
+  dispatch:
+    PrivateUse1: RsqrtOut
+
+- func: hardswish
+  dispatch:
+    PrivateUse1: HardSwish
+
+- func: hardswish_
+  dispatch:
+    PrivateUse1: HardSwish_
+
+- func: hardswish.out
+  dispatch:
+    PrivateUse1: HardSwishOut
+
+- func: hardswish_backward
+  dispatch:
+    PrivateUse1: HardSwishBwd
+
+- func: hardsigmoid
+  dispatch:
+    PrivateUse1: HardSigmoid
+- func: hardsigmoid_
+  dispatch:
+    PrivateUse1: HardSigmoid_
+- func: hardsigmoid.out
+  structured: false
+  dispatch:
+    PrivateUse1: HardSigmoidOut
+
+- func: acos
+  dispatch:
+    PrivateUse1: Acos
+- func: acos_
+  dispatch:
+    PrivateUse1: Acos_
+- func: acos.out
+  structured: false
+  dispatch:
+    PrivateUse1: AcosOut
+
+- func: tanh
+  dispatch:
+    PrivateUse1: Tanh
+- func: tanh_
+  dispatch:
+    PrivateUse1: Tanh_
+- func: tanh.out
+  structured: false
+  dispatch:
+    PrivateUse1: TanhOut
+
+- func: tan
+  dispatch:
+    PrivateUse1: Tan
+- func: tan_
+  dispatch:
+    PrivateUse1: Tan_
+- func: tan.out
+  structured: false
+  dispatch:
+    PrivateUse1: TanOut
+
+- func: atan
+  dispatch:
+    PrivateUse1: Atan
+- func: atan_
+  dispatch:
+    PrivateUse1: Atan_
+- func: atan.out
+  structured: false
+  dispatch:
+    PrivateUse1: AtanOut
+
+- func: log
+  dispatch:
+    PrivateUse1: Log
+- func: log_
+  dispatch:
+    PrivateUse1: Log_
+- func: log.out
+  structured: false
+  dispatch:
+    PrivateUse1: LogOut
+
+- func: log2
+  dispatch:
+    PrivateUse1: Log2
+- func: log2_
+  dispatch:
+    PrivateUse1: Log2_
+- func: log2.out
+  structured: false
+  dispatch:
+    PrivateUse1: Log2Out
+
+- func: gelu
+  dispatch:
+    PrivateUse1: Gelu
+- func: gelu_
+  dispatch:
+    PrivateUse1: Gelu_
+- func: gelu.out
+  structured: false
+  dispatch:
+    PrivateUse1: GeluOut
+
+- func: clamp
+  dispatch:
+    PrivateUse1: Clamp
+- func: clamp_
+  dispatch:
+    PrivateUse1: Clamp_
+- func: clamp.out
+  structured: false
+  dispatch:
+    PrivateUse1: ClampOut
+
+- func: clamp.Tensor
+  dispatch:
+    PrivateUse1: ClampTensor
+- func: clamp.Tensor_out
+  structured: false
+  dispatch:
+    PrivateUse1: ClampTensorOut
+
+- func: clamp_min
+  dispatch:
+    PrivateUse1: ClampMin
+- func: clamp_min.out
+  structured: false
+  dispatch:
+    PrivateUse1: ClampMinOut
+
+- func: clamp_max
+  dispatch:
+    PrivateUse1: ClampMax
+- func: clamp_max.out
+  structured: false
+  dispatch:
+    PrivateUse1: ClampMaxOut
+
+- func: reciprocal
+  dispatch:
+    PrivateUse1: Reciprocal
+- func: reciprocal_
+  dispatch:
+    PrivateUse1: Reciprocal_
+- func: reciprocal.out
+  structured: false
+  dispatch:
+    PrivateUse1: ReciprocalOut
+
+- func: sigmoid
+  dispatch:
+    PrivateUse1: Sigmoid
+- func: sigmoid_
+  dispatch:
+    PrivateUse1: Sigmoid_
+- func: sigmoid.out
+  structured: false
+  dispatch:
+    PrivateUse1: SigmoidOut
+
+- func: ceil
+  dispatch:
+    PrivateUse1: Ceil
+- func: ceil_
+  dispatch:
+    PrivateUse1: Ceil_
+- func: ceil.out
+  structured: false
+  dispatch:
+    PrivateUse1: CeilOut
+
+- func: exp
+  dispatch:
+    PrivateUse1: Exp
+- func: exp_
+  dispatch:
+    PrivateUse1: Exp_
+- func: exp.out
+  structured: false
+  dispatch:
+    PrivateUse1: ExpOut
+
+- func: silu
+  dispatch:
+    PrivateUse1: Silu
+- func: silu_
+  dispatch:
+    PrivateUse1: Silu_
+- func: silu.out
+  structured: false
+  dispatch:
+    PrivateUse1: SiluOut
+
+- func: cos
+  dispatch:
+    PrivateUse1: Cos
+- func: cos_
+  dispatch:
+    PrivateUse1: Cos_
+- func: cos.out
+  structured: false
+  dispatch:
+    PrivateUse1: CosOut
+
+- func: sin
+  dispatch:
+    PrivateUse1: Sin
+- func: sin_
+  dispatch:
+    PrivateUse1: Sin_
+- func: sin.out
+  structured: false
+  dispatch:
+    PrivateUse1: SinOut
+
+- func: neg
+  dispatch:
+    PrivateUse1: Neg
+- func: neg_
+  dispatch:
+    PrivateUse1: Neg_
+- func: neg.out
+  structured: false
+  dispatch:
+    PrivateUse1: NegOut
+
+- func: pow.Tensor_Scalar
+  dispatch:
+    PrivateUse1: PowScalar
+- func: pow_.Scalar
+  dispatch:
+    PrivateUse1: PowScalar_
+- func: pow.Tensor_Scalar_out
+  structured: false
+  dispatch:
+    PrivateUse1: PowScalarOut
+
+- func: leaky_relu
+  dispatch:
+    PrivateUse1: LeakyRelu
+- func: leaky_relu_
+  dispatch:
+    PrivateUse1: LeakyRelu_
+- func: leaky_relu.out
+  structured: false
+  dispatch:
+    PrivateUse1: LeakyReluOut
+
+- func: log10
+  dispatch:
+    PrivateUse1: Log10
+- func: log10_
+  dispatch:
+    PrivateUse1: Log10_
+- func: log10.out
+  structured: false
+  dispatch:
+    PrivateUse1: Log10Out
+
+- func: floor
+  dispatch:
+    PrivateUse1: Floor
+- func: floor_
+  dispatch:
+    PrivateUse1: Floor_
+- func: floor.out
+  structured: false
+  dispatch:
+    PrivateUse1: FloorOut
+
+- func: elu
+  dispatch:
+    PrivateUse1: Elu
+- func: elu_
+  dispatch:
+    PrivateUse1: Elu_
+- func: elu.out
+  structured: false
+  dispatch:
+    PrivateUse1: EluOut
+
+- func: hardtanh
+  dispatch:
+    PrivateUse1: HardTanh
+
+- func: hardtanh_
+  dispatch:
+    PrivateUse1: HardTanh_
+
+- func: hardtanh.out
+  dispatch:
+    PrivateUse1: HardTanhOut
+
+- func: hardtanh_backward
+  dispatch:
+    PrivateUse1: HardTanhBackward
+
+- func: hardtanh_backward.grad_input
+  dispatch:
+    PrivateUse1: HardTanhBackwardOut
+
+- func: _prelu_kernel
+  dispatch:
+    PrivateUse1: PRelu
+
+- func: _prelu_kernel_backward
+  dispatch:
+    PrivateUse1: PReluBackward
+
+- func: isnan
+  dispatch:
+    PrivateUse1: IsNan
+
+- func: _amp_foreach_non_finite_check_and_unscale_
+  dispatch:
+    PrivateUse1: AmpForeachNonFiniteCheckAndUnscale
+
+- func: _amp_update_scale_
+  dispatch:
+    PrivateUse1: AmpUpdateScale
+
+- func: native_batch_norm
+  dispatch:
+    PrivateUse1: NativeBatchNorm
+
+- func: native_batch_norm_backward
+  dispatch:
+    PrivateUse1: NativeBatchNormBwd
+
+- func: add.Tensor
+  dispatch:
+    PrivateUse1: AddTensor
+- func: add_.Tensor
+  dispatch:
+    PrivateUse1: AddTensor_
+- func: add.out
+  structured: false
+  dispatch:
+    PrivateUse1: AddTensorOut
+
+- func: div.Tensor
+  dispatch:
+    PrivateUse1: DivTensor
+- func: div_.Tensor
+  dispatch:
+    PrivateUse1: DivTensor_
+- func: div.out
+  structured: false
+  dispatch:
+    PrivateUse1: DivTensorOut
+
+- func: div.Tensor_mode
+  dispatch:
+    PrivateUse1: DivTensorMode
+- func: div_.Tensor_mode
+  dispatch:
+    PrivateUse1: DivTensorMode_
+- func: div.out_mode
+  structured: false
+  dispatch:
+    PrivateUse1: DivTensorModeOut
+
+- func: eq.Tensor
+  dispatch:
+    PrivateUse1: EqualTensor
+- func: eq_.Tensor
+  dispatch:
+    PrivateUse1: EqualTensor_
+- func: eq.Tensor_out
+  structured: false
+  dispatch:
+    PrivateUse1: EqualTensorOut
+
+- func: equal
+  dispatch:
+    PrivateUse1: MUSAEqual
+
+- func: ge.Tensor
+  dispatch:
+    PrivateUse1: GreaterEqualTensor
+- func: ge_.Tensor
+  dispatch:
+    PrivateUse1: GreaterEqualTensor_
+- func: ge.Tensor_out
+  structured: false
+  dispatch:
+    PrivateUse1: GreaterEqualTensorOut
+
+- func: gt.Tensor
+  dispatch:
+    PrivateUse1: GreaterTensor
+- func: gt_.Tensor
+  dispatch:
+    PrivateUse1: GreaterTensor_
+- func: gt.Tensor_out
+  structured: false
+  dispatch:
+    PrivateUse1: GreaterTensorOut
+
+- func: mul.Tensor
+  dispatch:
+    PrivateUse1: MulTensor
+- func: mul_.Tensor
+  dispatch:
+    PrivateUse1: MulTensor_
+- func: mul.out
+  structured: false
+  dispatch:
+    PrivateUse1: MulTensorOut
+
+- func: ne.Tensor
+  dispatch:
+    PrivateUse1: NotEqualTensor
+- func: ne_.Tensor
+  dispatch:
+    PrivateUse1: NotEqualTensor_
+- func: ne.Tensor_out
+  structured: false
+  dispatch:
+    PrivateUse1: NotEqualTensorOut
+
+- func: not_equal.Tensor
+  dispatch:
+    PrivateUse1: NotEqualTensor
+
+- func: not_equal_.Tensor
+  dispatch:
+    PrivateUse1: NotEqualTensor_
+
+- func: not_equal.Tensor_out
+  dispatch:
+    PrivateUse1: NotEqualTensorOut
+
+- func: sub.Tensor
+  dispatch:
+    PrivateUse1: SubTensor
+- func: sub_.Tensor
+  dispatch:
+    PrivateUse1: SubTensor_
+- func: sub.out
+  structured: false
+  dispatch:
+    PrivateUse1: SubTensorOut
+
+- func: remainder.Tensor
+  dispatch:
+    PrivateUse1: RemainderTensor
+- func: remainder_.Tensor
+  dispatch:
+    PrivateUse1: RemainderTensor_
+- func: remainder.Tensor_out
+  structured: false
+  dispatch:
+    PrivateUse1: RemainderTensorOut
+
+- func: remainder.Scalar_Tensor
+  dispatch:
+    PrivateUse1: RemainderScalarTensor
+
+- func: le.Tensor
+  dispatch:
+    PrivateUse1: LessEqualTensor
+- func: le_.Tensor
+  dispatch:
+    PrivateUse1: LessEqualTensor_
+- func: le.Tensor_out
+  structured: false
+  dispatch:
+    PrivateUse1: LessEqualTensorOut
+
+- func: lt.Tensor
+  dispatch:
+    PrivateUse1: LessTensor
+- func: lt_.Tensor
+  dispatch:
+    PrivateUse1: LessTensor_
+- func: lt.Tensor_out
+  structured: false
+  dispatch:
+    PrivateUse1: LessTensorOut
+
+- func: less.Tensor
+  dispatch:
+    PrivateUse1: LessTensor
+
+- func: less_.Tensor
+  dispatch:
+    PrivateUse1: LessTensor_
+
+- func: less.Tensor_out
+  dispatch:
+    PrivateUse1: LessTensorOut
+
+- func: silu_backward
+  dispatch:
+    PrivateUse1: SiluBwd
+- func: silu_backward.grad_input
+  structured: false
+  dispatch:
+    PrivateUse1: SiluBwdOut
+
+- func: sigmoid_backward
+  dispatch:
+    PrivateUse1: SigmoidBwd
+- func: sigmoid_backward.grad_input
+  structured: false
+  dispatch:
+    PrivateUse1: SigmoidBwdOut
+
+- func: tanh_backward
+  dispatch:
+    PrivateUse1: TanhBwd
+- func: tanh_backward.grad_input
+  structured: false
+  dispatch:
+    PrivateUse1: TanhBwdOut
+
+- func: threshold_backward
+  dispatch:
+    PrivateUse1: ThresholdBwd
+- func: threshold_backward.grad_input
+  structured: false
+  dispatch:
+    PrivateUse1: ThresholdBwdOut
+
+- func: gelu_backward
+  dispatch:
+    PrivateUse1: GeluBwd
+- func: gelu_backward.grad_input
+  structured: false
+  dispatch:
+    PrivateUse1: GeluBwdOut
+
+- func: logical_and
+  dispatch:
+    PrivateUse1: LogicalAndTensor
+
+- func: logical_and_
+  dispatch:
+    PrivateUse1: LogicalAndTensor_
+
+- func: logical_and.out
+  dispatch:
+    PrivateUse1: LogicalAndTensorOut
+
+- func: logical_or
+  dispatch:
+    PrivateUse1: LogicalOrTensor
+
+- func: logical_or_
+  dispatch:
+    PrivateUse1: LogicalOrTensor_
+
+- func: logical_or.out
+  dispatch:
+    PrivateUse1: LogicalOrTensorOut
+
+- func: floor_divide
+  dispatch:
+    PrivateUse1: FloorDivideTensor
+
+- func: floor_divide_.Tensor
+  dispatch:
+    PrivateUse1: FloorDivideTensor_
+
+- func: floor_divide.out
+  dispatch:
+    PrivateUse1: FloorDivideTensorOut
+
+- func: minimum
+  dispatch:
+    PrivateUse1: MinimumTensor
+- func: minimum.out
+  structured: false
+  dispatch:
+    PrivateUse1: MinimumTensorOut
+
+- func: maximum
+  dispatch:
+    PrivateUse1: MaximumTensor
+- func: maximum.out
+  structured: false
+  dispatch:
+    PrivateUse1: MaximumTensorOut
+
+- func: pow.Tensor_Tensor
+  dispatch:
+    PrivateUse1: PowTensor
+- func: pow_.Tensor
+  dispatch:
+    PrivateUse1: PowTensor_
+- func: pow.Tensor_Tensor_out
+  structured: false
+  dispatch:
+    PrivateUse1: PowTensorOut
+
+- func: bucketize.Tensor
+  dispatch:
+    PrivateUse1: Bucketize
+
+- func: cat
+  dispatch:
+    PrivateUse1: Cat
+    QuantizedPrivateUse1: CatQuantizedMusa
+- func: cat.out
+  structured: false
+  dispatch:
+    PrivateUse1: CatOut
+    QuantizedPrivateUse1: CatOutQuantizedMusa
+
+- func: convolution_overrideable
+  dispatch:
+    PrivateUse1: Convolution
+
+- func: convolution_backward_overrideable
+  dispatch:
+    PrivateUse1: ConvolutionBwd
+
+- func: _copy_from
+  dispatch:
+    PrivateUse1: MUSACopyFrom
+
+- func: bernoulli_.float
+  dispatch:
+    PrivateUse1: BernoulliFloat
+
+- func: bernoulli_.Tensor
+  dispatch:
+    PrivateUse1: BernoulliTensor
+
+- func: bernoulli.out
+  dispatch:
+    PrivateUse1: BernoulliOut
+
+- func: normal_
+  dispatch:
+    PrivateUse1: Normal
+
+- func: uniform_
+  dispatch:
+    PrivateUse1: Uniform
+
+- func: native_dropout
+  dispatch:
+    PrivateUse1: NativeDropout
+
+- func: native_dropout_backward
+  dispatch:
+    PrivateUse1: NativeDropoutBackward
+
+- func: embedding_dense_backward
+  dispatch:
+    PrivateUse1: EmbeddingDenseBwd
+
+- func: _embedding_bag
+  dispatch:
+    PrivateUse1: EmbeddingBag
+
+- func: exponential_
+  dispatch:
+    PrivateUse1: Exponential_
+
+- func: fill_.Scalar
+  dispatch:
+    PrivateUse1: Fill
+    QuantizedPrivateUse1: FillQuantizedScalar
+
+- func: fill_.Tensor
+  dispatch:
+    PrivateUse1: Fill_
+    QuantizedPrivateUse1: FillQuantizedTensor
+
+- func: zero_
+  dispatch:
+    PrivateUse1: Zero_
+
+- func: masked_fill_.Scalar
+  dispatch:
+    PrivateUse1: MaskedFill
+    QuantizedPrivateUse1: MaskedFillQuantize
+
+- func: masked_fill_.Tensor
+  dispatch:
+    PrivateUse1: MaskedFillTensor
+    QuantizedPrivateUse1: MaskedFillQuantizeTensor
+
+- func: _foreach_add.Scalar
+  dispatch:
+    PrivateUse1: foreach_tensor_add_scalar_kernel_musa
+
+- func: _foreach_add_.Scalar
+  dispatch:
+    PrivateUse1: foreach_tensor_add_scalar_kernel_musa_
+
+- func: _foreach_mul.Scalar
+  dispatch:
+    PrivateUse1: foreach_tensor_mul_scalar_kernel_musa
+
+- func: _foreach_mul_.Scalar
+  dispatch:
+    PrivateUse1: foreach_tensor_mul_scalar_kernel_musa_
+
+- func: _foreach_mul_.List
+  dispatch:
+    PrivateUse1: foreach_tensor_mul_list_kernel_musa_
+
+- func: _foreach_mul.List
+  dispatch:
+    PrivateUse1: foreach_tensor_mul_list_kernel_musa
+
+- func: _foreach_div_.List
+  dispatch:
+    PrivateUse1: foreach_tensor_div_list_kernel_musa_
+
+- func: _foreach_div.List
+  dispatch:
+    PrivateUse1: foreach_tensor_div_list_kernel_musa
+
+- func: _foreach_clamp_min.List
+  dispatch:
+    PrivateUse1: foreach_tensor_clamp_min_list_kernel_musa
+
+- func: _foreach_clamp_min_.List
+  dispatch:
+    PrivateUse1: foreach_tensor_clamp_min_list_kernel_musa_
+
+- func: _foreach_clamp_max.List
+  dispatch:
+    PrivateUse1: foreach_tensor_clamp_max_list_kernel_musa
+
+- func: _foreach_clamp_max_.List
+  dispatch:
+    PrivateUse1: foreach_tensor_clamp_max_list_kernel_musa_
+
+- func: _foreach_maximum.List
+  dispatch:
+    PrivateUse1: foreach_tensor_clamp_min_list_kernel_musa
+
+- func: _foreach_maximum_.List
+  dispatch:
+    PrivateUse1: foreach_tensor_clamp_min_list_kernel_musa_
+
+- func: _foreach_minimum.List
+  dispatch:
+    PrivateUse1: foreach_tensor_clamp_max_list_kernel_musa
+
+- func: _foreach_minimum_.List
+  dispatch:
+    PrivateUse1: foreach_tensor_clamp_max_list_kernel_musa_
+
+- func: _foreach_add.List
+  dispatch:
+    PrivateUse1: foreach_tensor_add_list_alpha_kernel_musa
+
+- func: _foreach_add_.List
+  dispatch:
+    PrivateUse1: foreach_tensor_add_list_alpha_kernel_musa_
+
+- func: _foreach_div.ScalarList
+  dispatch:
+    PrivateUse1: foreach_tensor_div_scalarlist_kernel_musa
+
+- func: _foreach_div_.ScalarList
+  dispatch:
+    PrivateUse1: foreach_tensor_div_scalarlist_kernel_musa_
+
+- func: _foreach_sqrt
+  dispatch:
+    PrivateUse1: foreach_tensor_sqrt_musa
+
+- func: _foreach_sqrt_
+  dispatch:
+    PrivateUse1: foreach_tensor_sqrt_musa_
+
+- func: _foreach_addcmul.Scalar
+  dispatch:
+    PrivateUse1: foreach_tensor_addcmul_scalar_musa
+
+- func: _foreach_addcmul_.Scalar
+  dispatch:
+    PrivateUse1: foreach_tensor_addcmul_scalar_musa_
+
+- func: _foreach_addcdiv.Scalar
+  dispatch:
+    PrivateUse1: foreach_tensor_addcdiv_scalar_musa
+
+- func: _foreach_addcdiv_.Scalar
+  dispatch:
+    PrivateUse1: foreach_tensor_addcdiv_scalar_musa_
+
+- func: _foreach_addcdiv.ScalarList
+  dispatch:
+    PrivateUse1: foreach_tensor_addcdiv_scalarlist_musa
+
+- func: _foreach_addcdiv_.ScalarList
+  dispatch:
+    PrivateUse1: foreach_tensor_addcdiv_scalarlist_musa_
+
+- func: gated_silu
+  dispatch:
+    PrivateUse1: GatedSilu
+
+- func: glu
+  dispatch:
+    PrivateUse1: Glu
+- func: glu.out
+  structured: false
+  dispatch:
+    PrivateUse1: GluOut
+
+- func: glu_backward
+  dispatch:
+    PrivateUse1: GluBackward
+
+- func: grid_sampler_2d
+  dispatch:
+    PrivateUse1: GridSampler2d
+
+- func: grid_sampler_2d_backward
+  dispatch:
+    PrivateUse1: GridSampler2dBackward
+
+- func: grid_sampler_3d
+  dispatch:
+    PrivateUse1: GridSampler3d
+
+- func: grid_sampler_3d_backward
+  dispatch:
+    PrivateUse1: GridSampler3dBackward
+
+- func: native_group_norm
+  dispatch:
+    PrivateUse1: NativeGroupNorm
+
+- func: native_group_norm_backward
+  dispatch:
+    PrivateUse1: NativeGroupNormBwd
+
+- func: native_layer_norm
+  dispatch:
+    PrivateUse1: NativeLayerNorm
+
+- func: native_layer_norm_backward
+  dispatch:
+    PrivateUse1: NativeLayerNormBwd
+
+- func: linalg_lstsq.out
+  dispatch:
+    PrivateUse1: LinalgLstsqOut
+
+- func: linalg_cholesky_ex
+  dispatch:
+    PrivateUse1: LinalgCholeskyEx
+- func: linalg_cholesky_ex.L
+  structured: false
+  dispatch:
+    PrivateUse1: LinalgCholeskyExOut
+
+- func: cholesky_inverse
+  dispatch:
+    PrivateUse1: CholeskyInverse
+
+- func: cholesky_inverse.out
+  dispatch:
+    PrivateUse1: CholeskyInverseOut
+
+- func: linalg_inv_ex.inverse
+  structured: false
+  dispatch:
+    PrivateUse1: LinalgInvExOutInverse
+
+- func: inverse
+  dispatch:
+    PrivateUse1: LinalgInverse
+
+- func: mse_loss_backward
+  dispatch:
+    PrivateUse1: MseLossBwd
+
+- func: mse_loss_backward.grad_input
+  dispatch:
+    PrivateUse1: MseLossBwdGradInput
+
+- func: nll_loss2d_forward.output
+  dispatch:
+    PrivateUse1: NllLoss2dOut
+
+- func: nll_loss2d_forward
+  dispatch:
+    PrivateUse1: NllLoss2d
+
+- func: nll_loss2d_backward.grad_input
+  dispatch:
+    PrivateUse1: NllLoss2dBwdGradInput
+
+- func: nll_loss2d_backward
+  dispatch:
+    PrivateUse1: NllLoss2dBwd
+
+- func: binary_cross_entropy
+  dispatch:
+    PrivateUse1: BinaryCrossEntropy
+
+- func: binary_cross_entropy.out
+  dispatch:
+    PrivateUse1: BinaryCrossEntropyOut
+
+- func: binary_cross_entropy_backward
+  dispatch:
+    PrivateUse1: BinaryCrossEntropyBackward
+
+- func: binary_cross_entropy_backward.grad_input
+  dispatch:
+    PrivateUse1: BinaryCrossEntropyBackwardOut
+
+- func: _ctc_loss
+  dispatch:
+    PrivateUse1: CtcLoss
+
+- func: _ctc_loss_backward
+  dispatch:
+    PrivateUse1: CtcLossBackward
+
+- func: masked_select
+  dispatch:
+    PrivateUse1: MaskedSelect
+
+- func: masked_select.out
+  dispatch:
+    PrivateUse1: MaskedSelectOut
+
+- func: nonzero
+  dispatch:
+    PrivateUse1: Nonzero
+
+- func: nonzero.out
+  dispatch:
+    PrivateUse1: NonzeroOut
+
+- func: masked_scatter_
+  dispatch:
+    PrivateUse1: MaskedScatter
+
+- func: dot
+  dispatch:
+    PrivateUse1: Dot
+
+- func: dot.out
+  dispatch:
+    PrivateUse1: DotOut
+
+- func: addmv
+  dispatch:
+    PrivateUse1: AddMv
+- func: addmv_
+  dispatch:
+    PrivateUse1: AddMv_
+- func: addmv.out
+  structured: false
+  dispatch:
+    PrivateUse1: AddMvOut
+
+- func: addmm
+  dispatch:
+    PrivateUse1: AddMm
+- func: addmm_
+  dispatch:
+    PrivateUse1: AddMm_
+- func: addmm.out
+  structured: false
+  dispatch:
+    PrivateUse1: AddMmOut
+
+- func: mm
+  dispatch:
+    PrivateUse1: Mm
+- func: mm.out
+  structured: false
+  dispatch:
+    PrivateUse1: MmOut
+
+- func: bmm
+  dispatch:
+    PrivateUse1: Bmm
+- func: bmm.out
+  structured: false
+  dispatch:
+    PrivateUse1: BmmOut
+
+- func: multinomial
+  dispatch:
+    PrivateUse1: Multinomial
+
+- func: multinomial.out
+  dispatch:
+    PrivateUse1: MultinomialOut
+
+- func: one_hot
+  dispatch:
+    PrivateUse1: OneHot
+
+- func: _adaptive_avg_pool2d
+  dispatch:
+    PrivateUse1: AdaptiveAvgPool2d
+    QuantizedPrivateUse1: AdaptiveAvgPool2dQuantized
+
+- func: adaptive_avg_pool2d.out
+  dispatch:
+    PrivateUse1: AdaptiveAvgPool2dOut
+
+- func: _adaptive_avg_pool2d_backward
+  dispatch:
+    PrivateUse1: AdaptiveAvgPool2dBwd
+
+- func: avg_pool2d
+  dispatch:
+    PrivateUse1: AvgPool2d
+- func: avg_pool2d.out
+  structured: false
+  dispatch:
+    PrivateUse1: AvgPool2dOut
+
+- func: avg_pool2d_backward
+  dispatch:
+    PrivateUse1: AvgPool2dBwd
+- func: avg_pool2d_backward.grad_input
+  structured: false
+  dispatch:
+    PrivateUse1: AvgPool2dOutBwd
+
+- func: max_pool2d_with_indices
+  dispatch:
+    PrivateUse1: MaxPool2dIndices
+- func: max_pool2d_with_indices.out
+  structured: false
+  dispatch:
+    PrivateUse1: MaxPool2dIndicesOut
+
+- func: max_pool2d_with_indices_backward
+  dispatch:
+    PrivateUse1: MaxPool2dIndicesBwd
+- func: max_pool2d_with_indices_backward.grad_input
+  structured: false
+  dispatch:
+    PrivateUse1: MaxPool2dIndicesBwdOut
+
+- func: max_pool3d_with_indices
+  dispatch:
+    PrivateUse1: MaxPool3dIndices
+
+- func: max_pool3d_with_indices.out
+  dispatch:
+    PrivateUse1: MaxPool3dIndicesOut
+
+- func: max_pool3d_with_indices_backward
+  dispatch:
+    PrivateUse1: MaxPool3dIndicesBwd
+
+- func: max_pool3d_with_indices_backward.grad_input
+  dispatch:
+    PrivateUse1: MaxPool3dIndicesBwdOut
+
+- func: random_.from
+  dispatch:
+    PrivateUse1: RandomFrom
+
+- func: random_.to
+  dispatch:
+    PrivateUse1: RandomTo
+
+- func: random_
+  dispatch:
+    PrivateUse1: Random
+
+- func: randperm.generator_out
+  dispatch:
+    PrivateUse1: RandpermGeneratorOut
+
+- func: arange.start_out
+  dispatch:
+    PrivateUse1: ArangeStartOut
+
+- func: linspace.out
+  dispatch:
+    PrivateUse1: LinspaceOut
+
+- func: range.out
+  dispatch:
+    PrivateUse1: RangeOut
+
+- func: record_stream
+  dispatch:
+    PrivateUse1: RecordStream
+
+- func: mean
+  dispatch:
+    PrivateUse1: Mean
+
+- func: mean.dim
+  dispatch:
+    PrivateUse1: MeanDim
+- func: mean.out
+  structured: false
+  dispatch:
+    PrivateUse1: MeanOut
+
+- func: mean.names_dim
+  dispatch:
+    PrivateUse1: MeanNamesDim
+
+- func: mean.names_out
+  dispatch:
+    PrivateUse1: MeanNamesDimOut
+
+- func: sum
+  dispatch:
+    PrivateUse1: Sum
+
+- func: sum.dim_IntList
+  dispatch:
+    PrivateUse1: SumIntList
+- func: sum.IntList_out
+  structured: false
+  dispatch:
+    PrivateUse1: SumIntListOut
+
+- func: sum.dim_DimnameList
+  dispatch:
+    PrivateUse1: SumDimnameList
+
+- func: sum.DimnameList_out
+  dispatch:
+    PrivateUse1: SumDimnameListOut
+
+- func: prod
+  dispatch:
+    PrivateUse1: Prod
+
+- func: prod.int_out
+  dispatch:
+    PrivateUse1: ProdIntOut
+
+- func: norm.out
+  structured: false
+  dispatch:
+    PrivateUse1: NormOut
+
+- func: norm.dtype_out
+  structured: false
+  dispatch:
+    PrivateUse1: NormDtypeOut
+
+- func: cumsum
+  dispatch:
+    PrivateUse1: Cumsum
+- func: cumsum_
+  dispatch:
+    PrivateUse1: Cumsum_
+- func: cumsum.out
+  structured: false
+  dispatch:
+    PrivateUse1: Cumsum_Out
+
+- func: any
+  dispatch:
+    PrivateUse1: Any
+- func: any.all_out
+  structured: false
+  dispatch:
+    PrivateUse1: AnyOut
+
+- func: any.dim
+  dispatch:
+    PrivateUse1: AnyDim
+- func: any.out
+  structured: false
+  dispatch:
+    PrivateUse1: AnyDimOut
+
+- func: max
+  dispatch:
+    PrivateUse1: MaxAll
+
+- func: max.dim
+  dispatch:
+    PrivateUse1: MaxDim
+    QuantizedPrivateUse1: QMax
+- func: max.dim_max
+  structured: false
+  dispatch:
+    PrivateUse1: MaxDimMax
+
+- func: max.names_dim
+  dispatch:
+    PrivateUse1: MaxNamesDim
+
+- func: max.names_dim_max
+  dispatch:
+    PrivateUse1: MaxNamesDimMax
+
+- func: min
+  dispatch:
+    PrivateUse1: MinAll
+
+- func: min.dim
+  dispatch:
+    PrivateUse1: MinDim
+    QuantizedPrivateUse1: QMin
+- func: min.dim_min
+  structured: false
+  dispatch:
+    PrivateUse1: MinDimMin
+
+- func: min.names_dim
+  dispatch:
+    PrivateUse1: MinNamesDim
+
+- func: min.names_dim_min
+  dispatch:
+    PrivateUse1: MinNamesDimMin
+
+- func: all
+  dispatch:
+    PrivateUse1: All
+
+- func: all.dim
+  dispatch:
+    PrivateUse1: AllDim
+- func: all.out
+  structured: false
+  dispatch:
+    PrivateUse1: AllDimOut
+
+- func: argmax.out
+  structured: false
+  dispatch:
+    PrivateUse1: ArgmaxOut
+
+- func: argmin.out
+  structured: false
+  dispatch:
+    PrivateUse1: ArgminOut
+
+- func: var_mean.correction
+  dispatch:
+    PrivateUse1: VarMeanCorrection
+
+- func: var.correction
+  dispatch:
+    PrivateUse1: VarCorrection
+
+- func: var.correction_out
+  dispatch:
+    PrivateUse1: VarOutCorrection
+
+- func: logsumexp
+  dispatch:
+    PrivateUse1: LogSumExp
+
+- func: logsumexp.out
+  dispatch:
+    PrivateUse1: LogSumExpOut
+
+- func: amax.out
+  structured: false
+  dispatch:
+    PrivateUse1: AMaxOut
+
+- func: amin.out
+  structured: false
+  dispatch:
+    PrivateUse1: AMinOut
+
+- func: aminmax.out
+  structured: false
+  dispatch:
+    PrivateUse1: AMinMaxOut
+
+- func: reflection_pad2d
+  dispatch:
+    PrivateUse1: ReflectionPad2d
+
+- func: reflection_pad1d
+  dispatch:
+    PrivateUse1: ReflectPad1D
+- func: reflection_pad1d.out
+  structured: false
+  dispatch:
+    PrivateUse1: ReflectPad1DOut
+
+- func: repeat_interleave.Tensor
+  dispatch:
+    PrivateUse1: RepeatInterleaveTensor
+
+- func: _local_scalar_dense
+  dispatch:
+    PrivateUse1: LocalScalarDense_
+
+- func: scatter.src
+  dispatch:
+    PrivateUse1: Scatter
+- func: scatter_.src
+  dispatch:
+    PrivateUse1: Scatter_
+- func: scatter.src_out
+  structured: false
+  dispatch:
+    PrivateUse1: ScatterOut
+
+- func: scatter.value
+  dispatch:
+    PrivateUse1: ScatterValue
+- func: scatter_.value
+  dispatch:
+    PrivateUse1: ScatterValue_
+- func: scatter.value_out
+  structured: false
+  dispatch:
+    PrivateUse1: ScatterValueOut
+
+- func: scatter_add
+  dispatch:
+    PrivateUse1: ScatterAdd
+- func: scatter_add_
+  dispatch:
+    PrivateUse1: ScatterAdd_
+- func: scatter_add.out
+  structured: false
+  dispatch:
+    PrivateUse1: ScatterAddOut
+
+- func: smooth_l1_loss_backward.grad_input
+  dispatch:
+    PrivateUse1: GradInputSmoothL1LossBackwardOut
+
+- func: log_softmax.Dimname
+  dispatch:
+    PrivateUse1: LogSoftmaxDimname
+
+- func: _log_softmax
+  dispatch:
+    PrivateUse1: LogSoftmax
+- func: _log_softmax.out
+  structured: false
+  dispatch:
+    PrivateUse1: LogSoftmaxOut
+
+- func: _log_softmax_backward_data
+  dispatch:
+    PrivateUse1: LogSoftmaxDataBwd
+- func: _log_softmax_backward_data.out
+  structured: false
+  dispatch:
+    PrivateUse1: LogSoftmaxDataOutBwd
+
+- func: softmax.Dimname
+  dispatch:
+    PrivateUse1: SoftmaxDimname
+
+- func: _softmax
+  dispatch:
+    PrivateUse1: Softmax
+- func: _softmax.out
+  structured: false
+  dispatch:
+    PrivateUse1: SoftmaxOut
+
+- func: _softmax_backward_data
+  dispatch:
+    PrivateUse1: SoftmaxBwd
+
+- func: _softmax_backward_data.out
+  structured: false
+  dispatch:
+    PrivateUse1: SoftmaxOutBwd
+
+- func: sort
+  dispatch:
+    PrivateUse1: Sort
+
+- func: sort.values
+  dispatch:
+    PrivateUse1: SortOut
+
+- func: sort.stable
+  dispatch:
+    PrivateUse1: SortStable
+
+- func: sort.values_stable
+  structured: false
+  dispatch:
+    PrivateUse1: SortStableOut
+
+- func: argsort.stable
+  dispatch:
+    PrivateUse1: ArgsortStable
+
+- func: stft
+  dispatch:
+    PrivateUse1: Stft
+
+- func: stft.center
+  dispatch:
+    PrivateUse1: StftCenter
+
+- func: empty.memory_format
+  dispatch:
+    PrivateUse1: EmptyMUSA
+    QuantizedPrivateUse1: EmptyUnknownQuantized
+
+- func: empty_strided
+  dispatch:
+    PrivateUse1: EmptyStridedMUSA
+    QuantizedPrivateUse1: EmptyStridedUnknownQuantized
+
+- func: resize_
+  dispatch:
+    PrivateUse1: ResizeMUSA_
+
+- func: set_
+  dispatch:
+    PrivateUse1: SetMUSA_
+
+- func: set_.source_Storage_storage_offset
+  dispatch:
+    PrivateUse1: SetStorageMUSA_
+    QuantizedPrivateUse1: SetStorageQuantized
+
+- func: set_.source_Storage
+  dispatch:
+    PrivateUse1: SetSource_
+
+- func: set_.source_Tensor
+  dispatch:
+    PrivateUse1: SetTensor_
+
+- func: eye.out
+  dispatch:
+    PrivateUse1: EyeOut
+
+- func: eye.m_out
+  dispatch:
+    PrivateUse1: EyeMOut
+
+- func: take
+  dispatch:
+    PrivateUse1: Take
+
+- func: put_
+  dispatch:
+    PrivateUse1: Put_
+
+- func: index_select
+  dispatch:
+    PrivateUse1: IndexSelect
+    QuantizedPrivateUse1: QIndexSelect
+
+- func: index_select.out
+  dispatch:
+    PrivateUse1: IndexSelectOut
+    QuantizedPrivateUse1: QIndexSelectOut
+
+
+- func: _index_put_impl_
+  dispatch:
+    PrivateUse1: IndexPut
+
+- func: flip
+  dispatch:
+    PrivateUse1, QuantizedPrivateUse1: Flip
+
+- func: roll
+  dispatch:
+    PrivateUse1: Roll
+
+- func: where.self
+  dispatch:
+    PrivateUse1: WhereSelf
+
+- func: where.self_out
+  dispatch:
+    PrivateUse1: WhereSelfOut
+
+- func: addcdiv
+  dispatch:
+    PrivateUse1: AddcDiv
+- func: addcdiv_
+  dispatch:
+    PrivateUse1: AddcDiv_
+- func: addcdiv.out
+  structured: false
+  dispatch:
+    PrivateUse1: AddcDivOut
+
+- func: addcmul.out
+  structured: false
+  dispatch:
+    PrivateUse1: AddcMulOut
+
+- func: topk
+  dispatch:
+    PrivateUse1: Topk
+- func: topk.values
+  structured: false
+  dispatch:
+    PrivateUse1: TopkOut
+
+- func: triu
+  dispatch:
+    PrivateUse1: Triu
+- func: triu_
+  dispatch:
+    PrivateUse1: Triu_
+- func: triu.out
+  structured: false
+  dispatch:
+    PrivateUse1: TriuOut
+
+- func: tril
+  dispatch:
+    PrivateUse1: Tril
+- func: tril_
+  dispatch:
+    PrivateUse1: Tril_
+- func: tril.out
+  structured: false
+  dispatch:
+    PrivateUse1: TrilOut
+
+- func: _unique
+  dispatch:
+    PrivateUse1: Unique
+
+- func: _unique2
+  dispatch:
+    PrivateUse1: Unique2
+
+- func: unique_consecutive
+  dispatch:
+    PrivateUse1: UniqueConsecutive
+
+- func: unique_dim
+  dispatch:
+    PrivateUse1: UniqueDim
+
+- func: unique_dim_consecutive
+  dispatch:
+    PrivateUse1: UniqueDimConsecutive
+
+- func: upsample_nearest2d
+  dispatch:
+    PrivateUse1: UpSampleNearest2d
+    QuantizedPrivateUse1: UpsampleNearest2dQuantized
+- func: upsample_nearest2d.out
+  structured: false
+  dispatch:
+    PrivateUse1: UpSampleNearest2dOut
+
+- func: upsample_nearest2d_backward
+  dispatch:
+    PrivateUse1: UpSampleNearest2dBwd
+- func: upsample_nearest2d_backward.grad_input
+  structured: false
+  dispatch:
+    PrivateUse1: UpSampleNearest2dBwdOut
+
+- func: upsample_bilinear2d
+  dispatch:
+    PrivateUse1: UpSampleBilinear2d
+- func: upsample_bilinear2d.out
+  structured: false
+  dispatch:
+    PrivateUse1: UpSampleBilinear2dOut
+
+- func: upsample_bilinear2d_backward
+  dispatch:
+    PrivateUse1: UpSampleBilinear2dBwd
+- func: upsample_bilinear2d_backward.grad_input
+  structured: false
+  dispatch:
+    PrivateUse1: UpSampleBilinear2dBwdOut
+
+- func: upsample_nearest3d
+  dispatch:
+    PrivateUse1: UpSampleNearest3d
+- func: upsample_nearest3d.out
+  structured: false
+  dispatch:
+    PrivateUse1: UpSampleNearest3dOut
+
+- func: upsample_nearest3d_backward
+  dispatch:
+    PrivateUse1: UpSampleNearest3dBwd
+- func: upsample_nearest3d_backward.grad_input
+  structured: false
+  dispatch:
+    PrivateUse1: UpSampleNearest3dBwdOut
+
+- func: _weight_norm_interface
+  dispatch:
+    PrivateUse1: _WeightNormInterface
+
+- func: baddbmm
+  dispatch:
+    PrivateUse1: Baddbmm
+- func: baddbmm_
+  dispatch:
+    PrivateUse1: Baddbmm_
+- func: baddbmm.out
+  structured: false
+  dispatch:
+    PrivateUse1: BaddbmmOut
+
+- func: quantize_per_tensor
+  dispatch:
+    PrivateUse1: QuantizePerTensor
+
+- func: quantize_per_tensor_dynamic
+  dispatch:
+    PrivateUse1: QuantizePerTensorDynamic
+
+- func: quantize_per_channel
+  dispatch:
+    PrivateUse1: QuantizePerChannel
+
+- func: quantize_per_tensor.tensor_qparams
+  dispatch:
+    PrivateUse1: QuantizePerTensorTensorQParams
+
+- func: int_repr
+  dispatch:
+    QuantizedPrivateUse1: WrapQuantizedMusaIntRepr
+
+- func: quantized_max_pool2d
+  dispatch:
+    QuantizedPrivateUse1: MaxPool2dQuantized
+
+- func: clone
+  dispatch:
+    QuantizedPrivateUse1: QuantizedClone
+
+- func: q_scale
+  dispatch:
+    QuantizedPrivateUse1: QScaleQuant
+
+- func: q_zero_point
+  dispatch:
+    QuantizedPrivateUse1: QZeroPointQuant
+
+- func: q_per_channel_scales
+  dispatch:
+    QuantizedPrivateUse1: QPerChannelScales
+
+- func: q_per_channel_zero_points
+  dispatch:
+    QuantizedPrivateUse1: QPerChannelZeroPoints
+
+- func: q_per_channel_axis
+  dispatch:
+    QuantizedPrivateUse1: QPerChannelAxis
+
+- func: qscheme
+  dispatch:
+    QuantizedPrivateUse1: QSchemeQuant
+
+- func: dequantize.self
+  dispatch:
+    QuantizedPrivateUse1: DequantizeQuantized
+
+- func: empty_quantized
+  dispatch:
+    QuantizedPrivateUse1: EmptyQuantized
+
+- func: _empty_affine_quantized
+  dispatch:
+    PrivateUse1, QuantizedPrivateUse1: EmptyAffineQuantized
+
+- func: _empty_per_channel_affine_quantized
+  dispatch:
+    QuantizedPrivateUse1: EmptyPerChannelAffineQuantized
+
+- func: empty_like
+  dispatch:
+    QuantizedPrivateUse1: EmptyLikeQuantized
+
+- func: as_strided
+  dispatch:
+    PrivateUse1: as_strided_tensorimpl
+    QuantizedPrivateUse1: AsStridedQTensorImpl
+
+- func: _make_per_tensor_quantized_tensor
+  dispatch:
+    PrivateUse1: MakePerTensorQuantizedTensor
+
+- func: _make_per_channel_quantized_tensor
+  dispatch:
+    PrivateUse1: MakePerChannelQuantizedTensor
+
+- func: squeeze
+  dispatch:
+    QuantizedPrivateUse1: SqueezeQuantized
+
+- func: squeeze.dim
+  dispatch:
+    QuantizedPrivateUse1: SqueezeQuantizedDim
+
+- func: squeeze.dims
+  dispatch:
+    QuantizedPrivateUse1: SqueezeQuantizedDims
+
+- func: unsqueeze
+  dispatch:
+    QuantizedPrivateUse1: UnsqueezeQuantized
+
+- func: view
+  dispatch:
+    PrivateUse1, QuantizedPrivateUse1: view
+
+- func: view_as_complex
+  dispatch:
+    PrivateUse1: view_as_complex
+
+- func: view_as_real
+  dispatch:
+    PrivateUse1: view_as_real
+
+- func: _reshape_alias
+  dispatch:
+    PrivateUse1, QuantizedPrivateUse1: _reshape_alias
+
+- func: unfold
+  dispatch:
+    PrivateUse1, QuantizedPrivateUse1: unfold
+
+- func: is_pinned
+  dispatch:
+    PrivateUse1: IsPinnedMusa
+
+- func: _pin_memory
+  dispatch:
+    PrivateUse1: PinMemoryMusa
+
+- func: mode
+  dispatch:
+    PrivateUse1: Mode
+
+- func: mode.values
+  dispatch:
+    PrivateUse1: ModeOut
+
+- func: count_nonzero.dim_IntList
+  dispatch:
+    PrivateUse1: CountNonzero
+
+- func: histc
+  dispatch:
+    PrivateUse1: Histc
+
+- func: histc.out
+  dispatch:
+    PrivateUse1: HistcOut
+
+- func: adaptive_avg_pool3d.out
+  dispatch:
+    PrivateUse1: AdaptiveAvgPool3dOut
+
+- func: _adaptive_avg_pool3d
+  dispatch:
+    PrivateUse1: AdaptiveAvgPool3d
+
+- func: adaptive_avg_pool3d_backward.grad_input
+  dispatch:
+    PrivateUse1: AdaptiveAvgPool3dBackwardOut
+
+- func: _adaptive_avg_pool3d_backward
+  dispatch:
+    PrivateUse1: AdaptiveAvgPool3dBackward

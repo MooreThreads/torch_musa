@@ -16,7 +16,6 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Context.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 enum class ActMode { IDENTITY, RELU, SILU };
 

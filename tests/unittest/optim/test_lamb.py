@@ -1,4 +1,5 @@
 """Test Fused LAMB optimzer"""
+
 # pylint: disable=missing-class-docstring, missing-function-docstring
 from itertools import product
 import torch
@@ -7,7 +8,6 @@ from torch_musa.optim import FusedLAMB
 from torch_musa.multi_tensor_apply import multi_tensor_applier
 from torch_musa.utils import ext_loader
 import torch_musa
-
 
 
 class RefLAMB(Optimizer):
@@ -125,7 +125,7 @@ class RefLAMB(Optimizer):
         return loss
 
 
-class TestLamb:
+class LambTest:
     def __init__(self, max_abs_diff=1e-3, max_rel_diff=1, iters=7):
         self.max_abs_diff = max_abs_diff
         self.max_rel_diff = max_rel_diff
@@ -150,12 +150,17 @@ class TestLamb:
         max_abs_diff = max_rel_diff = 0
         for p_ref, p_tst in zip(ref_param, tst_param):
             max_abs_diff_p = (p_ref - p_tst).abs().max().item()
-            max_rel_diff_p = ((p_ref - p_tst) / p_ref).abs().max().item()
+            # abs(x / y) == abs(x) / abs(y)
+            # and if we don't do clamp, the subnormal value would
+            # cause a huge value error
+            max_rel_diff_p = (
+                ((p_ref - p_tst).abs().clamp(min=1e-6) / p_ref.abs().clamp(min=1e-6))
+                .max()
+                .item()
+            )
 
-            if max_abs_diff_p > max_abs_diff:
-                max_abs_diff = max_abs_diff_p
-            if max_rel_diff_p > max_rel_diff:
-                max_rel_diff = max_rel_diff_p
+            max_abs_diff = max(max_abs_diff, max_abs_diff_p)
+            max_rel_diff = max(max_rel_diff, max_rel_diff_p)
 
         return max_abs_diff, max_rel_diff
 
@@ -187,7 +192,7 @@ class TestLamb:
                 assert max_rel_diff <= self.max_rel_diff
 
 
-class TestFusedLAMB(TestLamb):
+class FusedLAMBTest(LambTest):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.ref_optim = RefLAMB
@@ -265,4 +270,4 @@ class TestFusedLAMB(TestLamb):
 
 
 def test_fused_lamb():
-    TestFusedLAMB(max_abs_diff=1e-6).run()
+    FusedLAMBTest(max_abs_diff=1e-6).run()

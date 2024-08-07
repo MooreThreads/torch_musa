@@ -1,4 +1,5 @@
 """Test rms_norm operators."""
+
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import,invalid-name,not-callable
 import torch
 import torch.nn.functional as F
@@ -28,7 +29,7 @@ def ref_rms_norm(input, normalized_shape, weight, eps):  # pylint: disable=W0622
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("embedding_dim", [128, 512, 768, 2048])
-@pytest.mark.parametrize("batch", [1, 2, 8])
+@pytest.mark.parametrize("batch", [0, 1, 2, 8])
 @pytest.mark.parametrize("sequence_length", [1, 32, 128])
 @pytest.mark.parametrize("dtype", [torch.half, torch.float32])
 def test_rms_norm_nlp(embedding_dim, batch, sequence_length, dtype):
@@ -101,7 +102,7 @@ def test_rms_norm_backward(embedding_dim, batch, sequence_length, dtype):
         "input": torch.randn(input_shape, dtype=dtype, requires_grad=True),
         "normalized_shape": normalized_shape,
         "weight": torch.randn(normalized_shape, dtype=dtype, requires_grad=True),
-        "eps": 1e-6
+        "eps": 1e-6,
     }
     if dtype == torch.half:
         atol, rtol = 1e-3, 1e-2

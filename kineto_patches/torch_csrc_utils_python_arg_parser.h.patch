@@ -1,0 +1,13 @@
+diff --git a/torch/csrc/utils/python_arg_parser.h b/torch/csrc/utils/python_arg_parser.h
+index d9d14a8..df7a684 100644
+--- a/torch/csrc/utils/python_arg_parser.h
++++ b/torch/csrc/utils/python_arg_parser.h
+@@ -758,7 +758,7 @@ inline at::Device toDevice(PyObject* obj) {
+   if (THPUtils_checkLong(obj)) {
+     const auto device_index = THPUtils_unpackLong(obj);
+     TORCH_CHECK(device_index >= 0, "Device index must not be negative");
+-    return at::Device(DeviceType::CUDA, device_index);
++    return at::Device(DeviceType::PrivateUse1, device_index);
+   }
+   const std::string& device_str = THPUtils_unpackString(obj);
+   return at::Device(device_str);

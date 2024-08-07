@@ -1,28 +1,76 @@
 class PodTemplateFiles {
+
   private Map files = [
-    'MThreads GPU': 'ci/templates/musa.yaml',
+    'MThreads GPU S4000': 'ci/templates/musa_s4000.yaml',
+    'MThreads GPU S3000': 'ci/templates/musa_s3000.yaml',
+    'MThreads GPU S80': 'ci/templates/musa_s80.yaml',
   ]
 
   public String getPodTemplateFile(String platform) {
     String file = files.get(platform)
     return file
   }
+
 }
 
 def ifTriggeredByTimer() {
   return currentBuild.getBuildCauses()[0].shortDescription == 'Started by timer'
 }
 
-pipeline {
-  parameters {
-    choice(name: 'HARDWARE_PLATFORM', choices: ['MThreads GPU'], description: 'Target hardware platform')
-  }
+@NonCPS
+def cancelPreviousBuilds() {
+  def jobName = env.JOB_NAME
+  def buildNumber = env.BUILD_NUMBER.toInteger()
 
+    /* the following APIs like getItemByFullName, getListener etc must be added to ScriptApproval in Jenkins */
+  def currentJob = Jenkins.instance.getItemByFullName(jobName)
+  def gitlabMergeRequestIid = env.gitlabMergeRequestIid
+
+    /* Iterating over the builds for specific job */
+  for (def build : currentJob.builds) {
+    def listener = build.getListener()
+    def exec = build.getExecutor()
+        /* If there is a build that is currently running and it's not current build */
+    if (build.isBuilding() && build.number.toInteger() < buildNumber && exec != null && build.envVars.gitlabMergeRequestIid == gitlabMergeRequestIid) {
+            /* Then stop it */
+      exec.interrupt(
+                    Result.ABORTED,
+                    new CauseOfInterruption.UserInterruption("Aborted by #${buildNumber}")
+                )
+      println("Aborted previously running build #${build.number}")
+    }
+  }
+}
+
+pipeline {
   agent {
     kubernetes {
-      yamlFile "${new PodTemplateFiles().getPodTemplateFile(params.HARDWARE_PLATFORM)}"
-      defaultContainer "main"
+      yamlFile "${new PodTemplateFiles().getPodTemplateFile('MThreads GPU S3000')}"
+      defaultContainer 'main'
     }
+  }
+
+  post {
+      unstable {
+            script {
+                currentBuild.result = 'FAILURE'
+                error("Build marked as FAILURE due to instability.")
+            }
+            updateGitlabCommitStatus name: 'build', state: 'failed'
+        }
+      failure {
+        updateGitlabCommitStatus name: 'build', state: 'failed'
+      }
+      success {
+        updateGitlabCommitStatus name: 'build', state: 'success'
+      }
+      aborted {
+        updateGitlabCommitStatus name: 'build', state: 'canceled'
+      }
+  }
+
+  options {
+    gitLabConnection('gitlab')
   }
 
   environment {
@@ -37,6 +85,20 @@ pipeline {
   }
 
   stages {
+    stage('Prepare') {
+      steps {
+        updateGitlabCommitStatus name: 'build', state: 'pending'
+        container('main') {
+          withCredentials([string(credentialsId: 'mt-ai-ops-gitlab-api-key', variable: 'GITLAB_API_KEY')]) {
+            sh 'git config --global url."https://mt-ai-ops:${GITLAB_API_KEY}@sh-code.mthreads.com".insteadOf "https://sh-code.mthreads.com"'
+          }
+        }
+        script {
+          cancelPreviousBuilds()
+        }
+      }
+    }
+
     stage('Lint') {
       parallel {
         stage('Python Lint') {
@@ -51,176 +113,155 @@ pipeline {
           steps {
             container('main') {
               sh 'git config --global --add safe.directory \"*\"'
-              sh '/opt/conda/condabin/conda run -n py38 --no-capture-output /bin/bash tools/lint/git-clang-format.sh --rev origin/${CHANGE_TARGET}'
+              sh 'CHECK_BRANCH_NAME=${CHANGE_TARGET:-"main"} && /opt/conda/condabin/conda run -n py38 --no-capture-output /bin/bash tools/lint/git-clang-format.sh --rev origin/${CHECK_BRANCH_NAME}'
             }
           }
         }
       }
     }
+
+    stage('Start building') {
+      steps {
+        updateGitlabCommitStatus name: 'build', state: 'running'
+      }
+    }
+
     stage('Parallel Build & Test') {
+      failFast true
       parallel {
-        stage('s3000 Stable Build & Test') {
+        stage('S4000 Stable Build & Test') {
+          agent {
+            kubernetes {
+              yamlFile "${new PodTemplateFiles().getPodTemplateFile('MThreads GPU S4000')}"
+              defaultContainer 'main'
+            }
+          }
           stages {
             stage('Build') {
               steps {
+                withCredentials([string(credentialsId: 'mt-ai-ops-gitlab-api-key', variable: 'GITLAB_API_KEY')]) {
+                  sh 'git config --global url."https://mt-ai-ops:${GITLAB_API_KEY}@sh-code.mthreads.com".insteadOf "https://sh-code.mthreads.com"'
+                }
                 sh 'git config --global --add safe.directory \"*\"'
-                sh '/bin/bash --login docker/common/release/update_release_all.sh'
-                sh '/bin/bash --login docker/common/install_math.sh -w'
-                sh '/bin/bash --login -c "conda run -n py38 --no-capture-output /bin/bash build.sh -c"'
+                sh 'pip uninstall torch_musa -y'
+                sh '/bin/bash --login -c "KINETO_URL=https://sh-code.mthreads.com/ai/kineto.git conda run -n py38 --no-capture-output /bin/bash build.sh -c"'
               }
             }
             stage('Unit Test') {
               steps {
-                sh '/bin/bash --login scripts/run_unittest.sh'
+                script {
+                  lock('s4000-ut-lock') {
+                    sh '/bin/bash --login -c "conda run -n py38 --no-capture-output python scripts/run_unittest_dist.py --gpu-type S4000"'
+                  }
+                }
               }
             }
             stage('Integration Test') {
               steps {
-                sh '/bin/bash --login scripts/run_integration_test.sh'
+                sh 'GPU_TYPE=S4000 /bin/bash --login scripts/run_integration_test.sh'
+              }
+            }
+            stage('Archive Test Reports and Artifacts') {
+              steps {
+                sh '''
+                    cwd=$(pwd) find build/reports -type f -name '*.xml' -execdir bash -c 'for file; do python ${cwd}/scripts/extract_failed_tests.py ${file}; done' bash {} +
+                '''
+                junit allowEmptyResults: true, testResults: 'build/reports/**/*.xml'
+                sh '''
+                    find dist -type f -name '*.egg' -execdir bash -c 'for file; do mv "$file" "${file%/*}/S4000_${file##*/}"; done' bash {} +
+                '''
+                archiveArtifacts artifacts: 'dist/*.egg', fingerprint: true, allowEmptyArchive: true
+              }
+            }
+          }
+        }
+        stage('s3000 Stable Build & Test') {
+          stages {
+            stage('Build') {
+              steps {
+                container('main') {
+                  withCredentials([string(credentialsId: 'mt-ai-ops-gitlab-api-key', variable: 'GITLAB_API_KEY')]) {
+                    sh 'git config --global url."https://mt-ai-ops:${GITLAB_API_KEY}@sh-code.mthreads.com".insteadOf "https://sh-code.mthreads.com"'
+                  }
+                }
+                sh 'git config --global --add safe.directory \"*\"'
+                sh 'pip uninstall torch_musa -y'
+                sh '/bin/bash --login -c "KINETO_URL=https://sh-code.mthreads.com/ai/kineto.git conda run -n py38 --no-capture-output /bin/bash build.sh -c"'
+              }
+            }
+            stage('Unit Test') {
+              steps {
+                script {
+                  lock('s3000-ut-lock') {
+                    sh '/bin/bash --login -c "conda run -n py38 --no-capture-output python scripts/run_unittest_dist.py --gpu-type S3000"'
+                  }
+                }
+              }
+            }
+            stage('Integration Test') {
+              steps {
+                sh 'GPU_TYPE=S3000 /bin/bash --login scripts/run_integration_test.sh'
+              }
+            }
+            stage('Archive Test Reports and Artifacts') {
+              steps {
+                sh '''
+                    cwd=$(pwd) find build/reports -type f -name '*.xml' -execdir bash -c 'for file; do python ${cwd}/scripts/extract_failed_tests.py ${file}; done' bash {} +
+                '''
+                junit allowEmptyResults: true, testResults: 'build/reports/**/*.xml'
+                sh '''
+                    find dist -type f -name '*.egg' -execdir bash -c 'for file; do mv "$file" "${file%/*}/S3000_${file##*/}"; done' bash {} +
+                '''
+                archiveArtifacts artifacts: 'dist/*.egg', fingerprint: true, allowEmptyArchive: true
               }
             }
           }
         }
         stage('s80 Stable Build & Test') {
           agent {
-            docker {
-              image 'sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py38:latest'
-              alwaysPull true
-              args '-u root:sudo -e MTHREADS_VISIBLE_DEVICES=all -e TARGET_DEVICE=musa -e MUSA_VISIBLE_DEVICES=0 -e PYTORCH_REPO_PATH=/home/pytorch --privileged'
-              label 'torch_musa_s80'
-            }
-          }
-          stages {
-            stage('Build') {
-              steps {
-                sh 'git config --global --add safe.directory \"*\"'
-                sh '/bin/bash --login docker/common/release/update_release_all.sh'
-                sh '/bin/bash --login docker/common/install_math.sh -w'
-                sh '/bin/bash --login -c "conda run -n py38 --no-capture-output /bin/bash build.sh -c"'
-              }
-            }
-            stage('Unit Test') {
-              steps {
-                sh '/bin/bash --login scripts/run_unittest.sh'
-              }
-            }
-            stage('Integration Test') {
-              steps {
-                sh '/bin/bash --login scripts/run_integration_test.sh'
-              }
-            }
-          }
-        }
-        stage('s3000 Daily Build & Test') {
-          agent {
             kubernetes {
-              yamlFile 'ci/templates/musa.yaml'
-              defaultContainer "main"
+              yamlFile "${new PodTemplateFiles().getPodTemplateFile('MThreads GPU S80')}"
+              defaultContainer 'main'
             }
-          }
-          when {
-            beforeAgent true
-            expression { !ifTriggeredByTimer() }
           }
           stages {
             stage('Build') {
               steps {
-                container('main') {
-                  script {
-                    catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                      sh 'git config --global --add safe.directory \"*\"'
-                      sh '/bin/bash --login docker/common/daily/update_daily_all.sh'
-                      sh '/bin/bash --login docker/common/install_math.sh -w'
-                      sh '/bin/bash --login -c "conda run -n py38 --no-capture-output /bin/bash build.sh -c"'
-                    }
-                  }
+                withCredentials([string(credentialsId: 'mt-ai-ops-gitlab-api-key', variable: 'GITLAB_API_KEY')]) {
+                  sh 'git config --global url."https://mt-ai-ops:${GITLAB_API_KEY}@sh-code.mthreads.com".insteadOf "https://sh-code.mthreads.com"'
                 }
-              }
-              post {
-                success {
-                  echo 'BUILD SUCCESS!'
-                }
-                failure {
-                  script {
-                    echo 'BUILD FAILURE!'
-                    env.RUN_NEXT_STAGE = false
-                  }
-                }
+                sh 'git config --global --add safe.directory \"*\"'
+                sh 'pip uninstall torch_musa -y'
+                sh '/bin/bash --login -c "KINETO_URL=https://sh-code.mthreads.com/ai/kineto.git conda run -n py38 --no-capture-output /bin/bash build.sh -c"'
               }
             }
             stage('Unit Test') {
-              when {
-                expression { env.RUN_NEXT_STAGE }
-              }
               steps {
-                container('main') {
-                  script {
-                    catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                      sh '/bin/bash --login scripts/run_unittest.sh'
-                    }
-                  }
-                }
-              }
-              post {
-                success {
-                  script {
-                    echo 'Unit Test SUCCESS!'
-                    env.DAILY_UT_PASSED = true
-                  }
-                }
-                failure {
-                  script {
-                    echo 'Unit Test FAILURE!'
+                script {
+                  lock('s80-ut-lock') {
+                    sh '/bin/bash --login -c "conda run -n py38 --no-capture-output python scripts/run_unittest_dist.py --gpu-type S80"'
                   }
                 }
               }
             }
             stage('Integration Test') {
-              when {
-                expression { env.RUN_NEXT_STAGE }
-              }
               steps {
-                container('main') {
-                  script {
-                    catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-                      sh '/bin/bash --login scripts/run_integration_test.sh'
-                    }
-                  }
-                }
+                sh 'GPU_TYPE=S80 /bin/bash --login scripts/run_integration_test.sh'
               }
-              post {
-                success {
-                  script {
-                    echo 'Integration Test SUCCESS!'
-                    env.DAILY_IT_PASSED = true
-                  }
-                }
-                failure {
-                  echo 'Integration Test FAILURE!'
-                }
+            }
+            stage('Archive Test Reports and Artifacts') {
+              steps {
+                sh '''
+                    cwd=$(pwd) find build/reports -type f -name '*.xml' -execdir bash -c 'for file; do python ${cwd}/scripts/extract_failed_tests.py ${file}; done' bash {} +
+                '''
+                junit allowEmptyResults: true, testResults: 'build/reports/**/*.xml'
+                sh '''
+                    find dist -type f -name '*.egg' -execdir bash -c 'for file; do mv "$file" "${file%/*}/S80_${file##*/}"; done' bash {} +
+                '''
+                archiveArtifacts artifacts: 'dist/*.egg', fingerprint: true, allowEmptyArchive: true
               }
             }
           }
-        }
-      }
-    }
-    stage('Daily Release') {
-      when {
-        // beforeAgent true
-        allOf {
-          branch 'main'
-          expression { ifTriggeredByTimer() }
-        }
-      }
-      steps {
-        container('main') {
-          sh '/bin/bash --login docker/common/release/update_release_all.sh'
-          sh '/bin/bash --login docker/common/install_math.sh -w'
-          sh '/bin/bash --login -c "BUILD_ARTIFACTS=1 /bin/bash scripts/run_daily_release.sh"' 
-        }
-        container('release') {
-          // Publish new release to oss (minio)
-          sh '/bin/bash --login -c "PUBLISH_ARTIFACTS=1 /bin/bash scripts/run_daily_release.sh"'
         }
       }
     }
