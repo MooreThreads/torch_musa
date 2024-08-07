@@ -1,4 +1,5 @@
 """Test grid_sample operator."""
+
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
 from functools import partial
 import pytest
@@ -16,21 +17,45 @@ input_datas = [
     #  "tenFlow": torch.randn([5, 32, 32, 2], requires_grad=True)},
     # {"tenInput": torch.randn([11, 1, 983, 437], requires_grad=True),
     #  "tenFlow": torch.randn([11, 983, 437, 2], requires_grad=True)},
-    {"tenInput": torch.randn([17, 16, 16, 16], requires_grad=True),
-     "tenFlow": torch.randn([17, 16, 16, 2], requires_grad=True)},
+    {
+        "tenInput": torch.randn([17, 16, 16, 16], requires_grad=True),
+        "tenFlow": torch.randn([17, 16, 16, 2], requires_grad=True),
+    },
 ]
 
 all_support_mode = ["bilinear", "nearest"]
+
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_datas)
 @pytest.mark.parametrize("mode", all_support_mode)
 def test_func(input_data, mode):
     test = testing.OpTest(
-              func=F.grid_sample,
-              input_args={"input": input_data["tenInput"],
-                          "grid": input_data["tenFlow"],
-                          "mode": mode,
-                          "padding_mode": "border",
-                          "align_corners": True})
+        func=F.grid_sample,
+        input_args={
+            "input": input_data["tenInput"],
+            "grid": input_data["tenFlow"],
+            "mode": mode,
+            "padding_mode": "border",
+            "align_corners": True,
+        },
+    )
     test.check_result(train=False)
+    input_args_musa = {
+        "input": input_data["tenInput"].clone().musa(),
+        "grid": input_data["tenFlow"].clone().musa(),
+        "mode": mode,
+        "padding_mode": "border",
+        "align_corners": True,
+    }
+    input_args_cpu = {
+        "input": input_data["tenInput"].clone().cpu(),
+        "grid": input_data["tenFlow"].clone().cpu(),
+        "mode": mode,
+        "padding_mode": "border",
+        "align_corners": True,
+    }
+    assert (
+        F.grid_sample(**input_args_musa).grad_fn.__class__
+        == F.grid_sample(**input_args_cpu).grad_fn.__class__
+    )

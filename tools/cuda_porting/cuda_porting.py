@@ -2,14 +2,20 @@ import os
 import shutil
 import ahocorasick
 from os.path import join, dirname, abspath
-from typing import Dict
+from typing import Dict, List
 from tools.cuda_porting.match_rewrite import init_ac_automaton, transform_file
 
 
 class PortingFile:
     r"""Class used to manage porting files."""
 
-    def __init__(self, dir_name: str, recursive: bool, need_filter_cpp: bool) -> None:
+    def __init__(
+        self,
+        dir_name: str,
+        recursive: bool,
+        need_filter_cpp: bool,
+        exclude_sub_dirs: List[str] = None,
+    ) -> None:
         r"""Initializes class.
 
         Args:
@@ -20,6 +26,14 @@ class PortingFile:
         self.dir_name = dir_name
         self.recursive = recursive
         self.need_filter_cpp = need_filter_cpp
+
+        self.exclude_sub_dirs = []
+        if exclude_sub_dirs:
+            assert isinstance(exclude_sub_dirs, list)
+            for sub_dir in exclude_sub_dirs:
+                self.exclude_sub_dirs.append(
+                    os.path.join(dir_name.rstrip("/"), sub_dir.strip("/"))
+                )
 
 
 r"""All folders needed for cuda-porting
@@ -33,7 +47,14 @@ PORT_FILES = [
     PortingFile("aten/src/ATen/cuda", True, False),
     PortingFile("aten/src/THC", True, True),
     PortingFile("c10/cuda", True, False),
-    PortingFile("include", True, True),
+    PortingFile(
+        "include",
+        True,
+        True,
+        [
+            "ATen/ops",
+        ],
+    ),
     PortingFile("c10/core/impl", True, True),
     PortingFile("aten/src/ATen/cuda", True, True),
     PortingFile("torch/csrc/cuda", True, False),
@@ -104,35 +125,47 @@ def port_cuda(
         "C10_CUDA_ERROR_HANDLED": "C10_MUSA_ERROR_HANDLED",
         "C10_CUDA_CHECK[(]": "TORCH_MUSA_CHECK(",
         "C10_CUDA_CHECK_WARN[(]": "TORCH_MUSA_WARN(",
-        "CUDA_KERNEL_ASSERT(index >= -sizes[i] && index < sizes[i] && \"index out of bounds\");" : "",
+        'CUDA_KERNEL_ASSERT(index >= -sizes[i] && index < sizes[i] && "index out of bounds");': "",
         "C10_CUDA_API ": "C10_MUSA_API ",
         "C10_CUDA_IMPORT": "C10_MUSA_IMPORT",
         "C10_CUDA_EXPORT": "C10_MUSA_EXPORT",
         "C10_CUDA_BUILD_MAIN_LIB": "C10_MUSA_BUILD_MAUN_LIB",
         "C10_CUDA_BUILD_SHARED_LIBS": "C10_MUSA_BUILD_SHARED_LIBS",
         "OptionalCUDAStreamGuard": "OptionalMUSAStreamGuard",
-        "<ATen/CUDAFunctions\.h>" : "<ATen/MUSA_PORT_Functions.h>",
-        "<c10/musa/CUDADeviceAssertionHost\.h>": "\"torch_musa/csrc/core/MUSADeviceAssertionHost.h\"",
-        "<c10/musa/CUDAFunctions\.h>": "\"torch_musa/csrc/core/MUSAFunctions.h\"",
-        "<c10/musa/MUSAStream\.h>": "\"torch_musa/csrc/core/MUSAStream.h\"",
-        "<c10/musa/MUSAGuard\.h>": "\"torch_musa/csrc/core/MUSAGuard.h\"",
-        "<c10/musa/impl/CUDAGuardImpl\.h>": "\"torch_musa/csrc/core/GuardImpl.h\"",
-        "<c10/musa/CUDAException\.h>": "\"torch_musa/csrc/core/MUSAException.h\"",
-        "<c10/musa/CUDAMiscFunctions\.h>": "\"torch_musa/csrc/core/MUSAMiscFunctions.h\"",
-        "<c10/musa/CUDACachingAllocator\.h>": "\"torch_musa/csrc/core/Allocator.h\"",
-        "<c10/musa/MUSACachingAllocator\.h>": "\"torch_musa/csrc/core/Allocator.h\"",
-        "<c10/musa/CUDAGraphsC10Utils\.h>": "\"torch_musa/csrc/core/MUSAGraphsC10Utils.h\"",
-        "<ATen/musa/CUDADevice\.h>": "\"torch_musa/csrc/core/Device.h\"",
-        "<ATen/musa/CUDABlas\.h>": "\"torch_musa/csrc/aten/musa/MUSABlas.h\"",
-        "<ATen/musa/CUDAContext\.h>": "\"torch_musa/csrc/aten/musa/MUSAContext.h\"",
-        "<ATen/musa/Exceptions\.h>": "\"torch_musa/csrc/aten/musa/Exceptions.h\"",
-        "<ATen/musa/PinnedMemoryAllocator\.h>": "\"torch_musa/csrc/core/PinnedMemoryAllocator.h\"",
-        "<ATen/musa/CachingHostAllocator\.h>": "\"torch_musa/csrc/core/CachingHostAllocator.h\"",
-        "<ATen/musa/MUSAGeneratorImpl\.h>": "\"torch_musa/csrc/aten/musa/MUSAGeneratorImpl.h\"",
-        "<ATen/musa/detail/PhiloxCudaStateRaw\.muh>": "\"torch_musa/csrc/aten/musa/PhiloxCudaStateRaw.muh\"",
-        "<ATen/musa/detail/UnpackRaw\.muh>": "\"torch_musa/csrc/aten/musa/UnpackRaw.muh\"",
-        "<ATen/musa/CUDAGraphsUtils\.muh>": "\"torch_musa/csrc/aten/musa/MUSAGraphsUtils.muh\"",
+        "<ATen/CUDAFunctions\.h>": "<ATen/MUSA_PORT_Functions.h>",
+        "<c10/musa/CUDADeviceAssertionHost\.h>": '"torch_musa/csrc/core/MUSADeviceAssertionHost.h"',
+        "<c10/musa/CUDAFunctions\.h>": '"torch_musa/csrc/core/MUSAFunctions.h"',
+        "<c10/musa/MUSAStream\.h>": '"torch_musa/csrc/core/MUSAStream.h"',
+        "<c10/musa/MUSAGuard\.h>": '"torch_musa/csrc/core/MUSAGuard.h"',
+        "<c10/musa/impl/CUDAGuardImpl\.h>": '"torch_musa/csrc/core/GuardImpl.h"',
+        "<c10/musa/CUDAException\.h>": '"torch_musa/csrc/core/MUSAException.h"',
+        "<c10/musa/CUDAMiscFunctions\.h>": '"torch_musa/csrc/core/MUSAMiscFunctions.h"',
+        "<c10/musa/CUDACachingAllocator\.h>": '"torch_musa/csrc/core/Allocator.h"',
+        "<c10/musa/MUSACachingAllocator\.h>": '"torch_musa/csrc/core/Allocator.h"',
+        "<c10/musa/CUDAGraphsC10Utils\.h>": '"torch_musa/csrc/core/MUSAGraphsC10Utils.h"',
+        "<ATen/musa/CUDADevice\.h>": '"torch_musa/csrc/core/Device.h"',
+        "<ATen/musa/CUDABlas\.h>": '"torch_musa/csrc/aten/musa/MUSABlas.h"',
+        "<ATen/musa/CUDAContext\.h>": '"torch_musa/csrc/aten/musa/MUSAContext.h"',
+        "<ATen/musa/Exceptions\.h>": '"torch_musa/csrc/aten/musa/Exceptions.h"',
+        "<ATen/musa/PinnedMemoryAllocator\.h>": '"torch_musa/csrc/core/PinnedMemoryAllocator.h"',
+        "<ATen/musa/CachingHostAllocator\.h>": '"torch_musa/csrc/core/CachingHostAllocator.h"',
+        "<ATen/musa/MUSAGeneratorImpl\.h>": '"torch_musa/csrc/aten/musa/MUSAGeneratorImpl.h"',
+        "<ATen/musa/detail/PhiloxCudaStateRaw\.muh>": '"torch_musa/csrc/aten/musa/PhiloxCudaStateRaw.muh"',
+        "<ATen/musa/detail/UnpackRaw\.muh>": '"torch_musa/csrc/aten/musa/UnpackRaw.muh"',
+        "<ATen/musa/CUDAGraphsUtils\.muh>": '"torch_musa/csrc/aten/musa/MUSAGraphsUtils.muh"',
+        "Device\(kCUDA, current_device\(\)\)": "Device(kMUSA, current_device())",
     }
+
+    # unregister CUDA kernel bindings that managed by stub mechiasm,
+    # this is necessary when we implement kernels on our own rather than porting, and
+    # bind the kernel into the same stub with CPU/CUDA. otherwise, we can't guarantee
+    # the stub is binded to the correct kernel(the initialization order of static variables
+    # can not be guaranteed).
+    unregister_cuda_dispatch_stub_map = {
+        "REGISTER_DISPATCH\(index_stub, &index_kernel\);": "",
+        "REGISTER_DISPATCH\(index_put_stub, &index_put_kernel\);": "",
+    }
+    extra_replace_map.update(unregister_cuda_dispatch_stub_map)
 
     # 1. Copy and cuda-port files
     for port_file in PORT_FILES:
@@ -145,9 +178,13 @@ def port_cuda(
             os.path.join(src_root, port_file.dir_name)
         ):
             relative_path = cur_dir.replace(src_root.rstrip("/") + "/", "")
+            sub_dir[:] = [
+                d
+                for d in sub_dir
+                if (os.path.join(relative_path, d) not in port_file.exclude_sub_dirs)
+            ]
             destination_folder = os.path.join(
-                generated_dir,
-                relative_path.replace("cuda", "musa")
+                generated_dir, relative_path.replace("cuda", "musa")
             )
 
             if not port_file.recursive:
@@ -178,4 +215,7 @@ def port_cuda(
         "jit_macros.h": "ATen",
     }
     for key, value in special_copy_files.items():
-        shutil.copy(os.path.join(current_dir, key), os.path.join(generated_dir, "include", value))
+        shutil.copy(
+            os.path.join(current_dir, key),
+            os.path.join(generated_dir, "include", value),
+        )

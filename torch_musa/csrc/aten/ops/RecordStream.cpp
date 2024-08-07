@@ -4,12 +4,11 @@
 
 #include "torch_musa/csrc/core/Allocator.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
 
-void record_stream(at::Tensor& self, at::Stream s) {
+void RecordStream(at::Tensor& self, at::Stream s) {
   const MUSAGuard device_guard(self.device());
   struct c10::StreamData3 data = s.pack3();
   c10::musa::MUSACachingAllocator::recordStream(
@@ -18,6 +17,5 @@ void record_stream(at::Tensor& self, at::Stream s) {
           data.stream_id, data.device_index, data.device_type));
 }
 
-ADVANCED_REGISTER(aten, PrivateUse1, "record_stream", record_stream)
 } // namespace musa
 } // namespace at

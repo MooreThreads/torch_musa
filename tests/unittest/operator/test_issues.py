@@ -1,4 +1,5 @@
 """Test uncontiguous sub_."""
+
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import, not-callable
 import torch
 import pytest
@@ -65,6 +66,9 @@ def test_index_tensor():
 
 
 dtypes = [torch.float16, torch.float32, torch.int64]
+# bf16 is not supported on arch older than qy2
+if testing.get_musa_arch() >= 22:
+    dtypes.append(torch.bfloat16)
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -94,26 +98,34 @@ def test_issue_415():
     x = torch.randn((16, 1, 768)).transpose(1, 2)
     x_mu = x.to("musa")
     func = torch.nn.functional.adaptive_avg_pool1d
-    assert testing.DefaultComparator()(func(x, 1), func(x_mu, 1))
+    assert testing.DefaultComparator(abs_diff=1e-5, rel_diff=1e-4)(
+        func(x, 1), func(x_mu, 1)
+    )
 
     x = torch.randn((16, 1, 16, 32)).to(memory_format=torch.channels_last)
     x_mu = x.to("musa")
-    assert testing.DefaultComparator()(torch.mean(x), torch.mean(x_mu))
+    assert testing.DefaultComparator(abs_diff=1e-5, rel_diff=1e-4)(
+        torch.mean(x), torch.mean(x_mu)
+    )
 
     x = torch.randn((16, 32, 1, 1)).to(memory_format=torch.channels_last)
     x_mu = x.to("musa")
-    assert testing.DefaultComparator()(torch.sum(x), torch.sum(x_mu))
-    assert testing.DefaultComparator()(
+    assert testing.DefaultComparator(abs_diff=1e-5, rel_diff=1e-4)(
+        torch.sum(x), torch.sum(x_mu)
+    )
+    assert testing.DefaultComparator(abs_diff=1e-5, rel_diff=1e-4)(
         torch.sum(x, 0, keepdim=True), torch.sum(x_mu, 0, keepdim=True)
     )
 
     x = torch.randn((4, 1, 16)).transpose(1, 2).unsqueeze(1)
     x_mu = x.to("musa")
-    assert testing.DefaultComparator()(torch.max(x), torch.max(x_mu))
-    assert testing.DefaultComparator()(
+    assert testing.DefaultComparator(abs_diff=1e-5, rel_diff=1e-4)(
+        torch.max(x), torch.max(x_mu)
+    )
+    assert testing.DefaultComparator(abs_diff=1e-5, rel_diff=1e-4)(
         torch.max(x, 0, keepdim=True)[0], torch.max(x_mu, 0, keepdim=True)[0]
     )
-    assert testing.DefaultComparator()(
+    assert testing.DefaultComparator(abs_diff=1e-5, rel_diff=1e-4)(
         torch.max(x, 0, keepdim=True)[1], torch.max(x_mu, 0, keepdim=True)[1]
     )
 
@@ -163,3 +175,12 @@ def test_issue_610():
     c_input[:] = 2
     m_input[:] = 2
     assert testing.DefaultComparator(abs_diff=1e-7)(c_input, m_input)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_repeat():
+    c_input = torch.randn(2, 2, 2, 2, 2)
+    m_input = c_input.musa()
+    c_res = c_input.repeat(1, 1, 2, 1, 1)
+    m_res = m_input.repeat(1, 1, 2, 1, 1)
+    assert testing.DefaultComparator(abs_diff=1e-7)(c_res, m_res)

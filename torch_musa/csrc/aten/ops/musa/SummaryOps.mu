@@ -249,7 +249,8 @@ bool MUSA_tensor_histogram(
   auto sharedMem = nbins * sizeof(output_t) + 8; // 8 guard bytes
   auto maxGlobalMem = getFreeGlobalMemory();
   auto multiBlockMem = nbins * grid.x * sizeof(output_t) + 8; // 8 guard bytes
-  // determine memory type to use in the kernel
+  // TODO(@fan.mo): atomicCAS doesn't supoprt int64_t share mem address as a
+  // parameter so we force memType to be GLOBAL for now.
   if (nbins < THRESH_NUMBER_BINS_FOR_MULTI_BLOCK_MEM &&
       sharedMem < maxSharedMem) {
     memType = MUSAHistogramMemoryType::SHARED;
@@ -297,69 +298,8 @@ bool MUSA_tensor_histogram(
 #undef FOR_KERNEL_LOOP
 #undef THRESH_NUMBER_BINS_FOR_GLOBAL_MEM
 #undef THRESH_NUMBER_BINS_FOR_MULTI_BLOCK_MEM
-} // namespace musa
 
 namespace {
-///////////////// bincount /////////////////
-template <typename input_t, typename weights_t>
-Tensor _bincount_musa_template(
-    const Tensor& self,
-    const Tensor& weights,
-    int64_t minlength) {
-  if (minlength < 0) {
-    AT_ERROR("minlength should be >= 0");
-  }
-  if (self.dim() == 1 && self.numel() == 0) {
-    return at::zeros(
-        {minlength},
-        kLong,
-        c10::nullopt /* layout */,
-        kMUSA,
-        c10::nullopt /* pin_memory */);
-  }
-  if (self.dim() != 1 ||
-      (!std::is_same<input_t, uint8_t>::value &&
-       *self.min().cpu().data_ptr<input_t>() < 0)) {
-    AT_ERROR("bincount only supports 1-d non-negative integral inputs.");
-  }
-
-  bool has_weights = weights.defined();
-  if (has_weights && (weights.dim() != 1 || weights.size(0) != self.size(0))) {
-    AT_ERROR("weights should be 1-d and have the same length as input");
-  }
-
-  const int64_t nbins =
-      std::max(self.max().item<input_t>() + (int64_t)1, minlength);
-
-  // we are using acc_type for the bounds, in particular int64_t for integers
-  // in order to avoid overflows (e.g. using 256 bins for dtype uint8)
-  using bounds_t = at::acc_type<input_t, /*is_musa=*/true>;
-  const bounds_t minvalue = 0;
-  const bounds_t maxvalue = nbins;
-  // alloc output counter on GPU
-  Tensor output;
-  if (has_weights) {
-    output = at::zeros(
-        {nbins},
-        optTypeMetaToScalarType(weights.options().dtype_opt()),
-        weights.options().layout_opt(),
-        weights.options().device_opt(),
-        weights.options().pinned_memory_opt());
-    musa::MUSA_tensor_histogram<weights_t, input_t, true>(
-        output, self, weights, nbins, minvalue, maxvalue);
-  } else {
-    output = at::zeros(
-        {nbins},
-        kLong,
-        c10::nullopt /* layout */,
-        DeviceType::PrivateUse1,
-        c10::nullopt /* pin_memory */);
-    musa::MUSA_tensor_histogram<int64_t, input_t, false>(
-        output, self, weights, nbins, minvalue, maxvalue);
-  }
-  return output;
-}
-
 ///////////////// histc /////////////////
 template <typename input_t>
 Tensor _histc_musa_template(
@@ -387,7 +327,6 @@ Tensor _histc_musa_template(
     maxvalue = maxvalue + 1;
   }
 
-#if !defined(USE_ROCM)
   TORCH_CHECK(
       !(at::_isinf(minvalue) || at::_isinf(maxvalue) || at::_isnan(minvalue) ||
         at::_isnan(maxvalue)),
@@ -396,56 +335,29 @@ Tensor _histc_musa_template(
       ", ",
       maxvalue,
       "] is not finite");
-#else
-  TORCH_CHECK(
-      !(std::isinf(minvalue) || std::isinf(maxvalue) || std::isnan(minvalue) ||
-        std::isnan(maxvalue)),
-      "range of [",
-      minvalue,
-      ", ",
-      maxvalue,
-      "] is not finite");
-#endif
   TORCH_CHECK(minvalue < maxvalue, "max must be larger than min");
 
-  musa::MUSA_tensor_histogram<input_t, input_t, false>(
+  MUSA_tensor_histogram<input_t, input_t, false>(
       output, self, Tensor(), nbins, minvalue, maxvalue);
   return output;
 }
 } // namespace
 
-namespace native {
-Tensor _bincount_musa(
-    const Tensor& self,
-    const c10::optional<Tensor>& weights_opt,
-    int64_t minlength) {
-  // See [Note: hacky wrapper removal for optional tensor]
-  c10::MaybeOwned<Tensor> weights_maybe_owned =
-      at::borrow_from_optional_tensor(weights_opt);
-  const Tensor& weights = *weights_maybe_owned;
-
-  // See Note [Writing Nondeterministic Operations]
-  // Nondeterministic because of atomicAdd usage
-  globalContext().alertNotDeterministic("_bincount_musa");
-  return AT_DISPATCH_INTEGRAL_TYPES(self.scalar_type(), "bincount_musa", [&] {
-    const auto scalar = weights.scalar_type();
-    if (scalar == ScalarType::Undefined || scalar == ScalarType::Float)
-      return _bincount_musa_template<scalar_t, float>(self, weights, minlength);
-    return _bincount_musa_template<scalar_t, double>(
-        self, weights.to(kDouble), minlength);
-  });
-}
-
-Tensor _histc_musa(
+Tensor Histc(
     const Tensor& self,
     int64_t nbins,
     const Scalar& min,
     const Scalar& max) {
-  if (self.scalar_type() == ScalarType::Half) {
-    AT_ERROR("HalfTensor is not supported");
-  }
+  TORCH_CHECK(
+      self.scalar_type() != ScalarType::Half &&
+          self.scalar_type() != ScalarType::Long &&
+          self.scalar_type() != ScalarType::Double,
+      "histc doesn't support half, double and long tenesor, now is ",
+      self.scalar_type());
   // See Note [Writing Nondeterministic Operations]
   // Nondeterministic because of atomicAdd usage
+  // TODO(@mt-ai): we registrate this kernel with all data types, but
+  // Long and Double would cause MUSA UNKNOWN ERROR
   globalContext().alertNotDeterministic("_histc_musa");
   return AT_DISPATCH_ALL_TYPES(self.scalar_type(), "histc", [&] {
     using bounds_t = at::acc_type<scalar_t, /*is_musa=*/true>;
@@ -454,22 +366,17 @@ Tensor _histc_musa(
   });
 }
 
-Tensor& _histc_out_musa(
+Tensor& HistcOut(
     const Tensor& self,
     int64_t bins,
     const Scalar& min,
     const Scalar& max,
     Tensor& result) {
-  auto ret = _histc_musa(self, bins, min, max);
-  resize_output(result, ret.sizes());
+  Tensor ret = Histc(self, bins, min, max);
+  at::native::resize_output(result, ret.sizes());
   result.copy_(ret);
   return result;
 }
 
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("histc", &_histc_musa);
-  m.impl("histc.out", &_histc_out_musa);
-}
-
-} // namespace native
+} // namespace musa
 } // namespace at

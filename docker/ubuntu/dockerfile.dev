@@ -1,0 +1,105 @@
+ARG BASE_IMG
+FROM ${BASE_IMG}
+
+ARG MUSA_TOOLKITS_URL
+ARG MUDNN_URL
+ARG MCCL_URL
+
+# maybe update gcc
+ARG GCC_VERSION
+COPY ./common/install_gcc.sh install_gcc.sh
+RUN bash install_gcc.sh && \
+    rm -f install_gcc.sh && \
+    apt-get update && apt-get install -y clinfo pkg-config
+
+
+# install musa_toolkit, which includes musa_runtime and mcc
+RUN wget --no-check-certificate ${MUSA_TOOLKITS_URL} -O /home/musa_toolkits_install.tar.gz
+RUN cd /home && \
+    tar -zxf ./musa_toolkits_install.tar.gz && \
+    cd ./musa_toolkits_install && \
+    bash ./install.sh && \
+    rm -f ../musa_toolkits_install.tar.gz && \
+    rm -rf ../musa_toolkit*
+
+# install muDNN
+RUN wget --no-check-certificate ${MUDNN_URL} -O /home/mudnn.tar && \
+    tar -xvf /home/mudnn.tar -C /home && \
+    pushd /home/mudnn && \
+    bash install_mudnn.sh && \
+    popd && \
+    rm -f /home/mudnn.tar && \
+    rm -rf /home/*mudnn*  
+
+# install mccl
+COPY ./common/install_mccl.sh install_mccl.sh
+RUN bash install_mccl.sh --mccl_url ${MCCL_URL} && \
+    rm -f install_mccl.sh 
+
+# install math libs, there are muSparse, muAlg and muThrust
+COPY ./common/release/update_release_math.sh install_math.sh
+RUN bash install_math.sh -w && \
+    rm -f install_math.sh 
+
+# install mupti
+COPY ./common/release/update_release_mupti.sh install_mupti.sh
+RUN bash install_mupti.sh && \
+    rm -f install_mupti.sh
+
+# config git
+# RUN git config --global http.sslverify false && \
+#     git config --global https.sslverify false
+
+ENV MTHREADS_VISIBLE_DEVICES=all
+ENV MUSA_HOME=/usr/local/musa
+ENV LD_LIBRARY_PATH=$MUSA_HOME/lib:$LD_LIBRARY_PATH
+ENV PATH=${MUSA_HOME}/bin:$PATH
+
+COPY ./torch_musa /home/torch_musa
+COPY ./data /data/torch_musa_integration/local
+
+COPY ./common/change_conda_mirror.sh change_conda_mirror.sh 
+RUN bash change_conda_mirror.sh && \
+    rm change_conda_mirror.sh && \	
+    pushd /home/torch_musa && \
+    # if mkl was not installed via pip
+    # pytorch will look for it under /opt/intel/oneapi
+    pip install -r requirements.txt && \
+    # install mkl librarie (for static linking)
+    bash docker/common/install_mkl.sh && \
+    echo 'export LIBRARY_PATH="/opt/intel/oneapi/mkl/lib/intel64:${LIBRARY_PATH}"'>>~/.bashrc && \
+    echo 'export LD_LIBRARY_PATH="/usr/local/musa/lib:${LD_LIBRARY_PATH}"'>>~/.bashrc && \
+    # maybe create softlink for mkl libraries
+    bash docker/common/create_softlink4mkl.sh $(dirname $(dirname $(which python)))/lib && \
+    pip install pytest==7.2.2 protobuf==3.19.0 \
+    googleapis-common-protos==1.56.4 importlib-metadata==4.11.3 \
+    pillow==9.2.0 pylint==2.17.3 requests black && \
+    # workaround for https://github.com/pytorch/pytorch/issues/99625
+    conda install -y "llvm-openmp<16" && \
+    export CMAKE_PREFIX_PATH=${CONDA_PREFIX:-"$(dirname $(which conda))/../"} && \
+    export PATH=$PATH:$(dirname $(which conda)) && cmake --version && \
+    bash build.sh -c && \
+    rm -rf build && \
+    rm -rf /home/pytorch/build && \
+    popd
+
+
+WORKDIR /home
+
+RUN pushd vision && \
+    python setup.py install && \
+    rm -rf build && \
+    popd
+
+RUN pushd audio && \
+    USE_CUDA=0 python setup.py install && \
+    rm -rf build && \
+    popd
+
+COPY ./common/check_status.sh /home/check_status.sh
+COPY ./common/test_musa.mu /home/test_musa.mu
+
+RUN chmod 777 /home/check_status.sh
+
+ENTRYPOINT ["/home/check_status.sh"]
+

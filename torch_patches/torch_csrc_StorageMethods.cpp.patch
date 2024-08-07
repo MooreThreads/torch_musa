@@ -1,0 +1,27 @@
+diff --git a/torch/csrc/StorageMethods.cpp b/torch/csrc/StorageMethods.cpp
+index af22f46..342e9a7 100644
+--- a/torch/csrc/StorageMethods.cpp
++++ b/torch/csrc/StorageMethods.cpp
+@@ -135,6 +135,22 @@ static PyObject* THPStorage_resize_(PyObject* _self, PyObject* number_arg) {
+     const auto size_bytes = static_cast<size_t>(size_bytes_i);
+     at::native::resize_bytes_cuda(self->cdata, size_bytes);
+ #endif
++  } else if (device_type == at::kPrivateUse1) {
++    c10::StorageImpl* storage = self->cdata;
++    TORCH_CHECK(
++        storage->resizable(), "Trying to resize storage that is not resizable");
++    size_t size_bytes = newsize;
++    at::DataPtr new_data;
++    if (size_bytes != 0) {
++      new_data = storage->allocator()->allocate(size_bytes);
++    }
++    at::DataPtr old_data = storage->set_data_ptr(std::move(new_data));
++    const auto old_capacity = storage->nbytes();
++    const auto copy_capacity = std::min(size_bytes, old_capacity);
++    storage->set_nbytes(size_bytes);
++    if (old_data != nullptr && old_data.get() != nullptr && copy_capacity > 0) {
++      TORCH_CHECK(false, "MUSA currently not support copy from D2D");
++    }
+   } else {
+     TORCH_CHECK(
+         false,

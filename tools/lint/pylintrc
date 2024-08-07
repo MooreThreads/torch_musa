@@ -15,6 +15,9 @@ ignore=CVS, _cy2, _cy3, grammar
 # regex matches against base names, not paths.
 ignore-patterns=
 
+# TorchMusa: ignore the version file.
+ignore-paths=^docs/, ^tools/, ^benchmark, ^ci, ^examples, ^torch_musa/version.py
+
 # Pickle collected data for later comparisons.
 persistent=yes
 

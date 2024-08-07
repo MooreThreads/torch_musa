@@ -21,7 +21,6 @@
 #include "torch_musa/csrc/aten/ops/Embedding.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace native {
@@ -169,14 +168,6 @@ std::tuple<Tensor, Tensor, Tensor, Tensor> EmbeddingBag(
       padding_idx,
       /*requires_grad*/ true);
 }
-
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "embedding_dense_backward",
-    EmbeddingDenseBwd)
-
-ADVANCED_REGISTER(aten, PrivateUse1, "_embedding_bag", EmbeddingBag)
 
 } // namespace musa
 } // namespace at

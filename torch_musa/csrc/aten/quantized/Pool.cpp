@@ -12,7 +12,6 @@
 #include "torch_musa/csrc/aten/mudnn/Handle.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <vector>
 
@@ -247,9 +246,5 @@ Tensor MaxPool2dQuantized(
   return output.permute({0, 3, 1, 2});
 }
 
-TORCH_LIBRARY_IMPL(aten, QuantizedPrivateUse1, m) {
-  m.impl("_adaptive_avg_pool2d", TORCH_FN(AdaptiveAvgPool2dQuantized));
-  m.impl("quantized_max_pool2d", TORCH_FN(MaxPool2dQuantized));
-}
 } // namespace musa
 } // namespace at

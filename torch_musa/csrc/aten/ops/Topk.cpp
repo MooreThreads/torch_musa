@@ -6,7 +6,6 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -60,7 +59,12 @@ std::tuple<Tensor&, Tensor&> TopkOut(
   values.resize_(topk_size);
   indices.resize_(topk_size);
 
-  auto self_contiguous = self.contiguous();
+  if (self.numel() == 0 || k == 0) {
+    return std::forward_as_tuple(values, indices);
+  }
+
+  auto self_contiguous = FormatContiguous(self, MemoryFormat::Contiguous);
+
   auto mt_input = CreateMUTensor(self_contiguous);
   muTensor mt_values = CreateMUTensor(values);
   muTensor mt_indices = CreateMUTensor(indices);
@@ -90,9 +94,6 @@ std::tuple<Tensor, Tensor> Topk(
   TopkOut(self, k, dim, largest, sorted, values, indices);
   return std::forward_as_tuple(values, indices);
 }
-
-ADVANCED_REGISTER(aten, PrivateUse1, "topk", Topk)
-ADVANCED_REGISTER(aten, PrivateUse1, "topk.values", TopkOut)
 
 } // namespace musa
 } // namespace at

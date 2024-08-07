@@ -5,6 +5,7 @@ all the model's parameters into one or a few kernel launches
 """
 from ..utils import ext_loader
 
+
 class MultiTensorApply(object):
     available = False
     warned = False
@@ -23,12 +24,10 @@ class MultiTensorApply(object):
             raise RuntimeError(
                 "Attempted to call MultiTensorApply method, but MultiTensorApply "
                 "is not available, original import error message:",
-                MultiTensorApply.import_err)
+                MultiTensorApply.import_err,
+            )
 
     def __call__(self, op, noop_flag_buffer, tensor_lists, *args):
         self.check_avail()
 
-        return op(self.chunk_size,
-                  noop_flag_buffer,
-                  tensor_lists,
-                  *args)
+        return op(self.chunk_size, noop_flag_buffer, tensor_lists, *args)

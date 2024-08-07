@@ -322,15 +322,6 @@ Tensor& CatOutQuantizedMusa(
   return out;
 }
 
-TORCH_LIBRARY_IMPL(aten, QuantizedPrivateUse1, m) {
-  m.impl("squeeze", TORCH_FN(SqueezeQuantized));
-  m.impl("squeeze.dim", TORCH_FN(SqueezeQuantizedDim));
-  m.impl("squeeze.dims", TORCH_FN(SqueezeQuantizedDims));
-  m.impl("unsqueeze", TORCH_FN(UnsqueezeQuantized));
-  m.impl("cat", TORCH_FN(CatQuantizedMusa));
-  m.impl("cat.out", TORCH_FN(CatOutQuantizedMusa));
-}
-
 /* Quantized concatenation (under quantized schema)
  *
  * Note: This function directly concat quantized tensors

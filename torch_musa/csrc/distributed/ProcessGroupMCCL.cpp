@@ -19,6 +19,9 @@ const std::map<at::ScalarType, mcclDataType_t> mcclDataType = {
     {at::kHalf, mcclFloat16},
     {at::kDouble, mcclFloat64},
     {at::kBool, mcclUint8},
+#if MARCH_TYPE == 220
+    {at::kBFloat16, mcclBfloat16},
+#endif
 };
 
 const std::map<ReduceOp::RedOpType, mcclRedOp_t> mcclOp = {

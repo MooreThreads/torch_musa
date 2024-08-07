@@ -1,5 +1,7 @@
 """Test triangular operator."""
+
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
+import copy
 import torch
 import pytest
 import torch_musa
@@ -10,12 +12,27 @@ input_data = [
     {"input": torch.rand(5, 3), "diagonal": 0},
     {"input": torch.rand(5, 3), "diagonal": 1},
     {"input": torch.rand(5, 3), "diagonal": -1},
+    {"input": torch.rand(5, 0), "diagonal": -1},
     {"input": torch.rand(5, 3, 1), "diagonal": 0},
     {"input": torch.rand(5, 3, 3), "diagonal": 1},
-    {"input": torch.rand(5, 3, 3, 2), "diagonal": 1},
+    {"input": torch.rand(3, 4097, 1, 2), "diagonal": 1},
+    {"input": torch.rand(50, 4098, 3, 2), "diagonal": 1},
+    {
+        "input": torch.rand(5, 1, 1, 1).to(memory_format=torch.channels_last),
+        "diagonal": 1,
+    },
+    {
+        "input": torch.rand(5, 1, 3, 3).to(memory_format=torch.channels_last),
+        "diagonal": 1,
+    },
+    {
+        "input": torch.rand(5, 4, 3, 6).to(memory_format=torch.channels_last),
+        "diagonal": 1,
+    },
     {"input": torch.rand(5, 3, 3, 6, 3), "diagonal": 2},
     {"input": torch.rand(5, 3, 3, 6, 4, 4), "diagonal": 2},
     {"input": torch.rand(5, 3, 3, 6, 5, 5, 3), "diagonal": 1},
+    {"input": torch.rand(0, 3, 3, 6, 5, 5, 3), "diagonal": 1},
     # {"input": torch.rand(5, 3, 3, 6, 5, 5, 3, 4), "diagonal": 0},
 ]
 
@@ -35,6 +52,20 @@ def test_triu(input_data, data_type):
     )
     test.check_result()
     test.check_musafp16_vs_musafp32()
+    test.check_out_ops()
+    test.check_grad_fn()
+    test.check_grad_fn(fp16=True)
+    inplace_input = copy.deepcopy(input_data)
+    self_tensor = inplace_input["input"]
+    inplace_input.pop("input")
+    test = testing.InplaceOpChek(
+        func_name=torch.triu.__name__ + "_",
+        self_tensor=self_tensor,
+        input_args=inplace_input,
+        comparators=[comparator],
+    )
+    test.check_address()
+    test.check_res()
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -87,6 +118,20 @@ def test_tril(input_data, data_type):
     )
     test.check_result()
     test.check_musafp16_vs_musafp32()
+    test.check_out_ops()
+    test.check_grad_fn()
+    test.check_grad_fn(fp16=True)
+    inplace_input = copy.deepcopy(input_data)
+    self_tensor = inplace_input["input"]
+    inplace_input.pop("input")
+    test = testing.InplaceOpChek(
+        func_name=torch.tril.__name__ + "_",
+        self_tensor=self_tensor,
+        input_args=inplace_input,
+        comparators=[comparator],
+    )
+    test.check_address()
+    test.check_res()
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)

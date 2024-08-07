@@ -1,0 +1,17 @@
+diff --git a/torch/csrc/autograd/profiler_kineto.cpp b/torch/csrc/autograd/profiler_kineto.cpp
+index ef98d8f..0aafe8b 100644
+--- a/torch/csrc/autograd/profiler_kineto.cpp
++++ b/torch/csrc/autograd/profiler_kineto.cpp
+@@ -489,8 +489,10 @@ void onFunctionExit(
+     try {
+       auto fallback = kineto_ctx_ptr->fallback_;
+       TORCH_INTERNAL_ASSERT(fallback != nullptr);
+-      torch::profiler::impl::cudaStubs()->record(
+-          nullptr, &fallback->cuda_event_end_, nullptr);
++      // musaStubs does not exist temporarily hence comment the following lines
++      // which won't affect the functionality of torch musa profiler
++      // torch::profiler::impl::cudaStubs()->record(
++      //     nullptr, &fallback->cuda_event_end_, nullptr);
+     } catch (const std::exception& e) {
+       LOG(WARNING) << "Failed to record CUDA event. " << e.what();
+     }

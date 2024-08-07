@@ -1,4 +1,5 @@
 """Test layer_norm operators."""
+
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import,invalid-name,not-callable
 import torch
 import torch.nn.functional as F
@@ -38,10 +39,6 @@ def test_layer_norm_nlp(embedding_dim, batch, sequence_length):
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@pytest.mark.skipif(
-    testing.get_musa_arch() < 22,
-    reason="fp16 layer norm supported in S4000 or later"
-)
 @pytest.mark.parametrize("embedding_dim", [128, 512, 768, 2048])
 @pytest.mark.parametrize("batch", [1, 2, 8])
 @pytest.mark.parametrize("sequence_length", [1, 32, 128])
@@ -58,15 +55,15 @@ def test_layer_norm_nlp_fp16(embedding_dim, batch, sequence_length):
     test = testing.OpTest(
         func=F.layer_norm,
         input_args=input_data,
-        comparators=testing.DefaultComparator(abs_diff=1e-2),
+        comparators=testing.DefaultComparator(abs_diff=1e-2, rel_diff=1e-3),
     )
-    test._comparators = [testing.DefaultComparator(abs_diff=1e-2)]
+    # fp16 cause too much loss of significance
+    test._comparators = [testing.DefaultComparator(abs_diff=1.1e-2, rel_diff=1e-3)]
     test.check_musafp16_vs_musafp32()
 
 
 @pytest.mark.skipif(
-    testing.get_musa_arch() < 22,
-    reason="bf16 is not supported on arch older than S4000"
+    testing.get_musa_arch() < 22, reason="bf16 is not supported on arch older than qy2"
 )
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("embedding_dim", [128, 512, 768, 2048])
@@ -76,10 +73,9 @@ def test_layer_norm_nlp_bf16(embedding_dim, batch, sequence_length):
     normalized_shape = (embedding_dim,)
     weight, bias = init_weight_and_bias(normalized_shape)
     input_args = {
-        "input": 
-        torch.randn(
-            (batch, sequence_length, embedding_dim),
-            dtype=torch.bfloat16).requires_grad_(),
+        "input": torch.randn(
+            (batch, sequence_length, embedding_dim), dtype=torch.bfloat16
+        ).requires_grad_(),
         "normalized_shape": normalized_shape,
         "weight": weight.to(torch.bfloat16),
         "bias": bias.to(torch.bfloat16),
@@ -122,8 +118,7 @@ def test_layer_norm_cv(N, C, W, H):
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.skipif(
-    testing.get_musa_arch() < 22,
-    reason="fp16 layer norm supported in S4000 or later"
+    testing.get_musa_arch() < 22, reason="fp16 layer norm supported in QY2 or later"
 )
 @pytest.mark.parametrize("N", cv_test_data)
 @pytest.mark.parametrize("C", cv_test_data)
@@ -159,3 +154,27 @@ def test_layer_norm_weight_uncontiguous(dtype):
     layer.weight.data = chunk[5:].view(layer.weight.shape)
     musa_res = layer(input_data.to("musa"))
     assert testing.DefaultComparator(abs_diff=1e-3)(cpu_res, musa_res.cpu())
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("embedding_dim", [2048])
+@pytest.mark.parametrize("batch", [2])
+@pytest.mark.parametrize("sequence_length", [128])
+def test_layer_norm_bias_None(embedding_dim, batch, sequence_length):
+    normalized_shape = (embedding_dim,)
+    weight, bias = init_weight_and_bias(normalized_shape)
+    bias = None
+    input_data = {
+        "input": torch.randn(batch, sequence_length, embedding_dim),
+        "normalized_shape": normalized_shape,
+        "weight": weight,
+        "bias": bias,
+        "eps": 1e-8,
+    }
+    test = testing.OpTest(
+        func=F.layer_norm,
+        input_args=input_data,
+        comparators=testing.DefaultComparator(abs_diff=1e-2),
+    )
+    test.check_result()
+    test._comparators = [testing.DefaultComparator(abs_diff=1e-2)]

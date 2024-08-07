@@ -4,7 +4,10 @@ import pytest
 from torch_musa import testing
 
 
-input_data = [{'input': torch.randn(2, 16, 8, 16, 16, requires_grad=True)}]
+input_data = [
+    {"input": torch.randn(2, 16, 8, 16, 16, requires_grad=True)},
+    {"input": torch.randn(0, 16, 8, 16, 16, requires_grad=True)},
+]
 kernel_size = [2, 3, (2, 3, 3), (3, 3, 3)]
 stride = [1, 3, (2, 1, 1)]
 padding = [0, 1, (1, 1, 1)]
@@ -40,9 +43,11 @@ def test_pool3d(
     }
     test = testing.OpTest(func=torch.nn.MaxPool3d, input_args=input_params)
     test.check_result({"input": input_data["input"]}, train=True)
+    test.check_grad_fn()
 
     del input_params["dilation"]
     del input_params["return_indices"]
     del input_params["ceil_mode"]
     test = testing.OpTest(func=torch.nn.AvgPool3d, input_args=input_params)
     test.check_result({"input": input_data["input"]}, train=False)
+    test.check_grad_fn()

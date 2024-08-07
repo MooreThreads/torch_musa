@@ -6,7 +6,6 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -101,9 +100,13 @@ std::tuple<Tensor, Tensor, Tensor> NativeGroupNorm(
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::GroupNorm op;
   CHECK_MUDNN_STATUS(op.SetEpsilon(eps), "SetEpsilon");
-  CHECK_MUDNN_STATUS(
-      op.SetAxis(memory_format == at::MemoryFormat::ChannelsLast ? 3 : 1),
-      "SetAxis");
+  int axis = 1;
+  if (memory_format == at::MemoryFormat::ChannelsLast) {
+    axis = 3;
+  } else if (memory_format == at::MemoryFormat::ChannelsLast3d) {
+    axis = 4;
+  }
+  CHECK_MUDNN_STATUS(op.SetAxis(axis), "SetAxis");
   CHECK_MUDNN_STATUS(op.SetGroup(static_cast<int>(group)), "SetGroup");
   CHECK_MUDNN_STATUS(op.Run(h, out, mean, rstd, in, gamma, beta), "RunOp");
 
@@ -116,31 +119,15 @@ std::tuple<Tensor, Tensor, Tensor> NativeGroupNormBwd(
     const Tensor& mean,
     const Tensor& rstd,
     const c10::optional<Tensor>& weight,
-    c10::SymInt N,
-    c10::SymInt C,
-    c10::SymInt HxW,
+    int64_t N,
+    int64_t C,
+    int64_t HxW,
     int64_t group,
     ::std::array<bool, 3> output_mask) {
   c10::musa::MUSAGuard device_guard(grad_out.device());
   return at::native::native_group_norm_backward(
-      grad_out,
-      input,
-      mean,
-      rstd,
-      weight,
-      N.expect_int(),
-      C.expect_int(),
-      HxW.expect_int(),
-      group,
-      output_mask);
+      grad_out, input, mean, rstd, weight, N, C, HxW, group, output_mask);
 }
-
-ADVANCED_REGISTER(aten, PrivateUse1, "native_group_norm", NativeGroupNorm)
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "native_group_norm_backward",
-    NativeGroupNormBwd)
 
 } // namespace musa
 } // namespace at

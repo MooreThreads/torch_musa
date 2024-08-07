@@ -1,4 +1,5 @@
 """Test filp operator."""
+
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
 import torch
 import pytest
@@ -15,6 +16,18 @@ inputdata = [
     {"input": torch.randn(1, 2, 3), "dims": (0, 1, -1)},
     {"input": torch.randn(1, 0, 3), "dims": [0]},
     {"input": torch.randn(1, 2, 3, 4), "dims": [0, 2]},
+    {
+        "input": torch.randn(3, 2, 3, 4).to(memory_format=torch.channels_last),
+        "dims": [0, 2],
+    },
+    {
+        "input": torch.randn(3, 1, 3, 4).to(memory_format=torch.channels_last),
+        "dims": [0, 2],
+    },
+    {
+        "input": torch.randn(3, 4, 1, 1).to(memory_format=torch.channels_last),
+        "dims": [0, 2],
+    },
     {"input": torch.randn(1, 2, 3, 4, 3), "dims": (0, -1)},
     {"input": torch.randn(1, 2, 3, 4, 3, 2), "dims": [2, 3]},
     {"input": torch.randn(1, 2, 3, 4, 3, 2, 4), "dims": [1, 2, 3, 4, 5]},
@@ -28,6 +41,9 @@ inputdata = [
 def test_flip(input_data, data_type):
     test = testing.OpTest(
         func=torch.flip,
-        input_args={"input":input_data["input"].to(data_type), "dims":input_data["dims"]}
+        input_args={
+            "input": input_data["input"].to(data_type),
+            "dims": input_data["dims"],
+        },
     )
     test.check_result()

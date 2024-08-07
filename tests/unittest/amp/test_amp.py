@@ -31,10 +31,13 @@ class SimpleModel(nn.Module):
         x = self.relu(x)
         x = self.fc2(x)
         return x
+
     def __call__(self, x):
         return self.forward(x)
 
+
 DEVICE = "musa"
+
 
 def train_in_amp(low_dtype=torch.float16):
     set_seed()
@@ -77,6 +80,7 @@ def train_in_fp32():
         optimizer.step()
     return loss
 
+
 @pytest.mark.parametrize("low_dtype", [torch.float16])
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 def test_amp_autocast_fp16(low_dtype):
@@ -85,9 +89,9 @@ def test_amp_autocast_fp16(low_dtype):
     torch.musa.synchronize()
     testing.DefaultComparator(res_amp, res_fp32)
 
+
 @pytest.mark.skipif(
-    testing.get_musa_arch() < 22,
-    reason="bf16 is not supported on arch older than S4000"
+    testing.get_musa_arch() < 22, reason="bf16 is not supported on arch older than qy2"
 )
 @pytest.mark.parametrize("low_dtype", [torch.bfloat16])
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)

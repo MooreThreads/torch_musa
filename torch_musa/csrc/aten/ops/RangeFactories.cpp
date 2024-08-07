@@ -10,7 +10,6 @@
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -33,7 +32,7 @@ Tensor& ArangeStartOut(
   return out;
 }
 
-Tensor& range_out(
+Tensor& RangeOut(
     const Scalar& start,
     const Scalar& end,
     const Scalar& step,
@@ -53,10 +52,6 @@ at::Tensor& LinspaceOut(
   const OptionalDeviceGuard device_guard(device_of(out));
   return at::native::linspace_cuda_out(start, end, steps, out);
 }
-
-ADVANCED_REGISTER(aten, PrivateUse1, "arange.start_out", ArangeStartOut)
-ADVANCED_REGISTER(aten, PrivateUse1, "linspace.out", LinspaceOut)
-ADVANCED_REGISTER(aten, PrivateUse1, "range.out", range_out)
 
 } // namespace musa
 } // namespace at

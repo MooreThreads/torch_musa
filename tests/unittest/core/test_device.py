@@ -1,4 +1,5 @@
 """Test device features."""
+
 # pylint: disable=invalid-name, comparison-with-itself, unused-variable, unused-import, C0415, C0121, C2801, W0611
 import queue
 import threading
@@ -503,6 +504,17 @@ def test_tensor_device():
         assert torch.FloatTensor(1).to("musa").get_device() == 1
         assert torch.FloatTensor(1).to("musa:0").get_device() == 0
         assert torch.FloatTensor(1).to("musa").get_device() == 1
+
+
+def test_module_to_device_id():
+    cpu_module = torch.nn.Conv2d(16, 16, 16)
+    flag = True
+    try:
+        musa_module = cpu_module.to(0)
+        assert str(musa_module.weight.device) == "musa:0"
+    except AssertionError:
+        flag = False
+    assert flag is True
 
 
 def test_events():

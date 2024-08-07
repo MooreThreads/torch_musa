@@ -9,7 +9,6 @@
 
 #include <ATen/Context.h>
 #include <ATen/core/ATenGeneral.h>
-#include <pybind11/pybind11.h>
 
 #include "torch_musa/csrc/aten/musa/Exceptions.h"
 #include "torch_musa/csrc/core/MUSAFunctions.h"
@@ -71,8 +70,6 @@ inline void lazyInitMUSA() {
   c10::call_once(thm_init, [&] { at::detail::getMUSAHooks().initMUSA(); });
 }
 
-namespace py = pybind11;
-void registerMusaDeviceProperties(PyObject* module);
 } // namespace musa
 } // namespace at
 #endif // TORCH_MUSA_CSRC_ATEN_MUSA_MUSACONTEXT_H_

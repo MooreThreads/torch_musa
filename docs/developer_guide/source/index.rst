@@ -15,8 +15,7 @@
    ./3_introduction/index
    ./4_installation/index
    ./5_quickguide/index
-   ./6_support_new_operators/index
-   ./7_support_customized_operators/index
+   ./6_customize_operators/index
    ./8_build_musa_extensions/index
    ./9_optimize_performance/index
    ./10_debug_tools/index

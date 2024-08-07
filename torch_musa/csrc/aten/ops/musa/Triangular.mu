@@ -19,8 +19,9 @@ __global__ void triangular_matrix(
     const T* in_ptr,
     const int M,
     const int N,
-    const int MxN,
-    const int diag) {
+    const int64_t MxN,
+    const int diag,
+    const int64_t elements) {
   typedef typename at::musa::Dtype<T>::Vec4 vec4;
 
   int gid = blockIdx.x * blockDim.x * 4 + threadIdx.x * 4;
@@ -28,45 +29,48 @@ __global__ void triangular_matrix(
   int num_matrix = gid / MxN + 1;
   int prefix = MxN * num_matrix;
 
-  vec4 vec_out, vec_in;
-  for (int offset = gid; offset < MxN * num_matrix; offset += global_stride) {
-    if (offset + 1 <= MxN * num_matrix) {
-      vec_in = *(const vec4*)(in_ptr + offset);
-      int carry = 1;
-      bool mask[4] = {true, true, true, true};
+  if (gid < elements) {
+    vec4 vec_out, vec_in;
+    for (int offset = gid; offset < elements; offset += global_stride) {
+      num_matrix = offset / MxN + 1;
+      prefix = MxN * num_matrix;
+      if (offset + 4 < elements) {
+        vec_in = *(const vec4*)(in_ptr + offset);
+        int carry = 1;
+        bool mask[4] = {true, true, true, true};
 #pragma unroll
-      for (int i = 0; i < 4; ++i) {
-        if (offset + i > prefix) {
-          carry = 0;
-        }
-        int col = (offset - MxN * (num_matrix - carry) + i) % N;
-        int row = (offset - MxN * (num_matrix - carry) + i) / N;
+        for (int i = 0; i < 4; ++i) {
+          if (offset + i > prefix) {
+            carry = 0;
+          }
+          int col = (offset - MxN * (num_matrix - carry) + i) % N;
+          int row = (offset - MxN * (num_matrix - carry) + i) / N;
 
-        if constexpr (mode == TriangularMode::TRIU) {
-          mask[i] = ((col) - (row) >= (diag));
-        } else {
-          mask[i] = ((col) - (row) <= (diag));
+          if constexpr (mode == TriangularMode::TRIU) {
+            mask[i] = ((col) - (row) >= (diag));
+          } else {
+            mask[i] = ((col) - (row) <= (diag));
+          }
         }
-      }
-      vec_out.x = mask[0] ? vec_in.x : (T)0;
-      vec_out.y = mask[1] ? vec_in.y : (T)0;
-      vec_out.z = mask[2] ? vec_in.z : (T)0;
-      vec_out.w = mask[3] ? vec_in.w : (T)0;
+        vec_out.x = mask[0] ? vec_in.x : (T)0;
+        vec_out.y = mask[1] ? vec_in.y : (T)0;
+        vec_out.z = mask[2] ? vec_in.z : (T)0;
+        vec_out.w = mask[3] ? vec_in.w : (T)0;
 
-      *(vec4*)(out_ptr + offset) = vec_out;
-    } else {
-      for (int offset_dst = offset; offset_dst < MxN * num_matrix;
-           offset_dst++) {
-        int col = (offset_dst - MxN * (num_matrix - 1)) % N;
-        int row = (offset_dst - MxN * (num_matrix - 1)) / N;
+        *(vec4*)(out_ptr + offset) = vec_out;
+      } else {
+        for (int offset_dst = offset; offset_dst < elements; offset_dst++) {
+          int col = (offset_dst - MxN * (num_matrix - 1)) % N;
+          int row = (offset_dst - MxN * (num_matrix - 1)) / N;
 
-        bool mask = true;
-        if constexpr (mode == TriangularMode::TRIU) {
-          mask = ((col) - (row) >= (diag));
-        } else {
-          mask = ((col) - (row) <= (diag));
+          bool mask = true;
+          if constexpr (mode == TriangularMode::TRIU) {
+            mask = ((col) - (row) >= (diag));
+          } else {
+            mask = ((col) - (row) <= (diag));
+          }
+          out_ptr[offset_dst] = mask ? in_ptr[offset_dst] : (T)0;
         }
-        out_ptr[offset_dst] = mask ? in_ptr[offset_dst] : (T)0;
       }
     }
   }
@@ -78,54 +82,60 @@ __global__ void triangular_matrix_slow(
     const T* in_ptr,
     const int M,
     const int N,
-    const int MxN,
-    const int diag) {
+    const int64_t MxN,
+    const int diag,
+    const int64_t elements) {
   int gid = blockIdx.x * blockDim.x + threadIdx.x;
   int global_stride = blockDim.x * gridDim.x;
   int num_matrix = gid / MxN + 1;
 
-  for (int offset = gid; offset < MxN * num_matrix; offset += global_stride) {
-    int col = (offset - MxN * (num_matrix - 1)) % N;
-    int row = (offset - MxN * (num_matrix - 1)) / N;
-    bool mask = true;
-    if constexpr (mode == TriangularMode::TRIU) {
-      mask = ((col) - (row) >= (diag));
-    } else {
-      mask = ((col) - (row) <= (diag));
+  if (gid < elements) {
+    for (int offset = gid; offset < elements; offset += global_stride) {
+      num_matrix = offset / MxN + 1;
+      int col = (offset - MxN * (num_matrix - 1)) % N;
+      int row = (offset - MxN * (num_matrix - 1)) / N;
+      bool mask = true;
+      if constexpr (mode == TriangularMode::TRIU) {
+        mask = ((col) - (row) >= (diag));
+      } else {
+        mask = ((col) - (row) <= (diag));
+      }
+      out_ptr[offset] = mask ? in_ptr[offset] : (T)0;
     }
-    out_ptr[offset] = mask ? in_ptr[offset] : (T)0;
   }
 }
 
-#define GEN_TRI_MAT_FUNC(_MODE, _TYPE)                 \
-  [](Tensor& out,                                      \
-     const Tensor& in,                                 \
-     const int M,                                      \
-     const int N,                                      \
-     const int MxN,                                    \
-     const int diag,                                   \
-     const int nr_block,                               \
-     const int thread_per_block) {                     \
-    auto stream = c10::musa::getCurrentMUSAStream();   \
-    if (MxN >= 4) {                                    \
-      triangular_matrix<_TYPE, _MODE>                  \
-          <<<nr_block, thread_per_block, 0, stream>>>( \
-              static_cast<_TYPE*>(out.data_ptr()),     \
-              static_cast<_TYPE*>(in.data_ptr()),      \
-              M,                                       \
-              N,                                       \
-              MxN,                                     \
-              diag);                                   \
-    } else {                                           \
-      triangular_matrix_slow<_TYPE, _MODE>             \
-          <<<nr_block, thread_per_block, 0, stream>>>( \
-              static_cast<_TYPE*>(out.data_ptr()),     \
-              static_cast<_TYPE*>(in.data_ptr()),      \
-              M,                                       \
-              N,                                       \
-              MxN,                                     \
-              diag);                                   \
-    }                                                  \
+#define GEN_TRI_MAT_FUNC(_MODE, _TYPE)                                       \
+  [](Tensor& out,                                                            \
+     const Tensor& in,                                                       \
+     const int M,                                                            \
+     const int N,                                                            \
+     const int64_t MxN,                                                      \
+     const int diag,                                                         \
+     const int block_num,                                                    \
+     const int block_size,                                                   \
+     const int64_t elements) {                                               \
+    auto stream = c10::musa::getCurrentMUSAStream();                         \
+    if (MxN >= 4) {                                                          \
+      triangular_matrix<_TYPE, _MODE><<<block_num, block_size, 0, stream>>>( \
+          static_cast<_TYPE*>(out.data_ptr()),                               \
+          static_cast<_TYPE*>(in.data_ptr()),                                \
+          M,                                                                 \
+          N,                                                                 \
+          MxN,                                                               \
+          diag,                                                              \
+          elements);                                                         \
+    } else {                                                                 \
+      triangular_matrix_slow<_TYPE, _MODE>                                   \
+          <<<block_num, block_size, 0, stream>>>(                            \
+              static_cast<_TYPE*>(out.data_ptr()),                           \
+              static_cast<_TYPE*>(in.data_ptr()),                            \
+              M,                                                             \
+              N,                                                             \
+              MxN,                                                           \
+              diag,                                                          \
+              elements);                                                     \
+    }                                                                        \
   }
 } // namespace
 
@@ -138,10 +148,11 @@ struct KernelTable {
       const Tensor&,
       const int,
       const int,
+      const int64_t,
       const int,
       const int,
       const int,
-      const int)>;
+      const int64_t)>;
 
 #define REGISTER_KERNEL_MODE(_MODE)                            \
   REGISTER_KERNEL(at::ScalarType::Bool, _MODE, bool)           \
@@ -166,15 +177,16 @@ struct KernelTable {
       const Tensor& in,
       const int M,
       const int N,
-      const int MxN,
+      const int64_t MxN,
       const int diag,
-      const int nr_block,
-      const int thread_per_block) {
+      const int block_num,
+      const int block_size,
+      const int64_t elements) {
     at::ScalarType dtype = in.scalar_type();
     auto& func = triangular_kernels[(int)dtype][(int)mode];
 
     if (func) {
-      func(out, in, M, N, MxN, diag, nr_block, thread_per_block);
+      func(out, in, M, N, MxN, diag, block_num, block_size, elements);
     } else {
       TORCH_CHECK(false, "Unsupported dtype of Triangular: ", dtype);
     }
@@ -205,6 +217,7 @@ void TriuRun(Tensor& o, const Tensor& i, const int64_t diag) {
   TORCH_CHECK(CheckParams(o, i), "CheckParams fail");
   at::musa::muHandle& h = GetMudnnHandle();
   const int ndim = o.dim();
+  const int elements = o.numel();
   const int M = o.size(ndim - 2);
   const int N = o.size(ndim - 1);
   const int MxN = M * N;
@@ -216,20 +229,21 @@ void TriuRun(Tensor& o, const Tensor& i, const int64_t diag) {
       musaSuccess == musaGetDeviceProperties(&device_prop, device_id),
       "musaGetDeviceProperties error");
   const int mp_num = device_prop.multiProcessorCount;
-  const int elements = o.numel();
-  const int nr_threads = 1024;
-  const int nr_blocks =
-      std::min(at::musa::ceil_div(elements, nr_threads), mp_num);
+  const int block_size = 1024;
+  const int max_blocks = INT32_MAX;
+  const int block_num =
+      std::min(at::musa::ceil_div(elements, block_size * 4), max_blocks);
 
   KernelTable kernel_triangular;
   kernel_triangular.launch<TriangularMode::TRIU>(
-      o, i, M, N, MxN, static_cast<int>(diag), nr_blocks, nr_threads);
+      o, i, M, N, MxN, static_cast<int>(diag), block_num, block_size, elements);
 }
 
 void TrilRun(Tensor& o, const Tensor& i, const int64_t diag) {
   TORCH_CHECK(CheckParams(o, i), "CheckParams fail");
   at::musa::muHandle& h = GetMudnnHandle();
   const int ndim = o.dim();
+  const int elements = o.numel();
   const int M = o.size(ndim - 2);
   const int N = o.size(ndim - 1);
   const int MxN = M * N;
@@ -241,14 +255,14 @@ void TrilRun(Tensor& o, const Tensor& i, const int64_t diag) {
       musaSuccess == musaGetDeviceProperties(&device_prop, device_id),
       "musaGetDeviceProperties error");
   const int mp_num = device_prop.multiProcessorCount;
-  const int elements = o.numel();
-  const int nr_threads = 1024;
-  const int nr_blocks =
-      std::min(at::musa::ceil_div(elements, nr_threads), mp_num);
+  const int block_size = 1024;
+  const int max_blocks = INT32_MAX;
+  const int block_num =
+      std::min(at::musa::ceil_div(elements, block_size * 4), max_blocks);
 
   KernelTable kernel_triangular;
   kernel_triangular.launch<TriangularMode::TRIL>(
-      o, i, M, N, MxN, static_cast<int>(diag), nr_blocks, nr_threads);
+      o, i, M, N, MxN, static_cast<int>(diag), block_num, block_size, elements);
 }
 
 REGISTER_MUSA_DISPATCH(triu_stub, &TriuRun);

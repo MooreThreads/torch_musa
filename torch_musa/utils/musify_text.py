@@ -1,4 +1,5 @@
 """Musify-text tool"""
+
 import contextlib
 import itertools
 import json
@@ -101,7 +102,9 @@ def exclusion_start(line_no):
     """Judge if the line at line_no is exclusion start"""
     global EXCL_FLAG
     if EXCL_FLAG:
-        logging.warning("open musify exclusion block when it is already opened at line %s", line_no)
+        logging.warning(
+            "open musify exclusion block when it is already opened at line %s", line_no
+        )
     else:
         logging.info("musify exclusion block opened at line %s", line_no)
     EXCL_FLAG = True
@@ -112,8 +115,9 @@ def exclusion_stop(line_no):
     """Judge if the line at line_no is exclusion stop"""
     global EXCL_FLAG
     if not EXCL_FLAG:
-        logging.warning("close musify exclusion block when it is already closed at line %s",
-                        line_no)
+        logging.warning(
+            "close musify exclusion block when it is already closed at line %s", line_no
+        )
     else:
         logging.info("musify exclusion block closed at line %s", line_no)
     EXCL_FLAG = False
@@ -124,7 +128,9 @@ def exclusion_line(line_no):
     """Judge if the line at line_no is exclusion line"""
     if EXCL_FLAG:
         logging.warning(
-            "use musify single line exclusion when in exclusion block at line %s", line_no)
+            "use musify single line exclusion when in exclusion block at line %s",
+            line_no,
+        )
     else:
         logging.info("musify single line exclusion at line %s", line_no)
     return True
@@ -147,14 +153,14 @@ def init_ac_automaton(args):
 
     map_iter = map(
         lambda tup: (tup[0].encode(), tup[1].encode()),
-        itertools.chain(*map(
-            lambda p: read_mapping(p).items(),
-            args.mapping)))
+        itertools.chain(*map(lambda p: read_mapping(p).items(), args.mapping)),
+    )
 
     extra_map_iter = []
     if args.extra_mapping and isinstance(args.extra_mapping, dict):
-        extra_map_iter = map(lambda tup: (tup[0].encode(), tup[1].encode()),
-                             args.extra_mapping.items())
+        extra_map_iter = map(
+            lambda tup: (tup[0].encode(), tup[1].encode()), args.extra_mapping.items()
+        )
     if args.direction == "m2c":
         for cuda, musa in itertools.chain(map_iter, extra_map_iter):
             automaton.add(musa, cuda)
@@ -191,7 +197,7 @@ def transform_line(line, line_no):
     for (src_name, begin_idx), dst_name in automaton.search_longest(line):
         end_idx = begin_idx + len(src_name)
         if is_word_boundary(line, begin_idx, end_idx):
-            new_line += line[last_end_idx: begin_idx]
+            new_line += line[last_end_idx:begin_idx]
             new_line += dst_name
             last_end_idx = end_idx
 

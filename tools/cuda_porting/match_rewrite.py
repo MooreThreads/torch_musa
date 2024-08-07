@@ -87,7 +87,7 @@ def transform_line(
     new_line += line[last_end_idx:]
     for key, value in replace_map.items():
         # Note: header files in cub library are suffixed with ".cuh" instead of ".muh",
-        # which is not consistent with other musa libraries. So here we need to skip 
+        # which is not consistent with other musa libraries. So here we need to skip
         # header files replacement of cub library.
         if "cub/" not in new_line:
             pattern = re.compile(key)
@@ -131,16 +131,33 @@ def transform_file(
     with open(path, "rb") as read_handle:
         with writer(write_path) as write_handle:
             lines = read_handle.readlines()
+            old_line = "null"
             for line in lines:
                 try:
                     line = line.decode()
                 except UnicodeDecodeError:
                     line = line.decode("unicode_escape")
-                new_line = transform_line(line, automaton, replace_map)
+                if (line == "constexpr DeviceType kCUDA = DeviceType::CUDA;\n") or (
+                    "bool is_cuda() const noexcept" in old_line
+                ):
+                    new_line = line
+                else:
+                    new_line = transform_line(line, automaton, replace_map)
                 write_handle.write(new_line)
+                old_line = line
     file_name = os.path.basename(path)
-    if "cub/" not in file_name and file_name.endswith(".cu") or file_name.endswith(".cuh") or "CUDA" in file_name or "cuda" in file_name:
-        musa_file_name = file_name.replace(".cu", ".mu").replace("CUDA", "MUSA_PORT_").replace("cuda", "musa")
+    if (
+        "cub/" not in file_name
+        and file_name.endswith(".cu")
+        or file_name.endswith(".cuh")
+        or "CUDA" in file_name
+        or "cuda" in file_name
+    ):
+        musa_file_name = (
+            file_name.replace(".cu", ".mu")
+            .replace("CUDA", "MUSA_PORT_")
+            .replace("cuda", "musa")
+        )
         musa_file_path = path.replace(file_name, musa_file_name)
         os.remove(path)
     else:

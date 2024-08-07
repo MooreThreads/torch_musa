@@ -1,4 +1,5 @@
 """Unittest for tensor shape APIs."""
+
 # pylint: disable=missing-function-docstring, unused-import
 import torch
 import torch_musa

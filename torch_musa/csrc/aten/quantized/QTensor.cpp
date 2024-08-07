@@ -8,7 +8,6 @@
 #include <ATen/core/op_registration/adaption.h>
 #include "torch_musa/csrc/aten/quantized/Quantizer.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 inline std::tuple<int, int> QValueRangeHelper(c10::ScalarType dtype) {
   if (dtype == c10::ScalarType::QUInt8) {
@@ -292,31 +291,6 @@ Tensor& QTensorCopy(Tensor& self, const Tensor& src) {
     }
   });
   return self;
-}
-
-ADVANCED_REGISTER(aten, PrivateUse1, "quantize_per_tensor", QuantizePerTensor)
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "quantize_per_tensor_dynamic",
-    QuantizePerTensorDynamic)
-ADVANCED_REGISTER(aten, PrivateUse1, "quantize_per_channel", QuantizePerChannel)
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "quantize_per_tensor.tensor_qparams",
-    QuantizePerTensorTensorQParams)
-
-TORCH_LIBRARY_IMPL(aten, QuantizedPrivateUse1, m) {
-  m.impl("clone", TORCH_FN(QuantizedClone));
-  m.impl("q_scale", TORCH_FN(QScaleQuant));
-  m.impl("q_zero_point", TORCH_FN(QZeroPointQuant));
-  m.impl("q_per_channel_scales", TORCH_FN(QPerChannelScales));
-  m.impl("q_per_channel_zero_points", TORCH_FN(QPerChannelZeroPoints));
-  m.impl("q_per_channel_axis", TORCH_FN(QPerChannelAxis));
-  m.impl("qscheme", TORCH_FN(QSchemeQuant));
-  m.impl("dequantize.self", TORCH_FN(DequantizeQuantized));
-  m.impl("set_.source_Storage_storage_offset", TORCH_FN(SetStorageQuantized));
 }
 
 } // namespace musa

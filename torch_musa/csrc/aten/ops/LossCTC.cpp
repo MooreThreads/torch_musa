@@ -9,7 +9,6 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -219,9 +218,6 @@ Tensor CtcLossBackward(
             zero_infinity);
       });
 }
-
-ADVANCED_REGISTER(aten, PrivateUse1, "_ctc_loss", CtcLoss)
-ADVANCED_REGISTER(aten, PrivateUse1, "_ctc_loss_backward", CtcLossBackward)
 
 } // namespace musa
 } // namespace at

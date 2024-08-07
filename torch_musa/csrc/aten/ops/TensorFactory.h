@@ -31,11 +31,24 @@ Tensor empty_musa(
 
 TensorBase empty_musa(IntArrayRef size, const TensorOptions& options);
 
+Tensor empty_strided_musa(
+    IntArrayRef size,
+    IntArrayRef stride,
+    c10::optional<ScalarType> dtype_opt,
+    c10::optional<Layout> layout_opt,
+    c10::optional<Device> device_opt,
+    c10::optional<bool> pin_memory_opt);
+
+Tensor empty_strided_musa(
+    IntArrayRef sizes,
+    IntArrayRef strides,
+    const TensorOptions& options);
+
 } // namespace detail
 
 namespace musa {
 
-Tensor empty_musa(
+Tensor EmptyMUSA(
     IntArrayRef size,
     c10::optional<ScalarType> dtype_opt,
     c10::optional<Layout> layout_opt,
@@ -43,7 +56,7 @@ Tensor empty_musa(
     c10::optional<bool> pin_memory_opt,
     c10::optional<c10::MemoryFormat> memory_format_opt);
 
-Tensor empty_strided_musa(
+Tensor EmptyStridedMUSA(
     IntArrayRef size,
     IntArrayRef stride,
     c10::optional<ScalarType> dtype_opt,

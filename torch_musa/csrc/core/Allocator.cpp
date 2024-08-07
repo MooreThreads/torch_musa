@@ -1,3 +1,4 @@
+#include <c10/core/Allocator.h>
 #include <c10/util/flat_hash_map.h>
 #include <regex>
 
@@ -6,6 +7,7 @@
 #include "torch_musa/csrc/core/Allocator.h"
 #include "torch_musa/csrc/core/Device.h"
 #include "torch_musa/csrc/core/MUSAException.h"
+#include "torch_musa/csrc/core/MUSAGuard.h"
 #include "torch_musa/csrc/utils/Logging.h"
 
 namespace c10 {
@@ -126,19 +128,28 @@ struct BlockPool {
   const bool is_small;
 };
 
+struct HistoryChain {
+  History h;
+  std::unique_ptr<HistoryChain> next; // when blocks are merged we keep records
+                                      // of what used to be in the block
+};
+
 struct Block {
   int device; // gpu
   musaStream_t stream;
   stream_set stream_uses;
   size_t size; // block size in bytes
-  BlockPool* pool; // owning memory pool
-  void* ptr; // memory address
-  bool allocated; // in-use flag
-  Block* prev; // prev block if split from a larger allocation
-  Block* next; // next block if split from a larger allocation
+  size_t requested_size; // memory originally requested
+  BlockPool* pool{nullptr}; // owning memory pool
+  void* ptr{nullptr}; // memory address
+  bool allocated{false}; // in-use flag
+  Block* prev{nullptr}; // prev block if split from a larger allocation
+  Block* next{nullptr}; // next block if split from a larger allocation
   int event_count{0}; // number of outstanding MUSA events
-  int gc_count; // counter for prioritizing older / less useful blocks for
-                // garbage collection
+  int gc_count{0}; // counter for prioritizing older / less useful blocks for
+                   // garbage collection
+  std::unique_ptr<HistoryChain> history;
+  HistoryChain* history_last{nullptr};
 
   Block(
       int device,
@@ -150,24 +161,17 @@ struct Block {
         stream(stream),
         stream_uses(),
         size(size),
+        requested_size(0),
         pool(pool),
-        ptr(ptr),
-        allocated(0),
-        prev(nullptr),
-        next(nullptr),
-        gc_count(0) {}
+        ptr(ptr) {}
 
   // constructor for search key
   Block(int device, musaStream_t stream, size_t size)
       : device(device),
         stream(stream),
+        stream_uses(),
         size(size),
-        pool(nullptr),
-        ptr(nullptr),
-        allocated(0),
-        prev(nullptr),
-        next(nullptr),
-        gc_count(0) {}
+        requested_size(0) {}
 
   bool is_split() const {
     return (prev != nullptr) || (next != nullptr);
@@ -190,7 +194,8 @@ struct AllocParams {
       size_t size,
       musaStream_t stream,
       BlockPool* pool,
-      size_t alloc_size)
+      size_t alloc_size,
+      DeviceStats& stats)
       : search_key(device, stream, size),
         pool(pool),
         alloc_size(alloc_size),
@@ -216,6 +221,18 @@ struct AllocParams {
   StatTypes stat_types = {false};
   musaError_t err;
 };
+
+int trimHistoryBefore(Block* block, void* point) {
+  int n = 0;
+  while (block->history && block->history->h.addr < point) {
+    block->history = std::move(block->history->next);
+    ++n;
+  }
+  if (!block->history) {
+    block->history_last = nullptr;
+  }
+  return n;
+}
 
 class EventPool {
  public:
@@ -403,28 +420,59 @@ class MTGPUCachingAllocator {
   size_t allowed_memory_maximum_ = 0;
   bool set_fraction_ = false;
 
-  // device ID of this allocator
-  int self_device_;
+  bool record_history = false;
+  std::atomic<CreateContextFn> context_recorder_;
+  size_t alloc_trace_next = 0;
+  bool alloc_trace_record_context_ = false;
+  size_t alloc_trace_max_entries_ = 1;
+  std::vector<TraceEntry>*
+      alloc_trace; // pointer because we need to intentionally leak this on
+                   // deallocation it can hold references to Python state which
+                   // will already be destroyed when we are in exit handlers
+
+  std::vector<OutOfMemoryObserver> oom_observers_;
 
  public:
   MTGPUCachingAllocator()
       : large_blocks_(BlockComparator, /*is_small=*/false),
-        small_blocks_(BlockComparator, /*is_small=*/true) {
+        small_blocks_(BlockComparator, /*is_small=*/true),
+        alloc_trace(new std::vector<TraceEntry>()) {
     stats_.max_split_size = CachingAllocatorConfig::max_split_size();
+    context_recorder_.store(nullptr);
   }
 
   // All public methods (except the above) acquire the allocator mutex.
   // Thus, do not call a public method from another public method.
 
-  Block* malloc(int device, size_t size, musaStream_t stream) {
+  void recordHistory(
+      bool enabled,
+      CreateContextFn context_recorder,
+      size_t alloc_trace_max_entries,
+      bool alloc_trace_record_context) {
+    std::unique_lock<std::recursive_mutex> lock(mutex_);
+    record_history = enabled;
+    context_recorder_.store(context_recorder);
+    alloc_trace_max_entries_ = std::max(size_t(1), alloc_trace_max_entries);
+    alloc_trace_record_context_ = alloc_trace_record_context;
+    alloc_trace_next = 0;
+    alloc_trace->clear();
+  }
+
+  void attachOutOfMemoryObserver(OutOfMemoryObserver observer) {
+    oom_observers_.emplace_back(std::move(observer));
+  }
+
+  Block* malloc(int device, size_t orig_size, musaStream_t stream) {
+    CreateContextFn context_recorder = context_recorder_.load();
+    std::shared_ptr<Context> context =
+        context_recorder ? context_recorder() : nullptr;
     std::unique_lock<std::recursive_mutex> lock(mutex_);
     process_events();
 
-    self_device_ = device;
-    size = round_size(size);
+    size_t size = round_size(orig_size);
     BlockPool& pool = get_pool(size);
     const size_t alloc_size = get_allocation_size(size);
-    AllocParams params(device, size, stream, &pool, alloc_size);
+    AllocParams params(device, size, stream, &pool, alloc_size, stats_);
     params.stat_types[static_cast<size_t>(StatType::AGGREGATE)] = true;
     params.stat_types[static_cast<size_t>(get_stat_type_for_pool(pool))] = true;
 
@@ -451,6 +499,15 @@ class MTGPUCachingAllocator {
               alloc_block(params, false))
           // Free all non-split cached blocks and retry alloc.
           || (release_cached_blocks() && alloc_block(params, true));
+
+      if (record_history && block_found) {
+        record_trace(
+            TraceEntry::SEGMENT_ALLOC,
+            int64_t(params.block->ptr),
+            params.block->size,
+            params.stream(),
+            context);
+      }
     }
 
     if (!block_found) {
@@ -469,7 +526,30 @@ class MTGPUCachingAllocator {
         allowed_info = format_size(allowed_memory_maximum_) + " allowed; ";
       }
 
+      if (record_history) {
+        record_trace(
+            TraceEntry::OOM,
+            device_free,
+            params.size(),
+            params.stream(),
+            std::move(context));
+      }
+
       stats_.num_ooms += 1;
+
+      c10::reportOutOfMemoryToProfiler(
+          size,
+          stats_.allocated_bytes[static_cast<int64_t>(StatType::AGGREGATE)]
+              .current,
+          stats_.reserved_bytes[static_cast<int64_t>(StatType::AGGREGATE)]
+              .current,
+          c10::Device(at::musa::kMUSA, static_cast<DeviceIndex>(device)));
+      for (const auto& obs : oom_observers_) {
+        obs(device,
+            alloc_size,
+            set_fraction_ ? allowed_memory_maximum_ : device_total,
+            device_free);
+      }
 
       // "total capacity": total global memory on GPU
       // "allowed": memory is allowed to use, which set by fraction.
@@ -537,6 +617,10 @@ class MTGPUCachingAllocator {
       bool inserted = pool.blocks.insert(remaining).second;
       TORCH_INTERNAL_ASSERT_DEBUG_ONLY(inserted);
 
+      if (record_history) {
+        trimHistoryBefore(remaining, (char*)block->ptr + size);
+      }
+
       if (already_split) {
         // An already-split inactive block is being shrunk by size bytes.
         update_stat_array(
@@ -558,6 +642,23 @@ class MTGPUCachingAllocator {
     }
 
     block->allocated = true;
+    block->requested_size = orig_size;
+    if (record_history) {
+      trimHistoryBefore(block, (char*)block->ptr + size);
+      block->history = std::make_unique<HistoryChain>(HistoryChain{
+          History{block->ptr, orig_size, std::move(context)},
+          std::move(block->history)});
+      if (!block->history_last) {
+        block->history_last = block->history.get();
+      }
+      record_trace(
+          TraceEntry::ALLOC,
+          int64_t(block->ptr),
+          orig_size,
+          block->stream,
+          block->history->h.context);
+    }
+
     bool inserted = active_blocks_.insert(block).second;
     TORCH_INTERNAL_ASSERT_DEBUG_ONLY(inserted);
 
@@ -566,9 +667,18 @@ class MTGPUCachingAllocator {
       update_stat(stats_.allocated_bytes[stat_type], block->size);
       update_stat(stats_.active[stat_type], 1);
       update_stat(stats_.active_bytes[stat_type], block->size);
+      update_stat(stats_.requested_bytes[stat_type], block->requested_size);
     });
     if (block->size >= CachingAllocatorConfig::max_split_size())
       update_stat(stats_.oversize_allocations, 1);
+
+    c10::reportMemoryUsageToProfiler(
+        block->ptr,
+        block->size,
+        stats_.allocated_bytes[static_cast<size_t>(StatType::AGGREGATE)]
+            .current,
+        stats_.reserved_bytes[static_cast<size_t>(StatType::AGGREGATE)].current,
+        c10::Device(at::musa::kMUSA, device));
 
     return block;
   }
@@ -577,6 +687,8 @@ class MTGPUCachingAllocator {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
 
     block->allocated = false;
+    auto orig_block_ptr = block->ptr;
+    auto orig_block_size = block->size;
 
     StatTypes stat_types = {false};
     stat_types[static_cast<size_t>(StatType::AGGREGATE)] = true;
@@ -586,6 +698,14 @@ class MTGPUCachingAllocator {
       update_stat(stats_.allocation[stat_type], -1);
       update_stat(stats_.allocated_bytes[stat_type], -block->size);
     });
+    if (block->history) {
+      record_trace(
+          TraceEntry::FREE_REQUESTED,
+          int64_t(block->ptr),
+          block->history->h.real_size,
+          block->stream,
+          block->history->h.context);
+    }
     if (block->size >= CachingAllocatorConfig::max_split_size())
       update_stat(stats_.oversize_allocations, -1);
 
@@ -594,6 +714,13 @@ class MTGPUCachingAllocator {
     } else {
       free_block(block);
     }
+    c10::reportMemoryUsageToProfiler(
+        orig_block_ptr,
+        -orig_block_size,
+        stats_.allocated_bytes[static_cast<size_t>(StatType::AGGREGATE)]
+            .current,
+        stats_.reserved_bytes[static_cast<size_t>(StatType::AGGREGATE)].current,
+        c10::Device(at::musa::kMUSA, block->device));
   }
 
   // This function is used to return the base ptr and the offset
@@ -794,8 +921,9 @@ class MTGPUCachingAllocator {
 
   /** Dump a complete snapshot of the memory held by the allocator. Potentially
    * VERY expensive. **/
-  std::vector<SegmentInfo> snapshot() const {
+  std::vector<SegmentInfo> snapshot() {
     std::lock_guard<std::recursive_mutex> lock(mutex_);
+    size_t total_active = 0;
 
     std::vector<SegmentInfo> result;
     const std::vector<const Block*> all_blocks = get_all_blocks();
@@ -808,6 +936,7 @@ class MTGPUCachingAllocator {
       SegmentInfo& segment_info = result.back();
       segment_info.device = head_block->device;
       segment_info.address = reinterpret_cast<int64_t>(head_block->ptr);
+      segment_info.stream = head_block->stream;
       segment_info.is_large = (!head_block->pool->is_small);
 
       const Block* block = head_block;
@@ -827,9 +956,14 @@ class MTGPUCachingAllocator {
         if (block_info.active) {
           segment_info.active_size += block_info.size;
         }
-
+        HistoryChain* h = block->history.get();
+        while (h) {
+          block_info.history.push_back(h->h);
+          h = h->next.get();
+        }
         block = block->next;
       }
+      total_active += segment_info.active_size;
     }
 
     std::sort(
@@ -839,6 +973,25 @@ class MTGPUCachingAllocator {
           return a.address < b.address;
         });
 
+    if (record_history) {
+      record_trace(TraceEntry::SNAPSHOT, 0, total_active, 0, nullptr);
+    }
+
+    return result;
+  }
+
+  std::vector<TraceEntry> trace() {
+    std::lock_guard<std::recursive_mutex> lock(mutex_);
+    std::vector<TraceEntry> result;
+    result.reserve(alloc_trace->size());
+    result.insert(
+        result.end(),
+        alloc_trace->begin() + alloc_trace_next,
+        alloc_trace->end());
+    result.insert(
+        result.end(),
+        alloc_trace->begin(),
+        alloc_trace->begin() + alloc_trace_next);
     return result;
   }
 
@@ -900,8 +1053,17 @@ class MTGPUCachingAllocator {
     TORCH_INTERNAL_ASSERT(
         !block->allocated && block->event_count == 0 &&
         block->stream_uses.empty());
+    if (block->history) {
+      record_trace(
+          TraceEntry::FREE_COMPLETED,
+          int64_t(block->ptr),
+          block->history->h.real_size,
+          block->stream,
+          block->history->h.context);
+    }
 
     size_t original_block_size = block->size;
+    size_t requested_size = block->requested_size;
 
     BlockPool& pool = *block->pool;
     int64_t net_change_inactive_split_blocks = 0;
@@ -939,6 +1101,7 @@ class MTGPUCachingAllocator {
           net_change_inactive_split_size);
       update_stat(stats_.active[stat_type], -1);
       update_stat(stats_.active_bytes[stat_type], -original_block_size);
+      update_stat(stats_.requested_bytes[stat_type], requested_size);
     });
   }
 
@@ -958,11 +1121,27 @@ class MTGPUCachingAllocator {
       if (dst->prev) {
         dst->prev->next = dst;
       }
+      if (!dst->history) {
+        dst->history = std::move(src->history);
+        dst->history_last = src->history_last;
+      } else if (src->history) {
+        src->history_last->next = std::move(dst->history);
+        dst->history = std::move(src->history);
+      }
+      src->history_last = nullptr;
     } else {
       dst->next = src->next;
       if (dst->next) {
         dst->next->prev = dst;
       }
+      if (!dst->history) {
+        dst->history = std::move(src->history);
+        dst->history_last = src->history_last;
+      } else if (src->history) {
+        dst->history_last->next = std::move(src->history);
+        dst->history_last = src->history_last;
+      }
+      src->history_last = nullptr;
     }
 
     const size_t subsumed_size = src->size;
@@ -1165,7 +1344,13 @@ class MTGPUCachingAllocator {
         std::numeric_limits<size_t>::max())
       return false;
     BlockPool& pool = *p.pool;
-    Block key = p.search_key;
+    // because of std::unique_ptr, block cannot be trivially copied
+    Block key(
+        p.search_key.device,
+        p.search_key.stream,
+        p.search_key.size,
+        p.search_key.pool,
+        p.search_key.ptr);
     key.size = (key.size < CachingAllocatorConfig::max_split_size())
         ? CachingAllocatorConfig::max_split_size()
         : key.size;
@@ -1224,6 +1409,14 @@ class MTGPUCachingAllocator {
     });
     if (block->size >= CachingAllocatorConfig::max_split_size())
       update_stat(stats_.oversize_segments, -1);
+    if (block->history) {
+      record_trace(
+          TraceEntry::SEGMENT_FREE,
+          int64_t(block->ptr),
+          block->size,
+          block->stream,
+          block->history->h.context);
+    }
 
     pool->blocks.erase(block);
     delete block;
@@ -1250,6 +1443,28 @@ class MTGPUCachingAllocator {
       }
       if (blocksize > *largest) {
         *largest = blocksize;
+      }
+    }
+  }
+
+  void record_trace(
+      TraceEntry::Action action,
+      int64_t addr,
+      size_t size,
+      musaStream_t stream,
+      std::shared_ptr<Context> context) {
+    auto te = TraceEntry(
+        action,
+        addr,
+        size,
+        stream,
+        alloc_trace_record_context_ ? std::move(context) : nullptr);
+    if (alloc_trace->size() < alloc_trace_max_entries_) {
+      alloc_trace->emplace_back(te);
+    } else {
+      (*alloc_trace)[alloc_trace_next++] = te;
+      if (alloc_trace_next == alloc_trace_max_entries_) {
+        alloc_trace_next = 0;
       }
     }
   }
@@ -1368,13 +1583,13 @@ class MusaCachingAllocatorImpl {
         block, outSize);
   }
 
-  std::vector<SegmentInfo> snapshot() {
-    std::vector<SegmentInfo> result;
+  SnapshotInfo snapshot() {
+    SnapshotInfo result;
     for (auto& da : device_allocator_) {
+      result.device_traces.emplace_back(da->trace());
       auto snap = da->snapshot();
-      result.insert(result.end(), snap.begin(), snap.end());
+      result.segments.insert(result.segments.end(), snap.begin(), snap.end());
     }
-
     return result;
   }
 
@@ -1398,6 +1613,26 @@ class MusaCachingAllocatorImpl {
     // block must not be null reaching here
     TORCH_INTERNAL_ASSERT(block != nullptr, "No allocated block can be found");
     device_allocator_[block->device]->record_stream(block, stream);
+  }
+
+  void recordHistory(
+      bool enabled,
+      CreateContextFn context_recorder,
+      size_t alloc_trace_max_entries,
+      bool alloc_trace_record_context) {
+    for (auto& allocator : device_allocator_) {
+      allocator->recordHistory(
+          enabled,
+          std::move(context_recorder),
+          alloc_trace_max_entries,
+          alloc_trace_record_context);
+    }
+  }
+
+  void attachOutOfMemoryObserver(OutOfMemoryObserver observer) {
+    for (auto& allocator : device_allocator_) {
+      allocator->attachOutOfMemoryObserver(std::move(observer));
+    }
   }
 
   std::vector<std::unique_ptr<MTGPUCachingAllocator>> device_allocator_;
@@ -1511,11 +1746,7 @@ struct C10_API MusaCachingAllocator final : MUSAAllocator {
   }
 
   SnapshotInfo snapshot() override {
-    auto segment_info = allocator_impl_->snapshot();
-    SnapshotInfo snapshot_info;
-    snapshot_info.segments = segment_info;
-    // TODO(MTAI): Enable TraceEntry in SnapshotInfo in the future.
-    return snapshot_info;
+    return allocator_impl_->snapshot();
   }
 
   void notifyCaptureBegin(
@@ -1545,31 +1776,62 @@ struct C10_API MusaCachingAllocator final : MUSAAllocator {
         "notifyCaptureDestroy in MUSACachingAllocator is not supported now!");
   }
 
-  std::shared_ptr<void> getIpcDevPtr(std::string handle) override {
-    C10_THROW_ERROR(
-        NotImplementedError,
-        "getIpcDevPtr in MUSACachingAllocator is not supported now!");
-    return nullptr;
-  }
-
   void recordHistory(
       bool enabled,
       CreateContextFn context_recorder,
       size_t alloc_trace_max_entries,
       bool alloc_trace_record_context) override {
-    C10_THROW_ERROR(
-        NotImplementedError,
-        "recordHistory in MUSACachingAllocator is not supported now!");
+    allocator_impl_->recordHistory(
+        enabled,
+        std::move(context_recorder),
+        alloc_trace_max_entries,
+        alloc_trace_record_context);
   }
 
   void attachOutOfMemoryObserver(OutOfMemoryObserver observer) override {
-    C10_THROW_ERROR(
-        NotImplementedError,
-        "attachOutOfMemoryObserver in MUSACachingAllocator is not supported now!");
+    allocator_impl_->attachOutOfMemoryObserver(observer);
   }
 
   bool needsPoolSpecificPeerAccess() override {
     return false;
+  }
+
+  std::mutex IpcMutex;
+  ska::flat_hash_map<std::string, std::weak_ptr<void>> ipcMemHandle_to_devptr;
+  std::shared_ptr<void> getIpcDevPtr(std::string handle) override {
+    std::lock_guard<std::mutex> lock(IpcMutex);
+
+    auto iter = ipcMemHandle_to_devptr.find(handle);
+    if (iter != ipcMemHandle_to_devptr.end()) {
+      auto devptr = iter->second.lock();
+      if (devptr)
+        return devptr;
+    }
+    // This ipcMemHandle hasn't been opened, or already expired, open it to
+    // enable IPC access to that mem block.
+    void* dev = nullptr;
+    auto ipc_handle =
+        reinterpret_cast<const musaIpcMemHandle_t*>(handle.c_str());
+    C10_MUSA_CHECK(musaIpcOpenMemHandle(
+        &dev, *ipc_handle, musaIpcMemLazyEnablePeerAccess));
+    // devPtr has to be deleted in same device when created.
+    int curr_device;
+    C10_MUSA_CHECK(musaGetDevice(&curr_device));
+    auto sp =
+        std::shared_ptr<void>(dev, [handle, curr_device, this](void* ptr) {
+          MUSAGuard device_guard(curr_device);
+          std::lock_guard<std::mutex> deleter_lock(IpcMutex);
+          C10_MUSA_CHECK(musaIpcCloseMemHandle(ptr));
+          ipcMemHandle_to_devptr.erase(handle);
+        });
+    std::weak_ptr<void> wp = sp;
+    // To eliminate an additional search, we can use insert().
+    // It doesn't overwrite when key already exists(ptr expired).
+    // But in the deleter for sp we erased the entry,
+    // this should be safe to do now.
+    ipcMemHandle_to_devptr.insert(iter, {handle, wp});
+
+    return sp;
   }
 
   std::string name() override {
@@ -1674,15 +1936,45 @@ DeviceStats GetDeviceStats(int64_t device) {
   return palloc->get_allocator_impl()->get_stats(device);
 }
 
-std::vector<SegmentInfo> GetMemorySnapshot() {
+SnapshotInfo GetMemorySnapshot() {
   c10::musa::MusaCachingAllocator* palloc =
       c10::musa::GetMusaCachingAllocator();
-  return palloc->get_allocator_impl()->snapshot();
+  return palloc->snapshot();
 }
 
 void recordStream(const DataPtr& dataPtr, MUSAStream stream) {
   MusaCachingAllocator* palloc = c10::musa::GetMusaCachingAllocator();
   palloc->recordStream(dataPtr, stream);
+}
+
+void RecordHistory(
+    bool enabled,
+    CreateContextFn context_recorder,
+    size_t alloc_trace_max_entries,
+    bool alloc_trace_record_context) {
+  c10::musa::MusaCachingAllocator* palloc =
+      c10::musa::GetMusaCachingAllocator();
+  palloc->recordHistory(
+      enabled,
+      context_recorder,
+      alloc_trace_max_entries,
+      alloc_trace_record_context);
+}
+
+void AttachOutOfMemoryObserver(OutOfMemoryObserver observer) {
+  c10::musa::MusaCachingAllocator* palloc =
+      c10::musa::GetMusaCachingAllocator();
+  palloc->attachOutOfMemoryObserver(observer);
+}
+
+void* GetBaseAllocation(void* ptr, size_t* outSize) {
+  MusaCachingAllocator* palloc = GetMusaCachingAllocator();
+  return palloc->getBaseAllocation(ptr, outSize);
+}
+
+std::shared_ptr<void> GetIpcDevPtr(std::string handle) {
+  MusaCachingAllocator* palloc = GetMusaCachingAllocator();
+  return palloc->getIpcDevPtr(handle);
 }
 } // namespace MUSACachingAllocator
 } // namespace musa

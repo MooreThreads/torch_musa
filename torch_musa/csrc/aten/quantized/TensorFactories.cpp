@@ -12,7 +12,6 @@
 #include "torch_musa/csrc/aten/quantized/Quantizer.h"
 #include "torch_musa/csrc/aten/quantized/TensorFactories.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace musa {
@@ -235,28 +234,5 @@ Tensor AsStridedQTensorImpl(
   return result;
 }
 
-TORCH_LIBRARY_IMPL(aten, QuantizedPrivateUse1, m) {
-  m.impl("empty.memory_format", TORCH_FN(EmptyUnknownQuantized));
-  m.impl("empty_quantized", TORCH_FN(EmptyQuantized));
-  m.impl("_empty_affine_quantized", TORCH_FN(EmptyAffineQuantized));
-  m.impl(
-      "_empty_per_channel_affine_quantized",
-      TORCH_FN(EmptyPerChannelAffineQuantized));
-  m.impl("empty_like", TORCH_FN(EmptyLikeQuantized));
-  m.impl("empty_strided", TORCH_FN(EmptyStridedUnknownQuantized));
-
-  m.impl("as_strided", TORCH_FN(AsStridedQTensorImpl));
-
-  m.impl("view", TORCH_FN(at::native::view));
-
-  m.impl("_reshape_alias", TORCH_FN(at::native::_reshape_alias));
-  m.impl("unfold", TORCH_FN(at::native::unfold));
-}
-
-TORCH_LIBRARY_IMPL(aten, PrivateUse1, m) {
-  m.impl("_make_per_tensor_quantized_tensor", &MakePerTensorQuantizedTensor);
-  m.impl("_make_per_channel_quantized_tensor", &MakePerChannelQuantizedTensor);
-  m.impl("_empty_affine_quantized", TORCH_FN(EmptyAffineQuantized));
-}
 } // namespace musa
 } // namespace at

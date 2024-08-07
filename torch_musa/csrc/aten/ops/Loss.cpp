@@ -22,7 +22,6 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -322,9 +321,6 @@ std::tuple<at::Tensor&, at::Tensor&> NllLoss2dOut(
     at::Tensor& output,
     at::Tensor& total_weight) {
   c10::musa::MUSAGuard device_guard(self.device());
-  TORCH_CHECK(
-      self.sizes()[1] > target.max().item().to<int>(),
-      "Target is out of bounds.");
   return at::native::nll_loss2d_forward_out_cuda(
       self, target, weight, reduction, ignore_index, output, total_weight);
 }
@@ -336,9 +332,6 @@ std::tuple<at::Tensor, at::Tensor> NllLoss2d(
     int64_t reduction,
     int64_t ignore_index) {
   c10::musa::MUSAGuard device_guard(self.device());
-  TORCH_CHECK(
-      self.sizes()[1] > target.max().item().to<int>(),
-      "Target is out of bounds.");
   return at::native::nll_loss2d_forward_cuda(
       self, target, weight, reduction, ignore_index);
 }
@@ -439,76 +432,6 @@ Tensor KLDivBwd(
   return grad_input;
 }
 
-struct structured_mse_loss_out_out final
-    : public at::native::structured_mse_loss_out {
-  structured_mse_loss_out_out(Tensor& out0) : outputs_{std::ref(out0)} {}
-
-  void set_output_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    auto current_device = guard_.current_device();
-    if (C10_UNLIKELY(current_device.has_value())) {
-      TORCH_INTERNAL_ASSERT(
-          *current_device == options.device(),
-          "structured kernels don't support multi-device outputs");
-    } else {
-      guard_.reset_device(options.device());
-    }
-
-    const auto& out = outputs_[output_idx].get();
-    resize_out(out, sizes, strides, options);
-    // super must happen after, so that downstream can use maybe_get_output
-    // to retrieve the output
-    at::native::structured_mse_loss_out::set_output_raw_strided(
-        output_idx, sizes, strides, options, names);
-  }
-
-  void set_output_raw_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    auto current_device = guard_.current_device();
-    if (C10_UNLIKELY(current_device.has_value())) {
-      TORCH_INTERNAL_ASSERT(
-          *current_device == options.device(),
-          "structured kernels don't support multi-device outputs");
-    } else {
-      guard_.reset_device(options.device());
-    }
-
-    const auto& out = outputs_[output_idx].get();
-    resize_out(out, sizes, strides, options);
-    // super must happen after, so that downstream can use maybe_get_output
-    // to retrieve the output
-    at::native::structured_mse_loss_out::set_output_raw_strided(
-        output_idx, sizes, strides, options, names);
-  }
-
-  const Tensor& maybe_get_output(int64_t output_idx) override {
-    return outputs_[output_idx].get();
-  }
-  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
-  c10::musa::OptionalMUSAGuard guard_;
-};
-
-Tensor& MseLossOut(
-    const Tensor& self,
-    const Tensor& target,
-    int64_t reduction,
-    Tensor& out) {
-  // No device check
-
-  structured_mse_loss_out_out op(out);
-  op.meta(self, target, reduction);
-  op.impl(self, target, reduction, op.maybe_get_output(0));
-  return out;
-}
-
 Tensor MseLossBwd(
     const Tensor& grad_output,
     const Tensor& self,
@@ -546,86 +469,6 @@ at::Tensor& MseLossBwdGradInput(
   return at::native::mse_loss_backward_out(
       grad_output, self, target, reduction, grad_input);
 }
-
-struct structured_mse_loss_out_functional final
-    : public at::native::structured_mse_loss_out {
-  void set_output_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    auto current_device = guard_.current_device();
-    if (C10_UNLIKELY(current_device.has_value())) {
-      TORCH_INTERNAL_ASSERT(
-          *current_device == options.device(),
-          "structured kernels don't support multi-device outputs");
-    } else {
-      guard_.reset_device(options.device());
-    }
-
-    outputs_[output_idx] = create_out(sizes, strides, options);
-    // super must happen after, so that downstream can use maybe_get_output
-    // to retrieve the output
-    at::native::structured_mse_loss_out::set_output_raw_strided(
-        output_idx, sizes, strides, options, names);
-  }
-
-  void set_output_raw_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    auto current_device = guard_.current_device();
-    if (C10_UNLIKELY(current_device.has_value())) {
-      TORCH_INTERNAL_ASSERT(
-          *current_device == options.device(),
-          "structured kernels don't support multi-device outputs");
-    } else {
-      guard_.reset_device(options.device());
-    }
-
-    outputs_[output_idx] = create_out(sizes, strides, options);
-    // super must happen after, so that downstream can use maybe_get_output
-    // to retrieve the output
-    at::native::structured_mse_loss_out::set_output_raw_strided(
-        output_idx, sizes, strides, options, names);
-  }
-
-  const Tensor& maybe_get_output(int64_t output_idx) override {
-    return *outputs_[output_idx];
-  }
-  std::array<c10::ExclusivelyOwned<Tensor>, 1> outputs_;
-  c10::musa::OptionalMUSAGuard guard_;
-};
-
-Tensor MseLoss(const Tensor& self, const Tensor& target, int64_t reduction) {
-  // No device check
-
-  structured_mse_loss_out_functional op;
-  op.meta(self, target, reduction);
-  op.impl(self, target, reduction, *op.outputs_[0]);
-  return std::move(op.outputs_[0]).take();
-}
-
-ADVANCED_REGISTER(aten, PrivateUse1, "mse_loss", MseLoss)
-ADVANCED_REGISTER(aten, PrivateUse1, "mse_loss.out", MseLossOut)
-ADVANCED_REGISTER(aten, PrivateUse1, "mse_loss_backward", MseLossBwd)
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "mse_loss_backward.grad_input",
-    MseLossBwdGradInput)
-
-ADVANCED_REGISTER(aten, PrivateUse1, "nll_loss2d_forward.output", NllLoss2dOut)
-ADVANCED_REGISTER(aten, PrivateUse1, "nll_loss2d_forward", NllLoss2d)
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "nll_loss2d_backward.grad_input",
-    NllLoss2dBwdGradInput)
-ADVANCED_REGISTER(aten, PrivateUse1, "nll_loss2d_backward", NllLoss2dBwd)
 
 at::Tensor BinaryCrossEntropy(
     const at::Tensor& self,
@@ -696,23 +539,6 @@ at::Tensor& BinaryCrossEntropyBackwardOut(
   return at::native::binary_cross_entropy_backward_out_cuda(
       grad_output, self, target, weight, reduction, grad_input);
 }
-
-ADVANCED_REGISTER(aten, PrivateUse1, "binary_cross_entropy", BinaryCrossEntropy)
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "binary_cross_entropy.out",
-    BinaryCrossEntropyOut)
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "binary_cross_entropy_backward",
-    BinaryCrossEntropyBackward)
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "binary_cross_entropy_backward.grad_input",
-    BinaryCrossEntropyBackwardOut)
 
 } // namespace musa
 } // namespace at

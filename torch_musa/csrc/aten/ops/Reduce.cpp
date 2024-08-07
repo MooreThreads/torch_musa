@@ -47,7 +47,6 @@
 #include <ATen/ops/cumprod_native.h>
 #include <ATen/ops/cumsum.h>
 #include <ATen/ops/cumsum_meta.h>
-#include <ATen/ops/cumsum_musa_dispatch.h>
 #include <ATen/ops/cumsum_native.h>
 #include <ATen/ops/diff_native.h>
 #include <ATen/ops/dist_native.h>
@@ -109,7 +108,6 @@
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/utils/musa_lazy_init.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 #include <mudnn.h>
 
@@ -183,7 +181,17 @@ void ReduceCall(
     const c10::optional<at::Scalar>& p = c10::nullopt,
     const bool is_norm = false) {
   c10::musa::MUSAGuard device_guard(self.device());
-  auto input = Contiguous(self);
+  if (C10_UNLIKELY(self.numel() == 0)) {
+    return;
+  }
+  // TODO(kang.chen): mudnn not support uint8, cast to int64 temporarily.
+  Tensor self_;
+  if (self.scalar_type() == ScalarType::Byte) {
+    self_ = self.to(ScalarType::Long);
+  } else {
+    self_ = self;
+  }
+  auto input = Contiguous(self_);
   auto out = CreateMUTensor(output);
   auto in = CreateMUTensor(input);
 
@@ -397,7 +405,7 @@ Tensor& NormDtypeOut(
       (self.scalar_type() == kHalf || self.scalar_type() == kBFloat16) &&
       out_dtype == kFloat;
 
-  out = Reduction(
+  Tensor out_temp = Reduction(
       self,
       dim,
       keepdim,
@@ -405,6 +413,7 @@ Tensor& NormDtypeOut(
       ::musa::dnn::Reduce::Mode::NORM,
       p,
       true);
+  out.copy_(out_temp);
   return out;
 }
 
@@ -439,8 +448,8 @@ Tensor Cumsum(
     const Tensor& self,
     int64_t dim,
     c10::optional<ScalarType> dtype_opt) {
-  Tensor self_ = self.contiguous();
-  Tensor out = at::empty_like(self);
+  Tensor self_ = FormatContiguous(self, at::MemoryFormat::Contiguous);
+  Tensor out = at::empty_like(self, at::MemoryFormat::Contiguous);
   if (self.dtype() == at::kBool) {
     out = out.to(at::kLong);
   }
@@ -469,7 +478,7 @@ Tensor& Cumsum_Out(
     int64_t dim,
     c10::optional<ScalarType> dtype_opt,
     Tensor& out) {
-  Tensor self_ = self.contiguous();
+  Tensor self_ = FormatContiguous(self, at::MemoryFormat::Contiguous);
   if (self.dtype() == at::kBool) {
     Tensor out_ = at::empty_like(self, at::kLong, at::MemoryFormat::Contiguous);
     CumsumCall(self_, dim, dtype_opt, out_);
@@ -482,128 +491,33 @@ Tensor& Cumsum_Out(
 }
 
 // same like at::cuda::cumsum_out
-TORCH_API at::Tensor& cumsum_out(
-    at::Tensor& out,
-    const at::Tensor& self,
-    int64_t dim,
-    c10::optional<at::ScalarType> dtype) {
-  return at::musa::Cumsum_Out(self, dim, dtype, out);
-}
-
-namespace {
-
-struct StructuredMusaAny final : public at::native::structured_any_all_out {
-  void set_output_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    outputs_[output_idx] = create_out(sizes, strides, options);
-    if (!names.empty()) {
-      namedinference::propagate_names(*outputs_[output_idx], names);
-    }
-  }
-
-  void set_output_raw_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    outputs_[output_idx] = create_out(sizes, strides, options);
-    if (!names.empty()) {
-      namedinference::propagate_names(*outputs_[output_idx], names);
-    }
-  }
-
-  const Tensor& maybe_get_output(int64_t output_idx) override {
-    return *outputs_[output_idx];
-  }
-
-  std::array<c10::ExclusivelyOwned<Tensor>, 1> outputs_;
-};
-
-at::Tensor WrapperMusaAny(const at::Tensor& self) {
-  StructuredMusaAny op;
-  op.meta(self);
-  op.impl(self, *op.outputs_[0]);
-  return std::move(op.outputs_[0]).take();
-}
-
-struct StructuredMusaAnyOut final : public at::native::structured_any_all_out {
-  StructuredMusaAnyOut(Tensor& out0) : outputs_{std::ref(out0)} {}
-
-  void set_output_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    const auto& out = outputs_[output_idx].get();
-    resize_out(out, sizes, strides, options);
-    auto maybe_proxy = maybe_create_proxy(out, sizes, strides, options);
-    if (C10_UNLIKELY(maybe_proxy.has_value())) {
-      proxy_outputs_[output_idx] =
-          c10::ExclusivelyOwned<Tensor>(std::move(maybe_proxy).value());
-    }
-    if (!names.empty()) {
-      namedinference::propagate_names(outputs_[output_idx], names);
-    }
-  }
-
-  void set_output_raw_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    const auto& out = outputs_[output_idx].get();
-    resize_out(out, sizes, strides, options);
-    if (!names.empty()) {
-      namedinference::propagate_names(outputs_[output_idx], names);
-    }
-  }
-
-  const Tensor& maybe_get_output(int64_t output_idx) override {
-    return proxy_outputs_[output_idx].has_value() ? **proxy_outputs_[output_idx]
-                                                  : outputs_[output_idx].get();
-  }
-
-  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
-  std::array<c10::optional<c10::ExclusivelyOwned<Tensor>>, 1> proxy_outputs_;
-};
-
-at::Tensor& WrapperMusaAnyOut(const at::Tensor& self, at::Tensor& out) {
-  StructuredMusaAnyOut op(out);
-  op.meta(self);
-  op.impl(self, op.maybe_get_output(0));
-  if (op.proxy_outputs_[0].has_value()) {
-    op.outputs_[0].get().copy_(**op.proxy_outputs_[0]);
-  }
-  return out;
-}
-
-} // anonymous namespace
+// TORCH_API at::Tensor& cumsum_out(
+//     at::Tensor& out,
+//     const at::Tensor& self,
+//     int64_t dim,
+//     c10::optional<at::ScalarType> dtype) {
+//   return at::musa::Cumsum_Out(self, dim, dtype, out);
+// }
 
 Tensor Any(const Tensor& self) {
-  if (self.scalar_type() != ScalarType::Bool) {
-    return WrapperMusaAny(self);
-  }
-  return Reduction(
+  Tensor out = Reduction(
       self,
       IntArrayRef{},
       false,
       self.scalar_type(),
       ::musa::dnn::Reduce::Mode::OR);
+  if (self.scalar_type() != ScalarType::Bool) {
+    out = out.to(ScalarType::Bool);
+  }
+  return out;
 }
 
 Tensor& AnyOut(const Tensor& self, Tensor& out) {
-  if (self.scalar_type() != ScalarType::Bool) {
-    return WrapperMusaAnyOut(self, out);
-  }
   IntArrayRef dims = {};
   ReduceCall(out, self, dims, ::musa::dnn::Reduce::Mode::OR);
+  if (self.scalar_type() != ScalarType::Bool) {
+    out = out.to(ScalarType::Bool);
+  }
   return out;
 }
 
@@ -659,11 +573,32 @@ void ReduceIndicesCall(
 
   c10::musa::MUSAGuard device(self.device());
 
-  auto input = self.contiguous();
+  // TODO(mt-ai): remove this workaround once muDNN support these dtypes
+  auto should_dtype_workaround = [](ScalarType dtype) {
+    return (
+        dtype == ScalarType::Byte || dtype == ScalarType::Char ||
+        dtype == ScalarType::Short || dtype == ScalarType::Bool);
+  };
 
-  auto out = CreateMUTensor(output);
+  Tensor input_tmp;
+  Tensor output_tmp;
+
+  if (should_dtype_workaround(self.scalar_type())) {
+    input_tmp = at::empty_like(
+        self, self.options().dtype(at::kHalf), at::MemoryFormat::Contiguous);
+    output_tmp = at::empty_like(
+        output,
+        output.options().dtype(at::kHalf),
+        at::MemoryFormat::Contiguous);
+    input_tmp.copy_(self);
+  } else {
+    input_tmp = Contiguous(self, at::MemoryFormat::Contiguous);
+    output_tmp = output;
+  }
+
+  auto out = CreateMUTensor(output_tmp);
   auto ids = CreateMUTensor(indices);
-  auto in = CreateMUTensor(input);
+  auto in = CreateMUTensor(input_tmp);
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Reduce r;
@@ -672,6 +607,10 @@ void ReduceIndicesCall(
   CHECK_MUDNN_STATUS(r.SetDim({dim_int}), "SetDim");
   CHECK_MUDNN_STATUS(
       r.RunWithIndices(h, out, ids, in, InternalMemAlloc), "RunWithIndices");
+
+  if (should_dtype_workaround(self.scalar_type())) {
+    output.copy_(output_tmp);
+  }
 }
 
 std::tuple<Tensor, Tensor> ReductionIndices(
@@ -775,127 +714,17 @@ std::tuple<Tensor&, Tensor&> MaxNamesDimMax(
   return std::tuple<Tensor&, Tensor&>(output, indices);
 }
 
-namespace {
-
-struct StructuredMusaAll final : public at::native::structured_all_all_out {
-  void set_output_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    outputs_[output_idx] = create_out(sizes, strides, options);
-    if (!names.empty()) {
-      namedinference::propagate_names(*outputs_[output_idx], names);
-    }
-  }
-
-  void set_output_raw_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    outputs_[output_idx] = create_out(sizes, strides, options);
-    if (!names.empty()) {
-      namedinference::propagate_names(*outputs_[output_idx], names);
-    }
-  }
-
-  const Tensor& maybe_get_output(int64_t output_idx) override {
-    return *outputs_[output_idx];
-  }
-
-  std::array<c10::ExclusivelyOwned<Tensor>, 1> outputs_;
-};
-
-at::Tensor WrapperMusaAll(const at::Tensor& self) {
-  StructuredMusaAll op;
-  op.meta(self);
-  op.impl(self, *op.outputs_[0]);
-  return std::move(op.outputs_[0]).take();
-}
-
-struct StructuredMusaAllOut final : public at::native::structured_all_all_out {
-  StructuredMusaAllOut(Tensor& out0) : outputs_{std::ref(out0)} {}
-
-  void set_output_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    const auto& out = outputs_[output_idx].get();
-    resize_out(out, sizes, strides, options);
-    auto maybe_proxy = maybe_create_proxy(out, sizes, strides, options);
-    if (C10_UNLIKELY(maybe_proxy.has_value())) {
-      proxy_outputs_[output_idx] =
-          c10::ExclusivelyOwned<Tensor>(std::move(maybe_proxy).value());
-    }
-    if (!names.empty()) {
-      namedinference::propagate_names(outputs_[output_idx], names);
-    }
-  }
-
-  void set_output_raw_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override {
-    const auto& out = outputs_[output_idx].get();
-    resize_out(out, sizes, strides, options);
-    if (!names.empty()) {
-      namedinference::propagate_names(outputs_[output_idx], names);
-    }
-  }
-
-  const Tensor& maybe_get_output(int64_t output_idx) override {
-    return proxy_outputs_[output_idx].has_value() ? **proxy_outputs_[output_idx]
-                                                  : outputs_[output_idx].get();
-  }
-
-  std::array<std::reference_wrapper<Tensor>, 1> outputs_;
-  std::array<c10::optional<c10::ExclusivelyOwned<Tensor>>, 1> proxy_outputs_;
-};
-
-at::Tensor& WrapperMusaAllOut(const at::Tensor& self, at::Tensor& out) {
-  StructuredMusaAllOut op(out);
-  op.meta(self);
-  op.impl(self, op.maybe_get_output(0));
-  if (op.proxy_outputs_[0].has_value()) {
-    op.outputs_[0].get().copy_(**op.proxy_outputs_[0]);
-  }
-  return out;
-}
-
-} // anonymous namespace
-
 Tensor All(const Tensor& self) {
-  if (self.scalar_type() != ScalarType::Bool &&
-      self.scalar_type() != ScalarType::Byte) {
-    return WrapperMusaAll(self);
+  Tensor output = Reduction(
+      self,
+      IntArrayRef{},
+      false,
+      self.scalar_type(),
+      ::musa::dnn::Reduce::Mode::AND);
+  if (self.scalar_type() != ScalarType::Bool) {
+    output = output.to(ScalarType::Bool);
   }
-
-  // mtdnn now only support bool, so we need to cast when input_dype=Byte
-  if (self.scalar_type() == ScalarType::Byte) {
-    Tensor self_ = self.to(ScalarType::Bool);
-    auto out = Reduction(
-        self_,
-        IntArrayRef{},
-        false,
-        ScalarType::Bool,
-        ::musa::dnn::Reduce::Mode::AND);
-    out = out.to(ScalarType::Byte);
-    return out;
-  } else {
-    return Reduction(
-        self,
-        IntArrayRef{},
-        false,
-        self.scalar_type(),
-        ::musa::dnn::Reduce::Mode::AND);
-  }
+  return output;
 }
 
 Tensor AllDim(const Tensor& self, int64_t dim, bool keepdim) {
@@ -1120,57 +949,6 @@ at::Tensor& VarOutCorrection(
   const OptionalDeviceGuard device_guard(device_of(self));
   return at::native::var_out(self, dim, correction, keepdim, out);
 }
-
-ADVANCED_REGISTER(aten, PrivateUse1, "mean", Mean)
-ADVANCED_REGISTER(aten, PrivateUse1, "mean.dim", MeanDim)
-ADVANCED_REGISTER(aten, PrivateUse1, "mean.out", MeanOut)
-ADVANCED_REGISTER(aten, PrivateUse1, "mean.names_dim", MeanNamesDim)
-ADVANCED_REGISTER(aten, PrivateUse1, "mean.names_out", MeanNamesDimOut)
-ADVANCED_REGISTER(aten, PrivateUse1, "sum", Sum)
-ADVANCED_REGISTER(aten, PrivateUse1, "sum.IntList_out", SumIntListOut)
-ADVANCED_REGISTER(aten, PrivateUse1, "sum.dim_DimnameList", SumDimnameList)
-ADVANCED_REGISTER(aten, PrivateUse1, "sum.DimnameList_out", SumDimnameListOut)
-ADVANCED_REGISTER(aten, PrivateUse1, "sum.dim_IntList", SumIntList)
-
-ADVANCED_REGISTER(aten, PrivateUse1, "prod", Prod)
-ADVANCED_REGISTER(aten, PrivateUse1, "prod.int_out", ProdIntOut)
-
-ADVANCED_REGISTER(aten, PrivateUse1, "norm.out", NormOut)
-ADVANCED_REGISTER(aten, PrivateUse1, "norm.dtype_out", NormDtypeOut)
-
-ADVANCED_REGISTER(aten, PrivateUse1, "cumsum", Cumsum)
-ADVANCED_REGISTER(aten, PrivateUse1, "cumsum_", Cumsum_)
-ADVANCED_REGISTER(aten, PrivateUse1, "cumsum.out", Cumsum_Out)
-
-ADVANCED_REGISTER(aten, PrivateUse1, "any", Any)
-ADVANCED_REGISTER(aten, PrivateUse1, "any.all_out", AnyOut)
-ADVANCED_REGISTER(aten, PrivateUse1, "any.dim", AnyDim)
-ADVANCED_REGISTER(aten, PrivateUse1, "any.out", AnyDimOut)
-
-ADVANCED_REGISTER(aten, PrivateUse1, "max", MaxAll)
-ADVANCED_REGISTER(aten, PrivateUse1, "max.dim", MaxDim)
-ADVANCED_REGISTER(aten, PrivateUse1, "max.dim_max", MaxDimMax)
-ADVANCED_REGISTER(aten, PrivateUse1, "max.names_dim", MaxNamesDim)
-ADVANCED_REGISTER(aten, PrivateUse1, "max.names_dim_max", MaxNamesDimMax)
-
-ADVANCED_REGISTER(aten, PrivateUse1, "min", MinAll)
-ADVANCED_REGISTER(aten, PrivateUse1, "min.dim", MinDim)
-ADVANCED_REGISTER(aten, PrivateUse1, "min.dim_min", MinDimMin)
-ADVANCED_REGISTER(aten, PrivateUse1, "min.names_dim", MinNamesDim)
-ADVANCED_REGISTER(aten, PrivateUse1, "min.names_dim_min", MinNamesDimMin)
-
-ADVANCED_REGISTER(aten, PrivateUse1, "all", All)
-ADVANCED_REGISTER(aten, PrivateUse1, "all.dim", AllDim)
-ADVANCED_REGISTER(aten, PrivateUse1, "all.out", AllDimOut)
-ADVANCED_REGISTER(aten, PrivateUse1, "argmax.out", ArgmaxOut)
-ADVANCED_REGISTER(aten, PrivateUse1, "argmin.out", ArgminOut)
-
-ADVANCED_REGISTER(aten, PrivateUse1, "var_mean.correction", VarMeanCorrection)
-ADVANCED_REGISTER(aten, PrivateUse1, "var.correction", VarCorrection)
-ADVANCED_REGISTER(aten, PrivateUse1, "var.correction_out", VarOutCorrection)
-
-ADVANCED_REGISTER(aten, PrivateUse1, "logsumexp", LogSumExp)
-ADVANCED_REGISTER(aten, PrivateUse1, "logsumexp.out", LogSumExpOut)
 
 } // namespace musa
 } // namespace at

@@ -10,7 +10,6 @@
 #include "torch_musa/csrc/aten/ops/LinearAlgebra.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
 
 namespace at {
 namespace native {
@@ -197,22 +196,6 @@ at::Tensor CholeskyInverse(const at::Tensor& input, bool upper) {
   result = CholeskyInverseOut(input, upper, result);
   return result;
 }
-
-ADVANCED_REGISTER(aten, PrivateUse1, "linalg_lstsq.out", LinalgLstsqOut)
-ADVANCED_REGISTER(aten, PrivateUse1, "linalg_cholesky_ex", LinalgCholeskyEx)
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "linalg_cholesky_ex.L",
-    LinalgCholeskyExOut)
-ADVANCED_REGISTER(aten, PrivateUse1, "cholesky_inverse", CholeskyInverse)
-ADVANCED_REGISTER(aten, PrivateUse1, "cholesky_inverse.out", CholeskyInverseOut)
-ADVANCED_REGISTER(
-    aten,
-    PrivateUse1,
-    "linalg_inv_ex.inverse",
-    LinalgInvExOutInverse)
-ADVANCED_REGISTER(aten, PrivateUse1, "inverse", LinalgInverse)
 
 } // namespace musa
 } // namespace at

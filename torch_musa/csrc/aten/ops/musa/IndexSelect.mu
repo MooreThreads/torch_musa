@@ -17,50 +17,87 @@ namespace at {
 namespace native {
 
 namespace {
-constexpr int MAX_DIM = kMaxDim;
 
-template <typename SrcDtype, typename IndexDtype, typename DstDtype = SrcDtype>
+template <
+    typename SrcDtype,
+    typename IndexDtype,
+    bool Aligned = true,
+    int iobit = 128>
 __global__ void IndexSelectVectorKernel(
     SrcDtype* out_ptr,
     IndexDtype* index_ptr,
     SrcDtype* in_ptr,
-    const int s1,
-    const int r0,
-    const int s0,
-    const int aligned_elements,
-    int num_indices) {
-  (void)s1;
-  typedef typename at::musa::Dtype<SrcDtype>::Vec4 vec4;
+    const int64_t r0,
+    const int64_t s0,
+    int64_t num_indices,
+    const int64_t elements,
+    const uint32_t tail) {
+  // iobit is used to choose length of vector load, which is following muDNN
+  constexpr int bits_of_byte = 8;
+  constexpr int vlen_min = iobit / sizeof(SrcDtype) / bits_of_byte;
+  constexpr int max_load_vlen =
+      sizeof(SrcDtype) <= 4 ? (sizeof(SrcDtype) <= 2 ? 8 : 4) : 2;
+  constexpr int vlen = vlen_min > max_load_vlen ? max_load_vlen : vlen_min;
+  using SrcVec =
+      at::musa::VecType<SrcDtype, vlen * sizeof(SrcDtype) * bits_of_byte>;
 
-  int index_idx = blockIdx.y * blockDim.y + threadIdx.y;
-  for (int idx = blockIdx.x * blockDim.x + threadIdx.x; idx < aligned_elements;
-       idx += blockDim.x * gridDim.x) {
-    int index_selected = index_ptr[index_idx];
-    int row = idx / (s0 >> 2);
-    int col = (idx % (s0 >> 2)) << 2;
-    int src_offset = (row * r0 + index_selected) * s0 + col;
-    int dst_offset = (row * num_indices + index_idx) * s0 + col;
-    *(vec4*)(out_ptr + dst_offset) = *(vec4*)(in_ptr + src_offset);
+  int64_t index_idx = blockIdx.y * blockDim.y + threadIdx.y;
+  int64_t index_selected = index_ptr[index_idx];
+  int64_t idx_x = (blockIdx.x * blockDim.x + threadIdx.x);
+
+  if constexpr (Aligned) {
+    if (index_idx < num_indices && idx_x < (s0 / vlen)) {
+      idx_x *= vlen;
+      int64_t src_offset = (blockIdx.z * r0 + index_selected) * s0 + idx_x;
+      int64_t dst_offset = (blockIdx.z * num_indices + index_idx) * s0 + idx_x;
+      SrcVec vec_in = SrcVec::load(in_ptr, src_offset);
+      SrcVec::store(out_ptr, dst_offset, vec_in);
+    }
+  } else {
+    if (index_idx < num_indices) {
+      int sv = s0 / vlen;
+      if (idx_x < sv) {
+        idx_x *= vlen;
+        int64_t src_offset = (blockIdx.z * r0 + index_selected) * s0 + idx_x;
+        int64_t dst_offset =
+            (blockIdx.z * num_indices + index_idx) * s0 + idx_x;
+        SrcVec vec_in = SrcVec::load(in_ptr, src_offset);
+        SrcVec::store(out_ptr, dst_offset, vec_in);
+      } else if (idx_x == sv && tail > 0) {
+        idx_x *= vlen;
+        int64_t src_offset = (blockIdx.z * r0 + index_selected) * s0 + idx_x;
+        int64_t dst_offset =
+            (blockIdx.z * num_indices + index_idx) * s0 + idx_x;
+
+        int current_tail = 0;
+        while (current_tail < tail) {
+          out_ptr[dst_offset + current_tail] =
+              in_ptr[src_offset + current_tail];
+          ++current_tail;
+        }
+      }
+    }
   }
 }
 
-template <typename SrcDtype, typename IndexDtype, typename DstDtype = SrcDtype>
+template <typename SrcDtype, typename IndexDtype>
 __global__ void IndexSelectKernel(
     SrcDtype* out_ptr,
     IndexDtype* index_ptr,
     SrcDtype* in_ptr,
-    const int s1,
-    const int r0,
-    const int s0,
-    int num_indices) {
-  int index_idx = blockIdx.y * blockDim.y + threadIdx.y;
-  for (int idx = blockIdx.x * blockDim.x + threadIdx.x; idx < s1 * s0;
-       idx += blockDim.x * gridDim.x) {
-    int index_selected = index_ptr[index_idx];
-    int row = idx / s0;
-    int col = idx % s0;
-    int src_offset = (row * r0 + index_selected) * s0 + col;
-    int dst_offset = (row * num_indices + index_idx) * s0 + col;
+    const int64_t r0,
+    const int64_t s0,
+    int64_t num_indices,
+    const int64_t elements,
+    const uint32_t tail) {
+  (void)tail;
+  int64_t index_idx = blockIdx.y * blockDim.y + threadIdx.y;
+  int64_t index_selected = index_ptr[index_idx];
+  int64_t idx_x = blockIdx.x * blockDim.x + threadIdx.x;
+
+  if (index_idx < num_indices && idx_x < s0) {
+    int64_t src_offset = (blockIdx.z * r0 + index_selected) * s0 + idx_x;
+    int64_t dst_offset = (blockIdx.z * num_indices + index_idx) * s0 + idx_x;
     out_ptr[dst_offset] = in_ptr[src_offset];
   }
 }
@@ -69,56 +106,58 @@ __global__ void IndexSelectKernel(
   [](const Tensor& out,                                                   \
      const Tensor& index,                                                 \
      const Tensor& in,                                                    \
-     const int s1,                                                        \
-     const int r0,                                                        \
-     const int s0,                                                        \
-     const int aligned_elements,                                          \
-     const int num_indices,                                               \
-     const uint32_t nr_block,                                             \
-     const uint32_t nr_threads) {                                         \
-    (void)aligned_elements;                                               \
+     const int64_t r0,                                                    \
+     const int64_t s0,                                                    \
+     const int64_t num_indices,                                           \
+     dim3 block_size,                                                     \
+     dim3 grid_size,                                                      \
+     const int64_t elements,                                              \
+     const uint32_t tail) {                                               \
     auto stream = c10::musa::getCurrentMUSAStream();                      \
-    dim3 grid_size{nr_block, static_cast<uint32_t>(num_indices), 1};      \
-    IndexSelectKernel<_INT, _IDXT><<<grid_size, nr_threads, 0, stream>>>( \
+    IndexSelectKernel<_INT, _IDXT><<<grid_size, block_size, 0, stream>>>( \
         static_cast<_INT*>(out.data_ptr()),                               \
         static_cast<_IDXT*>(index.data_ptr()),                            \
         static_cast<_INT*>(in.data_ptr()),                                \
-        s1,                                                               \
         r0,                                                               \
         s0,                                                               \
-        num_indices);                                                     \
+        num_indices,                                                      \
+        elements,                                                         \
+        tail);                                                            \
   }
 
-#define GEN_FUNCTION_VECTOR(_INT, _IDXT)                             \
-  [](const Tensor& out,                                              \
-     const Tensor& index,                                            \
-     const Tensor& in,                                               \
-     const int s1,                                                   \
-     const int r0,                                                   \
-     const int s0,                                                   \
-     const int aligned_elements,                                     \
-     const int num_indices,                                          \
-     const uint32_t nr_block,                                        \
-     const uint32_t nr_threads) {                                    \
-    auto stream = c10::musa::getCurrentMUSAStream();                 \
-    dim3 grid_size{nr_block, static_cast<uint32_t>(num_indices), 1}; \
-    IndexSelectVectorKernel<_INT, _IDXT>                             \
-        <<<grid_size, nr_threads, 0, stream>>>(                      \
-            static_cast<_INT*>(out.data_ptr()),                      \
-            static_cast<_IDXT*>(index.data_ptr()),                   \
-            static_cast<_INT*>(in.data_ptr()),                       \
-            s1,                                                      \
-            r0,                                                      \
-            s0,                                                      \
-            aligned_elements,                                        \
-            num_indices);                                            \
+#define GEN_FUNCTION_VECTOR(_INT, _IDXT, _ALIGNED)   \
+  [](const Tensor& out,                              \
+     const Tensor& index,                            \
+     const Tensor& in,                               \
+     const int64_t r0,                               \
+     const int64_t s0,                               \
+     const int64_t num_indices,                      \
+     dim3 block_size,                                \
+     dim3 grid_size,                                 \
+     const int64_t elements,                         \
+     const uint32_t tail) {                          \
+    auto stream = c10::musa::getCurrentMUSAStream(); \
+    IndexSelectVectorKernel<_INT, _IDXT, _ALIGNED>   \
+        <<<grid_size, block_size, 0, stream>>>(      \
+            static_cast<_INT*>(out.data_ptr()),      \
+            static_cast<_IDXT*>(index.data_ptr()),   \
+            static_cast<_INT*>(in.data_ptr()),       \
+            r0,                                      \
+            s0,                                      \
+            num_indices,                             \
+            elements,                                \
+            tail);                                   \
   }
 
 #define REGISTER_KERNEL(_INT_ENUM, _CTYPE)                                 \
-  index_select_vector_kernels[0][(int)_INT_ENUM] =                         \
-      GEN_FUNCTION_VECTOR(_CTYPE, int32_t);                                \
-  index_select_vector_kernels[1][(int)_INT_ENUM] =                         \
-      GEN_FUNCTION_VECTOR(_CTYPE, int64_t);                                \
+  index_select_vector_kernels[0][(int)_INT_ENUM][0] =                      \
+      GEN_FUNCTION_VECTOR(_CTYPE, int32_t, false);                         \
+  index_select_vector_kernels[1][(int)_INT_ENUM][0] =                      \
+      GEN_FUNCTION_VECTOR(_CTYPE, int64_t, false);                         \
+  index_select_vector_kernels[0][(int)_INT_ENUM][1] =                      \
+      GEN_FUNCTION_VECTOR(_CTYPE, int32_t, true);                          \
+  index_select_vector_kernels[1][(int)_INT_ENUM][1] =                      \
+      GEN_FUNCTION_VECTOR(_CTYPE, int64_t, true);                          \
   index_select_kernels[0][(int)_INT_ENUM] = GEN_FUNCTION(_CTYPE, int32_t); \
   index_select_kernels[1][(int)_INT_ENUM] = GEN_FUNCTION(_CTYPE, int64_t);
 
@@ -127,21 +166,15 @@ struct KernelTable {
       const Tensor&,
       const Tensor&,
       const Tensor&,
-      const int,
-      const int,
-      const int,
-      const int,
-      const int,
-      const int,
-      const int)>;
+      const int64_t,
+      const int64_t,
+      const int64_t,
+      dim3,
+      dim3,
+      const int64_t,
+      const uint32_t)>;
 
   KernelTable() {
-    const int index_tyeps = 2; // int32 & int64
-    const int nr_dtype = (int)at::ScalarType::NumOptions;
-    index_select_kernels.resize(index_tyeps, std::vector<KernelFunc>(nr_dtype));
-    index_select_vector_kernels.resize(
-        index_tyeps, std::vector<KernelFunc>(nr_dtype));
-
     REGISTER_KERNEL(at::ScalarType::Half, float16_t);
     REGISTER_KERNEL(at::ScalarType::Float, float);
     REGISTER_KERNEL(at::ScalarType::Double, double);
@@ -155,37 +188,41 @@ struct KernelTable {
       const Tensor& out,
       const Tensor& index,
       const Tensor& in,
-      const int s1,
-      const int r0,
-      const int s0,
-      const int aligned_elements,
-      const int num_indices,
-      const uint32_t nr_block,
-      const uint32_t nr_threads,
+      const int64_t r0,
+      const int64_t s0,
+      const int64_t num_indices,
+      dim3 block_size,
+      dim3 grid_size,
+      const int64_t elements,
+      const uint32_t tail,
       bool can_vector_load) const {
     int index_dtype = index.scalar_type() == at::ScalarType::Int ? 0 : 1;
     auto& func = can_vector_load
         ? index_select_vector_kernels[index_dtype][(int)in.scalar_type()]
+                                     [(int)(tail == 0)]
         : index_select_kernels[index_dtype][(int)in.scalar_type()];
     if (func) {
       func(
           out,
           index,
           in,
-          s1,
           r0,
           s0,
-          aligned_elements,
           num_indices,
-          nr_block,
-          nr_threads);
+          block_size,
+          grid_size,
+          elements,
+          tail);
     } else {
       TORCH_CHECK(false, "IndexSelect unsupported!");
     }
   }
 
-  std::vector<std::vector<KernelFunc>> index_select_vector_kernels;
-  std::vector<std::vector<KernelFunc>> index_select_kernels;
+  static constexpr int index_types = 2; // int32 & int64
+  static constexpr int nr_dtype = (int)at::ScalarType::NumOptions;
+  static constexpr int nr_aligned = 2; // true & false
+  KernelFunc index_select_vector_kernels[index_types][nr_dtype][nr_aligned];
+  KernelFunc index_select_kernels[index_types][nr_dtype];
 };
 } // namespace
 
@@ -203,49 +240,52 @@ void IndexSelectRun(
           (in.scalar_type() == at::ScalarType::Half) ||
           (in.scalar_type() == at::ScalarType::Double) ||
           (in.scalar_type() == at::ScalarType::BFloat16),
-      "Index only support input dtype float16/32/64, int32/64, but got ",
+      "Index only support input dtype float16, bfloat16, float32, float64, int32, int64, but got ",
       out.scalar_type());
 
   int select_dim = desc_dim < 0 ? (desc_dim + in.dim()) : desc_dim;
 
-  int s1 = 1;
+  int64_t s1 = 1;
   for (int i = 0; i < select_dim; i++) {
-    s1 *= in.sizes()[i];
+    s1 *= in.size(i);
   }
-  int r0 = in.sizes()[select_dim];
-  int s0 = 1;
+  int64_t r0 = in.size(select_dim);
+  int64_t s0 = 1;
   for (int j = select_dim + 1; j < in.dim(); j++) {
-    s0 *= in.sizes()[j];
+    s0 *= in.size(j);
   }
-  int num_indices = index.numel();
-
-  bool can_vector_load = (select_dim != in.dim() - 1) && (s0 % 4 == 0);
-
-  // device info
-  musaDeviceProp device_prop;
-  at::musa::muHandle& h = GetMudnnHandle();
-  int device_id = h.GetDeviceId();
-  TORCH_CHECK(
-      musaSuccess == musaGetDeviceProperties(&device_prop, device_id),
-      "musaGetDeviceProperties error");
-  int max_block_num = device_prop.multiProcessorCount;
+  int64_t elements = out.numel();
+  int64_t num_indices = index.numel();
+  bool can_vector_load = select_dim != in.dim() - 1;
+  const int max_load_vlen = at::musa::DTypeSize(in.scalar_type()) <= 4
+      ? (at::musa::DTypeSize(in.scalar_type()) <= 2 ? 8 : 4)
+      : 2;
+  const uint32_t tail = s0 % max_load_vlen;
 
   static KernelTable kernel_index_select;
-  const uint32_t nr_threads = 512;
-  const uint32_t nr_blocks = can_vector_load
-      ? std::min(at::musa::ceil_div(s0 / 4 * s1, 512), max_block_num)
-      : std::min(at::musa::ceil_div(s0 * s1, 512), max_block_num);
+
+  // thread blocks
+  const int block_dim_x = 16;
+  const int block_dim_y = 64;
+  const uint32_t grid_dim_x = can_vector_load
+      ? at::musa::ceil_div(at::musa::ceil_div(s0, max_load_vlen), block_dim_x)
+      : at::musa::ceil_div(s0, block_dim_x);
+  const uint32_t grid_dim_y = at::musa::ceil_div(num_indices, block_dim_y);
+  const uint32_t grid_dim_z = s1;
+  dim3 block_size{(uint32_t)block_dim_x, (uint32_t)block_dim_y, 1};
+  dim3 grid_size{grid_dim_x, grid_dim_y, grid_dim_z};
+
   kernel_index_select.launch(
       out,
       index,
       in,
-      s1,
       r0,
       s0,
-      s0 / 4 * s1,
       num_indices,
-      nr_blocks,
-      nr_threads,
+      block_size,
+      grid_size,
+      elements,
+      tail,
       can_vector_load);
 }
 

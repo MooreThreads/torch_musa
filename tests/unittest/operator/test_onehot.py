@@ -1,4 +1,5 @@
 """Test onehot operators."""
+
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
 import torch
 import pytest
@@ -33,3 +34,4 @@ def test_onehot(input_shape, dtype, num_classes):
     input_args["num_classes"] = num_classes
     test = testing.OpTest(func=torch.nn.functional.one_hot, input_args=input_args)
     test.check_result()
+    test.check_grad_fn()

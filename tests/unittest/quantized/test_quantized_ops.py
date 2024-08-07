@@ -1,4 +1,5 @@
 """Test quantized operators."""
+
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
 import pytest
 import torch

@@ -1,4 +1,5 @@
 """Test quantized activations."""
+
 # pylint: disable=missing-function-docstring, unused-import
 import pytest
 import torch
