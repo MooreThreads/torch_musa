@@ -2,6 +2,7 @@
 #define TORCH_MUSA_CSRC_UTILS_LOGGING_H_
 #include <cstdio>
 #include <cstdlib>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <string>

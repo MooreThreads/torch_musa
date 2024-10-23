@@ -4,20 +4,6 @@ set -e
 DATE=$(date +%Y%m%d)
 mupti_path=./release_mupti_${DATE}
 
-GPU=$(mthreads-gmi -q -i 0 | grep "Product Name" | awk -F: '{print $2}' | tr -d '[:space:]')
-
-ARCH="x86_64-ubuntu-mp_21"
-
-if [ "$GPU" = "MTTS3000" ] || [ "$GPU" = "MTTS80" ] || [ "$GPU" = "MTTS80ES" ]; then
-    ARCH="x86_64-ubuntu-mp_21"
-elif [ "$GPU" = "MTTS4000" ] || [ "$GPU" = "MTTS90" ]; then
-    ARCH="x86_64-ubuntu-mp_22"
-else
-  echo "Expect MTTS3000 | MTTS80 | MTTS4000 | MTTS90 | MTTS80ES, got ${GPU}"
-fi
-
-yesterday_date=$(TZ=Asia/Shanghai date -d "yesterday" +%Y%m%d)
-
 # TODO(the oss link will be updated later)
 mupti_oss_link=${mupti_oss_link:-https://oss.mthreads.com/release-ci/computeQA/musa/MUPTI/MUPTI_torch_profiler.tar.gz}
 if [ "${KUAE}" ]; then

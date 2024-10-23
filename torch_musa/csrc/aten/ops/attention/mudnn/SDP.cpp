@@ -1,10 +1,16 @@
 #include <type_traits>
 
-#include <mudnn.h>
-
-#include <ATen/NativeFunctions.h>
 #include <ATen/NestedTensorImpl.h>
 #include <ATen/native/transformers/attention.h>
+
+#ifndef AT_PER_OPERATOR_HEADERS
+#include <ATen/Functions.h>
+#include <ATen/NativeFunctions.h>
+#else
+#include <ATen/ops/ones.h>
+#endif
+
+#include <mudnn.h>
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/ops/attention/mudnn/SDPUtils.h"
@@ -21,14 +27,31 @@ inline bool is_pad_mask(const at::Tensor& mask, const at::Tensor& query) {
       mask.size(1) == query.size(2);
 }
 
+inline void check_scale(
+    const Tensor& query,
+    const c10::optional<double>& scale) {
+  if (scale.has_value()) {
+    const double default_scale =
+        (c10::SymFloat(1.0) / (c10::SymFloat(query.sym_size(-1)).sqrt()))
+            .as_float_unchecked();
+    const double user_scale = scale.value();
+    TORCH_CHECK(
+        default_scale == user_scale,
+        "Now torch_musa only allows explicit value of `scale` parameter, ",
+        "whose value is equal to `1/sqrt(query.size(-1))`.")
+  }
+}
+
 std::tuple<at::Tensor, at::Tensor, at::Tensor> MuDNNMathSDPAFwd(
     const at::Tensor& query,
     const at::Tensor& key,
     const at::Tensor& value,
     const c10::optional<at::Tensor>& attn_mask,
     double dropout_p,
-    bool is_causal) {
+    bool is_causal,
+    c10::optional<double> scale) {
   auto mask = attn_mask; // remove const
+  check_scale(query, scale);
   TORCH_CHECK(
       query.dim() == 4 && key.dim() == 4 && value.dim() == 4,
       "Expect all query, key, value has 4D shape!");
@@ -140,7 +163,8 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> MuDNNMathSDPABwd(
     const at::Tensor& value,
     const at::Tensor& output,
     const at::Tensor& attn_weights,
-    const at::Tensor& dropout_mask) {
+    const at::Tensor& dropout_mask,
+    c10::optional<double> scale) {
   c10::musa::MUSAGuard device_guard(query.device());
   auto contiguous_query = query.contiguous();
   auto contiguous_key = key.contiguous();
@@ -218,8 +242,10 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> MuDNNFlashSDPAFwd(
     const at::Tensor& value,
     const c10::optional<at::Tensor>& attn_mask,
     double dropout_p,
-    bool is_causal) {
+    bool is_causal,
+    c10::optional<double> scale) {
   auto mask = attn_mask; // remove const
+  check_scale(query, scale);
   TORCH_CHECK(
       query.dim() == 4 && key.dim() == 4 && value.dim() == 4,
       "Expect all query, key, value has 4D shape!");
@@ -331,7 +357,8 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> MuDNNFlashSDPABwd(
     const at::Tensor& logsumexp,
     const at::Tensor& dropout_mask,
     bool is_causal,
-    const c10::optional<Tensor>& mask) {
+    const c10::optional<Tensor>& mask,
+    c10::optional<double> scale) {
   c10::musa::MUSAGuard device_guard(query.device());
 
   musa::muTensor musa_q, musa_k, musa_v;

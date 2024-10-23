@@ -66,6 +66,7 @@ Tensor Triu(const Tensor& self, int64_t diagonal) {
 Tensor& Triu_(Tensor& self, int64_t diagonal) {
   c10::musa::MUSAGuard device_guard(self.device());
 
+  // TODO(@mt-ai): Triangular kernel doesn't support inplace currently
   if (!self.is_contiguous()) {
     Tensor self_contig = self.contiguous();
     TriCallOut(
@@ -112,6 +113,7 @@ Tensor Tril(const Tensor& self, int64_t diagonal) {
 Tensor& Tril_(Tensor& self, int64_t diagonal) {
   c10::musa::MUSAGuard device_guard(self.device());
 
+  // TODO(@mt-ai): Triangular kernel doesn't support inplace currently
   if (!self.is_contiguous()) {
     Tensor self_contig = self.contiguous();
     TriCallOut(

@@ -1,10 +1,10 @@
 diff --git a/torch/ao/nn/intrinsic/qat/modules/conv_fused.py b/torch/ao/nn/intrinsic/qat/modules/conv_fused.py
-index b0af9e6..0298b85 100644
+index e3ec75481bd..cf023b68b13 100644
 --- a/torch/ao/nn/intrinsic/qat/modules/conv_fused.py
 +++ b/torch/ao/nn/intrinsic/qat/modules/conv_fused.py
-@@ -587,6 +587,57 @@ class ConvBnReLU2d(ConvBn2d):
+@@ -588,6 +588,57 @@ class ConvBnReLU2d(ConvBn2d):
      def from_float(cls, mod):
-         return super(ConvBnReLU2d, cls).from_float(mod)
+         return super().from_float(mod)
  
 +class ConvBnSiLU2d(ConvBn2d):
 +    r"""
@@ -60,9 +60,9 @@ index b0af9e6..0298b85 100644
  class ConvReLU2d(nnqat.Conv2d, nni._FusedModule):
      r"""A ConvReLU2d module is a fused module of Conv2d and ReLU, attached with
      FakeQuantize modules for weight for
-@@ -624,6 +675,43 @@ class ConvReLU2d(nnqat.Conv2d, nni._FusedModule):
+@@ -625,6 +676,43 @@ class ConvReLU2d(nnqat.Conv2d, nni._FusedModule):
      def from_float(cls, mod):
-         return super(ConvReLU2d, cls).from_float(mod)
+         return super().from_float(mod)
  
 +class ConvSiLU2d(nnqat.Conv2d, nni._FusedModule):
 +    r"""A ConvSiLU2d module is a fused module of Conv2d and SiLU, attached with

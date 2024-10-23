@@ -94,7 +94,7 @@ input_data = [
         "alpha": 1.7,
     },
     {
-        "input": torch.randn(128, 64),
+        "input": torch.tensor(2.1),
         "mat1": torch.randn(128, 256),
         "mat2": torch.randn(256, 64),
         "beta": 1.2,
@@ -252,7 +252,7 @@ def test_addmm_out(out_input_data, dtype):
             musa_input_data[key] = out_input_data[key].clone().to("musa")
         else:
             musa_input_data[key] = out_input_data[key]
-    musa_input_data["out"] = musa_input_data["input"]
+    musa_input_data["out"] = musa_input_data["input"].clone()
     musa_res = torch.addmm(**musa_input_data)
     # get musa res
     out_input_data["out"] = out_input_data["input"]

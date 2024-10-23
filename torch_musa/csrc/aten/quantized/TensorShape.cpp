@@ -13,7 +13,6 @@
 
 #include <torch/library.h>
 #include "torch_musa/csrc/aten/quantized/QTensor.h"
-#include "torch_musa/csrc/aten/quantized/Quantizer.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 #include "torch_musa/csrc/utils/register_wrapper.h"
@@ -84,7 +83,7 @@ InferUnsqueezeGeometryResult InferUnsqueezeGeometry(
 // dim is present if squeezing a single dimension and absent if squeezing all
 // dimensions
 Tensor SqueezeQtensor(const Tensor& self, c10::OptionalIntArrayRef dims) {
-  auto quantizer = at::GetQTensorImpl(self)->quantizer();
+  auto quantizer = at::get_qtensorimpl(self)->quantizer();
   SymDimVector sizes;
   SymDimVector strides;
   const auto ndim = self.dim();
@@ -94,7 +93,7 @@ Tensor SqueezeQtensor(const Tensor& self, c10::OptionalIntArrayRef dims) {
   std::tie(sizes, strides) = InferSqueezeGeometry(self, mask);
   if (quantizer->qscheme() == QScheme::PER_CHANNEL_AFFINE) {
     const auto* per_channel_quantizer =
-        static_cast<at::MusaPerChannelAffineQuantizer*>(quantizer.get());
+        static_cast<at::PerChannelAffineQuantizer*>(quantizer.get());
     auto axis = per_channel_quantizer->axis();
     int64_t shift = 0;
     for (const auto d : c10::irange(ndim)) {
@@ -108,7 +107,7 @@ Tensor SqueezeQtensor(const Tensor& self, c10::OptionalIntArrayRef dims) {
       }
     }
     axis -= shift;
-    quantizer = MakePerChannelAffineQuantizer(
+    quantizer = at::make_per_channel_affine_quantizer(
         per_channel_quantizer->scales(),
         per_channel_quantizer->zero_points(),
         axis,
@@ -145,15 +144,15 @@ Tensor UnsqueezeQuantized(const Tensor& self, int64_t dim) {
   // DeviceGuard omitted
   dim = maybe_wrap_dim(dim, self.dim() + 1);
   auto geometry = InferUnsqueezeGeometry(self, dim);
-  auto quantizer = at::GetQTensorImpl(self)->quantizer();
+  auto quantizer = at::get_qtensorimpl(self)->quantizer();
   if (quantizer->qscheme() == QScheme::PER_CHANNEL_AFFINE) {
     const auto* per_channel_quantizer =
-        static_cast<at::MusaPerChannelAffineQuantizer*>(quantizer.get());
+        static_cast<at::PerChannelAffineQuantizer*>(quantizer.get());
     auto axis = per_channel_quantizer->axis();
     if (axis >= dim) {
       axis += 1;
     }
-    quantizer = MakePerChannelAffineQuantizer(
+    quantizer = at::make_per_channel_affine_quantizer(
         per_channel_quantizer->scales(),
         per_channel_quantizer->zero_points(),
         axis,

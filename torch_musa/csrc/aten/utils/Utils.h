@@ -147,6 +147,63 @@ size_t DTypeSize(c10::ScalarType type);
  */
 at::Tensor ContiguousIfZeroInStrides(const at::Tensor& t);
 
+template <typename... AllowedDtypes>
+inline constexpr int NAllowedDtypes(AllowedDtypes... allowed_dtypes) {
+  return sizeof...(allowed_dtypes);
+}
+
+inline constexpr bool IsAllowedDtypeImpl(ScalarType dtype) {
+  return false;
+}
+
+template <typename... AllowedDtypes>
+inline bool IsAllowedDtypeImpl(
+    ScalarType input_dtype,
+    ScalarType allowed_dtype,
+    AllowedDtypes... allowed_dtypes) {
+  return input_dtype == allowed_dtype ||
+      IsAllowedDtypeImpl(input_dtype, allowed_dtypes...);
+}
+
+template <typename... AllowedDtypes>
+inline bool IsAllowedDtype(
+    ScalarType input_dtype,
+    AllowedDtypes... allowed_dtypes) {
+  return IsAllowedDtypeImpl(input_dtype, allowed_dtypes...);
+}
+
+#define IS_ALLOWED_DTYPES(input_dtype, ...) \
+  IsAllowedDtype(input_dtype, __VA_ARGS__);
+
+#define IS_ALLOWED_FLOATING_DTYPES(input_dtype) \
+  IS_ALLOWED_DTYPES(                            \
+      input_dtype, ScalarType::Float, ScalarType::Half, ScalarType::BFloat16);
+
+#define _TORCH_MUSA_CHECK_DTYPES(type, func, cond) \
+  TORCH_CHECK(                                     \
+      cond, '"', func, "\" not implemented for '", c10::toString(type), "'");
+
+#define TORCH_MUSA_CHECK_DTYPES(input_dtype, func_name, ...) \
+  static_assert(NAllowedDtypes(__VA_ARGS__) != 0);           \
+  const auto& the_type = input_dtype;                        \
+  ScalarType _st = ::detail::scalar_type(the_type);          \
+  bool cond = IS_ALLOWED_DTYPES(_st, __VA_ARGS__);           \
+  _TORCH_MUSA_CHECK_DTYPES(_st, func_name, cond)
+
+#define TORCH_MUSA_CHECK_FLOATING_TYPES(input_dtype, func_name) \
+  const auto& the_type = input_dtype;                           \
+  ScalarType _st = ::detail::scalar_type(the_type);             \
+  bool cond = IS_ALLOWED_FLOATING_DTYPES(_st);                  \
+  _TORCH_MUSA_CHECK_DTYPES(_st, func_name, cond)
+
+#define TORCH_MUSA_CHECK_FLOATING_TYPES_AND_N(input_dtype, func_name, ...) \
+  static_assert(NAllowedDtypes(__VA_ARGS__) != 0);                         \
+  const auto& the_type = input_dtype;                                      \
+  ScalarType _st = ::detail::scalar_type(the_type);                        \
+  bool cond1 = IS_ALLOWED_FLOATING_DTYPES(_st);                            \
+  bool cond2 = IS_ALLOWED_DTYPES(_st, __VA_ARGS__);                        \
+  _TORCH_MUSA_CHECK_DTYPES(_st, func_name, cond1 || cond2)
+
 } // namespace musa
 
 using musa::kMUSA;

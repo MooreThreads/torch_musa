@@ -1,8 +1,8 @@
 diff --git a/caffe2/CMakeLists.txt b/caffe2/CMakeLists.txt
-index 221e3f3..5e0c6b3 100644
+index 7483637..7da588c 100644
 --- a/caffe2/CMakeLists.txt
 +++ b/caffe2/CMakeLists.txt
-@@ -1310,6 +1310,16 @@ if($ENV{TH_BINARY_BUILD})
+@@ -1392,6 +1392,16 @@ if($ENV{TH_BINARY_BUILD})
    endif()
  endif()
  

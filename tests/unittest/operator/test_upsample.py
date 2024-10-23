@@ -76,7 +76,7 @@ def test_upsample_bilinear(input_data, dtype, scale_factor, align_corners):
         {"input": torch.randn([4, 16, 1, 1]).to(memory_format=torch.channels_last)},
     ],
 )
-@pytest.mark.parametrize("dtype", all_support_types)
+@pytest.mark.parametrize("dtype", all_support_types + [torch.uint8])
 @pytest.mark.parametrize("scale_factor", scale_factor)
 def test_upsample_nearest2d(input_data, dtype, scale_factor):
     nearest = partial(
@@ -123,7 +123,7 @@ def test_upsample_nearest2d_fp16(input_data, dtype, scale_factor):
         {"input": torch.randn([4, 16, 1, 1]).to(memory_format=torch.channels_last)},
     ],
 )
-@pytest.mark.parametrize("dtype", all_support_types)
+@pytest.mark.parametrize("dtype", all_support_types + [torch.uint8])
 @pytest.mark.parametrize("scale_factor", scale_factor)
 def test_upsample_nearest2d_uncontig(input_data, dtype, scale_factor):
     nearest = partial(
@@ -196,7 +196,7 @@ def test_upsample_linear(input_data, dtype, scale_factor, align_corners):
         {"input": torch.randn([4, 25, 16, 32, 32])[:, :10, :10, :10, :10]},
     ],
 )
-@pytest.mark.parametrize("dtype", all_support_types)
+@pytest.mark.parametrize("dtype", all_support_types + [torch.uint8])
 @pytest.mark.parametrize("scale_factor", scale_factor)
 def test_upsample_nearest3d(input_data, dtype, scale_factor):
     linear = partial(
@@ -251,7 +251,7 @@ def test_upsample_nearest3d_bwd(input_data, scale_factor):
         {"input": torch.randn([4, 25, 16])},
     ],
 )
-@pytest.mark.parametrize("dtype", all_support_types)
+@pytest.mark.parametrize("dtype", all_support_types + [torch.uint8])
 @pytest.mark.parametrize("scale_factor", scale_factor)
 def test_upsample_nearest1d(input_data, dtype, scale_factor):
     linear = partial(

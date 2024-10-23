@@ -10,7 +10,7 @@ ARCH="x86_64-ubuntu-mp_21"
 
 if [ "$GPU" = "MTTS3000" ] || [ "$GPU" = "MTTS80" ] || [ "$GPU" = "MTTS80ES" ]; then
     ARCH="x86_64-ubuntu-mp_21"
-elif [ "$GPU" = "MTTS4000" ] || [ "$GPU" = "MTTS90" ]; then
+elif [ "$GPU" = "MTTS4000" ]; then
     ARCH="x86_64-ubuntu-mp_22"
 else
     echo -e "\033[31mThe output of mthreads-gmi -q -i 0 | grep \"Product Name\" | awk -F: '{print \$2}' | tr -d '[:space:]' is not correct! Now GPU ARCH is set to qy1 by default! \033[0m"

@@ -329,6 +329,9 @@ at::Tensor& AddcDiv_(
     const at::Tensor& tensor1,
     const at::Tensor& tensor2,
     const at::Scalar& value) {
+  // TODO(@mt-ai,mt-compute): Since we don't know the self is created from empty
+  // or computed from other operations, and muDNN doesn't supoprt inplace
+  // ternary, we create an output then copy it to self
   at::Tensor output = at::empty_like(
       self, self.options().memory_format(at::MemoryFormat::Contiguous));
 

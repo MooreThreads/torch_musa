@@ -1,8 +1,8 @@
 diff --git a/aten/src/ATen/native/cuda/KernelUtils.cuh b/aten/src/ATen/native/cuda/KernelUtils.cuh
-index e1b9f38..211aca3 100644
+index d07f54093e8..2c4b01ab689 100644
 --- a/aten/src/ATen/native/cuda/KernelUtils.cuh
 +++ b/aten/src/ATen/native/cuda/KernelUtils.cuh
-@@ -36,9 +36,7 @@ __device__ __forceinline__ void fastSpecializedAtomicAdd(
+@@ -47,9 +47,7 @@ __device__ __forceinline__ void fastSpecializedAtomicAdd(
      index_t index,
      const index_t numel,
      scalar_t value) {
@@ -13,7 +13,7 @@ index e1b9f38..211aca3 100644
    gpuAtomicAddNoReturn(
        reinterpret_cast<at::Half*>(tensor) + index,
        static_cast<at::Half>(value));
-@@ -76,9 +74,7 @@ __device__ __forceinline__ void fastSpecializedAtomicAdd(
+@@ -87,9 +85,7 @@ __device__ __forceinline__ void fastSpecializedAtomicAdd(
      index_t index,
      const index_t numel,
      scalar_t value) {

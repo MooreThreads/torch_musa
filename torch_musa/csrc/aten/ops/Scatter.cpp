@@ -63,11 +63,15 @@ Tensor& ScatterOp(
   c10::musa::MUSAGuard device_guard(self.device());
   ScatterMetaCheck(self, dim, index, src);
 
-  Tensor src_ = src.contiguous();
-  Tensor index_ = index.contiguous();
-  if (out.data_ptr() != self.data_ptr()) {
+  if (!out.is_same(self)) {
     out.copy_(self);
   }
+  if (index.numel() == 0) {
+    return out;
+  }
+
+  Tensor src_ = src.contiguous();
+  Tensor index_ = index.contiguous();
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Scatter op;

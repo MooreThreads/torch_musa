@@ -17,6 +17,10 @@ void warn_or_error_on_sync() {
   }
 }
 
+musaError_t GetDevice(int* device) {
+  return musaGetDevice(device);
+}
+
 bool hasPrimaryContext(DeviceIndex device_index) {
   TORCH_CHECK(
       device_index >= 0 && device_index < c10::musa::device_count(),

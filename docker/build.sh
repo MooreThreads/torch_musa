@@ -20,9 +20,9 @@ MUDNN_URL=""
 MCCL_URL=""
 TORCH_WHL_URL=""
 TORCH_MUSA_WHL_URL=""
-VISION_TAG="v0.15.2"
+VISION_TAG="v0.17.2"
 NO_PREPARE=0
-TORCH_MUSA_TAG='dev1.5.1'
+TORCH_MUSA_TAG='v1.3.0'
 
 usage() {
   echo -e "\033[1;32mThis script is used to build docker image for torch_musa. \033[0m"
@@ -76,7 +76,7 @@ function prepare_build_context() {
   # preprare files will be used when building docker image
   BUILD_DIR=${1:-$(pwd)/tmp}
   if [ ${RELEASE} -eq 0 ]; then
-    sudo git -b ${TORCH_MUSA_TAG} clone https://sh-code.mthreads.com/ai/torch_musa.git $BUILD_DIR/torch_musa
+    sudo git clone -b ${TORCH_MUSA_TAG} https://sh-code.mthreads.com/ai/torch_musa.git $BUILD_DIR/torch_musa
   fi
   CUR_ROOT=$(cd "$(dirname "$0")"; pwd)
   sudo cp -r $CUR_ROOT/common $BUILD_DIR/
@@ -90,16 +90,16 @@ function build_dev_base_docker_image() {
 function build_docker_image() {
   BUILD_CONTEXT_DIR=$1
   build_docker_cmd_prefix="docker build --no-cache --network=host --shm-size=80g "
-  build_docker_cmd=${build_docker_cmd_prefix}"--build-arg BASE_IMG=${BASE_IMG}
-                                              --build-arg PYTHON_VERSION=${PYTHON_VERSION}                     \
-                                              --build-arg MUSA_TOOLKITS_URL=${MUSA_TOOLKITS_URL}               \
-                                              --build-arg MUDNN_URL=${MUDNN_URL}                               \
-                                              --build-arg TORCH_WHL_URL=${TORCH_WHL_URL}                       \
-                                              --build-arg TORCH_MUSA_WHL_URL=${TORCH_MUSA_WHL_URL}             \
-                                              --build-arg TORCHAUDIO_WHL_URL=${TORCHAUDIO_WHL_URL}             \
-                                              --build-arg TORCHVISION_WHL_URL=${TORCHVISION_WHL_URL}             \
-                                              --build-arg MCCL_URL=${MCCL_URL}                                 \
-                                              -t ${IMAGE_DOCKER_NAME}:${TAG}                                   \
+  build_docker_cmd=${build_docker_cmd_prefix}"--build-arg BASE_IMG=${BASE_IMG}                       \
+                                              --build-arg PYTHON_VERSION=${PYTHON_VERSION}           \
+                                              --build-arg MUSA_TOOLKITS_URL=${MUSA_TOOLKITS_URL}     \
+                                              --build-arg MUDNN_URL=${MUDNN_URL}                     \
+                                              --build-arg TORCH_WHL_URL=${TORCH_WHL_URL}             \
+                                              --build-arg TORCH_MUSA_WHL_URL=${TORCH_MUSA_WHL_URL}   \
+                                              --build-arg TORCHAUDIO_WHL_URL=${TORCHAUDIO_WHL_URL}   \
+                                              --build-arg TORCHVISION_WHL_URL=${TORCHVISION_WHL_URL} \
+                                              --build-arg MCCL_URL=${MCCL_URL}                       \
+                                              -t ${IMAGE_DOCKER_NAME}:${TAG}                         \
                                               -f ${DOCKER_FILE} ${BUILD_CONTEXT_DIR}"
   echo -e "\033[34mbuild_docker cmd: "$build_docker_cmd"\033[0m"
   eval $build_docker_cmd

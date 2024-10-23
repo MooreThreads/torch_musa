@@ -82,6 +82,27 @@ Generator createMUSAGenerator(DeviceIndex device_index) {
 } // namespace musa
 
 /**
+ * Sets the offset to be used by curandStatePhilox4_32_10
+ *
+ * See Note [Acquire lock when using random generators]
+ */
+void MUSAGeneratorImpl::set_offset(uint64_t offset) {
+  at::musa::assertNotCapturing("Cannot call MUSAGeneratorImpl::set_offset");
+  philox_offset_per_thread_ = offset;
+  no_reset_rnn_state_.clear();
+}
+
+/**
+ * Gets the current offset of MUSAGeneratorImpl.
+ */
+uint64_t MUSAGeneratorImpl::get_offset() const {
+  // Debatable if get_offset() should be allowed in captured regions.
+  // Conservatively disallow it for now.
+  at::musa::assertNotCapturing("Cannot call MUSAGeneratorImpl::get_offset");
+  return philox_offset_per_thread_;
+}
+
+/**
  * Note [Why enforce RNG offset % 4 == 0?]
  * ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
  * (It helps to look at pytorch/aten/src/ATen/cuda/CUDAGeneratorImpl.cpp)
@@ -198,7 +219,7 @@ void MUSAGeneratorImpl::set_state(const c10::TensorImpl& new_state) {
   }
 
   uint64_t input_seed;
-  auto new_rng_state = new_state.data<uint8_t>();
+  auto new_rng_state = new_state.data_dtype_initialized<uint8_t>();
   memcpy(&input_seed, new_rng_state, seed_size);
   this->set_current_seed(input_seed);
   int64_t philox_offset = 0;

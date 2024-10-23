@@ -1,9 +1,9 @@
 diff --git a/torch/nn/parallel/comm.py b/torch/nn/parallel/comm.py
-index 587f88e..2567023 100644
+index 764775587d6..20e66ed3bd3 100644
 --- a/torch/nn/parallel/comm.py
 +++ b/torch/nn/parallel/comm.py
-@@ -33,9 +33,9 @@ def broadcast(tensor, devices=None, *, out=None):
-             "devices={} and out={}".format(devices, out))
+@@ -32,9 +32,9 @@ def broadcast(tensor, devices=None, *, out=None):
+             f"Exactly one of 'devices' and 'out' must be specified, but got devices={devices} and out={out}")
      if devices is not None:
          devices = [_get_device_index(d) for d in devices]
 -        return torch._C._broadcast(tensor, devices)
@@ -14,7 +14,7 @@ index 587f88e..2567023 100644
  
  
  def broadcast_coalesced(tensors, devices, buffer_size=10485760):
-@@ -55,7 +55,7 @@ def broadcast_coalesced(tensors, devices, buffer_size=10485760):
+@@ -54,7 +54,7 @@ def broadcast_coalesced(tensors, devices, buffer_size=10485760):
      """
      devices = [_get_device_index(d) for d in devices]
      tensors = [_handle_complex(t) for t in tensors]
@@ -23,7 +23,7 @@ index 587f88e..2567023 100644
  
  
  def reduce_add(inputs, destination=None):
-@@ -186,7 +186,7 @@ def scatter(tensor, devices=None, chunk_sizes=None, dim=0, streams=None, *, out=
+@@ -184,7 +184,7 @@ def scatter(tensor, devices=None, chunk_sizes=None, dim=0, streams=None, *, out=
      tensor = _handle_complex(tensor)
      if out is None:
          devices = [_get_device_index(d) for d in devices]
@@ -32,16 +32,16 @@ index 587f88e..2567023 100644
      else:
          if devices is not None:
              raise RuntimeError(
-@@ -196,7 +196,7 @@ def scatter(tensor, devices=None, chunk_sizes=None, dim=0, streams=None, *, out=
+@@ -192,7 +192,7 @@ def scatter(tensor, devices=None, chunk_sizes=None, dim=0, streams=None, *, out=
+         if chunk_sizes is not None:
              raise RuntimeError(
-                 "'chunk_sizes' must not be specified when 'out' is specified, "
-                 "but got chunk_sizes={}".format(chunk_sizes))
+                 f"'chunk_sizes' must not be specified when 'out' is specified, but got chunk_sizes={chunk_sizes}")
 -        return tuple(torch._C._scatter_out(tensor, out, dim, streams))
 +        return tuple(torch.musa._MUSAC._scatter_out(tensor, out, dim, streams))
  
  
  def gather(tensors, dim=0, destination=None, *, out=None):
-@@ -232,10 +232,10 @@ def gather(tensors, dim=0, destination=None, *, out=None):
+@@ -228,9 +228,9 @@ def gather(tensors, dim=0, destination=None, *, out=None):
                  'Using -1 to represent CPU tensor is deprecated. Please use a '
                  'device object or string instead, e.g., "cpu".')
          destination = _get_device_index(destination, allow_cpu=True, optional=True)
@@ -50,7 +50,6 @@ index 587f88e..2567023 100644
      else:
          if destination is not None:
              raise RuntimeError(
-                 "'destination' must not be specified when 'out' is specified, but "
-                 "got destination={}".format(destination))
+                 f"'destination' must not be specified when 'out' is specified, but got destination={destination}")
 -        return torch._C._gather_out(tensors, out, dim)
 +        return torch.musa._MUSAC._gather_out(tensors, out, dim)

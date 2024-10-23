@@ -1,5 +1,6 @@
 """Torch musa autograd profiler."""
 
+import os
 import sqlite3
 from collections import defaultdict
 from typing import Any, Dict, List, Optional
@@ -9,6 +10,8 @@ import torch
 from torch._C._profiler import _ExperimentalConfig
 from torch.autograd import (
     _disable_profiler,
+    _is_prepare_profiler_succeed,
+    _finish_profiler,
     _enable_profiler,
     _kineto_step,
     _prepare_profiler,
@@ -19,6 +22,7 @@ from torch.autograd import (
     ProfilerActivity,
     ProfilerConfig,
     ProfilerState,
+    RecordScope,
 )
 from torch.futures import Future
 
@@ -201,6 +205,11 @@ class profile:
         if self.use_cpu:
             self.kineto_activities.add(ProfilerActivity.CPU)
 
+        self.scopes = set()
+        enabled_mt_timer_cpu_events = os.getenv("MT_TIMER_CPU_EVENTS")
+        if enabled_mt_timer_cpu_events:
+            self.scopes.add(RecordScope.USER_SCOPE)
+
         self.profiler_kind = ProfilerState.KINETO
         if self.use_musa:
             if not use_kineto or ProfilerActivity.MUSA not in _supported_activities():
@@ -239,13 +248,17 @@ class profile:
 
     def _start_trace(self):
         self.entered = True
-        _enable_profiler(self.config(), self.kineto_activities)
+        if not _is_prepare_profiler_succeed():
+            return
+        _enable_profiler(self.config(), self.kineto_activities, self.scopes)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         if not self.enabled:
             return None
         if self.use_musa:
             torch.musa.synchronize()
+        if not _is_prepare_profiler_succeed():
+            return None
         self.kineto_results = _disable_profiler()
         parsed_results = self._parse_kineto_results(self.kineto_results)
         self.function_events = EventList(
@@ -297,9 +310,12 @@ class profile:
     table.__doc__ = EventList.table.__doc__
 
     def export_chrome_trace(self, path):
-        self._check_finish()
+        if _is_prepare_profiler_succeed():
+            self._check_finish()
         if kineto_available():
-            self.kineto_results.save(path)  # type: ignore[union-attr]
+            if _is_prepare_profiler_succeed():
+                self.kineto_results.save(path)  # type: ignore[union-attr]
+                _finish_profiler()
             return None
         return self.function_events.export_chrome_trace(path)  # type: ignore[union-attr]
 

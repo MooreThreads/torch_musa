@@ -41,10 +41,12 @@ Tensor& RandpermOutMusa(
   at::native::check_supported_max_int_with_precision(n, result);
 
   // muDNN's radix_sort_by_key only support int32 & int64 dtype of value
-  bool is_supported_value_dtype =
-      (result.scalar_type() == at::ScalarType::Int) ||
-      (result.scalar_type() == at::ScalarType::Long);
-  auto shuffled_dtype = result.element_size() <= 4 ? kInt : kLong;
+  TORCH_CHECK(
+      result.scalar_type() == at::ScalarType::Int ||
+          result.scalar_type() == at::ScalarType::Long,
+      "Mudnn Randperm only support int32, int64, but got dtype ",
+      result.scalar_type());
+  auto shuffled_dtype = result.scalar_type();
 
   result.resize_({n});
 
@@ -55,7 +57,7 @@ Tensor& RandpermOutMusa(
   // points to a new tensor.
   Tensor shuffled;
   void* shuffled_data;
-  if (result.is_contiguous() && is_supported_value_dtype) {
+  if (result.is_contiguous()) {
     shuffled = result;
     shuffled_data = result.data_ptr();
   } else {
@@ -152,7 +154,7 @@ Tensor& RandpermOutMusa(
         });
   }
 
-  if (!result.is_contiguous() && !is_supported_value_dtype) {
+  if (!result.is_contiguous()) {
     result.copy_(shuffled);
   }
 

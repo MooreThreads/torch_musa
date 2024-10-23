@@ -10,21 +10,26 @@
 #include <ATen/native/transformers/musa/sdp_utils.h>
 #include <ATen/native/transformers/sdp_utils_cpp.h>
 
+#include "torch_musa/csrc/aten/musa/MUSAContext.h"
+
 namespace sdp {
 
-inline bool check_musa_arch(sdp_params params, bool is_debug) {
+inline bool check_musa_arch(const sdp_params& params, bool is_debug) {
   // Check that the gpu is capable of running flash attention
-  auto device_properties = at::musa::getCurrentDeviceProperties();
-  bool is_arch_greater_than_22 =
-      device_properties->major == 2 && device_properties->minor >= 2;
-  if (!is_arch_greater_than_22) {
+  const auto device_prop = at::musa::getCurrentDeviceProperties();
+  const auto arch_major = device_prop->major;
+  const auto arch_minor = device_prop->minor;
+  const bool enable_flash_attn =
+      (arch_major > 2) || (arch_major == 2 && arch_minor > 1);
+
+  if (!enable_flash_attn) {
     if (is_debug) {
       TORCH_WARN(
-          "Flash attention only supports architecture with mp version 2.2. "
-          "But now attempts to run on a mp ",
-          device_properties->major,
+          "Flash attention only supports architecture with mp version >= 2.2, "
+          "but now attempts to run on a mp ",
+          arch_major,
           ".",
-          device_properties->minor,
+          arch_minor,
           " gpu.");
     }
     return false;
@@ -32,7 +37,9 @@ inline bool check_musa_arch(sdp_params params, bool is_debug) {
   return true;
 }
 
-inline bool check_musa_attention_input(sdp::sdp_params params, bool is_debug) {
+inline bool check_musa_attention_input(
+    const sdp_params& params,
+    bool is_debug) {
   auto head_dim = params.query.size(-1);
   if (!(head_dim == 160 || head_dim <= 128)) {
     if (is_debug) {
@@ -45,13 +52,13 @@ inline bool check_musa_attention_input(sdp::sdp_params params, bool is_debug) {
   return true;
 }
 
-inline bool use_flash_attention(const sdp::sdp_params& params) {
-  using SDPParamsCheckFunc = bool (*)(sdp::sdp_params, bool);
+inline bool use_flash_attention(const sdp_params& params) {
+  using SDPParamsCheckFunc = bool (*)(const sdp_params&, bool);
   constexpr int conditions_num = 4;
   constexpr std::array<SDPParamsCheckFunc, conditions_num> conditions{
-      {sdp::check_runtime_disabled_flash,
-       sdp::check_tensor_shapes,
-       sdp::check_musa_attention_input,
+      {check_runtime_disabled_flash,
+       check_tensor_shapes,
+       check_musa_attention_input,
        check_musa_arch}};
   auto res = std::all_of(
       conditions.begin(), conditions.end(), [&params](SDPParamsCheckFunc func) {
@@ -62,23 +69,24 @@ inline bool use_flash_attention(const sdp::sdp_params& params) {
   }
   static const std::array<at::ScalarType, 2> musa_allowed_dtypes{
       at::kHalf, at::kBFloat16};
-  return sdp::check_tensor_dtype(params, musa_allowed_dtypes, true);
+  return check_tensor_dtype(params, musa_allowed_dtypes, true);
 }
 
-inline sdp::SDPBackend select_backend(const sdp::sdp_params& params) {
+inline SDPBackend select_backend(const sdp_params& params) {
   const auto& ctx = at::globalContext();
   if (!ctx.userEnabledMathSDP() && !ctx.userEnabledFlashSDP() &&
       !ctx.userEnabledMemEfficientSDP()) {
-    return sdp::SDPBackend::error;
+    return SDPBackend::error;
   }
   if (use_flash_attention(params)) {
-    return sdp::SDPBackend::flash_attention;
+    return SDPBackend::flash_attention;
   } else if (ctx.userEnabledMathSDP()) {
-    return sdp::SDPBackend::math;
+    return SDPBackend::math;
   } else {
     TORCH_CHECK(false, "Invalid backend configuration for musa!")
   }
 }
+
 } // namespace sdp
 
 #endif // TORCH_MUSA_CSRC_ATEN_OPS_ATTENTION_MUDNN_SDPUTILS_H_

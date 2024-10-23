@@ -1,6 +1,7 @@
 #include <musa_runtime_api.h>
 #include <stdint.h>
 #include <deque>
+#include <future>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -9,6 +10,7 @@
 #include <utility>
 
 #include <ATen/DeviceGuard.h>
+//#include <c10/core/DeviceGuard.h>
 
 #include "torch_musa/csrc/aten/musa/Exceptions.h"
 #include "torch_musa/csrc/core/CachingHostAllocator.h"
@@ -171,10 +173,11 @@ class MUSAHostAllocator {
     at::OptionalDeviceGuard device_guard;
     auto primary_ctx_device_index =
         c10::musa::getDeviceIndexWithPrimaryContext();
-    if (primary_ctx_device_index.has_value()) {
-      device_guard.reset_device(
-          at::Device(at::musa::kMUSA, *primary_ctx_device_index));
-    }
+    // device_guard can only be initialized by follow ctx, it must has_value,
+    // or device_guard will call Destructor with invalid property.
+    assert(primary_ctx_device_index.has_value());
+    device_guard.reset_device(
+        at::Device(at::musa::kMUSA, *primary_ctx_device_index));
 
     // Round up the allocation to the nearest power of two to improve reuse.
     // TODO(MTAI): We might want to employ more efficient approaches, such as

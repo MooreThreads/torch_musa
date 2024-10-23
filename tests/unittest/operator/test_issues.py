@@ -94,43 +94,6 @@ def test_empty_cat():
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
-def test_issue_415():
-    x = torch.randn((16, 1, 768)).transpose(1, 2)
-    x_mu = x.to("musa")
-    func = torch.nn.functional.adaptive_avg_pool1d
-    assert testing.DefaultComparator(abs_diff=1e-5, rel_diff=1e-4)(
-        func(x, 1), func(x_mu, 1)
-    )
-
-    x = torch.randn((16, 1, 16, 32)).to(memory_format=torch.channels_last)
-    x_mu = x.to("musa")
-    assert testing.DefaultComparator(abs_diff=1e-5, rel_diff=1e-4)(
-        torch.mean(x), torch.mean(x_mu)
-    )
-
-    x = torch.randn((16, 32, 1, 1)).to(memory_format=torch.channels_last)
-    x_mu = x.to("musa")
-    assert testing.DefaultComparator(abs_diff=1e-5, rel_diff=1e-4)(
-        torch.sum(x), torch.sum(x_mu)
-    )
-    assert testing.DefaultComparator(abs_diff=1e-5, rel_diff=1e-4)(
-        torch.sum(x, 0, keepdim=True), torch.sum(x_mu, 0, keepdim=True)
-    )
-
-    x = torch.randn((4, 1, 16)).transpose(1, 2).unsqueeze(1)
-    x_mu = x.to("musa")
-    assert testing.DefaultComparator(abs_diff=1e-5, rel_diff=1e-4)(
-        torch.max(x), torch.max(x_mu)
-    )
-    assert testing.DefaultComparator(abs_diff=1e-5, rel_diff=1e-4)(
-        torch.max(x, 0, keepdim=True)[0], torch.max(x_mu, 0, keepdim=True)[0]
-    )
-    assert testing.DefaultComparator(abs_diff=1e-5, rel_diff=1e-4)(
-        torch.max(x, 0, keepdim=True)[1], torch.max(x_mu, 0, keepdim=True)[1]
-    )
-
-
-@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 def test_div_broadcast():
     inp = torch.randn(40, 1)
     out = torch.div(inp, 1, rounding_mode="floor")

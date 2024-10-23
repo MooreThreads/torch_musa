@@ -97,13 +97,11 @@ def _lazy_init():
     with _initialization_lock:
         if is_initialized():
             return
-
         if _is_in_bad_fork():
             raise RuntimeError(
                 "Cannot re-initialize MUSA in forked subprocess. To use MUSA with "
                 "multiprocessing, you must use the 'spawn' start method"
             )
-
         if not hasattr(torch_musa._MUSAC, "_musa_getDeviceCount"):
             raise AssertionError("Torch not compiled with MUSA enabled")
 

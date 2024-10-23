@@ -1,11 +1,21 @@
 diff --git a/aten/src/ATen/native/transformers/attention.cpp b/aten/src/ATen/native/transformers/attention.cpp
-index a5f0141..d998724 100644
+index 15503234a36..02b98a257b0 100644
 --- a/aten/src/ATen/native/transformers/attention.cpp
 +++ b/aten/src/ATen/native/transformers/attention.cpp
-@@ -483,6 +483,53 @@ std::tuple<Tensor, Tensor> native_multi_head_attention_cpu(
-   return std::make_tuple(std::move(proj), std::move(qkt));
- }
- 
+@@ -33,6 +33,8 @@
+ #include <ATen/ops/_nested_tensor_softmax_with_shape.h>
+ #include <ATen/ops/_scaled_dot_product_attention_math.h>
+ #include <ATen/ops/_scaled_dot_product_attention_math_native.h>
++#include <ATen/ops/_scaled_dot_product_attention_flash_musa.h>
++#include <ATen/ops/_scaled_dot_product_attention_math_musa.h>
+ #include <ATen/ops/_scaled_dot_product_efficient_attention.h>
+ #include <ATen/ops/_scaled_dot_product_flash_attention.h>
+ #include <ATen/ops/_scaled_dot_product_flash_attention_backward_native.h>
+@@ -614,6 +616,57 @@ at::Tensor post_process_flash_output(
+ //     S: Source sequence length
+ //     L: Target sequence length
+ //     E: Embedding dimension
++
 +std::tuple<Tensor, Tensor, Tensor>
 +_scaled_dot_product_attention_math_cpu_musa_backward(
 +    const at::Tensor& grad_out_,
@@ -14,17 +24,8 @@ index a5f0141..d998724 100644
 +    const at::Tensor& value,
 +    const at::Tensor& out,
 +    const at::Tensor& attn_weights,
-+    const at::Tensor& bwd_reserve) {
-+  TORCH_CHECK(false, "No CPU implemetation for this aten func yet!");
-+}
-+
-+std::tuple<Tensor, Tensor, Tensor> _scaled_dot_product_attention_math_cpu_musa(
-+    const at::Tensor& query,
-+    const at::Tensor& key,
-+    const at::Tensor& value,
-+    const c10::optional<Tensor>& mask,
-+    double dropout_p,
-+    bool is_causal) {
++    const at::Tensor& bwd_reserve,
++    c10::optional<double> scale) {
 +  TORCH_CHECK(false, "No CPU implemetation for this aten func yet!");
 +}
 +
@@ -37,11 +38,11 @@ index a5f0141..d998724 100644
 +    const at::Tensor& out,
 +    const at::Tensor& logsumexp,
 +    const at::Tensor& dropout_mask,
-+    bool is_casual,
-+    const c10::optional<Tensor>& mask) {
++    bool is_causal,
++    const c10::optional<Tensor>& mask,
++    c10::optional<double> scale) {
 +  TORCH_CHECK(false, "No CPU implemetation for this aten func yet!");
 +}
-+
 +
 +std::tuple<Tensor, Tensor, Tensor> _scaled_dot_product_attention_flash_cpu_musa(
 +    const at::Tensor& query,
@@ -49,38 +50,41 @@ index a5f0141..d998724 100644
 +    const at::Tensor& value,
 +    const c10::optional<Tensor>& mask,
 +    double dropout_p,
-+    bool is_causal) {
++    bool is_causal,
++    c10::optional<double> scale) {
 +  TORCH_CHECK(false, "No CPU implemetation for this aten func yet!");
 +}
 +
- std::tuple<Tensor, Tensor, Tensor, Tensor> native_decoder_only_multi_head_attention(
-     const Tensor& query,
++std::tuple<Tensor, Tensor, Tensor> _scaled_dot_product_attention_math_cpu_musa(
++    const at::Tensor& query,
++    const at::Tensor& key,
++    const at::Tensor& value,
++    const c10::optional<Tensor>& mask,
++    double dropout_p,
++    bool is_causal,
++    c10::optional<double> scale) {
++  TORCH_CHECK(false, "No CPU implemetation for this aten func yet!");
++}
++
+ Tensor scaled_dot_product_attention(
+     const Tensor& query_,
      const Tensor& key,
-@@ -774,38 +821,71 @@ Tensor scaled_dot_product_attention(
-     bool is_causal) {
-   validate_sdpa_input(query_, key, value, attn_mask_, dropout_p, is_causal);
+@@ -624,12 +676,47 @@ Tensor scaled_dot_product_attention(
+     c10::optional<double> scale) {
+   validate_sdpa_input(query_, key, value, attn_mask_, dropout_p, is_causal, scale);
    int64_t choice_int = static_cast<int64_t>(sdp::SDPBackend::math);
--  if (query_.device().type() == DeviceType::CUDA){
+-  if (query_.device().type() == DeviceType::CUDA
+-      || query_.device().type() == DeviceType::CPU){
++
 +  auto device_type = query_.device().type();
-+  if (device_type == DeviceType::CUDA || device_type == DeviceType::PrivateUse1){
++  if (device_type == DeviceType::CUDA || query_.device().type() == DeviceType::CPU || device_type == DeviceType::PrivateUse1){
      choice_int = _fused_sdp_choice_stub(query_.device().type(),
-       query_, key, value, attn_mask_, dropout_p, is_causal);
+       query_, key, value, attn_mask_, dropout_p, is_causal, scale);
    }
++
    sdp::SDPBackend backend = static_cast<sdp::SDPBackend>(choice_int);
--  switch (backend) {
--    case sdp::SDPBackend::flash_attention: {
--      auto out_lse_softmax = at::_scaled_dot_product_flash_attention(
--          query_, key, value, dropout_p, is_causal);
--      return std::get<0>(out_lse_softmax);
--    }
--    case sdp::SDPBackend::efficient_attention: {
--      bool compute_logsumexp =
--          (query_.requires_grad() || key.requires_grad() ||
--           value.requires_grad());
--      auto out_and_lse = at::_scaled_dot_product_efficient_attention(
--          query_, key, value, compute_logsumexp, is_causal);
--      return std::get<0>(out_and_lse);
-+ if(device_type == DeviceType::PrivateUse1){
++
++  if(device_type == DeviceType::PrivateUse1){
 +    // MUSA way
 +    switch (backend) {
 +        case sdp::SDPBackend::flash_attention: {
@@ -90,7 +94,8 @@ index a5f0141..d998724 100644
 +              value,
 +              attn_mask_,
 +              dropout_p,
-+              is_causal
++              is_causal,
++              scale
 +            ));
 +        }
 +        case sdp::SDPBackend::math: {
@@ -100,7 +105,8 @@ index a5f0141..d998724 100644
 +              value,
 +              attn_mask_,
 +              dropout_p,
-+              is_causal
++              is_causal,
++              scale
 +            ));
 +        }
 +        default:
@@ -108,50 +114,17 @@ index a5f0141..d998724 100644
 +                false,
 +                "No viable backend for scaled_dot_product_attention was found.");
 +            return Tensor();
-     }
--    case sdp::SDPBackend::math:
--      return std::get<0>(at::_scaled_dot_product_attention_math(
--          query_,
--          key,
--          value,
--          attn_mask_,
--          dropout_p,
--          is_causal));
--    default:
--      TORCH_CHECK(
--          false,
--          "No viable backend for scaled_dot_product_attention was found.");
--      return Tensor();
++    }
 +  } else {
-+    // other way
-+    switch (backend) {
-+        case sdp::SDPBackend::flash_attention: {
-+          auto out_lse_softmax = at::_scaled_dot_product_flash_attention(
-+              query_, key, value, dropout_p, is_causal);
-+          return std::get<0>(out_lse_softmax);
-+        }
-+        case sdp::SDPBackend::efficient_attention: {
-+          bool compute_logsumexp =
-+              (query_.requires_grad() || key.requires_grad() ||
-+              value.requires_grad());
-+          auto out_and_lse = at::_scaled_dot_product_efficient_attention(
-+              query_, key, value, compute_logsumexp, is_causal);
-+          return std::get<0>(out_and_lse);
-+        }
-+        case sdp::SDPBackend::math:
-+          return std::get<0>(at::_scaled_dot_product_attention_math(
-+              query_,
-+              key,
-+              value,
-+              attn_mask_,
-+              dropout_p,
-+              is_causal));
-+        default:
-+          TORCH_CHECK(
-+              false,
-+              "No viable backend for scaled_dot_product_attention was found.");
-+          return Tensor();
-+      }
+   c10::optional<Tensor> attn_mask = convert_boolean_attn_mask(attn_mask_, query_.dtype());
+   switch (backend) {
+     case sdp::SDPBackend::flash_attention: {
+@@ -676,6 +761,8 @@ Tensor scaled_dot_product_attention(
+           "No viable backend for scaled_dot_product_attention was found.");
+       return Tensor();
    }
++  }
++
  }
  
+ std::tuple<Tensor, Tensor> _scaled_dot_product_attention_math(

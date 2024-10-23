@@ -1,4 +1,5 @@
 """define torch musa storage methods """
+
 # pylint: disable=unused-argument
 import torch
 from torch._utils import _get_async_or_non_blocking
@@ -66,7 +67,7 @@ def _release_ipc_counter_musa(cls, *args, device=None, **kwargs):
 
 
 def set_storage_attributes():
-    """ overwrite torch UntypedStorage methods. """
+    """overwrite torch UntypedStorage methods."""
     torch.UntypedStorage._share_musa_ = _share_musa
     torch.UntypedStorage._share_cuda_ = _share_musa
 

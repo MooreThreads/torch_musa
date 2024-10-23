@@ -6,7 +6,7 @@
 #include <atomic>
 #include <limits>
 
-#include "torch_musa/csrc/aten/musa/PhiloxMusaStateRaw.muh"
+#include <ATen/musa/PhiloxCudaState.h>
 
 namespace at {
 /**
@@ -70,6 +70,8 @@ struct MUSAGeneratorImpl : public c10::GeneratorImpl {
   uint64_t seed() override;
   void set_state(const c10::TensorImpl& new_state) override;
   c10::intrusive_ptr<c10::TensorImpl> get_state() const override;
+  void set_offset(uint64_t offset) override;
+  uint64_t get_offset() const override;
   void set_philox_offset_per_thread(uint64_t offset);
   uint64_t philox_offset_per_thread() const;
   void capture_prologue(int64_t* seed_extragraph, int64_t* offset_extragraph);

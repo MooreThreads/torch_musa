@@ -1,5 +1,5 @@
 diff --git a/torch/ao/nn/intrinsic/quantized/modules/conv_add.py b/torch/ao/nn/intrinsic/quantized/modules/conv_add.py
-index 6e46aa8..bd3b9f6 100644
+index 6e46aa8915e..bd3b9f648fe 100644
 --- a/torch/ao/nn/intrinsic/quantized/modules/conv_add.py
 +++ b/torch/ao/nn/intrinsic/quantized/modules/conv_add.py
 @@ -91,3 +91,46 @@ class ConvAddReLU2d(nnq.Conv2d):

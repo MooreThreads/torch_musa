@@ -22,7 +22,11 @@ Tensor& FillOp(
   auto self_mu = at::musa::CreateMUTensor(self);
 
   ::musa::dnn::Fill op;
-  if (at::isIntegralType(self.scalar_type(), /*includeBool=*/false)) {
+  const auto fill_type = self.scalar_type();
+  if (fill_type == ScalarType::Bool) {
+    const auto fill_value = static_cast<int64_t>(value.to<bool>());
+    CHECK_MUDNN_STATUS(op.SetValue(fill_value), "SetValue");
+  } else if (isIntegralType(fill_type, false)) {
     CHECK_MUDNN_STATUS(op.SetValue(value.toLong()), "SetValue");
   } else {
     CHECK_MUDNN_STATUS(op.SetValue(value.toDouble()), "SetValue");

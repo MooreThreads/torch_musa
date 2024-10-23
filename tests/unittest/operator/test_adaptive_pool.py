@@ -44,8 +44,6 @@ AdaptiveMaxPoolNdMapping = {
 @pytest.mark.parametrize("train", [True, False])
 @pytest.mark.parametrize("pool_mode", ["MAX", "AVG"])
 def test_adaptive_pool(config, dtype, return_indices, train, pool_mode):
-    # if pool_mode == "AVG" and testing.get_musa_arch() == 21:
-    #     pytest.skip(reason="AdaptiveAvgPool might unstable on S3000")
     if pool_mode == "MAX":
         input_params = {
             "output_size": config[1],

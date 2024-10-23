@@ -95,12 +95,12 @@ static PyObject* THMPStorageShareMusa(
   Py_INCREF(Py_None);
   THPObjectPtr _event_sync_required(Py_None);
   Py_INCREF(Py_None);
-  if (storage->data<uint8_t>()) {
+  if (storage->data()) {
     // NOLINTNEXTLINE(cppcoreguidelines-init-variables)
     size_t base_size;
     void* base_ptr = c10::musa::MUSACachingAllocator::GetBaseAllocation(
-        storage->data<uint8_t>(), &base_size);
-    ptrdiff_t offset_bytes = (char*)storage->data<uint8_t>() - (char*)base_ptr;
+        storage->mutable_data(), &base_size);
+    ptrdiff_t offset_bytes = (char*)storage->data() - (char*)base_ptr;
 
     // NOLINTNEXTLINE(cppcoreguidelines-init-variables)
     musaIpcMemHandle_t handle;
@@ -112,7 +112,7 @@ static PyObject* THMPStorageShareMusa(
     // Put Storage Data behind new ref counting context
     // See Note [MUSA IPC Refcounting implementation explained]
     at::DataPtr sent_data_ptr = torch::musa::GetNewRefCountedSentData(
-        storage->data(), storage->device());
+        storage->mutable_data(), storage->device());
     auto old_data_ptr = storage->set_data_ptr(std::move(sent_data_ptr));
     auto sent_data = static_cast<torch::musa::MusaIPCSentData*>(
         storage->data_ptr().get_context());
@@ -283,7 +283,11 @@ static PyObject* THMPStorageNewSharedMusa(PyObject* _unused, PyObject* args) {
   base->set_resizable(false);
   base->set_received_cuda(true);
 
-  return THPStorage_New(std::move(base));
+  /* return THPStorage_New(std::move(base)); */
+  return THPStorage_NewWithStorage(
+      THPStorageClass,
+      std::move(base),
+      c10::impl::PyInterpreterStatus::TAGGED_BY_US);
   END_HANDLE_TH_ERRORS
 }
 

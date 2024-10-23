@@ -1,5 +1,6 @@
 #include <ATen/ATen.h>
 #include <ATen/NativeFunctions.h>
+#include <ATen/ceil_div.h>
 #include <ATen/core/op_registration/adaption.h>
 #include <ATen/native/Resize.h>
 #include <ATen/native/TensorFactories.h>
@@ -9,9 +10,10 @@
 #include <c10/core/TensorOptions.h>
 #include <torch/library.h>
 
-#include "torch_musa/csrc/aten/quantized/Quantizer.h"
+#include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/aten/quantized/TensorFactories.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/core/MUSAGuard.h"
 
 namespace at {
 namespace musa {
@@ -30,17 +32,6 @@ Tensor MakePerChannelQuantizedTensor(
     const Tensor& scales,
     const Tensor& zero_points,
     int64_t axis) {
-  c10::optional<Device> common_device = nullopt;
-  (void)common_device; // Suppress unused variable warning
-  c10::impl::check_and_update_common_device(
-      common_device, self, "MakePerChannelQuantizedTensor", "self");
-  c10::impl::check_and_update_common_device(
-      common_device, scales, "MakePerChannelQuantizedTensor", "scale");
-  c10::impl::check_and_update_common_device(
-      common_device,
-      zero_points,
-      "MakePerChannelQuantizedTensor",
-      "zero_point");
   const OptionalDeviceGuard device_guard(device_of(self));
   return at::native::make_per_channel_quantized_tensor_cuda(
       self, scales, zero_points, axis);
@@ -73,10 +64,10 @@ Tensor EmptyAffineQuantized(
   TORCH_CHECK(
       options.has_dtype(),
       "Must provide data type for Tensor creation functions.");
-  return NewQTensor(
+  return at::new_qtensor(
       size,
       options,
-      MakePerTensorAffineQuantizer(
+      at::make_per_tensor_affine_quantizer(
           scale, zero_point, typeMetaToScalarType(options.dtype())));
 }
 
@@ -104,12 +95,12 @@ Tensor EmptyPerChannelAffineQuantized(
   TORCH_CHECK(
       options.has_dtype(),
       "Must provide data type for Tensor creation functions.");
-  QuantizerPtr quantizer = MakePerChannelAffineQuantizer(
+  QuantizerPtr quantizer = at::make_per_channel_affine_quantizer(
       scales.to(options.device()),
       zero_points.to(options.device()),
       axis,
       typeMetaToScalarType(options.dtype()));
-  return NewQTensor(size, options, std::move(quantizer));
+  return at::new_qtensor(size, options, std::move(quantizer));
 }
 
 Tensor EmptyUnknownQuantized(
@@ -133,8 +124,8 @@ Tensor EmptyUnknownQuantized(
       options.has_dtype(),
       "Must provide data type for Tensor creation functions.");
   QuantizerPtr quantizer =
-      MakeUnknownQuantizer(typeMetaToScalarType(options.dtype()));
-  return NewQTensor(size, options, std::move(quantizer));
+      at::make_unknown_quantizer(typeMetaToScalarType(options.dtype()));
+  return at::new_qtensor(size, options, std::move(quantizer));
 }
 
 // Create an empty quantized Tensor with size, based on the options
@@ -147,10 +138,6 @@ Tensor EmptyQuantized(
     c10::optional<Device> device,
     c10::optional<bool> pin_memory,
     c10::optional<c10::MemoryFormat> memory_format) {
-  c10::optional<Device> common_device = nullopt;
-  (void)common_device; // Suppress unused variable warning
-  c10::impl::check_and_update_common_device(
-      common_device, qtensor, "EmptyQuantized", "qtensor");
   const DeviceGuard device_guard(device_or_default(device));
   TensorOptions specified_options =
       TensorOptions().dtype(dtype).layout(layout).device(device).pinned_memory(
@@ -208,9 +195,9 @@ Tensor EmptyStridedUnknownQuantized(
     c10::optional<Layout> layout,
     c10::optional<Device> device,
     c10::optional<bool> pin_memory) {
-  const DeviceGuard device_guard(device_or_default(device));
-  return at::native::empty_strided_unknown_quantized(
-      size, strided, dtype, layout, device, pin_memory);
+  TORCH_CHECK(
+      false,
+      "empty_strided not supported on quantized tensors yet see https://github.com/pytorch/pytorch/issues/74540");
 }
 
 Tensor AsStridedQTensorImpl(
@@ -220,7 +207,7 @@ Tensor AsStridedQTensorImpl(
     optional<int64_t> storage_offset_) {
   // DeviceGuard omitted
   auto storage_offset = storage_offset_.value_or(self.storage_offset());
-  auto quantizer = at::GetQTensorImpl(self)->quantizer();
+  auto quantizer = at::get_qtensorimpl(self)->quantizer();
   TORCH_CHECK(
       quantizer->qscheme() == QScheme::PER_TENSOR_AFFINE,
       "Setting strides is possible only on uniformly quantized tensor");

@@ -7,6 +7,7 @@
 from contextlib import ExitStack, nullcontext
 import random
 import copy
+import inspect
 from typing import Callable
 from functools import wraps
 
@@ -286,6 +287,9 @@ class OpTest:
         comparators (list): Comparator used to compare results.
         ignored_result_indices (list): Indices of results which will be ignored when comparing.
         seed (int): random seed may be used in nn.Module's initialization.
+        test_dtype (torch.dtype): The dtype will be tested on MUSA, if not specified,
+            users should guarantee the correctness of input's dtype.
+
     """
 
     def __init__(
@@ -296,15 +300,27 @@ class OpTest:
         comparators=DefaultComparator(equal_nan=True),
         ignored_result_indices=None,
         seed=42,
+        test_dtype=None,
     ):
         assert func is not None, "no function defined."
         self._func = func
-        self._input_args = input_args
+        if input_args:
+            assert isinstance(input_args, dict)
+            self._input_args = input_args
+        else:
+            self._input_args = {None: None}
         self._refer_func = refer_func
         self._comparators = [comparators]
         self._ignored_result_indices = ignored_result_indices
         self._seed = seed
         self._input_args_for_out_check = self.deep_copy_dict(input_args)
+
+        # The test_dtype parameter is provided primarily to be compatible with
+        # some unit tests that passing the nn.Moudle class into func instead of
+        # the nn.Module instance, the former cannot guarantee the correctness of the
+        # module weights' dtype when running operator among different dtype test cases
+        self._test_dtype = test_dtype
+        self._test_low_vs_high = False
 
     def set_random_seed(self):
         random.seed(self._seed)
@@ -312,6 +328,8 @@ class OpTest:
         torch.manual_seed(self._seed)
 
     def deep_copy_dict(self, args):
+        if not args:
+            return {}
         res = {}
         for k in args:
             if isinstance(args[k], torch.Tensor):
@@ -324,15 +342,85 @@ class OpTest:
                 res[k] = copy.deepcopy(args[k])
         return res
 
+    def wrap_everything(self, x, device, compute_dtype=None, dtype_nocast=False):
+        # Wrap the Tensor and nn.Module into target dtype and device
+        # we provide a parameter named `compute_dtype` here,
+        # this maybe useful then testing the half dtype of operators,
+        # cause most of the operators do not implement the half dtype on CPU backend,
+        # then we could cast the dtype of input into `self._test_dtype` and promote it
+        # into `compute_dtype`
+        if not isinstance(x, (torch.Tensor, torch.nn.Module)):
+            return x
+        wrapped_x = x
+        if isinstance(x, torch.Tensor):
+            wrapped_x = wrapped_x.clone()
+            origin_dtype = wrapped_x.dtype
+        else:
+            # though actual original dtype might not torch.float32,
+            # just mark it as fp32. actually, mark as any floating
+            # dtype(except float64) will be okay
+            origin_dtype = torch.float32
+        origin_dtype_is_floating = origin_dtype in [
+            torch.bfloat16,
+            torch.float16,
+            torch.float32,
+        ]
+        # op test under different precision(maybe musafp16_vs_cpufp32)
+        if self._test_low_vs_high and origin_dtype_is_floating:
+            assert self._test_dtype is not None
+            wrapped_x = wrapped_x.to(self._test_dtype)
+        # op test under same precision
+        if self._test_dtype and (not self._test_low_vs_high) and (not dtype_nocast):
+            wrapped_x = wrapped_x.to(self._test_dtype)
+
+        if compute_dtype:
+            if origin_dtype_is_floating:
+                wrapped_x = wrapped_x.to(compute_dtype)
+        return wrapped_x.to(device)
+
+    def maybe_retain_and_zero_grad(self, param, train=False):
+        if train and isinstance(param, torch.Tensor) and param.requires_grad:
+            param.retain_grad()
+            if param.grad:
+                param.grad.zero_()
+
+    # pylint: disable=invalid-name
+    def maybe_retain_and_zero_nn_modules_grad(self, module, train=False):
+        if not isinstance(module, torch.nn.Module):
+            return
+        for _, param in module.named_parameters():
+            self.maybe_retain_and_zero_grad(param, train)
+
+    def run_backward(self, reduce):
+        if isinstance(reduce, (list, tuple)):
+            reduce = reduce[0]
+        reduce.sum().backward()
+
+    def save_gradients(self, inputs, grads):
+        def _save_gradients(val):
+            if isinstance(val, torch.Tensor) and val.requires_grad:
+                grads.append(val.grad.cpu())
+
+        if isinstance(inputs, (list, tuple)):
+            for val in inputs:
+                _save_gradients(val)
+        elif isinstance(inputs, dict):
+            for _, val in inputs.items():
+                _save_gradients(val)
+        elif isinstance(inputs, torch.Tensor):
+            _save_gradients(inputs)
+        else:
+            raise TypeError("illegal inputs")
+
     def _call_func(
         self,
         inputs,
         device,
         train: bool = False,
         test_out: bool = False,
-        fp16: bool = False,
-        bf16: bool = False,
+        compute_dtype: torch.dtype = None,
         refer: bool = False,
+        dtype_nocast_map: dict = None,
     ):
         """Run op on specific device.
         Args:
@@ -340,17 +428,36 @@ class OpTest:
             device (str): Device where op will be ran.
             train (bool): Whether to test backward.
             test_out (bool): Whether to test op in out-of-place.
+            compute_dtype (torch.dtype): The input tensor's dtype when running op.
             refer (bool): Whether it is in a reference scenario.
-            fp16 (bool): Whether to set inputs to fp16 dtype
-            bf16 (bool): Whether to set inputs to bf16 dtype
-                Note: either fp16 or bf16 can be true.
+            dtype_nocast_map (dict): Indicate whether input tensor's dtype should be casted.
+                In current OpTest' implementation, we pass all input tensors into warp_everything
+                to get the correct dtype of tensor that will be tested, however, in some cases,
+                the input of some tensors is independent of the test dtype, thus we should ensure
+                that the dtypes of these tensors will not be casted.
         Returns:
             Computing result in numpy format.
         """
+        if test_out:
+            assert "out" in self._input_args
+            old_out_tensor_ptr = 0
+            new_out_tensor_ptr = 0
+        if dtype_nocast_map is None:
+            # avoid dangerous-default-value lint error
+            dtype_nocast_map = {}
+        assert isinstance(dtype_nocast_map, dict)
         cur_func = self._func
         if refer and self._refer_func is not None:
             cur_func = self._refer_func
-        assert int(fp16) + int(bf16) <= 1, "either bf16 and fp16 can be True"
+
+        if inspect.isclass(cur_func):
+            # Just to be compatible with legacy unit tests.
+            # In fact, for the sake of simplicity of the OpTest code, we should probably
+            # DISALLOW the `cur_func` to be of class type, but for now we still deal with
+            # this case in the 'elif isinstance(inputs, dict)' branch.
+            assert isinstance(inputs, dict), (
+                "the inputs is only allowed to be dict " "type when cur_func is class"
+            )
 
         res = []
         grad = []
@@ -358,120 +465,174 @@ class OpTest:
         input_args = {}
         with ExitStack() as stack:
             stack.enter_context(mode_context)
-            for k in self._input_args:
-                if isinstance(self._input_args[k], torch.Tensor):
-                    if not self._input_args[k].is_complex():
-                        input_args[k] = self._input_args[k].to(device).clone()
-                        if fp16 and input_args[k].dtype == torch.float32:
-                            input_args[k] = input_args[k].to(torch.float16)
-                        elif bf16 and input_args[k].dtype == torch.float32:
-                            input_args[k] = input_args[k].to(torch.bfloat16)
+            for k, v in self._input_args.items():
+                if k is None:
+                    break
+                dtype_nocast = dtype_nocast_map.get(k, False)
+                if isinstance(v, torch.Tensor):
+                    if not v.is_complex():
+                        input_args[k] = self.wrap_everything(
+                            v,
+                            device,
+                            compute_dtype=compute_dtype,
+                            dtype_nocast=dtype_nocast,
+                        )
                     else:
-                        str_input_device = str(self._input_args[k].device)
+                        str_input_device = str(v.device)
                         if str_input_device.startswith("musa") and device.startswith(
                             "cpu"
                         ):
-                            input_args[k] = _complex_musa_to_cpu_adjust(
-                                self._input_args[k]
-                            )
+                            input_args[k] = _complex_musa_to_cpu_adjust(v)
                         elif str_input_device.startswith("cpu") and device.startswith(
                             "musa"
                         ):
-                            input_args[k] = _complex_cpu_to_musa_adjust(
-                                self._input_args[k], device
-                            )
+                            input_args[k] = _complex_cpu_to_musa_adjust(v, device)
                         else:
-                            input_args[k] = self._input_args[k]
+                            input_args[k] = v
                 else:
-                    input_args[k] = self._input_args[k]
+                    input_args[k] = v
 
-                if (
-                    train
-                    and isinstance(input_args[k], torch.Tensor)
-                    and input_args[k].requires_grad
-                ):
-                    input_args[k].retain_grad()
-                    if input_args[k].grad is not None:
-                        input_args[k].grad.zero_()
+                self.maybe_retain_and_zero_grad(input_args[k], train)
+
+            self.maybe_retain_and_zero_nn_modules_grad(cur_func, train)
+            cur_func = self.wrap_everything(
+                cur_func, device, compute_dtype=compute_dtype
+            )
 
             if inputs is None:
+                if test_out:
+                    old_out_tensor_ptr = input_args["out"].data_ptr()
                 prev_addr = self.get_addr_list_of_args(input_args)
                 reduce = cur_func(**input_args)
-                if train:
-                    if isinstance(reduce, (list, tuple)):
-                        reduce = reduce[0]
-                    reduce.sum().backward()
                 post_addr = self.get_addr_list_of_args(input_args)
                 assert (
                     prev_addr == post_addr
                 ), "The position of tensor should not be changed"
+                if test_out:
+                    # I'am almost 100% sure reduce is a tensor,
+                    # but assertion is added anyway.
+                    assert isinstance(reduce, torch.Tensor)
+                    assert reduce.data_ptr() == input_args["out"].data_ptr()
+                    new_out_tensor_ptr = input_args["out"].data_ptr()
+                if train:
+                    self.run_backward(reduce)
+                    self.save_gradients(input_args, grad)
             elif isinstance(inputs, list):
                 inputs_list = []
-                for _, value in enumerate(inputs):
+                for i, value in enumerate(inputs):
+                    dtype_nocast = dtype_nocast_map.get(i, False)
                     if isinstance(value, torch.Tensor):
-                        inputs_list.append(value.to(device))
+                        inputs_list.append(
+                            self.wrap_everything(
+                                value,
+                                device,
+                                compute_dtype=compute_dtype,
+                                dtype_nocast=dtype_nocast,
+                            )
+                        )
                     elif isinstance(value, np.ndarray):
-                        tensor = torch.from_numpy(value).to(device)
-                        inputs_list.append(tensor)
+                        inputs_list.append(
+                            self.wrap_everything(
+                                torch.from_numpy(value),
+                                device,
+                                compute_dtype=compute_dtype,
+                                dtype_nocast=dtype_nocast,
+                            )
+                        )
                     else:
                         inputs_list.append(value)
+                    self.maybe_retain_and_zero_grad(inputs_list[-1], train)
                 prev_addr = self.get_addr_list_of_args(inputs_list)
                 reduce = cur_func(*inputs_list)
                 post_addr = self.get_addr_list_of_args(inputs_list)
                 assert (
                     prev_addr == post_addr
                 ), "The position of tensor should not be changed"
+                if train:
+                    self.run_backward(reduce)
+                    self.save_gradients(inputs_list, grad)
             elif isinstance(inputs, dict):
+                inputs_dict = {}
                 for k in inputs:
+                    dtype_nocast = dtype_nocast_map.get(k, False)
                     if isinstance(inputs[k], torch.Tensor):
-                        inputs[k] = inputs[k].to(device)
-                    if isinstance(inputs[k], np.ndarray):
-                        inputs[k] = torch.from_numpy(inputs[k]).to(device)
-                    if train and inputs[k].requires_grad:
-                        inputs[k].retain_grad()
-                        if inputs[k].grad is not None:
-                            inputs[k].grad.zero_()
-                # For models with learnable parameters such as nn.Conv2d, it is necessary to
-                # ensure that the model's parameters are consistent when performing calculations
-                # on CPU and MUSA respectively, so we use same seed here.
-                self.set_random_seed()
-                prev_addr = self.get_addr_list_of_args(input_args)
-                func = cur_func(**input_args)
-                post_addr = self.get_addr_list_of_args(input_args)
+                        inputs_dict[k] = self.wrap_everything(
+                            inputs[k],
+                            device,
+                            compute_dtype=compute_dtype,
+                            dtype_nocast=dtype_nocast,
+                        )
+                    elif isinstance(inputs[k], np.ndarray):
+                        inputs_dict[k] = self.wrap_everything(
+                            torch.from_numpy(inputs[k]),
+                            device,
+                            compute_dtype=compute_dtype,
+                            dtype_nocast=dtype_nocast,
+                        )
+                    else:
+                        inputs_dict[k] = inputs[k]
+                    self.maybe_retain_and_zero_grad(inputs_dict[k], train)
+                if inspect.isclass(cur_func):
+                    # For models with learnable parameters such as nn.Conv2d, it is necessary to
+                    # ensure that the model's parameters are consistent when performing calculations
+                    # on CPU and MUSA respectively, so we use same seed here.
+                    self.set_random_seed()
+                    # prev_addr = self.get_addr_list_of_args(input_args)
+                    cur_func = cur_func(**input_args)
+                    cur_func = self.wrap_everything(
+                        cur_func, device, compute_dtype=compute_dtype
+                    )
+                    if isinstance(cur_func, torch.nn.Module):
+                        # For example, if func is nn.Conv2d, the test_dtype must be specified
+                        if any(p is not None for p in cur_func.parameters()):
+                            assert self._test_dtype is not None
+                self.maybe_retain_and_zero_nn_modules_grad(cur_func, train)
+                prev_addr = self.get_addr_list_of_args(inputs_dict)
+                reduce = cur_func(**inputs_dict)
+                post_addr = self.get_addr_list_of_args(inputs_dict)
                 assert (
                     prev_addr == post_addr
                 ), "The position of tensor should not be changed"
-                func.to(device)
-                reduce = func(**inputs)
+
                 if train:
-                    if isinstance(reduce, (list, tuple)):
-                        reduce = reduce[0]
-                    reduce.sum().backward()
-                    for _, val in inputs.items():
-                        if val.requires_grad:
-                            grad.append(val.grad.cpu())
+                    self.run_backward(reduce)
+                    self.save_gradients(inputs_dict, grad)
             else:
+                dtype_nocast = dtype_nocast_map.get(0, False)
                 if isinstance(inputs, torch.Tensor):
-                    inputs = inputs.to(device)
+                    inputs = self.wrap_everything(
+                        inputs,
+                        device,
+                        compute_dtype=compute_dtype,
+                        dtype_nocast=dtype_nocast,
+                    )
                 if isinstance(inputs, np.ndarray):
-                    inputs = torch.from_numpy(inputs).to(device)
+                    inputs = self.wrap_everything(
+                        torch.from_numpy(inputs),
+                        device,
+                        compute_dtype=compute_dtype,
+                        dtype_nocast=dtype_nocast,
+                    )
                 prev_addr = inputs.data_ptr()
                 reduce = cur_func(inputs)
                 post_addr = inputs.data_ptr()
                 assert (
                     prev_addr == post_addr
                 ), "The position of tensor should not be changed"
-            for k in input_args:
-                if (
-                    train
-                    and isinstance(input_args[k], torch.Tensor)
-                    and input_args[k].requires_grad
-                ):
-                    grad.append(input_args[k].grad.cpu())
+                if train:
+                    self.run_backward(reduce)
+                    self.save_gradients(inputs, grad)
+
+            if train and isinstance(cur_func, torch.nn.Module):
+                # also save weights' gradient of nn.Module
+                for _, param in cur_func.named_parameters():
+                    self.save_gradients(param, grad)
 
             if isinstance(reduce, (tuple, list)):
                 for val in reduce:
-                    res.append(val.to("cpu"))
+                    if val is not None:
+                        # skip None result
+                        res.append(val.to("cpu"))
             elif isinstance(reduce, bool):
                 res.append(reduce)
             else:
@@ -483,16 +644,17 @@ class OpTest:
                     res.append(_complex_musa_to_cpu_adjust(reduce))
                 else:
                     res.append(reduce.to("cpu"))
-            if test_out and "out" in input_args:
-                res.append(input_args["out"].to("cpu"))
             for i in grad:
                 res.append(i.clone())
+            if test_out:
+                # add result of test_out at the tail of res, cpu result as golden value
+                res.append(old_out_tensor_ptr == new_out_tensor_ptr)
             return res
 
     def compare_res(self, res1, res2):
         for i, (m_r, c_r) in enumerate(zip(res1, res2)):
             if isinstance(m_r, bool):
-                assert m_r == c_r
+                assert m_r == c_r, f"compare failed at the {i + 1}-th comparasion"
                 return
             if self._ignored_result_indices and i in self._ignored_result_indices:
                 continue
@@ -520,28 +682,100 @@ class OpTest:
 
                 assert res, info_str
 
-    def check_musafp16_vs_musafp16(self, inputs=None, train=False, test_out=False):
+    def test_low_vs_high_dec(low_dtype):  # pylint: disable=no-self-argument
+        # When testing op using different precision, we first cast tensor into
+        # low_dtype, which ensures that there is no precision errors in the op'input.
+        def wrapper(func):
+            @wraps(func)
+            def inner_func(self, *args, **kwargs):
+                # self._test_low_vs_high = compute_dtype is not None
+                # but for more readable, add _test_low_vs_high flag anyway
+                self._test_low_vs_high = True
+                origin_test_dtype = self._test_dtype
+                self._test_dtype = low_dtype
+                func(self, *args, **kwargs)
+                self._test_dtype = origin_test_dtype
+                self._test_low_vs_high = False
+
+            return inner_func
+
+        return wrapper
+
+    def check_musafp16_vs_musafp16(
+        self, inputs=None, train=False, test_out=False, **kwargs
+    ):
         """
         Compare results of ref_func and func.
         This are designed for some ops could be validated by compositing small ops like SDP.
         """
         fp16_ref_res = self._call_func(
-            inputs, "musa", train, test_out, refer=True, fp16=True
+            inputs,
+            "musa",
+            train,
+            test_out,
+            refer=True,
+            compute_dtype=torch.float16,
+            **kwargs,
         )
-        fp16_comp_res = self._call_func(inputs, "musa", train, test_out, fp16=True)
+        fp16_comp_res = self._call_func(
+            inputs, "musa", train, test_out, compute_dtype=torch.float16, **kwargs
+        )
         self.compare_res(fp16_ref_res, fp16_comp_res)
 
-    def check_musafp16_vs_musafp32(self, inputs=None, train=False, test_out=False):
-        fp32_res = self._call_func(inputs, "musa", train, test_out, refer=True)
-        fp16_res = self._call_func(inputs, "musa", train, test_out, True)
+    # pylint: disable=redundant-keyword-arg
+    @test_low_vs_high_dec(low_dtype=torch.float16)
+    def check_musafp16_vs_musafp32(
+        self, inputs=None, train=False, test_out=False, **kwargs
+    ):
+        fp32_res = self._call_func(
+            inputs,
+            "musa",
+            train,
+            test_out,
+            refer=True,
+            compute_dtype=torch.float32,
+            **kwargs,
+        )
+        fp16_res = self._call_func(
+            inputs, "musa", train, test_out, compute_dtype=torch.float16, **kwargs
+        )
         self.compare_res(fp32_res, fp16_res)
 
-    def check_musabf16_vs_musafp16(self, inputs=None, train=False, test_out=False):
+    @test_low_vs_high_dec(low_dtype=torch.bfloat16)
+    def check_musabf16_vs_musafp16(
+        self, inputs=None, train=False, test_out=False, **kwargs
+    ):
         fp16_res = self._call_func(
-            inputs, "musa", train, test_out, refer=True, fp16=True
+            inputs,
+            "musa",
+            train,
+            test_out,
+            refer=True,
+            compute_dtype=torch.float16,
+            **kwargs,
         )
-        bf16_res = self._call_func(inputs, "musa", train, test_out, bf16=True)
+        bf16_res = self._call_func(
+            inputs, "musa", train, test_out, compute_dtype=torch.bfloat16, **kwargs
+        )
         self.compare_res(fp16_res, bf16_res)
+
+    @test_low_vs_high_dec(low_dtype=torch.float16)
+    def check_musafp16_vs_cpufp32(
+        self, inputs=None, train=False, test_out=False, **kwargs
+    ):
+        fp32_res = self._call_func(
+            inputs,
+            "cpu",
+            train,
+            test_out,
+            refer=True,
+            compute_dtype=torch.float32,
+            **kwargs,
+        )
+        fp16_res = self._call_func(
+            inputs, "musa", train, test_out, compute_dtype=torch.float16, **kwargs
+        )
+        self.compare_res(fp32_res, fp16_res)
 
     def check_result(self, inputs=None, train=False, test_out=False, **kwargs):
         """Run op and compare computing results.
@@ -551,6 +785,7 @@ class OpTest:
             test_out (bool): Whether to test op in out-of-place.
             kwargs: other arguments may be needed.
         """
+        # with torch.set_grad_enabled(train):
         cpu_res = self._call_func(inputs, "cpu", train, test_out, refer=True, **kwargs)
         mtgpu_res = self._call_func(inputs, "musa", train, test_out, **kwargs)
         self.compare_res(cpu_res, mtgpu_res)
@@ -705,8 +940,11 @@ class OpTest:
                 cpu_normal_input_args[k], torch.Tensor
             ) and cpu_normal_input_args[k].dtype in (torch.float16, torch.bfloat16):
                 cpu_normal_input_args[k] = cpu_normal_input_args[k].to(torch.float32)
-        musa_output = cur_func(**musa_normal_input_args)
-        cpu_output = cur_func(**cpu_normal_input_args)
+        # cur_func might be nn.Module
+        musa_output = self.wrap_everything(cur_func, "musa")(**musa_normal_input_args)
+        cpu_output = self.wrap_everything(cur_func, "cpu", torch.float32)(
+            **cpu_normal_input_args
+        )
         if hasattr(musa_output, "grad_fn"):
             assert id(musa_output.grad_fn.__class__) == id(
                 cpu_output.grad_fn.__class__

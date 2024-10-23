@@ -8,6 +8,9 @@ import importlib
 from typing import Set, Type
 
 import torch
+from torch.distributed.fsdp import (
+    sharded_grad_scaler,
+)  # load sharded_grad_scaler explicitly
 from packaging.version import Version
 
 try:
@@ -23,7 +26,7 @@ if Version(TORCH_VERSION) < TORCH_MIN_VERSION:
         " but now torch version is " + torch.__version__,
     )
 
-if "2.0.0" not in torch.__version__:
+if "2.2.0" not in torch.__version__:
     warnings.warn(
         "torch version should be v2.0.0 when using torch_musa, but now torch version is "
         + torch.__version__,
@@ -57,6 +60,8 @@ torch.__setattr__("profiler", sys.modules["torch.profiler"])
 
 setattr(torch._C._autograd.DeviceType, "MUSA", 1)
 setattr(torch._C._profiler.ProfilerActivity, "MUSA", 1)
+
+from torch_musa.distributed import _apply_distributed_patch
 
 from .core.device import (
     Device as device,
@@ -122,9 +127,11 @@ from .core.memory import (
     _dump_snapshot,
 )
 
-from .core._lazy_init import _lazy_init, _initialized
+from .core._lazy_init import _lazy_init, _initialized, _is_in_bad_fork
 
 from .core.random import *
+
+torch.random.fork_rng = fork_rng
 
 from .core.mudnn import *
 
@@ -159,6 +166,32 @@ def set_attributes():
 
 
 set_attributes()
+
+
+def _apply_storage_patch():
+    # keep consistent with CUDA
+    # releated PR: https://github.com/pytorch/pytorch/pull/99882
+    def untyped_storage_resize_(self, size):
+        torch_musa._MUSAC._musa_storage_resize_(self, size)
+
+    # TODO: check code on pybind side
+    # torch.UntypedStorage.resize_ = torch_musa._MUSAC._musa_storage_resize_
+    torch.UntypedStorage.resize_ = untyped_storage_resize_
+
+
+def _apply_sharded_grad_scaler_patch():
+    torch.distributed.fsdp.sharded_grad_scaler.ShardedGradScaler = (
+        torch_musa.distributed.fsdp.ShardedGradScaler
+    )
+
+
+def _apply_patches():
+    _apply_distributed_patch()
+    _apply_storage_patch()
+    _apply_sharded_grad_scaler_patch()
+
+
+_apply_patches()
 
 
 def ipc_collect():

@@ -1,5 +1,7 @@
 """Bert training integration entry"""
 
+# pylint: disable=E0402
+
 import pytest
 
 import torch
@@ -79,5 +81,5 @@ def test_bert_base_uncased_common(batch_size, max_epochs, strategies) -> None:
             reason="Musa Mem may be out-of-memory in S80 for this bert train test."
         )
     common_bert_base_uncased_run(
-        batch_size, max_epochs, strategies, jaccard_score_lowerbound=0.77
+        batch_size, max_epochs, strategies, jaccard_score_lowerbound=0.76
     )

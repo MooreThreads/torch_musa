@@ -26,7 +26,7 @@ namespace musa {
 static Tensor& FillOutQuantized(Tensor& self, const Scalar& value) {
   at::Tensor out = at::ones(self.sizes()).to(kFloat) * value;
   out = out.to(self.device()).to(self.suggest_memory_format());
-  // TODO(@songlin): Fix copy_ error of musa quantized tensor
+  // TODO(@fan.mo): Fix copy_ error of musa quantized tensor
   self = QTensorCopy(self, out);
   return self;
 }

@@ -15,7 +15,6 @@
 #include <ATen/ops/_convolution_mode.h>
 #include <ATen/ops/_convolution_mode_native.h>
 #include <ATen/ops/_convolution_native.h>
-#include <ATen/ops/_slow_conv2d_backward.h>
 #include <ATen/ops/_unsafe_view.h>
 #include <ATen/ops/cat.h>
 #include <ATen/ops/constant_pad_nd.h>
@@ -36,20 +35,8 @@
 #include <ATen/ops/empty.h>
 #include <ATen/ops/empty_like.h>
 #include <ATen/ops/empty_native.h>
-#include <ATen/ops/miopen_convolution.h>
-#include <ATen/ops/miopen_convolution_transpose.h>
-#include <ATen/ops/miopen_depthwise_convolution.h>
-#include <ATen/ops/mkldnn_convolution.h>
-#include <ATen/ops/mps_convolution_backward.h>
-#include <ATen/ops/mps_convolution_transpose_backward.h>
 #include <ATen/ops/pad.h>
-#include <ATen/ops/slow_conv3d.h>
-#include <ATen/ops/slow_conv_dilated2d.h>
-#include <ATen/ops/slow_conv_dilated3d.h>
-#include <ATen/ops/slow_conv_transpose2d.h>
-#include <ATen/ops/slow_conv_transpose3d.h>
 #include <ATen/ops/sum.h>
-#include <ATen/ops/thnn_conv2d.h>
 #include <ATen/ops/view_as_real.h>
 #include <ATen/ops/zeros.h>
 #include <ATen/ops/zeros_like.h>
@@ -62,63 +49,6 @@
 
 namespace at {
 namespace musa {
-
-void Conv2dShapeCheck(
-    const Tensor& input,
-    const Tensor& weight,
-    IntArrayRef padding,
-    int64_t groups) {
-  // Check dimension
-  TORCH_CHECK(
-      input.dim() == 4 && weight.dim() == 4,
-      "Expected 4D for input and weight tensor");
-
-  auto input_shape = input.sizes();
-  auto weight_shape = weight.sizes();
-
-  int64_t exactinput_height = input_shape[2] + 2 * padding[0];
-  int64_t exactinput_width = input_shape[3] + 2 * padding[1];
-
-  // Check input shape
-  TORCH_CHECK(
-      exactinput_height >= weight_shape[2] &&
-          exactinput_width >= weight_shape[3],
-      "input tensor should be greater than weight tensor!");
-  // Check channel
-  TORCH_CHECK(
-      input_shape[1] / groups == weight_shape[1],
-      "input.shape[1] should be the same with weight.shape[1]");
-}
-
-void Conv3dShapeCheck(
-    const Tensor& input,
-    const Tensor& weight,
-    IntArrayRef padding,
-    int64_t groups) {
-  // Check dimension
-  TORCH_CHECK(
-      input.dim() == 5 && weight.dim() == 5,
-      "Expected 5D for input and weight tensor");
-
-  auto input_shape = input.sizes();
-  auto weight_shape = weight.sizes();
-
-  int64_t exactinput_depth = input_shape[2] + 2 * padding[0];
-  int64_t exactinput_height = input_shape[3] + 2 * padding[1];
-  int64_t exactinput_width = input_shape[4] + 2 * padding[2];
-
-  // Check input shape
-  TORCH_CHECK(
-      exactinput_depth >= weight_shape[2] &&
-          exactinput_height >= weight_shape[3] &&
-          exactinput_width >= weight_shape[4],
-      "input tensor should be greater than weight tensor!");
-  // Check channel
-  TORCH_CHECK(
-      input_shape[1] / groups == weight_shape[1],
-      "input.shape[1] should be the same with weight.shape[1]");
-}
-
 void ConfigConv(
     ::musa::dnn::Convolution& c,
     const at::ScalarType& dtype,
@@ -163,7 +93,8 @@ void AddBias(Tensor& out, const Tensor& bias) {
   out.add_(at::native::reshape_bias(out.dim(), bias));
 }
 
-Tensor Conv2d(
+template <int N>
+Tensor ConvNd(
     const Tensor& input,
     const Tensor& weight,
     const c10::optional<Tensor>& bias_opt,
@@ -171,8 +102,12 @@ Tensor Conv2d(
     IntArrayRef padding,
     IntArrayRef dilation,
     int64_t groups) {
+  static_assert(N == 2 || N == 3);
   const auto weight_memory_format = weight.suggest_memory_format();
-  Conv2dShapeCheck(input, weight, padding, groups);
+
+  // There is no need to check shape, see
+  // https://github.com/pytorch/pytorch/blob/39901f229520a5256505ec24782f716ee7ddc843/aten/src/ATen/native/Convolution.cpp#L1515
+
   Tensor contiguous_input = FormatContiguous(input, weight_memory_format);
   Tensor contiguous_weight = FormatContiguous(weight, weight_memory_format);
 
@@ -192,31 +127,47 @@ Tensor Conv2d(
   ::musa::dnn::Convolution c;
   ConfigConv(c, input.scalar_type(), stride, padding, dilation, groups);
 
-  ::musa::dnn::Convolution::FusedActivationDesc act;
-  act.SetMode(::musa::dnn::Convolution::FusedActivationDesc::Mode::IDENTITY);
-
-  ::musa::dnn::Convolution::Algorithm algo =
-      static_cast<::musa::dnn::Convolution::Algorithm>(0);
+  ::musa::dnn::Convolution::Algorithm algo;
   c.GetRecommendForwardAlgorithm(h, algo, out, in, ke);
 
-  at::musa::muTensor bias;
-  if (bias_opt.has_value() && bias_opt.value().numel() != 0) {
-    // FIXME: Will dangling pointer happen here? contiguous_bias may have its
-    // own data area.
-    bias = CreateMUTensor(bias_opt.value().contiguous());
+  if constexpr (N == 2) {
+    ::musa::dnn::Convolution::FusedActivationDesc act;
+    act.SetMode(::musa::dnn::Convolution::FusedActivationDesc::Mode::IDENTITY);
+
+    at::musa::muTensor bias;
+    if (bias_opt.has_value() && bias_opt.value().numel() != 0) {
+      // bias always contiguous ?
+      bias = CreateMUTensor(bias_opt.value());
+    } else {
+      bias = CreateEmptyMUTensor();
+    }
+    muTensor add = at::musa::CreateEmptyMUTensor();
+    CHECK_MUDNN_STATUS(
+        c.RunFusion(h, out, in, ke, bias, add, act, algo, InternalMemAlloc),
+        "RunFusion");
   } else {
-    bias = CreateEmptyMUTensor();
+    // conv3d
+    CHECK_MUDNN_STATUS(c.Run(h, out, in, ke, algo, InternalMemAlloc), "Run");
+    if (bias_opt.has_value()) {
+      AddBias(output, *bias_opt);
+    }
   }
 
-  muTensor add = at::musa::CreateEmptyMUTensor();
-
-  CHECK_MUDNN_STATUS(
-      c.RunFusion(h, out, in, ke, bias, add, act, algo, InternalMemAlloc),
-      "RunFusion");
   return output;
 }
 
-Tensor Conv2dTransposeImpl(
+template <int ND>
+Tensor ConvDataBwd(
+    const Tensor&,
+    const Tensor&,
+    IntArrayRef,
+    IntArrayRef,
+    IntArrayRef,
+    int64_t,
+    IntArrayRef);
+
+template <int ND>
+Tensor ConvTransposeImpl(
     const Tensor& grad_output,
     const Tensor& weight,
     IntArrayRef stride,
@@ -224,7 +175,6 @@ Tensor Conv2dTransposeImpl(
     IntArrayRef output_padding,
     int64_t groups,
     IntArrayRef dilation) {
-  const auto weight_memory_format = weight.suggest_memory_format();
   auto input_size = at::native::conv_input_size(
       grad_output.sizes(),
       weight.sizes(),
@@ -233,27 +183,13 @@ Tensor Conv2dTransposeImpl(
       stride,
       dilation,
       groups);
-  Tensor contiguous_weight = FormatContiguous(weight, weight_memory_format);
-  Tensor contiguous_grad_output =
-      FormatContiguous(grad_output, weight_memory_format);
-  auto grad_input_t = at::empty(
-      input_size, contiguous_grad_output.options(), weight_memory_format);
-  auto gout = CreateMUTensor(contiguous_grad_output);
-  auto gin = CreateMUTensor(grad_input_t);
-  auto w = CreateMUTensor(contiguous_weight);
 
-  muHandle& h = GetMudnnHandle();
-  ::musa::dnn::Convolution c;
-  ConfigConv(c, weight.scalar_type(), stride, padding, dilation, groups);
-  ::musa::dnn::Convolution::AlgorithmBwdData algo;
-  c.GetRecommendBackwardDataAlgorithm(h, algo, gin, gout, w);
-  CHECK_MUDNN_STATUS(
-      c.RunBwdData(h, gin, gout, w, algo, InternalMemAlloc), "RunBwdData");
-
-  return grad_input_t;
+  return ConvDataBwd<ND>(
+      grad_output, weight, input_size, stride, padding, groups, dilation);
 }
 
-Tensor Conv2dTranspose(
+template <int ND>
+Tensor ConvTranspose(
     const Tensor& grad_output,
     const Tensor& weight,
     const c10::optional<Tensor>& bias_opt,
@@ -262,94 +198,41 @@ Tensor Conv2dTranspose(
     IntArrayRef output_padding,
     int64_t groups,
     IntArrayRef dilation) {
-  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(padding.size() == 2UL);
-  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(dilation.size() == 2UL);
-  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(weight.dim() == 4UL);
+  static_assert(ND == 2 || ND == 3);
+  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(padding.size() == ND);
+  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(dilation.size() == ND);
+  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(weight.dim() == (ND + 2));
 
-  const int64_t dilation_h = dilation[0], dilation_w = dilation[1];
-  const int64_t w_r = weight.size(2), w_s = weight.size(3);
-  const int64_t pad_h = padding[0], pad_w = padding[1];
+  std::vector<int64_t> maybe_shrinked_padding(ND);
+  std::vector<int64_t> padding_gap(ND * 2);
+  bool not_shrink_padding = true;
+  for (int i = 0; i < ND; i++) {
+    const auto pad_i_upperbound = dilation[i] * (weight.size(i + 2) - 1);
+    const auto pad_i_gap = std::min<int64_t>(pad_i_upperbound - padding[i], 0);
+    const bool not_shrink_pad_i = (pad_i_gap == 0);
+    maybe_shrinked_padding[i] =
+        (not_shrink_pad_i ? padding[i] : pad_i_upperbound);
+    padding_gap[ND * 2 - 1 - i * 2] = pad_i_gap;
+    padding_gap[ND * 2 - 2 - i * 2] = pad_i_gap;
+    not_shrink_padding = not_shrink_pad_i && not_shrink_padding;
+  }
 
-  const auto pad_h_upperbound = dilation_h * (w_r - 1);
-  const auto pad_h_gap = std::min<int64_t>(pad_h_upperbound - pad_h, 0);
-  const bool not_shrink_pad_h = (pad_h_gap == 0);
-
-  const auto pad_w_upperbound = dilation_w * (w_s - 1);
-  const auto pad_w_gap = std::min<int64_t>(pad_w_upperbound - pad_w, 0);
-  const bool not_shrink_pad_w = (pad_w_gap == 0);
-
-  Tensor grad_input_t = Conv2dTransposeImpl(
+  Tensor grad_input_t = ConvTransposeImpl<ND>(
       grad_output,
       weight,
       stride,
-      {not_shrink_pad_h ? pad_h : pad_h_upperbound,
-       not_shrink_pad_w ? pad_w : pad_w_upperbound},
+      maybe_shrinked_padding,
       output_padding,
       groups,
       dilation);
-  if (C10_UNLIKELY(!(not_shrink_pad_h && not_shrink_pad_w))) {
-    grad_input_t =
-        at::pad(grad_input_t, {pad_w_gap, pad_w_gap, pad_h_gap, pad_h_gap});
-  }
 
+  if (C10_UNLIKELY(!not_shrink_padding)) {
+    grad_input_t = at::pad(grad_input_t, IntArrayRef(padding_gap));
+  }
   if (bias_opt.has_value()) {
     AddBias(grad_input_t, *bias_opt);
   }
   return grad_input_t;
-}
-
-Tensor Conv3d(
-    const Tensor& input,
-    const Tensor& weight,
-    const c10::optional<Tensor>& bias_opt,
-    IntArrayRef stride,
-    IntArrayRef padding,
-    IntArrayRef dilation,
-    int64_t groups) {
-  Conv3dShapeCheck(input, weight, padding, groups);
-
-  const auto weight_memory_format = weight.suggest_memory_format();
-  Tensor contiguous_input = FormatContiguous(input, weight_memory_format);
-  Tensor contiguous_weight = FormatContiguous(weight, weight_memory_format);
-
-  auto input_shape = contiguous_input.sizes();
-  auto weight_shape = contiguous_weight.sizes();
-
-  auto output_size = at::native::conv_output_size(
-      input_shape, weight_shape, padding, stride, dilation);
-  Tensor output =
-      at::empty(output_size, contiguous_input.options(), weight_memory_format);
-
-  auto in = CreateMUTensor(contiguous_input);
-  auto out = CreateMUTensor(output);
-  auto ke = CreateMUTensor(contiguous_weight);
-
-  muHandle& h = GetMudnnHandle();
-  ::musa::dnn::Convolution c;
-  ConfigConv(c, input.scalar_type(), stride, padding, dilation, groups);
-  ::musa::dnn::Convolution::Algorithm algo;
-  c.GetRecommendForwardAlgorithm(h, algo, out, in, ke);
-  if (bias_opt.has_value() && bias_opt.value().numel() != 0) {
-#ifdef ENABLE_FUSION
-    ::musa::dnn::Convolution::FusedActivationDesc fused_desc;
-    muTensor temp_add;
-    auto bias = CreateMUTensor(bias_opt.value().contiguous());
-    CHECK_MUDNN_STATUS(
-        c.RunFusion(
-            h, out, in, ke, bias, temp_add, fused_desc, algo, InternalMemAlloc),
-        "RunFusion");
-#else
-    CHECK_MUDNN_STATUS(
-        c.Run(h, out, in, ke, algo, InternalMemAlloc), "RUNConv");
-    if (bias_opt.has_value()) {
-      AddBias(output, *bias_opt);
-    }
-#endif
-  } else {
-    // conv3d
-    CHECK_MUDNN_STATUS(c.Run(h, out, in, ke, algo, InternalMemAlloc), "Run");
-  }
-  return output;
 }
 
 Tensor Convolution(
@@ -362,14 +245,13 @@ Tensor Convolution(
     bool transposed,
     IntArrayRef output_padding,
     int64_t groups) {
+  // definitely on MUSA device
   TORCH_CHECK(
-      weight.device().type() == kMUSA,
-      "Device of weight tensor of Convolution must be MUSA, ",
-      "but now is ",
-      weight.device());
-  TORCH_CHECK(
-      input.device().type() == kMUSA,
-      "Device of weight tensor of Convolution must be MUSA, but now is",
+      weight.device() == input.device(),
+      "Expected weight tensor and input tensor to be on the same MUSA device, ",
+      "but got weight on ",
+      weight.device(),
+      " and input on ",
       input.device());
   TORCH_CHECK(
       weight.scalar_type() == at::ScalarType::Float ||
@@ -379,19 +261,15 @@ Tensor Convolution(
       "but now it is ",
       weight.scalar_type());
   TORCH_CHECK(
-      input.scalar_type() == at::ScalarType::Float ||
-          input.scalar_type() == at::ScalarType::Half ||
-          input.scalar_type() == at::ScalarType::BFloat16,
-      "Dtype of input tensor of Convolution only support Float32 and Half/BFloat16, ",
-      "but now it is ",
-      input.scalar_type());
-  TORCH_CHECK(
       input.scalar_type() == weight.scalar_type(),
-      "input dtype and weight dtype must be the same");
+      "input dtype and weight dtype must be the same in Convolution");
   c10::musa::MUSAGuard device_guard(input.device());
+
+  // only conv2d and conv3d, 3D tensors have been unsqueezed by native torch
+  // before calling into Convolution
   if (input.dim() == 4 && weight.dim() == 4) {
     return transposed
-        ? Conv2dTranspose(
+        ? ConvTranspose<2>(
               input,
               weight,
               bias_opt,
@@ -400,44 +278,91 @@ Tensor Convolution(
               output_padding,
               groups,
               dilation)
-        : Conv2d(input, weight, bias_opt, stride, padding, dilation, groups);
+        : ConvNd<2>(input, weight, bias_opt, stride, padding, dilation, groups);
   }
-  if (input.dim() == 5 && weight.dim() == 5) {
-    TORCH_CHECK(!transposed, "ConvTranposed3D is not supported on musa");
-    return Conv3d(input, weight, bias_opt, stride, padding, dilation, groups);
-  }
-  auto input_host = input.to("cpu");
-  auto weight_host = weight.to("cpu");
-  c10::optional<Tensor> bias_host;
-  if (bias_opt.has_value() && bias_opt.value().numel() != 0) {
-    bias_host = bias_opt.value().to("cpu");
-  }
-  auto result_host = at::convolution(
-      input_host,
-      weight_host,
-      bias_host,
-      stride,
-      padding,
-      dilation,
-      transposed,
-      output_padding,
-      groups);
-  return result_host.to(input.device());
+  return transposed
+      ? ConvTranspose<3>(
+            input,
+            weight,
+            bias_opt,
+            stride,
+            padding,
+            output_padding,
+            groups,
+            dilation)
+      : ConvNd<3>(input, weight, bias_opt, stride, padding, dilation, groups);
 }
 
-Tensor Conv3dDataBwd(
+static muTensor CreateMUTensorFromNDHWCToDHWCN(
+    const Tensor& out,
+    const Tensor& in) {
+  // called by ConvDataBwd in ChannelsLast3d case
+  // NOTE: The memory format at Torch level makes no sense,
+  // i.e., the out just needs to satisfy a dense layout
+  muTensor in_mu, out_mu;
+
+  SetMUTensorDType(out.scalar_type(), out_mu);
+  SetMUTensorAddr(out.data_ptr(), out_mu);
+  out_mu.SetFormat(muTensor::Format::DHWCN);
+  auto sizes = in.sizes();
+  // desired out's shape and stride:
+  // shape: (sizes[0], sizes[1], sizes[2], sizes[3], sizes[4])
+  // stride: (1,
+  //          sizes[0],
+  //          sizes[0] * sizes[1] * sizes[4] * sizes[3],
+  //          sizes[0] * sizes[1] * sizes[4],
+  //          sizes[0] * sizes[1])
+  int64_t stride_4 = sizes[0] * sizes[1];
+  int64_t stride_3 = stride_4 * sizes[4];
+  int64_t stride_2 = stride_3 * sizes[3];
+
+  out_mu.SetNdInfo(
+      {sizes[2], sizes[3], sizes[4], sizes[1], sizes[0]},
+      {stride_2, stride_3, stride_4, sizes[0], 1});
+
+  SetMUTensorDType(in.scalar_type(), in_mu);
+  SetMUTensorAddr(in.data_ptr(), in_mu);
+  in_mu.SetFormat(muTensor::Format::NDHWC);
+  // desired in's shape and stride:
+  // shape: (sizes[0], sizes[1], sizes[2], sizes[3], sizes[4])
+  // stride: (sizes[1] * sizes[2] * sizes[3] * sizes[4],
+  //          1,
+  //          sizes[1] * sizes[4] * sizes[3],
+  //          sizes[1] * sizes[4],
+  //          sizes[1])
+  stride_3 = sizes[1] * sizes[4];
+  stride_2 = stride_3 * sizes[3];
+  int64_t stride_0 = stride_2 * sizes[2];
+  in_mu.SetNdInfo(
+      {sizes[2], sizes[3], sizes[4], sizes[1], sizes[0]},
+      {stride_2, stride_3, sizes[1], 1, stride_0});
+
+  muHandle& h = GetMudnnHandle();
+  ::musa::dnn::Permute op;
+  CHECK_MUDNN_STATUS(
+      op.Run(h, out_mu, in_mu), "CreateMUTensorFromNDHWCToDHWCN");
+
+  return out_mu;
+}
+
+template <int ND>
+Tensor ConvDataBwd(
     const Tensor& grad_output,
-    const Tensor& input,
     const Tensor& weight,
+    IntArrayRef input_size,
     IntArrayRef stride,
     IntArrayRef padding,
     int64_t groups,
     IntArrayRef dilation) {
-  const MUSAGuard device_guard(grad_output.device());
-  auto grad_input_t = at::empty(input.sizes(), grad_output.options());
+  c10::musa::MUSAGuard device_guard(grad_output.device());
 
-  Tensor contiguous_weight = weight.contiguous();
-  Tensor contiguous_grad_output = grad_output.contiguous();
+  const auto weight_memory_format = weight.suggest_memory_format();
+  Tensor contiguous_weight = FormatContiguous(weight, weight_memory_format);
+
+  Tensor contiguous_grad_output =
+      FormatContiguous(grad_output, weight_memory_format);
+  auto grad_input_t = at::empty(
+      input_size, contiguous_grad_output.options(), weight_memory_format);
 
   auto gout = CreateMUTensor(contiguous_grad_output);
   auto gin = CreateMUTensor(grad_input_t);
@@ -445,7 +370,7 @@ Tensor Conv3dDataBwd(
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Convolution c;
-  ConfigConv(c, input.scalar_type(), stride, padding, dilation, groups);
+  ConfigConv(c, weight.scalar_type(), stride, padding, dilation, groups);
   ::musa::dnn::Convolution::AlgorithmBwdData algo;
   c.GetRecommendBackwardDataAlgorithm(h, algo, gin, gout, w);
   CHECK_MUDNN_STATUS(
@@ -453,29 +378,45 @@ Tensor Conv3dDataBwd(
   return grad_input_t;
 }
 
-Tensor Conv2dDataBwd(
+// Convolution::RunBwdData only support DHWCN format weight in NDHWC case
+// that's why make a template specilization here, we could remove this once
+// NDHWC weight is supported.
+template <>
+Tensor ConvDataBwd<3>(
     const Tensor& grad_output,
-    const Tensor& input,
     const Tensor& weight,
+    IntArrayRef input_size,
     IntArrayRef stride,
     IntArrayRef padding,
     int64_t groups,
     IntArrayRef dilation) {
   c10::musa::MUSAGuard device_guard(grad_output.device());
   const auto weight_memory_format = weight.suggest_memory_format();
-  Tensor contiguous_weight = FormatContiguous(weight, weight_memory_format);
+
+  Tensor contiguous_weight;
+  muTensor w;
+  if (weight_memory_format == MemoryFormat::ChannelsLast3d) {
+    // call FormatContiguous to ensure restride
+    contiguous_weight = at::empty(weight.sizes(), weight.options());
+    w = CreateMUTensorFromNDHWCToDHWCN(
+        contiguous_weight, FormatContiguous(weight, weight_memory_format));
+
+  } else {
+    contiguous_weight = FormatContiguous(weight, weight_memory_format);
+    w = CreateMUTensor(contiguous_weight);
+  }
+
   Tensor contiguous_grad_output =
       FormatContiguous(grad_output, weight_memory_format);
   auto grad_input_t = at::empty(
-      input.sizes(), contiguous_grad_output.options(), weight_memory_format);
+      input_size, contiguous_grad_output.options(), weight_memory_format);
 
   auto gout = CreateMUTensor(contiguous_grad_output);
   auto gin = CreateMUTensor(grad_input_t);
-  auto w = CreateMUTensor(contiguous_weight);
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Convolution c;
-  ConfigConv(c, input.scalar_type(), stride, padding, dilation, groups);
+  ConfigConv(c, weight.scalar_type(), stride, padding, dilation, groups);
   ::musa::dnn::Convolution::AlgorithmBwdData algo;
   c.GetRecommendBackwardDataAlgorithm(h, algo, gin, gout, w);
   CHECK_MUDNN_STATUS(
@@ -483,65 +424,7 @@ Tensor Conv2dDataBwd(
   return grad_input_t;
 }
 
-Tensor Conv1dDataBwd(
-    const Tensor& grad_output,
-    const Tensor& input,
-    const Tensor& weight,
-    IntArrayRef stride,
-    IntArrayRef padding,
-    IntArrayRef output_padding,
-    int64_t groups,
-    IntArrayRef dilation) {
-  Tensor contiguous_input = input.contiguous().unsqueeze(-1);
-  Tensor contiguous_weight = weight.contiguous().unsqueeze(-1);
-  Tensor contiguous_grad_output = grad_output.contiguous().unsqueeze(-1);
-
-  std::vector<int64_t> vstride({stride[0], 1});
-  std::vector<int64_t> vpadding({padding[0], 0});
-  std::vector<int64_t> vdilation({dilation[0], 1});
-  std::vector<int64_t> voutput_padding({output_padding[0], 0});
-  auto result = Conv2dDataBwd(
-      contiguous_grad_output,
-      contiguous_input,
-      contiguous_weight,
-      vstride,
-      vpadding,
-      groups,
-      vdilation);
-  return result.squeeze_(-1);
-}
-
-Tensor Conv3dWeightBwd(
-    const Tensor& grad_output,
-    const Tensor& input,
-    const Tensor& weight,
-    IntArrayRef stride,
-    IntArrayRef padding,
-    int64_t groups,
-    IntArrayRef dilation) {
-  c10::musa::MUSAGuard device_guard(grad_output.device());
-  auto weight_size = weight.sizes();
-  auto grad_weight_t = at::empty(weight_size, grad_output.options());
-
-  Tensor contiguous_input = input.contiguous();
-  Tensor contiguous_grad_output = grad_output.contiguous();
-
-  auto gout = CreateMUTensor(contiguous_grad_output);
-  auto gw = CreateMUTensor(grad_weight_t);
-
-  auto in = CreateMUTensor(contiguous_input);
-
-  muHandle& h = GetMudnnHandle();
-  ::musa::dnn::Convolution c;
-  ConfigConv(c, input.scalar_type(), stride, padding, dilation, groups);
-  ::musa::dnn::Convolution::AlgorithmBwdFilter algo;
-  c.GetRecommendBackwardFilterAlgorithm(h, algo, gw, in, gout);
-  CHECK_MUDNN_STATUS(
-      c.RunBwdFilter(h, gw, in, gout, algo, InternalMemAlloc), "ConvBwdFilter");
-  return grad_weight_t;
-}
-
-Tensor Conv2dWeightBwd(
+Tensor ConvWeightBwd(
     const Tensor& grad_output,
     const Tensor& input,
     const Tensor& weight,
@@ -573,37 +456,8 @@ Tensor Conv2dWeightBwd(
   return grad_weight_t;
 }
 
-Tensor Conv1dWeightBwd(
-    const Tensor& grad_output,
-    const Tensor& input,
-    const Tensor& weight,
-    IntArrayRef stride,
-    IntArrayRef padding,
-    int64_t groups,
-    IntArrayRef dilation) {
-  TORCH_CHECK(
-      weight.dim() == 3 && input.dim() == 3,
-      "Expected 3D for weight tensor and input.");
-
-  Tensor contiguous_input = input.contiguous().unsqueeze(-1);
-  Tensor contiguous_weight = weight.contiguous().unsqueeze(-1);
-  Tensor contiguous_grad_output = grad_output.contiguous().unsqueeze(-1);
-
-  std::vector<int64_t> vstride({stride[0], 1});
-  std::vector<int64_t> vpadding({padding[0], 0});
-  std::vector<int64_t> vdilation({dilation[0], 1});
-  Tensor grad_weight = Conv2dWeightBwd(
-      contiguous_grad_output,
-      contiguous_input,
-      contiguous_weight,
-      vstride,
-      vpadding,
-      groups,
-      vdilation);
-  return grad_weight.squeeze_(-1);
-}
-
-::std::tuple<Tensor, Tensor, Tensor> Convolution2dBwd(
+template <int ND>
+::std::tuple<Tensor, Tensor, Tensor> ConvolutionBwdImpl(
     const Tensor& grad_output,
     const Tensor& input,
     const Tensor& weight,
@@ -612,108 +466,46 @@ Tensor Conv1dWeightBwd(
     IntArrayRef dilation,
     int64_t groups,
     ::std::array<bool, 3> output_mask) {
-  TORCH_CHECK(
-      weight.dim() == 4 && input.dim() == 4,
-      "Expected 4D for weight tensor and input.");
-  Tensor grad_input;
-  Tensor grad_weight;
-  Tensor grad_bias;
+  static_assert(ND == 2 || ND == 3);
+  Tensor grad_input, grad_weight, grad_bias;
+
+  Tensor grad_output_c = grad_output;
+
+  if constexpr (ND == 2) {
+    const auto weight_memory_format = weight.suggest_memory_format();
+    grad_output_c = FormatContiguous(grad_output, weight_memory_format);
+  }
 
   if (output_mask[0]) {
-    grad_input = Conv2dDataBwd(
-        grad_output, input, weight, stride, padding, groups, dilation);
-  }
-
-  if (output_mask[1]) {
-    grad_weight = Conv2dWeightBwd(
-        grad_output, input, weight, stride, padding, groups, dilation);
-  }
-
-  if (output_mask[2]) {
-    grad_bias = at::sum(grad_output, IntArrayRef{0, 2, 3});
-  }
-
-  return std::tuple<Tensor&, Tensor&, Tensor&>{
-      grad_input, grad_weight, grad_bias};
-}
-
-::std::tuple<Tensor, Tensor, Tensor> Convolution3dBwd(
-    const Tensor& grad_output,
-    const Tensor& input,
-    const Tensor& weight,
-    IntArrayRef stride,
-    IntArrayRef padding,
-    IntArrayRef dilation,
-    int64_t groups,
-    ::std::array<bool, 3> output_mask) {
-  TORCH_CHECK(
-      weight.dim() == 5 && input.dim() == 5,
-      "Expected 5D for weight tensor and input.");
-  Tensor grad_input;
-  Tensor grad_weight;
-  Tensor grad_bias;
-
-  if (output_mask[0]) {
-    grad_input = Conv3dDataBwd(
-        grad_output, input, weight, stride, padding, groups, dilation);
-  }
-
-  if (output_mask[1]) {
-    grad_weight = Conv3dWeightBwd(
-        grad_output, input, weight, stride, padding, groups, dilation);
-  }
-
-  if (output_mask[2]) {
-    grad_bias = at::sum(grad_output, IntArrayRef{0, 2, 3, 4});
-  }
-
-  return std::tuple<Tensor&, Tensor&, Tensor&>{
-      grad_input, grad_weight, grad_bias};
-}
-
-::std::tuple<Tensor, Tensor, Tensor> Convolution1dBwd(
-    const Tensor& grad_output,
-    const Tensor& input,
-    const Tensor& weight,
-    IntArrayRef stride,
-    IntArrayRef padding,
-    IntArrayRef dilation,
-    IntArrayRef output_padding,
-    int64_t groups,
-    ::std::array<bool, 3> output_mask) {
-  TORCH_CHECK(
-      weight.dim() == 3 && input.dim() == 3,
-      "Expected 3D for weight tensor and input.");
-  Tensor grad_input;
-  Tensor grad_weight;
-  Tensor grad_bias;
-
-  if (output_mask[0]) {
-    grad_input = Conv1dDataBwd(
-        grad_output,
-        input,
+    grad_input = ConvDataBwd<ND>(
+        grad_output_c,
         weight,
+        input.sizes(),
         stride,
         padding,
-        output_padding,
         groups,
         dilation);
   }
 
   if (output_mask[1]) {
-    grad_weight = Conv1dWeightBwd(
-        grad_output, input, weight, stride, padding, groups, dilation);
+    grad_weight = ConvWeightBwd(
+        grad_output_c, input, weight, stride, padding, groups, dilation);
   }
 
   if (output_mask[2]) {
-    grad_bias = at::sum(grad_output, IntArrayRef{0, 2});
+    if constexpr (ND == 2) {
+      grad_bias = at::sum(grad_output, IntArrayRef{0, 2, 3});
+    } else {
+      grad_bias = at::sum(grad_output, IntArrayRef{0, 2, 3, 4});
+    }
   }
 
   return std::tuple<Tensor&, Tensor&, Tensor&>{
       grad_input, grad_weight, grad_bias};
 }
 
-::std::tuple<Tensor, Tensor, Tensor> Conv2dTransposeBwd(
+template <int N>
+::std::tuple<Tensor, Tensor, Tensor> ConvTransposeBwd(
     const Tensor& grad_output,
     const Tensor& input,
     const Tensor& weight,
@@ -723,25 +515,35 @@ Tensor Conv1dWeightBwd(
     IntArrayRef dilation,
     int64_t groups,
     ::std::array<bool, 3> output_mask) {
-  TORCH_CHECK(
-      weight.dim() == 4 && input.dim() == 4,
-      "Expected 4D for weight tensor and input.");
-  Tensor grad_input;
-  Tensor grad_weight;
-  Tensor grad_bias;
+  static_assert(N == 2 || N == 3);
+  Tensor grad_input, grad_weight, grad_bias;
+
+  const auto weight_memory_format = weight.suggest_memory_format();
+  Tensor grad_output_c = FormatContiguous(grad_output, weight_memory_format);
 
   if (output_mask[0]) {
-    Tensor bias_opt = at::zeros({weight.size(0)}, input.options());
-    grad_input = Conv2d(
-        grad_output, weight, bias_opt, stride, padding, dilation, groups);
+    grad_input = ConvNd<N>(
+        grad_output_c,
+        weight,
+        c10::optional<Tensor>(),
+        stride,
+        padding,
+        dilation,
+        groups);
   }
   if (output_mask[1]) {
-    grad_weight = Conv2dWeightBwd(
-        input, grad_output, weight, stride, padding, groups, dilation);
+    Tensor input_c = FormatContiguous(input, weight_memory_format);
+    grad_weight = ConvWeightBwd(
+        input_c, grad_output_c, weight, stride, padding, groups, dilation);
   }
   if (output_mask[2]) {
-    grad_bias = at::sum(grad_output, IntArrayRef{0, 2, 3});
+    if constexpr (N == 2) {
+      grad_bias = at::sum(grad_output, IntArrayRef{0, 2, 3});
+    } else {
+      grad_bias = at::sum(grad_output, IntArrayRef{0, 2, 3, 4});
+    }
   }
+
   return std::tuple<Tensor&, Tensor&, Tensor&>{
       grad_input, grad_weight, grad_bias};
 }
@@ -757,20 +559,16 @@ Tensor Conv1dWeightBwd(
     IntArrayRef output_padding,
     int64_t groups,
     ::std::array<bool, 3> output_mask) {
+  // definitely on MUSA device
   TORCH_CHECK(
-      weight.device().type() == kMUSA,
-      "Device of weight tensor of Convolution Backward must be MUSA, ",
-      "but now is ",
-      weight.device());
-  TORCH_CHECK(
-      input.device().type() == kMUSA,
-      "Device of weight tensor of Convolution Backward must be MUSA, "
-      "but now is",
-      input.device());
-  TORCH_CHECK(
-      grad_output.device().type() == kMUSA,
-      "Device of grad_output tensor of Convolution Backward must be "
-      "MUSA, but now is",
+      (weight.device() == input.device()) &&
+          (weight.device() == grad_output.device()),
+      "Expected weight tensor, input tensor and grad_output tensor ",
+      "to be on the same MUSA device, but got weight on ",
+      weight.device(),
+      " input on ",
+      input.device(),
+      " and grad_output on ",
       grad_output.device());
   TORCH_CHECK(
       weight.scalar_type() == at::ScalarType::Float ||
@@ -780,34 +578,15 @@ Tensor Conv1dWeightBwd(
       "but now is ",
       weight.scalar_type());
   TORCH_CHECK(
-      input.scalar_type() == at::ScalarType::Float ||
-          input.scalar_type() == at::ScalarType::Half ||
-          input.scalar_type() == at::ScalarType::BFloat16,
-      "Dtype of input tensor of Convolution Backward only support Float32 and Float16/Bfloat16, ",
-      "but now is ",
-      input.scalar_type());
-  TORCH_CHECK(
-      grad_output.scalar_type() == at::ScalarType::Float ||
-          grad_output.scalar_type() == at::ScalarType::Half ||
-          grad_output.scalar_type() == at::ScalarType::BFloat16,
-      "Dtype of grad_output tensor of Convolution Backward only support Float32 and Float16/Bfloat16, ",
-      "but now is ",
-      grad_output.scalar_type());
+      (weight.scalar_type() == input.scalar_type()) &&
+          (weight.scalar_type() == grad_output.scalar_type()),
+      "input's dtype, weight's dtype and grad_output's dtype must be the same in ConvolutionBwd");
   c10::musa::MUSAGuard device_guard(input.device());
 
-  if (input.dim() == 3 && weight.dim() == 3) {
-    return Convolution1dBwd(
-        grad_output,
-        input,
-        weight,
-        stride,
-        padding,
-        dilation,
-        output_padding,
-        groups,
-        output_mask);
-  } else if (input.dim() == 4 && weight.dim() == 4) {
-    return transposed ? Conv2dTransposeBwd(
+  // only conv2d and conv3d, 3D tensors have been unsqueezed by native torch
+  // before calling into ConvolutionBwd
+  if (input.dim() == 4 && weight.dim() == 4) {
+    return transposed ? ConvTransposeBwd<2>(
                             grad_output,
                             input,
                             weight,
@@ -817,7 +596,7 @@ Tensor Conv1dWeightBwd(
                             dilation,
                             groups,
                             output_mask)
-                      : Convolution2dBwd(
+                      : ConvolutionBwdImpl<2>(
                             grad_output,
                             input,
                             weight,
@@ -827,15 +606,25 @@ Tensor Conv1dWeightBwd(
                             groups,
                             output_mask);
   }
-  return Convolution3dBwd(
-      grad_output,
-      input,
-      weight,
-      stride,
-      padding,
-      dilation,
-      groups,
-      output_mask);
+  return transposed ? ConvTransposeBwd<3>(
+                          grad_output,
+                          input,
+                          weight,
+                          stride,
+                          padding,
+                          output_padding,
+                          dilation,
+                          groups,
+                          output_mask)
+                    : ConvolutionBwdImpl<3>(
+                          grad_output,
+                          input,
+                          weight,
+                          stride,
+                          padding,
+                          dilation,
+                          groups,
+                          output_mask);
 }
 
 } // namespace musa

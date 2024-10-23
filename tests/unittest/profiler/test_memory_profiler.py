@@ -67,6 +67,7 @@ class LazyLinear(torch.nn.Module):
 
 class RecordInputOutputDispatchMode(torch.utils._python_dispatch.TorchDispatchMode):
     def __init__(self):
+        super().__init__()
         self.results = []
 
     def mark_region(self, name: str):
@@ -1429,7 +1430,6 @@ class TestMemoryProfilerE2E(TestCase):
             create                     OPTIMIZER_STATE             22(v0)         1024 kB
             create                     OPTIMIZER_STATE             23(v0)         1024 kB
             increment_version          OPTIMIZER_STATE             18(v0)          128 kB
-            increment_version          OPTIMIZER_STATE             18(v1)          128 kB
             increment_version          OPTIMIZER_STATE             19(v0)          128 kB
             increment_version          OPTIMIZER_STATE             19(v1)          128 kB
             create                     ???                         24(v0)          128 kB
@@ -1438,7 +1438,6 @@ class TestMemoryProfilerE2E(TestCase):
             increment_version          ???                         25(v0)          128 kB
             increment_version          PARAMETER                    0(v0)          128 kB
             increment_version          OPTIMIZER_STATE             20(v0)            2 kB
-            increment_version          OPTIMIZER_STATE             20(v1)            2 kB
             increment_version          OPTIMIZER_STATE             21(v0)            2 kB
             increment_version          OPTIMIZER_STATE             21(v1)            2 kB
             create                     ???                         26(v0)            2 kB
@@ -1448,7 +1447,6 @@ class TestMemoryProfilerE2E(TestCase):
             destroy                    ???                         25(v1)          128 kB
             increment_version          PARAMETER                    1(v0)            2 kB
             increment_version          OPTIMIZER_STATE             22(v0)         1024 kB
-            increment_version          OPTIMIZER_STATE             22(v1)         1024 kB
             increment_version          OPTIMIZER_STATE             23(v0)         1024 kB
             increment_version          OPTIMIZER_STATE             23(v1)         1024 kB
             create                     ???                         28(v0)         1024 kB

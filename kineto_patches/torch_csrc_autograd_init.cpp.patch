@@ -1,0 +1,14 @@
+diff --git a/torch/csrc/autograd/init.cpp b/torch/csrc/autograd/init.cpp
+index ce11637..f67f314 100644
+--- a/torch/csrc/autograd/init.cpp
++++ b/torch/csrc/autograd/init.cpp
+@@ -273,6 +273,8 @@ PyObject* THPAutograd_initExtension(PyObject* _unused, PyObject* unused) {
+   m.def("_prepare_profiler", prepareProfiler);
+   m.def("_add_metadata_json", addMetadataJson); // Only if `USE_KINETO` is set
+   m.def("_kineto_step", profilerStep); // Only if `USE_KINETO` is set
++  m.def("_is_prepare_profiler_succeed", isSyncProfilingRunning); // Only if `USE_KINETO` is set
++  m.def("_finish_profiler", setSyncProfilingRunningFalse); // Only if `USE_KINETO` is set
+   m.def("kineto_available", []() { return torch::profiler::kKinetoAvailable; });
+ 
+   // NOTICE: These record functions are not torch operators and may not show up
+

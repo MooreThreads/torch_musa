@@ -1,0 +1,50 @@
+diff --git a/aten/src/ATen/native/musa_unique.cpp b/aten/src/ATen/native/musa_unique.cpp
+new file mode 100644
+index 0000000..8c10384
+--- /dev/null
++++ b/aten/src/ATen/native/musa_unique.cpp
+@@ -0,0 +1,44 @@
++
++
++#ifndef AT_PER_OPERATOR_HEADERS
++#include <ATen/Functions.h>
++#include <ATen/NativeFunctions.h>
++#else
++#include <ATen/ops/gated_silu_native.h>
++#include <ATen/ops/_fused_rmsnorm_forward_native.h>
++#include <ATen/ops/_fused_rmsnorm_backward_native.h>
++#endif
++
++namespace at::native {
++
++namespace {
++
++[[noreturn]] inline void NYI(const char* op_name) {
++  TORCH_CHECK(false, op_name, " only supported in torch_musa.");
++}
++
++} // anonymous namespace
++
++Tensor gated_silu(const Tensor& input) {
++  NYI("gated_silu");
++}
++
++std::tuple<Tensor, Tensor> _fused_rmsnorm_forward(
++    const Tensor& input,
++    IntArrayRef normalized_shape,
++    double eps,
++    const c10::optional<Tensor>& weight) {
++  NYI("_fused_rmsnorm_forward");
++}
++
++std::tuple<Tensor, Tensor> _fused_rmsnorm_backward(
++    const Tensor& grad_out,
++    const Tensor& invvar,
++    const Tensor& input,
++    IntArrayRef normalized_shape,
++    double eps,
++    const c10::optional<Tensor>& weight) {
++  NYI("_fused_rmsnorm_backward");
++}
++
++} // namespace at::native

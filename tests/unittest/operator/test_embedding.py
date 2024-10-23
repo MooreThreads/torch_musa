@@ -60,11 +60,16 @@ def test_embedding(input_shape, weight_dtype, indices_dtype):
         func=torch.nn.Embedding,
         input_args=embedding_args,
         comparators=testing.DefaultComparator(abs_diff=1e-6),
+        test_dtype=weight_dtype,
     )
     if weight_dtype == torch.float32:
-        test.check_result({"input": input_tensor}, train=True)
+        test.check_result(
+            {"input": input_tensor}, train=True, dtype_nocast_map={"input": True}
+        )
     else:
-        test.check_musafp16_vs_musafp32({"input": input_tensor}, train=True)
+        test.check_musafp16_vs_musafp32(
+            {"input": input_tensor}, train=True, dtype_nocast_map={"input": True}
+        )
 
 
 @pytest.mark.skipif(

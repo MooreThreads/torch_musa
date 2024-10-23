@@ -167,8 +167,6 @@ void UnaryCall(
     CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::FLOORDIV), "SetMode");
   } else if (m == BINARY_MODE::TRUNCATEDIV) {
     CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::TRUNCATEDIV), "SetMode");
-  } else if (m == BINARY_MODE::FLOORDIV) {
-    CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::FLOORDIV), "SetMode");
   } else {
     AT_ERROR("Invalid mode for broadcast in Binary");
   }

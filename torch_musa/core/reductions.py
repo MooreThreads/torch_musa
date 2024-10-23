@@ -1,4 +1,5 @@
 """ Add torch musa event to forking pickler."""
+
 from multiprocessing.reduction import ForkingPickler
 import torch
 

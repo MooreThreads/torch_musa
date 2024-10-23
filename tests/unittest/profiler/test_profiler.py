@@ -82,7 +82,7 @@ import pickle
 
 from torch._C._profiler import _ExperimentalConfig, _ExtraFields_PyCall
 
-@unittest.skip(reason="not stable on concurrent environment")
+
 @unittest.skipIf(not HAS_PSUTIL, "Requires psutil to run")
 @unittest.skipIf(TEST_WITH_ASAN, "Cannot test with ASAN")
 @unittest.skipIf(IS_WINDOWS, "Test is flaky on Windows")
@@ -201,12 +201,9 @@ class TestRecordFunction(TestCase):
             if has_iter and has_mux:
                 break
 
-            if (
-                not has_iter
-                and e.name == "enumerate(DataPipe)#IterableWrapperIterDataPipe"
-            ):
+            if not has_iter and "IterableWrapper" in e.name:
                 has_iter = True
-            if not has_mux and e.name == "enumerate(DataPipe)#MultiplexerIterDataPipe":
+            if not has_mux and "Multiplexer" in e.name:
                 has_mux = True
         self.assertTrue(has_iter)
         self.assertTrue(has_mux)
@@ -263,12 +260,9 @@ class TestRecordFunction(TestCase):
             if has_iter and has_child:
                 break
 
-            if (
-                not has_iter
-                and e.name == "enumerate(DataPipe)#IterableWrapperIterDataPipe"
-            ):
+            if not has_iter and "IterableWrapper" in e.name:
                 has_iter = True
-            if not has_child and e.name == "enumerate(DataPipe)#_ChildDataPipe":
+            if not has_child and "_ChildDataPipe" in e.name:
                 has_child = True
         self.assertTrue(has_iter)
         self.assertTrue(has_child)
@@ -356,7 +350,7 @@ class TestExecutionGraph(TestCase):
         found_root_node = False
         for n in nodes:
             assert "name" in n
-            if "[pytorch|profiler|execution_graph|process]" in n["name"]:
+            if "[pytorch|profiler|execution_trace|process]" in n["name"]:
                 found_root_node = True
             if n["name"].startswith("## LOOP "):
                 loop_count += 1
@@ -385,17 +379,17 @@ class TestExecutionGraph(TestCase):
         loop_count = 0
         # Expected tensor object tuple size, in th form of:
         # [tensor_id, storage_id, offset, numel, itemsize, device_str]
-        tensor_tuple_size = 6
+        tensor_tuple_size = 10
         found_root_node = False
         for n in nodes:
             assert "name" in n
-            if "[pytorch|profiler|execution_graph|process]" in n["name"]:
+            if "[pytorch|profiler|execution_trace|process]" in n["name"]:
                 found_root_node = True
             if n["name"].startswith("## LOOP "):
                 loop_count += 1
             # Check if tensor tuple representation size is correct.
             if n["name"] == "## TEST 2 ##":
-                assert len(n["inputs"][3][0]) == tensor_tuple_size
+                assert len(n["inputs"]["shapes"]) == tensor_tuple_size
         assert found_root_node
         assert loop_count == expected_loop_events
 
@@ -428,7 +422,7 @@ class TestExecutionGraph(TestCase):
         found_root_node = False
         for n in nodes:
             assert "name" in n
-            if "[pytorch|profiler|execution_graph|process]" in n["name"]:
+            if "[pytorch|profiler|execution_trace|process]" in n["name"]:
                 found_root_node = True
             if n["name"].startswith("## LOOP "):
                 loop_count += 1
@@ -461,7 +455,7 @@ class TestExecutionGraph(TestCase):
             found_root_node = False
             for n in nodes:
                 assert "name" in n
-                if "[pytorch|profiler|execution_graph|process]" in n["name"]:
+                if "[pytorch|profiler|execution_trace|process]" in n["name"]:
                     assert n["id"] == 1
                     found_root_node = True
                 if n["name"].startswith("## LOOP "):
@@ -480,7 +474,8 @@ class TestExecutionGraph(TestCase):
         nodes = self.get_execution_graph_root(fp.name)
         for n in nodes:
             assert "name" in n
-            if "[pytorch|profiler|execution_graph|process]" in n["name"]:
+            print(n["name"])
+            if "[pytorch|profiler|execution_trace|process]" in n["name"]:
                 found_root_node = True
         assert found_root_node
 
@@ -910,23 +905,6 @@ class TestProfiler(TestCase):
                 allocs=[
                     "aten::rand",
                     "aten::empty",
-                ],
-            )
-
-        if torch._C.has_mkldnn:
-            create_mkldnn_tensor()
-            stats = run_profiler(create_mkldnn_tensor)
-            check_metrics(
-                stats,
-                "cpu_memory_usage",
-                allocs=[
-                    "test_user_scope_alloc",
-                    "aten::rand",
-                    "aten::empty",
-                    "aten::to_mkldnn",
-                ],
-                deallocs=[
-                    "test_user_scope_dealloc",
                 ],
             )
 
@@ -2204,34 +2182,6 @@ class TestTorchTidyProfiler(TestCase):
             [torch.device("cpu"), torch.device("cpu"), None],
         )
 
-    @unittest.skipIf(not torch._C.has_mkldnn, "MKL-DNN build is disabled")
-    def test_mkldnn_tensors(self):
-        x = torch.ones(4, 3).to_mkldnn()
-
-        with profile(with_stack=True, profile_memory=True, record_shapes=True) as p:
-            _ = x + x
-
-        nodes = p.profiler.kineto_results.experimental_event_tree()
-        node = find_node_with_name(nodes, "aten::add")
-        self.assertIsNotNone(node)
-
-        self.assertIsInstance(
-            node.extra_fields, torch._C._profiler._ExtraFields_TorchOp
-        )
-
-        def getattr_inputs(name, default):
-            return [getattr(i, name, default) for i in node.extra_fields.inputs]
-
-        self.assertEqual(getattr_inputs("sizes", []), [[4, 3], [4, 3], []])
-        self.assertEqual(getattr_inputs("strides", []), [[], [], []])
-        self.assertEqual(
-            getattr_inputs("layout", None), [torch._mkldnn, torch._mkldnn, None]
-        )
-        self.assertEqual(
-            getattr_inputs("device", None),
-            [torch.device("cpu"), torch.device("cpu"), None],
-        )
-
     def test_scalar_ins(self):
         x = torch.ones(5, 5)
         alpha = 0.9
@@ -2633,7 +2583,7 @@ class TestExperimentalUtils(TestCase):
 
             kineto_events = [
                 {
-                    "_name": e.name,
+                    "_name": e.name(),
                     "_start_us": e.start_us(),
                     "_duration_us": e.duration_us(),
                     "_linked_correlation_id": e.linked_correlation_id(),
@@ -2652,7 +2602,7 @@ class TestExperimentalUtils(TestCase):
 
             profiler_events = [
                 {
-                    "_name": e.name,
+                    "_name": e.name(),
                     "id": e.id,
                     "start_time_ns": e.start_time_ns,
                     "duration_time_ns": e.duration_time_ns,

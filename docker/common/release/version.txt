@@ -1,0 +1,6 @@
+MUSA:rc3.1.0
+MCCL:rc1.7.0
+MUDNN:rc2.7.0
+TRITON:rc1.0.0
+MUALG:musa-1.12.1
+MUTHRUST:musa-1.12.1

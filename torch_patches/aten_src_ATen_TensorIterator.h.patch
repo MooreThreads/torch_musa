@@ -1,8 +1,8 @@
 diff --git a/aten/src/ATen/TensorIterator.h b/aten/src/ATen/TensorIterator.h
-index 5c5595d..04e67be 100644
+index a7e061770b0..7b2354f0f25 100644
 --- a/aten/src/ATen/TensorIterator.h
 +++ b/aten/src/ATen/TensorIterator.h
-@@ -28,6 +28,10 @@ class OptionalTensorRef;
+@@ -20,6 +20,10 @@ class OptionalTensorRef;
  using NameVector = SmallVector<Dimname, kDimVectorStaticSize>;
  } // namespace at
  
@@ -13,7 +13,7 @@ index 5c5595d..04e67be 100644
  // TensorIterator is a helper class for element-wise operations, such as
  // arithmetic, comparisons, and trigonometric functions. It handles
  // broadcasting and type conversions of operands.
-@@ -225,6 +229,7 @@ enum class FastSetupType : uint8_t {
+@@ -226,6 +230,7 @@ enum class FastSetupType : uint8_t {
    NONE,
    CONTIGUOUS,
    CHANNELS_LAST,
@@ -21,7 +21,7 @@ index 5c5595d..04e67be 100644
    NON_OVERLAPPING_DENSE
  };
  
-@@ -737,6 +742,7 @@ class TORCH_API TensorIteratorConfig final {
+@@ -755,6 +760,7 @@ class TORCH_API TensorIteratorConfig final {
   public:
    friend struct TensorIteratorBase;
    friend struct TensorIterator;

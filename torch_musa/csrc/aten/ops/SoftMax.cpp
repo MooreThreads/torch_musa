@@ -4,6 +4,7 @@
 #include <ATen/NativeFunctions.h>
 #include <ATen/TensorUtils.h>
 #include <ATen/WrapDimUtils.h>
+#include <ATen/native/ReduceOpsUtils.h>
 #include <torch/library.h>
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
@@ -262,6 +263,93 @@ Tensor LogSoftmaxDataBwd(
   Tensor result = at::empty(grad_output.sizes(), grad_output.options());
   LogSoftmaxDataOutBwd(grad_output, output, dim, input_dtype, result);
   return result;
+}
+
+Tensor& LogSumExpOutImpl(Tensor& result, const Tensor& self, IntArrayRef dims) {
+  auto run_logsumexp = [](Tensor& result, const Tensor& self, int dim) {
+    c10::musa::MUSAGuard device_guard(self.device());
+
+    Tensor self_contig = FormatContiguous(self, at::MemoryFormat::Contiguous);
+    Tensor result_contig =
+        FormatContiguous(result, at::MemoryFormat::Contiguous);
+    muHandle& h = GetMudnnHandle();
+    ::musa::dnn::Softmax desc;
+    auto input_m = CreateMUTensor(self_contig);
+    auto output_m = CreateMUTensor(result_contig);
+    CHECK_MUDNN_STATUS(
+        desc.SetMode(::musa::dnn::Softmax::Mode::LOGSUMEXP), "SetMode");
+    CHECK_MUDNN_STATUS(desc.SetDim(dim), "SetDim");
+    CHECK_MUDNN_STATUS(
+        desc.SetAlgorithm(::musa::dnn::Softmax::Algorithm::ACCURATE),
+        "SetAlgorithm");
+    CHECK_MUDNN_STATUS(desc.Run(h, output_m, input_m), "Run");
+    if (!result.is_contiguous()) {
+      result.copy_(result_contig);
+    }
+  };
+
+  if (dims.size() > 1) {
+    Tensor cur_self = self;
+    Tensor cur_result;
+    int dims_size = dims.size();
+    for (int i = 0; i < dims_size; ++i) {
+      DimVector cur_dim({dims[i]});
+      maybe_wrap_dims(cur_dim, self.dim());
+      if (i == (dims_size - 1)) {
+        cur_result = result;
+      } else {
+        auto cur_shape =
+            at::meta::get_reduction_shape(cur_self, cur_dim, /*keepdim=*/true);
+        cur_result = at::empty(
+            cur_shape,
+            result.options().memory_format(at::MemoryFormat::Contiguous));
+      }
+      run_logsumexp(cur_result, cur_self, static_cast<int>(cur_dim[0]));
+      cur_self = cur_result;
+    }
+  } else {
+    run_logsumexp(result, self, static_cast<int>(dims[0]));
+  }
+
+  return result;
+}
+
+Tensor& LogSumExpOut(
+    const Tensor& self,
+    IntArrayRef dims,
+    bool keepdim,
+    Tensor& result) {
+  c10::musa::MUSAGuard device_guard(self.device());
+  TORCH_MUSA_CHECK_FLOATING_TYPES(result.scalar_type(), "LogSumExpOut");
+  namedinference::propagate_names_for_reduction(result, self, dims, keepdim);
+
+  if (at::isIntegralType(self.scalar_type(), /*includeBool=*/true)) {
+    // for integral inputs, promote input to default floating type.
+    auto default_dtype = at::typeMetaToScalarType(c10::get_default_dtype());
+    LogSumExpOutImpl(result, self.to(default_dtype), dims);
+  } else {
+    LogSumExpOutImpl(result, self, dims);
+  }
+
+  return result;
+}
+
+Tensor LogSumExp(const Tensor& self, IntArrayRef dims, bool keepdim) {
+  TensorOptions result_options;
+  DimVector dims_vec(dims);
+  maybe_wrap_dims(dims_vec, self.dim());
+  auto shape = at::meta::get_reduction_shape(self, dims_vec, keepdim);
+
+  if (at::isIntegralType(self.scalar_type(), /*includeBool=*/true)) {
+    // even for integral inputs, result is floating dtype
+    auto default_dtype = at::typeMetaToScalarType(c10::get_default_dtype());
+    result_options = self.options().dtype(default_dtype);
+  } else {
+    result_options = self.options();
+  }
+  auto result = at::empty(
+      shape, result_options.memory_format(at::MemoryFormat::Contiguous));
+  return LogSumExpOut(self, dims_vec, keepdim, result);
 }
 
 } // namespace musa

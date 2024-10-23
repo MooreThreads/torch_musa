@@ -1,8 +1,8 @@
 diff --git a/aten/src/ATen/native/group_norm.cpp b/aten/src/ATen/native/group_norm.cpp
-index f1a15cf..08d7744 100644
+index caa466fa5ba..28ed7020924 100644
 --- a/aten/src/ATen/native/group_norm.cpp
 +++ b/aten/src/ATen/native/group_norm.cpp
-@@ -197,7 +197,7 @@ Tensor group_norm(
+@@ -202,7 +202,7 @@ Tensor group_norm(
  
    const Tensor kEmpty;
    auto memory_format = input.suggest_memory_format();

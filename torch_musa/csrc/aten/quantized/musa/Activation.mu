@@ -169,7 +169,7 @@ at::Tensor ActQuantized(const at::Tensor& self) {
     const int64_t zero_point = self.q_zero_point();
     at::Tensor quantized_output = at::_empty_affine_quantized(
         self.sizes(),
-        at::device(at::kPrivateUse1).dtype(self.scalar_type()),
+        self.options(),
         scale,
         zero_point,
         self.suggest_memory_format());
@@ -195,7 +195,7 @@ at::Tensor ActQuantizedGeLU(
     const int64_t zero_point = self.q_zero_point();
     at::Tensor quantized_output = at::_empty_affine_quantized(
         self.sizes(),
-        at::device(at::kPrivateUse1).dtype(self.scalar_type()),
+        self.options(),
         scale,
         zero_point,
         self.suggest_memory_format());

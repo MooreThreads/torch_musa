@@ -55,6 +55,7 @@ def runner(rank, world_size):
 def train(fn, world_size):
     mp.spawn(fn, args=(world_size,), nprocs=world_size, join=True)
 
+
 @pytest.mark.skipif(
     testing.get_musa_arch() < 22, reason="MCCL not released for qy1 dev3.0.0"
 )

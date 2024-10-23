@@ -25,7 +25,7 @@
 #. 编译PyTorch
 #. 编译torch_musa
 
-torch_musa rc1.2.0是在PyTorch v2.0.0基础上以插件的方式来支持摩尔线程显卡。开发时涉及到对PyTorch源码的修改，目前是以打patch的方式实现的。PyTorch社区正在积极支持第三方后端接入，这个 `issue <https://github.com/pytorch/pytorch/issues/98406>`_ 下有相关PR。我们也在积极向PyTorch社区提交PR，避免在编译过程中向PyTorch打patch。
+torch_musa rc1.3.0是在PyTorch v2.0.0基础上以插件的方式来支持摩尔线程显卡。开发时涉及到对PyTorch源码的修改，目前是以打patch的方式实现的。PyTorch社区正在积极支持第三方后端接入，这个 `issue <https://github.com/pytorch/pytorch/issues/98406>`_ 下有相关PR。我们也在积极向PyTorch社区提交PR，避免在编译过程中向PyTorch打patch。
 
 
 开发Docker
@@ -35,7 +35,7 @@ torch_musa rc1.2.0是在PyTorch v2.0.0基础上以插件的方式来支持摩尔
 
 .. code-block:: bash
 
-  docker run -it --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev:latest /bin/bash
+  docker run -it --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py38:latest /bin/bash
 
 .. attention::
    | 使用docker时，请务必提前安装 `mt-container-toolkit <https://mcconline.mthreads.com/software/1?id=1>`_ ，并且在启动docker container时添加选项“--env MTHREADS_VISIBLE_DEVICES=all”，否则在docker container内部无法使用torch_musa。

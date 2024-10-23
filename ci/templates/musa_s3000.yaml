@@ -31,7 +31,7 @@ spec:
   containers:
   - name: main
     tty: true
-    image: sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py38:dev3.0.0-v1.1.0-qy1
+    image: sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py38:rc3.1.0-v1.3.0-qy1
     imagePullPolicy: Always
     env:
     - name: TARGET_DEVICE
@@ -65,22 +65,3 @@ spec:
     - mountPath: /data/torch_musa_integration/shared
       name: integration-data-shared
       readOnly: true
-  # Container named "release".
-  - name: release
-    image: sh-harbor.mthreads.com/mt-ai/ops/torch_musa_oss_release:latest
-    imagePullPolicy: IfNotPresent
-    tty: true
-    ttyEnabled: true
-    command:
-    - sleep
-    args:
-    - infinity
-    resources:
-      limits:
-        cpu: 300m
-        memory: 300Mi
-    # Mount the volume named "artifacts" to path "/artifacts", readwrite
-    volumeMounts:
-    - mountPath: /artifacts
-      name: artifacts
-      readOnly: false

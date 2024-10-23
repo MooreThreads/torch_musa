@@ -113,20 +113,21 @@ void resize_bytes_musa(StorageImpl* storage, size_t size_bytes) {
   TORCH_CHECK(
       allocator != nullptr, "Trying to resize storage without an allocator");
 
-  auto device = at::musa::current_device();
+  auto device = storage->device();
   if (size_bytes == 0) {
-    storage->set_data_ptr_noswap(
-        at::DataPtr(nullptr, at::Device(at::musa::kMUSA, device)));
+    storage->set_data_ptr_noswap(at::DataPtr(nullptr, device));
     storage->set_nbytes(0);
     return;
   }
 
+  c10::musa::MUSAGuard guard(device.index());
   at::DataPtr data = allocator->allocate(size_bytes);
   if (storage->data_ptr()) {
     // Enable p2p access when the memcpy is across devices
     at::musa::lazyInitMUSA();
-    at::musa::get_p2p_access(device, storage->device().index());
 
+    // Is there cross device copy scenario ?
+    // at::musa::get_p2p_access(device, device.index());
     C10_MUSA_CHECK(musaMemcpyAsync(
         data.get(),
         storage->data(),

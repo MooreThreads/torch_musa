@@ -55,6 +55,10 @@ def function(input_data_, dtype, other_dtype, func):
         comparator = testing.DefaultComparator(
             abs_diff=1, rel_diff=1e-1, equal_nan=True
         )
+    if torch.float16 in (dtype, other_dtype):
+        comparator = testing.DefaultComparator(
+            abs_diff=1e-3, rel_diff=1e-3, equal_nan=True
+        )
     test = testing.OpTest(func=func, input_args=input_data, comparators=comparator)
     # test = testing.OpTest(func=func, input_args=input_data)
     if torch.float16 in (dtype, other_dtype):
@@ -190,6 +194,17 @@ def test_div(input_data, dtype, func):
         test.check_musabf16_vs_musafp16()
         test.check_out_ops(bf16=True)
         test.check_grad_fn(bf16=True)
+    elif func == torch.div and dtype == torch.float16:
+        test = testing.OpTest(
+            func=func,
+            input_args=input_data,
+            comparators=testing.DefaultComparator(
+                abs_diff=1e-1, rel_diff=1e-3, equal_nan=True
+            ),
+        )
+        test.check_musafp16_vs_musafp32()
+        test.check_out_ops(fp16=True)
+        test.check_grad_fn(fp16=True)
     else:
         function(input_data, dtype, dtype, func)
 
@@ -969,3 +984,270 @@ def test_uint_binary_add_sub(input_data, func, dtype):
     test(l_cpu, r_cpu, l_musa, r_musa, func)
     if reverse:
         test(r_cpu, l_cpu, r_musa, l_musa, func)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize(
+    "shape",
+    [
+        {
+            "shape": [128, 128],
+            "uncontig_func": lambda t: t[:64, 64:],
+        },
+    ],
+)
+@pytest.mark.parametrize(
+    "io_types",
+    [
+        [[torch.uint8, torch.int8], [torch.float16, torch.int32, torch.float]],
+        [[torch.int16], [torch.int32, torch.float]],
+        [[torch.int32], [torch.int64]],
+        [[torch.int64], []],
+    ],
+)
+def test_binary_fmod_int(shape, io_types):
+    i_raw = torch.randint(-100, 100, shape["shape"])
+    a_raw = torch.randint(-100, 100, shape["shape"])
+    a_raw[::2, :] = 2
+    a_raw[1::2, :] = -2
+    i_ts, o_ts = io_types
+    u_f = shape["uncontig_func"]
+
+    def do_assert(golden, result):
+        assert golden.dtype == result.dtype
+        assert golden.shape == result.shape
+        assert torch.allclose(golden, result.cpu())
+
+    for i_t in i_ts:
+        cpu_i = i_raw.to(i_t)
+        musa_i = cpu_i.musa()
+
+        cpu_a = a_raw.to(i_t)
+        musa_a = cpu_a.musa()
+
+        cpu_o = cpu_i.fmod(cpu_a)
+        musa_o = musa_i.fmod(musa_a)
+        do_assert(cpu_o, musa_o)
+
+        uncontig_cpu_o = u_f(cpu_i).fmod(u_f(cpu_a))
+        uncontig_musa_o = u_f(musa_i).fmod(u_f(musa_a))
+        do_assert(uncontig_cpu_o, uncontig_musa_o)
+
+        cpu_o.copy_(cpu_i)
+        cpu_o.fmod_(cpu_a)
+        musa_o.copy_(musa_i)
+        musa_o.fmod_(musa_a)
+        do_assert(cpu_o, musa_o)
+
+        for o_t in o_ts:
+            cpu_o.zero_()
+            cpu_o = cpu_o.to(o_t)
+            torch.fmod(cpu_i, cpu_a, out=cpu_o)
+            musa_o.zero_()
+            musa_o = musa_o.to(o_t)
+            torch.fmod(musa_i, musa_a, out=musa_o)
+            do_assert(cpu_o, musa_o)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("shape", [[128, 128]])
+@pytest.mark.parametrize(
+    "io_types",
+    [
+        [[torch.float16], [torch.float]],
+        [[torch.bfloat16], [torch.float]],
+        [[torch.float], []],
+    ],
+)
+def test_binary_fmod_float(shape, io_types):
+    i_raw = torch.empty(shape)
+    i_raw.uniform_(-9.0, 9.0)
+    a_raw = torch.empty(shape)
+    a_raw[::3, :] = 2
+    a_raw[1::3, :] = -2
+    a_raw[2::3, :] = 0
+    i_ts, o_ts = io_types
+
+    def do_assert(golden, result):
+        if result.dtype == torch.bfloat16:
+            assert golden.dtype == result.dtype
+        assert golden.shape == result.shape
+        atol = 2e-5
+        if result.dtype == torch.float16:
+            atol = 2e-3
+        elif result.dtype == torch.bfloat16:
+            atol = 2e-2
+        assert torch.allclose(
+            golden.float(), result.cpu().float(), atol=atol, equal_nan=True
+        )
+
+    for i_t in i_ts:
+        cpu_i = i_raw.to(i_t)
+        musa_i = cpu_i.musa()
+
+        cpu_a = a_raw.to(i_t)
+        musa_a = cpu_a.musa()
+
+        if i_t != torch.bfloat16:
+            cpu_i = cpu_i.float()
+            cpu_a = cpu_a.float()
+
+        cpu_o = cpu_i.fmod(cpu_a)
+        musa_o = musa_i.fmod(musa_a)
+        do_assert(cpu_o, musa_o)
+
+        musa_o.copy_(musa_i)
+        musa_o.fmod_(musa_a)
+        do_assert(cpu_o, musa_o)
+
+        for o_t in o_ts:
+            musa_o.zero_()
+            musa_o = musa_o.to(o_t)
+            torch.fmod(musa_i, musa_a, out=musa_o)
+            do_assert(cpu_o, musa_o)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize(
+    "shape",
+    [
+        {
+            "shape": [128, 128],
+            "uncontig_func": lambda t: t[:64, 64:],
+        },
+    ],
+)
+@pytest.mark.parametrize(
+    "io_types",
+    [
+        [[torch.uint8, torch.int8], [torch.float16, torch.int32, torch.float]],
+        [[torch.int16], [torch.int32, torch.float]],
+        [[torch.int32], [torch.int64]],
+        [[torch.int64], []],
+    ],
+)
+def test_binary_fmin_fmax_int(shape, io_types):
+    i_raw = torch.randint(-100, 100, shape["shape"])
+    a_raw = torch.randint(-100, 100, shape["shape"])
+    a_raw[::2, :] = 2
+    a_raw[1::2, :] = -2
+    i_ts, o_ts = io_types
+    u_f = shape["uncontig_func"]
+
+    def assert_detail(golden, result):
+        assert golden.dtype == result.dtype
+        assert golden.shape == result.shape
+        assert torch.allclose(golden, result.cpu())
+
+    for i_t in i_ts:
+        cpu_i = i_raw.to(i_t)
+        musa_i = cpu_i.musa()
+
+        cpu_a = a_raw.to(i_t)
+        musa_a = cpu_a.musa()
+
+        cpu_o = cpu_i.fmin(cpu_a)
+        musa_o = musa_i.fmin(musa_a)
+        assert_detail(cpu_o, musa_o)
+
+        m_cpu_o = cpu_i.fmax(cpu_a)
+        m_musa_o = musa_i.fmax(musa_a)
+        assert_detail(m_cpu_o, m_musa_o)
+
+        uncontig_cpu_o = u_f(cpu_i).fmin(u_f(cpu_a))
+        uncontig_musa_o = u_f(musa_i).fmin(u_f(musa_a))
+        assert_detail(uncontig_cpu_o, uncontig_musa_o)
+
+        m_uncontig_cpu_o = u_f(cpu_i).fmax(u_f(cpu_a))
+        m_uncontig_musa_o = u_f(musa_i).fmax(u_f(musa_a))
+        assert_detail(m_uncontig_cpu_o, m_uncontig_musa_o)
+
+        for o_t in o_ts:
+            cpu_o.zero_()
+            cpu_o = cpu_o.to(o_t)
+            torch.fmin(cpu_i, cpu_a, out=cpu_o)
+            musa_o.zero_()
+            musa_o = musa_o.to(o_t)
+            torch.fmin(musa_i, musa_a, out=musa_o)
+            assert_detail(cpu_o, musa_o)
+
+        for o_t in o_ts:
+            cpu_o.zero_()
+            cpu_o = cpu_o.to(o_t)
+            torch.fmax(cpu_i, cpu_a, out=cpu_o)
+            musa_o.zero_()
+            musa_o = musa_o.to(o_t)
+            torch.fmax(musa_i, musa_a, out=musa_o)
+            assert_detail(cpu_o, musa_o)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("shape", [[128, 128]])
+@pytest.mark.parametrize(
+    "io_types",
+    [
+        [[torch.float16], [torch.float]],
+        [[torch.bfloat16], [torch.float]],
+        [[torch.float], []],
+    ],
+)
+def test_binary_fmin_fmax_float(shape, io_types):
+    i_raw = torch.empty(shape)
+    i_raw.uniform_(-9.0, 9.0)
+    a_raw = torch.empty(shape)
+    a_raw[::3, :] = 2
+    a_raw[1::3, :] = -2
+    a_raw[2::3, :] = 0
+    i_ts, o_ts = io_types
+
+    def assert_detail(golden, result):
+        if result.dtype == torch.bfloat16:
+            assert golden.dtype == result.dtype
+        assert golden.shape == result.shape
+        atol = 2e-5
+        if result.dtype == torch.float16:
+            atol = 2e-3
+        elif result.dtype == torch.bfloat16:
+            atol = 2e-2
+        assert torch.allclose(
+            golden.float(), result.cpu().float(), atol=atol, equal_nan=True
+        )
+
+    for i_t in i_ts:
+        cpu_i = i_raw.to(i_t)
+        musa_i = cpu_i.musa()
+
+        cpu_a = a_raw.to(i_t)
+        musa_a = cpu_a.musa()
+
+        if i_t != torch.bfloat16:
+            cpu_i = cpu_i.float()
+            cpu_a = cpu_a.float()
+
+        cpu_o = cpu_i.fmin(cpu_a)
+        musa_o = musa_i.fmin(musa_a)
+        assert_detail(cpu_o, musa_o)
+
+        musa_o.copy_(musa_i)
+        musa_o = musa_o.fmin(musa_a)
+        assert_detail(cpu_o, musa_o)
+
+        m_cpu_o = cpu_i.fmax(cpu_a)
+        m_musa_o = musa_i.fmax(musa_a)
+        assert_detail(m_cpu_o, m_musa_o)
+
+        m_musa_o.copy_(musa_i)
+        m_musa_o = m_musa_o.fmax(musa_a)
+        assert_detail(m_cpu_o, m_musa_o)
+
+        for o_t in o_ts:
+            musa_o.zero_()
+            musa_o = musa_o.to(o_t)
+            torch.fmin(musa_i, musa_a, out=musa_o)
+            assert_detail(cpu_o, musa_o)
+
+        for o_t in o_ts:
+            m_musa_o.zero_()
+            m_musa_o = m_musa_o.to(o_t)
+            torch.fmax(musa_i, musa_a, out=m_musa_o)
+            assert_detail(m_cpu_o, m_musa_o)

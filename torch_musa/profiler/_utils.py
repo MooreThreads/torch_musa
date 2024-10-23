@@ -1,4 +1,5 @@
 """Some common utils function definitions."""
+
 # pylint: disable=invalid-name, missing-class-docstring, missing-function-docstring,
 
 import functools
@@ -62,7 +63,7 @@ class EventKey:
         return self.event.id == other.event.id
 
     def __repr__(self):
-        return f"{self.event.name}"
+        return f"{self.event.name()}"
 
     def intervals_overlap(self, intervals: List[Interval]):
         overlap_time = 0
@@ -126,7 +127,7 @@ class BasicEvaluation:
                 stack.append(child_event)
             assert (
                 EventKey(curr_event) not in self.metrics
-            ), f"Duplicate id: {curr_event.id}, {curr_event.name}"
+            ), f"Duplicate id: {curr_event.id}, {curr_event.name()}"
             self.metrics[EventKey(curr_event)] = EventMetrics(self_time_ns=self_time)
             self.metrics[EventKey(curr_event)].duration_time_ns = (
                 curr_event.duration_time_ns
@@ -167,8 +168,7 @@ class BasicEvaluation:
         for musa_launch_event in musa_launch_events:
             index = index_of_first_match(
                 musa_kernel_events,
-                lambda x, e=musa_launch_event:
-                x.linked_correlation_id()
+                lambda x, e=musa_launch_event: x.linked_correlation_id()
                 == e.linked_correlation_id(),
                 start=last_mapped_kernel,
             )
@@ -202,9 +202,9 @@ class BasicEvaluation:
                 end_time = event.end_time_ns  # type: ignore[attr-defined]
 
             while (
-                    current_kernel_index < len(musa_kernel_events)
-                    and (musa_kernel_events[current_kernel_index].start_us()) * 1000
-                    <= start_time
+                current_kernel_index < len(musa_kernel_events)
+                and (musa_kernel_events[current_kernel_index].start_us()) * 1000
+                <= start_time
             ):
                 current_kernel_index += 1
             current_queue_depth = spawned_kernel_index - current_kernel_index + 1
@@ -358,9 +358,9 @@ def argmax(seq, key=lambda x: x, start=0, end=None):
 
 def source_code_location(event):
     while event is not None:
-        match = re.search(r"\.py\(.*\)", event.name)
+        match = re.search(r"\.py\(.*\)", event.name())
         if match is None:
             event = event.parent
             continue
-        return event.name
+        return event.name()
     return "No source code location found"

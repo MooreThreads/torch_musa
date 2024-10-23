@@ -1,0 +1,13 @@
+diff --git a/torch/functional.py b/torch/functional.py
+index a6c1241..287a2e4 100644
+--- a/torch/functional.py
++++ b/torch/functional.py
+@@ -1595,7 +1595,7 @@ def norm(input, p: Optional[Union[float, str]] = "fro", dim=None, keepdim=False,
+ 
+     # We don't do this for MPS or sparse tensors
+     if input.layout == torch.strided and input.device.type in \
+-            ("cpu", "cuda", "meta", torch.utils.backend_registration._privateuse1_backend_name):
++            ("cpu", "cuda", "meta"):
+         if dim is not None:
+             if isinstance(dim, (int, torch.SymInt)):
+                 _dim = [dim]

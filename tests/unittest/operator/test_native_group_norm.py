@@ -26,7 +26,7 @@ parameter = [
         "num_channels": 6,
     },
     {
-        "data": torch.randn(2, 6, 3, 4, 5).to(memory_format = torch.channels_last_3d),
+        "data": torch.randn(2, 6, 3, 4, 5).to(memory_format=torch.channels_last_3d),
         "num_groups": 3,
         "num_channels": 6,
     },
@@ -55,6 +55,7 @@ def test_native_group_norm(input_dtype, parameter, affine, eps, train):
             "affine": affine,
         },
         comparators=testing.DefaultComparator(abs_diff=1e-5, rel_diff=1e-4),
+        test_dtype=input_dtype,
     )
     test.check_result(
         inputs={

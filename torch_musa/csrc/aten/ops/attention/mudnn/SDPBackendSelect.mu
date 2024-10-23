@@ -8,14 +8,14 @@ namespace at {
 namespace native {
 
 int64_t _fused_sdp_choice_musa(
-    const at::Tensor& query,
-    const at::Tensor& key,
-    const at::Tensor& value,
-    const c10::optional<at::Tensor>& attn_mask,
+    const Tensor& query,
+    const Tensor& key,
+    const Tensor& value,
+    const c10::optional<Tensor>& attn_mask,
     double dropout_p,
-    bool is_causal) {
-  sdp::sdp_params params{
-      query, key, value, attn_mask.has_value(), dropout_p, is_causal};
+    bool is_causal,
+    c10::optional<double> scale) {
+  sdp::sdp_params params{query, key, value, attn_mask, dropout_p, is_causal};
   auto backend = sdp::select_backend(params);
   if (backend == sdp::SDPBackend::error) {
     TORCH_CHECK(

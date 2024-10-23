@@ -121,7 +121,16 @@ def test_addcmul(input_data, dtype, value):
         "tensor2": input_data["tensor2"].to(dtype),
         "value": transform_dtype(dtype, value),
     }
-    test = testing.OpTest(func=torch.addcmul, input_args=input_dict)
+    if dtype == torch.float16:
+        abs_diff, rel_diff = 5e-3, 5e-2
+    elif dtype == torch.bfloat16:
+        abs_diff, rel_diff = 5e-3, 5e-2
+    else:
+        abs_diff, rel_diff = 1e-6, 1e-6
+    comparator = testing.DefaultComparator(abs_diff, rel_diff)
+    test = testing.OpTest(
+        func=torch.addcmul, input_args=input_dict, comparators=comparator
+    )
     if dtype == torch.float16:
         test.check_musafp16_vs_musafp32()
     else:
