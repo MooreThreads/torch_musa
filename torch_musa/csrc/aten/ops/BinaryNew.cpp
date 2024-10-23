@@ -300,6 +300,55 @@ void DivImpl(MusaTensorIterator& iter, const std::string& op_name) {
   }
 }
 
+void FModMeta(
+    MusaTensorIterator& iter,
+    const Tensor& out,
+    const Tensor& lhs,
+    const Tensor& rhs) {
+  InitBinaryIterator(iter, out, lhs, rhs);
+  TensorIteratorConfig config;
+  SetUpBinaryConfig(config);
+  iter.build(config);
+}
+
+void FModImpl(MusaTensorIterator& iter, const std::string& op_name) {
+  // torch disallow (Number input, Tensor other, *, Tensor out) schema.
+  if (iter.is_cpu_scalar(2)) {
+    const auto unary_alpha = iter.input(1).item();
+    UnaryAlphaCall(iter, unary_alpha, UNARY_MODE::TRUNCATEMOD, op_name);
+  } else {
+    BinaryCall(iter, BINARY_MODE::TRUNCATEMOD, op_name);
+  }
+}
+
+#define FOPS_TPL(F_NAME, M_NAME)                        \
+   void F##F_NAME##Meta(                                \
+       MusaTensorIterator& iter,                        \
+       const Tensor& out,                               \
+       const Tensor& lhs,                               \
+       const Tensor& rhs) {                             \
+     InitBinaryIterator(iter, out, lhs, rhs);           \
+     TensorIteratorConfig config;                       \
+     SetUpBinaryConfig(config);                         \
+     iter.build(config);                                \
+   }                                                    \
+   void F##F_NAME##Impl(MusaTensorIterator& iter, const std::string& op_name) { \
+     if (iter.is_cpu_scalar(1)) {                                               \
+       const auto unary_alpha = iter.input(0).item();                           \
+       UnaryAlphaCall(iter, unary_alpha, UNARY_MODE::M_NAME, op_name);          \
+     } else if (iter.is_cpu_scalar(2)) {                                        \
+       const auto unary_alpha = iter.input(1).item();                           \
+       UnaryAlphaCall(iter, unary_alpha, UNARY_MODE::M_NAME, op_name);          \
+     } else {                                                                   \
+       BinaryCall(iter, BINARY_MODE::M_NAME, op_name);                          \
+     }                                                                          \
+   }
+
+   FOPS_TPL(Min, MIN)
+   FOPS_TPL(Max, MAX)
+
+#undef FOPS_TPL
+
 #define GEN_IMPL(TPL, FUNC, META, IMPL) \
   TPL void FUNC(                        \
       MusaTensorIterator& iter,         \
@@ -322,6 +371,9 @@ GEN_IMPL(
     DivMeta<div_mode>,
     DivImpl<div_mode>)
 // clang-format on
+GEN_IMPL(, BinaryFMod, FModMeta, FModImpl)
+GEN_IMPL(, BinaryFMin, FMinMeta, FMinImpl)
+GEN_IMPL(, BinaryFMax, FMaxMeta, FMaxImpl)
 
 #undef GEN_IMPL
 
@@ -403,6 +455,9 @@ GEN_ALPHA_FUNCTION(SubTensor, BinarySub)
 GEN_FUNCTION(MulTensor, BinaryMul)
 GEN_FUNCTION(DivTensor, BinaryDivMode<BINARY_MODE::TRUEDIV>)
 GEN_FUNCTION(FloorDivideTensor, BinaryDivMode<BINARY_MODE::FLOORDIV>)
+GEN_FUNCTION(FModTensor, BinaryFMod)
+GEN_FUNCTION(FMin, BinaryFMin)
+GEN_FUNCTION(FMax, BinaryFMax)
 
 #undef GEN_FUNCTION
 

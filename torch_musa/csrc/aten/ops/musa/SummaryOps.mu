@@ -300,6 +300,75 @@ bool MUSA_tensor_histogram(
 #undef THRESH_NUMBER_BINS_FOR_MULTI_BLOCK_MEM
 
 namespace {
+
+///////////////// bincount /////////////////
+template <typename input_t, typename weights_t>
+Tensor _bincount_musa_template(
+    const Tensor& self,
+    const Tensor& weights,
+    int64_t minlength) {
+  if (minlength < 0) {
+    AT_ERROR("minlength should be >= 0");
+  }
+  if (self.dim() == 1 && self.numel() == 0) {
+    return at::zeros(
+        {minlength},
+        kLong,
+        c10::nullopt /* layout */,
+        DeviceType::PrivateUse1,
+        c10::nullopt /* pin_memory */);
+  }
+  if (self.dim() != 1 ||
+      (!std::is_same<input_t, uint8_t>::value &&
+       *self.min().cpu().data_ptr<input_t>() < 0)) {
+    AT_ERROR("bincount only supports 1-d non-negative integral inputs.");
+  }
+
+  bool has_weights = weights.defined();
+  if (has_weights && (weights.dim() != 1 || weights.size(0) != self.size(0))) {
+    AT_ERROR("weights should be 1-d and have the same length as input");
+  }
+
+  const int64_t nbins =
+      std::max(self.max().item<input_t>() + (int64_t)1, minlength);
+
+  // TODO(@mt-ai): we registrate this kernel with all data types, but
+  // Long would cause MUSA UNKNOWN ERROR, use Int instead. so limit
+  // its maximum value to int32.
+  TORCH_CHECK(
+      nbins <= INT32_MAX,
+      "bincount doesn't support the value exceeding 2147483647 but now it is ",
+      nbins);
+  // we are using acc_type for the bounds, in particular int64_t for integers
+  // in order to avoid overflows (e.g. using 256 bins for dtype uint8)
+  using bounds_t = at::acc_type<input_t, /*is_cuda=*/true>;
+  const bounds_t minvalue = 0;
+  const bounds_t maxvalue = nbins;
+  // alloc output counter on GPU
+  Tensor output;
+  if (has_weights) {
+    output = at::zeros(
+        {nbins},
+        optTypeMetaToScalarType(weights.options().dtype_opt()),
+        weights.options().layout_opt(),
+        weights.options().device_opt(),
+        weights.options().pinned_memory_opt());
+    musa::MUSA_tensor_histogram<weights_t, input_t, true>(
+        output, self, weights, nbins, minvalue, maxvalue);
+  } else {
+    output = at::zeros(
+        {nbins},
+        kInt,
+        c10::nullopt /* layout */,
+        DeviceType::PrivateUse1,
+        c10::nullopt /* pin_memory */);
+    musa::MUSA_tensor_histogram<int32_t, input_t, false>(
+        output, self, weights, nbins, minvalue, maxvalue);
+    return output.to(at::kLong);
+  }
+  return output;
+}
+
 ///////////////// histc /////////////////
 template <typename input_t>
 Tensor _histc_musa_template(
@@ -376,6 +445,23 @@ Tensor& HistcOut(
   at::native::resize_output(result, ret.sizes());
   result.copy_(ret);
   return result;
+}
+
+Tensor Bincount(
+    const Tensor& self,
+    const c10::optional<Tensor>& weights_opt,
+    int64_t minlength) {
+  // See [Note: hacky wrapper removal for optional tensor]
+  c10::MaybeOwned<Tensor> weights_maybe_owned =
+      at::borrow_from_optional_tensor(weights_opt);
+  const Tensor& weights = *weights_maybe_owned;
+
+  // See Note [Writing Nondeterministic Operations]
+  // Nondeterministic because of atomicAdd usage
+  globalContext().alertNotDeterministic("_bincount_musa");
+  return AT_DISPATCH_INTEGRAL_TYPES(self.scalar_type(), "bincount_musa", [&] {
+    return _bincount_musa_template<scalar_t, float>(self, weights, minlength);
+  });
 }
 
 } // namespace musa

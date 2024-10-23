@@ -34,19 +34,26 @@ namespace c10d {
 
 // Environment variable which controls whether we perform a MCCL health check
 // which ensures communicators are healthy at the beginning of init.
-constexpr const char* ENABLE_MCCL_HEALTH_CHECK = "ENABLE_MCCL_HEALTH_CHECK";
+static std::vector<std::string> ENABLE_MCCL_HEALTH_CHECK = {
+    "ENABLE_MCCL_HEALTH_CHECK"};
 
 // Environment variable which controls whether or not wait() is blocking or
 // non-blocking.
-constexpr const char* MCCL_BLOCKING_WAIT = "MCCL_BLOCKING_WAIT";
+static std::vector<std::string> TORCH_MCCL_BLOCKING_WAIT = {
+    "MCCL_BLOCKING_WAIT"};
 
 // Environment variable which controls whether or not we perform Async Error
 // Handling with MCCL.
-constexpr const char* MCCL_ASYNC_ERROR_HANDLING = "MCCL_ASYNC_ERROR_HANDLING";
+static std::vector<std::string> TORCH_MCCL_ASYNC_ERROR_HANDLING = {
+    "MCCL_ASYNC_ERROR_HANDLING"};
 
 // Environment Variable to control whether Desync Debug is enabled.
 // This variable must be set together with MCCL_ASYNC_ERROR_HANDLING.
-constexpr const char* MCCL_DESYNC_DEBUG = "MCCL_DESYNC_DEBUG";
+static std::vector<std::string> TORCH_MCCL_DESYNC_DEBUG = {"MCCL_DESYNC_DEBUG"};
+
+// TODO(tyr): not supported!.
+static std::vector<std::string> TORCH_MCCL_AVOID_RECORD_STREAMS = {
+    "MCCL_AVOID_RECORD_STREAMS"};
 
 enum ErrorHandlingMode { NoHandling = 0, TearDown = 1, CleanUpOnly = 2 };
 constexpr const char* MCCL_BACKEND_NAME = "mccl";
@@ -136,6 +143,9 @@ class TORCH_API ProcessGroupMCCL : public Backend {
     // Clone of blockingWait_ from ProcessGroupMCCL.
     bool blockingWait_ = false;
 
+    // TODO(tyr) same as ProcessGroupMCCL. (Here is WorkMCCL)
+    bool avoidRecordStreams_ = false;
+
     // Clone of opTimeout_ from ProcessGroupMCCL.
     std::chrono::milliseconds opTimeout_;
 
@@ -185,6 +195,8 @@ class TORCH_API ProcessGroupMCCL : public Backend {
 
     // The future returned by getFuture.
     c10::intrusive_ptr<at::ivalue::Future> future_;
+
+    std::shared_ptr<std::vector<at::Tensor>> stashed_for_allocator_safety_;
 
     friend class ProcessGroupMCCL;
   };
@@ -275,7 +287,7 @@ class TORCH_API ProcessGroupMCCL : public Backend {
 
   void startCoalescing() override;
 
-  void endCoalescing(std::vector<c10::intrusive_ptr<Work>>& reqs) override;
+  c10::intrusive_ptr<Work> endCoalescing() override;
 
   c10::intrusive_ptr<Work> broadcast(
       std::vector<at::Tensor>& tensors,
@@ -603,10 +615,12 @@ class TORCH_API ProcessGroupMCCL : public Backend {
   std::set<int> usedDeviceIdxs_;
 
   // Flag to denote if a coalescing groupStart/groupEnd block is active
-  bool coalescing_active_ = false;
+  int coalescing_state_ = 0;
 
   // Stores device indexes for all collectives run inside a coalescing block
   std::vector<std::vector<at::Device>> coalescedDevices_;
+
+  std::vector<std::vector<std::shared_ptr<MCCLComm>>> coalescedComms_;
 
   // map from the key: "group name + pg counter (ID)" to the
   // unique MCCL ID count. This needs to be group and pg specific
@@ -638,6 +652,10 @@ class TORCH_API ProcessGroupMCCL : public Backend {
 
   // Whether or not to enable timeout root cause analysis.
   bool desyncDebug_;
+
+  // Since torch-muse is not fully supported, avoidRecordStreams_ always false.
+  // TODO(tyr): support it with latest MCCL in the future.
+  bool avoidRecordStreams_ = false;
 
   // Set of communicators that this process group has aborted and their
   // mcclUniqueId has been written to the store. We don't need a lock

@@ -89,7 +89,7 @@ if(USE_CCACHE)
     set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}"
         CACHE STRING "CXX compiler launcher")
   else()
-    meassage(STATUS "Could not find ccache. \
+    message(STATUS "Could not find ccache. \
                    Consider installing ccache to speed up compilation.")
   endif()
 endif()

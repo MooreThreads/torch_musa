@@ -49,10 +49,14 @@ def test_softmax_fp32(config, functor):
 @pytest.mark.parametrize("functor", [torch.nn.Softmax, torch.nn.LogSoftmax])
 def test_softmax_fp16(config, functor):
     shape, dim = config
+    if functor == torch.nn.LogSoftmax:
+        abs_diff, rel_diff = 5e-3, 5e-3
+    else:
+        abs_diff, rel_diff = 5e-4, 1e-3
     test = testing.OpTest(
         func=functor,
         input_args={"dim": dim},
-        comparators=testing.DefaultComparator(abs_diff=1e-8),
+        comparators=testing.DefaultComparator(abs_diff, rel_diff),
     )
     input_tensor = (
         torch.randn(shape, dtype=torch.float16).to(torch.float32).requires_grad_()

@@ -23,10 +23,11 @@ bool IsPinnedMusa(const Tensor& self, c10::optional<Device> device) {
   // device to one that already has context, if exists.
   at::OptionalDeviceGuard device_guard;
   auto primary_ctx_device_index = c10::musa::getDeviceIndexWithPrimaryContext();
-  if (primary_ctx_device_index.has_value()) {
-    device_guard.reset_device(
-        at::Device(at::musa::kMUSA, *primary_ctx_device_index));
-  }
+  // device_guard can only be initialized by follow ctx, it must has_value,
+  // or device_guard will call Destructor with invalid property.
+  assert(primary_ctx_device_index.has_value());
+  device_guard.reset_device(
+      at::Device(at::musa::kMUSA, *primary_ctx_device_index));
   musaPointerAttributes attr;
   // We do not believe that MUSA needs mutable access to the data here.
   const void* data = self.storage().data();

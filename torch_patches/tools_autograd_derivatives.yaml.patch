@@ -1,27 +1,28 @@
 diff --git a/tools/autograd/derivatives.yaml b/tools/autograd/derivatives.yaml
-index 1416505..662ea70 100644
+index 2c6886a36cc..c869d2f2a32 100644
 --- a/tools/autograd/derivatives.yaml
 +++ b/tools/autograd/derivatives.yaml
-@@ -2681,6 +2681,14 @@
-   output_differentiability: [True, False, False, False, False]
-   query, key, value: _flash_attention_backward(grad, query, key, value, output, softmax_logsumexp, cum_seq_q, cum_seq_k, max_q, max_k, dropout_p, is_causal, philox_seed, philox_offset)
+@@ -2787,6 +2787,14 @@
+   output_differentiability: [True, False, False, False, False, False]
+   query, key, value, bias: _efficient_attention_backward_symint(grad, query, key, value, bias, output, cu_seqlens_q, cu_seqlens_k, max_seqlen_batch_q, max_seqlen_batch_k, logsumexp, dropout_p, philox_seed, philox_offset, custom_mask_type, bias.requires_grad(), scale)
  
-+- name: _scaled_dot_product_attention_math_musa(Tensor query, Tensor key, Tensor value, Tensor? attn_mask=None, float dropout_p=0.0, bool is_causal=False) -> (Tensor output, Tensor attn_weights, Tensor bwd_reserve)
++- name: _scaled_dot_product_attention_math_musa(Tensor query, Tensor key, Tensor value, Tensor? attn_mask=None, float dropout_p=0.0, bool is_causal=False, *, float? scale=None) -> (Tensor output, Tensor attn_weights, Tensor bwd_reserve)
 +  output_differentiability: [True, False, False]
-+  query, key, value: _scaled_dot_product_attention_math_musa_backward(grad, query, key, value, output, attn_weights, bwd_reserve)
++  query, key, value: _scaled_dot_product_attention_math_musa_backward(grad, query, key, value, output, attn_weights, bwd_reserve, scale)
 +
-+- name: _scaled_dot_product_attention_flash_musa(Tensor query, Tensor key, Tensor value, Tensor? attn_mask=None, float dropout_p=0.0, bool is_causal=False) -> (Tensor output, Tensor logsumexp, Tensor dropout_mask)
++- name: _scaled_dot_product_attention_flash_musa(Tensor query, Tensor key, Tensor value, Tensor? attn_mask=None, float dropout_p=0.0, bool is_causal=False, *, float? scale=None) -> (Tensor output, Tensor logsumexp, Tensor dropout_mask)
 +  output_differentiability: [True, False, False]
-+  query, key, value: _scaled_dot_product_attention_flash_musa_backward(grad, query, key, value, output, logsumexp, dropout_mask, is_causal, attn_mask)
++  query, key, value: _scaled_dot_product_attention_flash_musa_backward(grad, query, key, value, output, logsumexp, dropout_mask, is_causal, attn_mask, scale)
 +
  # fft
  - name: _fft_r2c(Tensor self, int[] dim, int normalization, bool onesided) -> Tensor
    self: fft_r2c_backward(grad, dim, normalization, onesided, self.sym_size(dim.back()))
-@@ -2963,3 +2971,7 @@
- - name: _reshape_copy(Tensor self, SymInt[] size) -> Tensor
-   self: grad.reshape_symint(self.sym_sizes())
-   result: auto_linear
+@@ -3116,3 +3124,7 @@
+ - name: _foreach_norm.Scalar(Tensor[] self, Scalar ord=2) -> Tensor[]
+   self: norm_backward(grads[i], self[i], ord, result[i])
+   result: norm_jvp(self_p, self_t, ord, result[i])
 +
-+- name: rms_norm_forward(Tensor input, int[] normalized_shape, Tensor? weight=None, float eps=1e-05) -> (Tensor output, Tensor invvar)
++- name: _fused_rmsnorm_forward(Tensor input, int[] normalized_shape, float eps, Tensor? weight=None) -> (Tensor output, Tensor invvar)
 +  output_differentiability: [True, False]
-+  input, weight: rms_norm_backward(grad, invvar, input, normalized_shape, weight, eps)
++  input, weight: _fused_rmsnorm_backward(grad, invvar, input, normalized_shape, eps, weight)
+\ No newline at end of file

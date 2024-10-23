@@ -1,5 +1,5 @@
 diff --git a/third_party/kineto.buck.bzl b/third_party/kineto.buck.bzl
-index 623d45c..044c7cf 100644
+index 623d45c0b60..044c7cfaef9 100644
 --- a/third_party/kineto.buck.bzl
 +++ b/third_party/kineto.buck.bzl
 @@ -15,9 +15,9 @@ def define_kineto():

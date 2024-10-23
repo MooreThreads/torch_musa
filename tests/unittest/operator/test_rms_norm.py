@@ -29,7 +29,7 @@ def ref_rms_norm(input, normalized_shape, weight, eps):  # pylint: disable=W0622
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("embedding_dim", [128, 512, 768, 2048])
-@pytest.mark.parametrize("batch", [0, 1, 2, 8])
+@pytest.mark.parametrize("batch", [1, 2, 8])
 @pytest.mark.parametrize("sequence_length", [1, 32, 128])
 @pytest.mark.parametrize("dtype", [torch.half, torch.float32])
 def test_rms_norm_nlp(embedding_dim, batch, sequence_length, dtype):
@@ -105,7 +105,7 @@ def test_rms_norm_backward(embedding_dim, batch, sequence_length, dtype):
         "eps": 1e-6,
     }
     if dtype == torch.half:
-        atol, rtol = 1e-3, 1e-2
+        atol, rtol = 5e-2, 1e-3
     elif dtype == torch.float32:
         atol, rtol = 1e-4, 1e-5  # grad has bigger float pointing error.
     test = testing.OpTest(

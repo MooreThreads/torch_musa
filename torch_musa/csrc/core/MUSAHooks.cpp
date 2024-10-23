@@ -11,24 +11,9 @@ namespace at {
 namespace musa {
 namespace detail {
 
-// Sets the MUSA_MODULE_LOADING environment variable
-// if it's not set by the user.
-void maybe_set_musa_module_loading(const std::string& def_value) {
-  auto value = std::getenv("MUSA_MODULE_LOADING");
-  if (!value) {
-#ifdef _WIN32
-    auto env_var = "MUSA_MODULE_LOADING=" + def_value;
-    _putenv(env_var.c_str());
-#else
-    setenv("MUSA_MODULE_LOADING", def_value.c_str(), 1);
-#endif
-  }
-}
-
 void MUSAHooks::initMUSA() const {
   C10_LOG_API_USAGE_ONCE("torch_musa.init");
   const int64_t num_devices = c10::musa::device_count();
-  maybe_set_musa_module_loading("LAZY");
   c10::musa::MUSACachingAllocator::init(num_devices);
   at::musa::detail::init_p2p_access_cache(num_devices);
 }

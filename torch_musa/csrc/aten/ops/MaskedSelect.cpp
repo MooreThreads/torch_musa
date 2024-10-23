@@ -62,18 +62,17 @@ at::Tensor& MaskedSelectOut(
   }
 
   c10::musa::MUSAGuard device_guard(mask.device());
-
-  auto contiguous_self = (*self_temp).contiguous();
-  auto contiguous_mask = (*mask_temp).contiguous();
-
   c10::MaybeOwned<Tensor> expand_mask, expand_input;
   std::tie(expand_mask, expand_input) =
-      expand_outplace(contiguous_mask, contiguous_self);
+      expand_outplace(*mask_temp, *self_temp);
+  auto contiguous_self = (*expand_input).contiguous();
+  auto contiguous_mask = (*expand_mask).contiguous();
+
   out.resize_({(*expand_input).numel()});
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::MaskedSelect maskedselect_op;
-  auto mt_input = CreateMUTensor(*expand_input);
-  auto mt_mask = CreateMUTensor(*expand_mask);
+  auto mt_input = CreateMUTensor(contiguous_self);
+  auto mt_mask = CreateMUTensor(contiguous_mask);
   auto mt_result = CreateMUTensor(out);
   CHECK_MUDNN_STATUS(
       maskedselect_op.Run(h, mt_result, mt_input, mt_mask, InternalMemAlloc),
@@ -151,6 +150,7 @@ at::Tensor& MaskedScatter(
     return self;
   }
 
+  // TODO(@muDNN): muDNN MaskedScatter doesn't support inplace compute
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::MaskedScatter op;
   auto mt_input = CreateMUTensor(contiguous_self);

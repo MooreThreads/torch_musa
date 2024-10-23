@@ -19,5 +19,21 @@ std::tuple<Tensor, Tensor, Tensor> compute_unique(
     const bool return_counts,
     const bool consecutive);
 
+template <
+    typename policy_t,
+    typename scalar_t,
+    typename equal_t,
+    typename not_equal_t>
+std::tuple<Tensor, Tensor, int64_t> compute_unique(
+    const policy_t& policy,
+    scalar_t* data,
+    int64_t num_inp,
+    const Tensor& sorted_indices,
+    const bool return_inverse,
+    const bool return_counts,
+    TensorOptions options,
+    equal_t equal,
+    not_equal_t not_equal);
+
 } // namespace musa
 } // namespace at

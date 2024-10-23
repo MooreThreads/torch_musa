@@ -1,5 +1,5 @@
 #!/bin/bash --login
-set -x
+set -exo pipefail
 
 LOCAL_DATA_ROOT="/data/torch_musa_integration/local"
 SHARED_DATA_ROOT="/data/torch_musa_integration/shared"
@@ -18,9 +18,6 @@ fi
 
 export INTEGRATION_DATA_ROOT="${SELECTED_DATA_ROOT}"
 
-TEST_REPORT_DIR=build/reports/integration_test
-mkdir -p ${TEST_REPORT_DIR}
-GPU_TYPE=${GPU_TYPE:-S3000}
 # Integration tests
 pytest --last-failed --junitxml=${TEST_REPORT_DIR}/${GPU_TYPE}-resnet-test-failed-results.xml -sv tests/integration/vision/resnet
 pytest --last-failed --junitxml=${TEST_REPORT_DIR}/${GPU_TYPE}-bert-test-failed-results.xml -sv tests/integration/nlp/bert

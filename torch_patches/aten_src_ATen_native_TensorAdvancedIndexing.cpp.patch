@@ -1,8 +1,8 @@
 diff --git a/aten/src/ATen/native/TensorAdvancedIndexing.cpp b/aten/src/ATen/native/TensorAdvancedIndexing.cpp
-index 24ea40652e8..89de5c3b2b0 100644
+index 4ca54863da5..f9ad9e571cd 100644
 --- a/aten/src/ATen/native/TensorAdvancedIndexing.cpp
 +++ b/aten/src/ATen/native/TensorAdvancedIndexing.cpp
-@@ -569,7 +569,8 @@ AdvancedIndex::AdvancedIndex(const Tensor& src, TensorList indices_list)
+@@ -589,7 +589,8 @@ AdvancedIndex::AdvancedIndex(const Tensor& src, TensorList indices_list)
  
    // For CUDA/MPS tensors, force all index tensors to have the same striding to
    // simplify the CUDA/MPS kernel.

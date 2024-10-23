@@ -1,8 +1,17 @@
 diff --git a/torch/distributed/distributed_c10d.py b/torch/distributed/distributed_c10d.py
-index be0006d..4b70c9c 100644
+index 27d7919598f..23b47999995 100644
 --- a/torch/distributed/distributed_c10d.py
 +++ b/torch/distributed/distributed_c10d.py
-@@ -63,6 +63,7 @@ _MPI_AVAILABLE = True
+@@ -50,7 +50,7 @@ __all__ = [
+     'gather', 'gather_object', 'get_backend_config', 'get_backend', 'get_rank',
+     'get_world_size', 'group', 'init_process_group', 'irecv',
+     'is_gloo_available', 'is_initialized', 'is_mpi_available', 'is_backend_available',
+-    'is_nccl_available', 'is_torchelastic_launched', 'is_ucc_available',
++    'is_nccl_available', 'is_mccl_available', 'is_torchelastic_launched', 'is_ucc_available',
+     'isend', 'monitored_barrier', 'new_group', 'new_subgroups',
+     'new_subgroups_by_enumeration', 'recv', 'reduce',
+     'reduce_scatter', 'scatter',
+@@ -67,6 +67,7 @@ _MPI_AVAILABLE = True
  _NCCL_AVAILABLE = True
  _GLOO_AVAILABLE = True
  _UCC_AVAILABLE = True
@@ -10,64 +19,41 @@ index be0006d..4b70c9c 100644
  
  _pickler = pickle.Pickler
  _unpickler = pickle.Unpickler
-@@ -241,6 +242,7 @@ class BackendConfig:
-             self.device_backend_map = {
-                 "cpu": backend_val,
-                 "cuda": backend_val,
-+                "musa": backend_val,
-             }
-         else:
-             # custom backend string in format of "{device_type1}:{backend1},{device_type2}:{backend2}"
-@@ -418,6 +420,8 @@ def _get_pg_device(group: ProcessGroup):
-     """
-     if _check_for_nccl_backend(group):
-         return torch.device("cuda", torch.cuda.current_device())
-+    if _check_for_mccl_backend(group):
-+        return torch.device("musa", torch.musa.current_device())
-     return torch.device("cpu")
- 
- 
-@@ -655,6 +659,11 @@ def is_nccl_available() -> bool:
-     """
+@@ -248,6 +249,8 @@ class Backend:
+         setattr(Backend, name.upper(), name.lower())
+         Backend.backend_list.append(name.lower())
+         if devices is not None:
++            if isinstance(devices, str):
++                devices = [devices]
+             for device in devices:
+                 if device != 'cpu' and device != 'cuda':
+                     Backend.default_device_backend_map[device] = name.lower()
+@@ -914,6 +917,10 @@ def is_nccl_available() -> bool:
+     """Check if the NCCL backend is available."""
      return _NCCL_AVAILABLE
  
 +def is_mccl_available() -> bool:
-+    """
-+    Checks if the MCCL backend is available.
-+    """
++    """Check if the MCCL backend is available."""
 +    return _MCCL_AVAILABLE
++
  
  def is_gloo_available() -> bool:
-     """
-@@ -1969,6 +1978,14 @@ def _check_for_nccl_backend(group):
-         pg.name() == Backend.NCCL
-     )
+     """Check if the Gloo backend is available."""
+@@ -1461,7 +1468,7 @@ def destroy_process_group(group: Optional[ProcessGroup] = None):
+     # alive until all works and hooks are done. The current implementation does the
+     # latter. Therefore, we explicitly call _wait_for_pending_works() here to wait
+     # for the pending hooks to finish.
+-    if pg.name().lower() == "nccl" and pg._has_hooks():
++    if (pg.name().lower() == "nccl" or pg.name().lower() == "mccl") and pg._has_hooks():
+         pg._wait_for_pending_works()
  
-+def _check_for_mccl_backend(group):
-+    pg = group or _get_default_group()
-+    # A BUG of torch here:
-+    # Torch register custom MCCL as Backend.MCCL == "MCCL"
-+    # But Backend.NCCL == 'nccl', thus we have to compare
-+    # the backend by uppper (or lower).
-+    return (is_mccl_available() and
-+            pg.name().upper() == Backend.MCCL.upper())
- 
- @exception_handler
- def all_gather_object(object_list, obj, group=None):
-@@ -3296,11 +3313,11 @@ def barrier(group=GroupMember.WORLD, async_op=False, device_ids=None):
- 
-     opts = BarrierOptions()
-     if device_ids is not None:
--        if get_backend(group) != Backend.NCCL:
--            raise RuntimeError(
--                "Function argument device_ids not supported "
--                "for the selected backend {}".format(get_backend(group))
--            )
-+#        if get_backend(group) != Backend.NCCL:
-+#            raise RuntimeError(
-+#                "Function argument device_ids not supported "
-+#                "for the selected backend {}".format(get_backend(group))
-+#            )
-         if isinstance(device_ids, list):
-             opts.device_ids = device_ids
-         else:
+     if group is None or group == GroupMember.WORLD:
+@@ -1858,7 +1865,7 @@ def batch_isend_irecv(p2p_op_list):
+     _check_p2p_op_list(p2p_op_list)
+     group = p2p_op_list[0].group
+     device = p2p_op_list[0].tensor.device
+-    if device.type == "cuda":
++    if device.type == "cuda" or device.type == "musa":
+         # NCCL style coalescing
+         with _coalescing_manager(group, device, async_ops=True) as cm:
+             for p2p_op in p2p_op_list:

@@ -14,16 +14,16 @@ from warnings import warn
 import torch
 import torch.distributed as dist
 from torch._C._profiler import (
-    _add_execution_graph_observer,
-    _disable_execution_graph_observer,
-    _enable_execution_graph_observer,
+    _add_execution_trace_observer,
+    _disable_execution_trace_observer,
+    _enable_execution_trace_observer,
     _ExperimentalConfig,
-    _remove_execution_graph_observer,
+    _remove_execution_trace_observer,
 )
 from torch.autograd import kineto_available, ProfilerActivity
-from . import _memory_profiler
 
 from ..autograd import profiler as prof
+from ._memory_profiler import MemoryProfile, MemoryProfileTimeline
 
 __all__ = [
     "supported_activities",
@@ -96,6 +96,8 @@ class _KinetoProfile:
         self.with_modules = with_modules
         self.experimental_config = experimental_config
         self.profiler: Optional[prof.profile] = None
+        self.mem_tl: Optional[MemoryProfileTimeline] = None
+        self.use_device = None
 
     def start(self):
         self.prepare_trace()
@@ -226,14 +228,67 @@ class _KinetoProfile:
             "world_size": dist.get_world_size(),
         }
 
-    def _memory_profile(self) -> _memory_profiler.MemoryProfile:
+    def _memory_profile(self) -> MemoryProfile:
         required = ("record_shapes", "profile_memory", "with_stack")
         missing = [f"{i}=True" for i in required if not getattr(self, i)]
         if missing:
             raise ValueError(f"{', '.join(missing)} required for memory profiling.")
 
         assert self.profiler is not None and self.profiler.kineto_results is not None
-        return _memory_profiler.MemoryProfile(self.profiler.kineto_results)
+        return MemoryProfile(self.profiler.kineto_results)
+
+    def export_memory_timeline(self, path: str, device: Optional[str] = None) -> None:
+        """Export memory event information from the profiler collected
+        tree for a given device, and export a timeline plot. There are 3
+        exportable files using ``export_memory_timeline``, each controlled by the
+        ``path``'s suffix.
+
+        - For an HTML compatible plot, use the suffix ``.html``, and a memory timeline
+          plot will be embedded as a PNG file in the HTML file.
+
+        - For plot points consisting of ``[times, [sizes by category]]``, where
+          ``times`` are timestamps and ``sizes`` are memory usage for each category.
+          The memory timeline plot will be saved a JSON (``.json``) or gzipped JSON
+          (``.json.gz``) depending on the suffix.
+
+        - For raw memory points, use the suffix ``.raw.json.gz``. Each raw memory
+          event will consist of ``(timestamp, action, numbytes, category)``, where
+          ``action`` is one of ``[PREEXISTING, CREATE, INCREMENT_VERSION, DESTROY]``,
+          and ``category`` is one of the enums from
+          ``torch.profiler._memory_profiler.Category``.
+
+        Output: Memory timeline written as gzipped JSON, JSON, or HTML.
+        """
+        # Default to device 0, if unset. Fallback on cpu.
+        if device is None and self.use_device and self.use_device != "musa":
+            device = self.use_device + ":0"
+
+        if device is None:
+            device = "musa:0" if torch.musa.is_available() else "cpu"
+
+        # Construct the memory timeline plot data
+        self.mem_tl = MemoryProfileTimeline(self._memory_profile())
+
+        # Depending on the file suffix, save the data as json.gz or json.
+        # For html, we can embed the image into an HTML file.
+        if path.endswith(".html"):
+            self.mem_tl.export_memory_timeline_html(path, device)
+        elif path.endswith(".gz"):
+            # pylint: disable=R1732
+            file_handle = tempfile.NamedTemporaryFile(
+                "w+t", suffix=".json", delete=False
+            )
+            file_handle.close()
+            if path.endswith("raw.json.gz"):
+                self.mem_tl.export_memory_timeline_raw(file_handle.name, device)
+            else:
+                self.mem_tl.export_memory_timeline(file_handle.name, device)
+            with open(file_handle.name, encoding="UTF-8") as fin:
+                with gzip.open(path, "wt") as fout:
+                    fout.writelines(fin)
+            os.remove(file_handle.name)
+        else:
+            self.mem_tl.export_memory_timeline(path, device)
 
 
 class ProfilerAction(Enum):
@@ -446,7 +501,6 @@ class profile(_KinetoProfile):
         # deprecated:
         use_musa: Optional[bool] = None,
     ):
-
         activities_set = set(activities) if activities else supported_activities()
         if use_musa is not None:
             warn("use_musa is deprecated, use activities argument instead")
@@ -631,7 +685,7 @@ class ExecutionGraphObserver:
         """
         if not self._registered:
             self._output_file_path = output_file_path
-            self._registered = _add_execution_graph_observer(output_file_path)
+            self._registered = _add_execution_trace_observer(output_file_path)
 
     def unregister_callback(self):
         """
@@ -639,7 +693,7 @@ class ExecutionGraphObserver:
         """
         if self._registered:
             self.stop()
-            _remove_execution_graph_observer()
+            _remove_execution_trace_observer()
             self._registered = False
 
     @property
@@ -654,7 +708,7 @@ class ExecutionGraphObserver:
         Starts to capture.
         """
         if self._registered and not self._execution_graph_running:
-            _enable_execution_graph_observer()
+            _enable_execution_trace_observer()
             self._execution_graph_running = True
 
     def stop(self):
@@ -662,7 +716,7 @@ class ExecutionGraphObserver:
         Stops to capture.
         """
         if self._execution_graph_running:
-            _disable_execution_graph_observer()
+            _disable_execution_trace_observer()
             self._execution_graph_running = False
 
     def get_output_file_path(self) -> str:

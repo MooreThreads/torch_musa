@@ -859,3 +859,25 @@ def test_get_set_rng_state_all():
     after1 = torch.FloatTensor(100).to("musa:1").normal_()
     assert torch.all(before0 == after0)
     assert torch.all(before1 == after1)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_random_fork_rng():
+    """Testing fork rng state by randperm"""
+    device = "musa"
+    for n in (5, 100, 50000, 100000):
+        for dtype in (torch.long, torch.half, torch.float):
+            if (
+                n > 2049 and dtype == torch.half
+            ):  # Large n for torch.half will raise an exception, do not test here.
+                continue
+            if n > 256 and dtype == torch.long:
+                continue
+            with torch.random.fork_rng():
+                res1 = torch.randperm(n, dtype=dtype, device=device)
+            res2 = torch.empty(0, dtype=dtype, device=device)
+            torch.randperm(n, out=res2, dtype=dtype, device=device)
+            assert torch.all(res1 == res2)
+            assert torch.all(
+                res1.sort().values.long() == torch.arange(n, device=device)
+            )

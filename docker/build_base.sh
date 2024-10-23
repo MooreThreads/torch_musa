@@ -3,18 +3,18 @@
 # pytorch source code and conda environment
 # example: DOCKER_BUILD_DIR=/tmp/torch_musa_base_docker_build \
 #          PYTORCH_REPO_ROOT_PATH=~/tmp \
-#          bash docker/build_base.sh -n pytorch2.0.0 -s ubuntu:20.04
+#          bash docker/build_base.sh -i pytorch2.0.0 -s ubuntu:20.04
 set -e
 
 # Please check https://github.com/pytorch/vision and https://pytorch.org/audio/main/installation.html for the version compatibility
-PYTORCH_TAG="v2.0.0"
-VISION_TAG="v0.15.2"
-AUDIO_TAG="v2.0.1"
+PYTORCH_TAG="v2.2.0"
+VISION_TAG="v0.17.2"
+AUDIO_TAG="v2.2.2"
 
 IMAGE_DOCKER_NAME=NULL
 TAG=latest
 PYTHON_VERSION="3.8"
-OS_NAME=ubuntu:20.04
+OS_NAME=ubuntu:22.04
 
 usage() {
   echo -e "\033[1;32mThis script is used to build base docker image which contains pytorch source code. \033[0m"

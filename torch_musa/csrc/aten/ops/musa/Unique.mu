@@ -27,8 +27,6 @@
 #include <iterator>
 #include <tuple>
 
-#include "torch_musa/csrc/aten/ops/musa/UniqueCub.muh"
-
 namespace at::musa {
 
 namespace {
@@ -78,6 +76,8 @@ std::tuple<Tensor, Tensor, int64_t> compute_unique(
   Tensor counts = at::empty({0}, options);
   int64_t num_out;
   if (!return_counts) {
+    // TODO(@mt-ai, mt-sw): this api would throw `invalid argument` error
+    // we walkaround it by default
     num_out = thrust::unique(policy, data, data + num_inp, equal) - data;
   } else {
     Tensor range = at::arange(0, num_inp + 1, options);
@@ -174,7 +174,7 @@ std::tuple<Tensor, Tensor, Tensor> unique_dim_musa_template(
       num_inp,
       indices,
       return_inverse,
-      return_counts,
+      /*return_counts=*/true,
       options,
       [=] __device__(int64_t a, int64_t b) -> bool {
         for (int64_t i = 0; i < n; ++i) {
@@ -219,7 +219,8 @@ INSTANTIATE_UNIQUE_MUSA_TEMPLATE(int64_t);
 INSTANTIATE_UNIQUE_MUSA_TEMPLATE(int16_t);
 INSTANTIATE_UNIQUE_MUSA_TEMPLATE(bool);
 INSTANTIATE_UNIQUE_MUSA_TEMPLATE(at::Half);
+INSTANTIATE_UNIQUE_MUSA_TEMPLATE(at::BFloat16);
 
-#undef INSTANTIATE
+#undef INSTANTIATE_UNIQUE_MUSA_TEMPLATE
 
 } // namespace at::musa

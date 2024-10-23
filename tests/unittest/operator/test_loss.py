@@ -132,7 +132,9 @@ def test_nll_loss_fp16():
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 def test_binary_cross_entropy():
     input_data = torch.randn(3, 20, 224, 224, requires_grad=True)
-    target_data = torch.randn(3, 20, 224, 224, requires_grad=False)
+    target_data = torch.randint(
+        0, 2, (3, 20, 224, 224), requires_grad=False, dtype=input_data.dtype
+    )
     output_cpu = torch.nn.functional.binary_cross_entropy(
         torch.sigmoid(input_data), target_data
     )

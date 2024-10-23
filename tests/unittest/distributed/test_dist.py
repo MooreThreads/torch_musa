@@ -248,6 +248,7 @@ def _test_function(rank, world_size):
     _test_broadcast_object()
     cleanup()
 
+
 @pytest.mark.skipif(
     testing.get_musa_arch() < 22, reason="MCCL not released for qy1 dev3.0.0"
 )

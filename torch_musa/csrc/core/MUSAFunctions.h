@@ -7,6 +7,8 @@
 namespace c10 {
 namespace musa {
 
+musaError_t GetDevice(int* device);
+
 enum class SyncDebugMode { L_DISABLED = 0, L_WARN, L_ERROR };
 
 void warn_or_error_on_sync();

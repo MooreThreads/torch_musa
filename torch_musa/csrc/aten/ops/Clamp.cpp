@@ -278,7 +278,6 @@ Tensor& ClampTensorOut(
     const c10::optional<Tensor>& max,
     Tensor& output) {
   c10::musa::MUSAGuard device_guard(self.device());
-  // 类型检查
   MUSA_TENSOR_TYPE_CHECK(self);
   const auto self_device = self.device();
   const bool has_min = (min.has_value());
@@ -347,7 +346,6 @@ Tensor ClampTensor(
       self, self.options().memory_format(self.suggest_memory_format()));
 
   ClampTensorOut(self, min, max, output);
-  self.copy_(output);
   return output;
 }
 

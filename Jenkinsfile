@@ -3,7 +3,7 @@ class PodTemplateFiles {
   private Map files = [
     'MThreads GPU S4000': 'ci/templates/musa_s4000.yaml',
     'MThreads GPU S3000': 'ci/templates/musa_s3000.yaml',
-    'MThreads GPU S80': 'ci/templates/musa_s80.yaml',
+    // 'MThreads GPU S80': 'ci/templates/musa_s80.yaml',
   ]
 
   public String getPodTemplateFile(String platform) {
@@ -45,7 +45,7 @@ def cancelPreviousBuilds() {
 pipeline {
   agent {
     kubernetes {
-      yamlFile "${new PodTemplateFiles().getPodTemplateFile('MThreads GPU S3000')}"
+      yamlFile "${new PodTemplateFiles().getPodTemplateFile('MThreads GPU S4000')}"
       defaultContainer 'main'
     }
   }
@@ -105,7 +105,7 @@ pipeline {
           steps {
             container('main') {
               sh 'git config --global --add safe.directory \"*\"'
-              sh '/opt/conda/condabin/conda run -n py38 --no-capture-output /bin/bash tools/lint/pylint.sh'
+              sh '/opt/conda/condabin/conda run -n py38 --no-capture-output pip uninstall torch_musa -y && /bin/bash tools/lint/pylint.sh'
             }
           }
         }
@@ -143,7 +143,9 @@ pipeline {
                   sh 'git config --global url."https://mt-ai-ops:${GITLAB_API_KEY}@sh-code.mthreads.com".insteadOf "https://sh-code.mthreads.com"'
                 }
                 sh 'git config --global --add safe.directory \"*\"'
+                sh 'git config --unset-all core.hooksPath'
                 sh 'pip uninstall torch_musa -y'
+                sh '/bin/bash --login docker/common/release/update_release_all.sh'
                 sh '/bin/bash --login -c "KINETO_URL=https://sh-code.mthreads.com/ai/kineto.git conda run -n py38 --no-capture-output /bin/bash build.sh -c"'
               }
             }
@@ -176,6 +178,12 @@ pipeline {
           }
         }
         stage('s3000 Stable Build & Test') {
+          agent {
+            kubernetes {
+              yamlFile "${new PodTemplateFiles().getPodTemplateFile('MThreads GPU S3000')}"
+              defaultContainer 'main'
+            }
+          }
           stages {
             stage('Build') {
               steps {
@@ -185,7 +193,9 @@ pipeline {
                   }
                 }
                 sh 'git config --global --add safe.directory \"*\"'
+                sh 'git config --unset-all core.hooksPath'
                 sh 'pip uninstall torch_musa -y'
+                sh '/bin/bash --login docker/common/release/update_release_all.sh'
                 sh '/bin/bash --login -c "KINETO_URL=https://sh-code.mthreads.com/ai/kineto.git conda run -n py38 --no-capture-output /bin/bash build.sh -c"'
               }
             }
@@ -211,52 +221,6 @@ pipeline {
                 junit allowEmptyResults: true, testResults: 'build/reports/**/*.xml'
                 sh '''
                     find dist -type f -name '*.egg' -execdir bash -c 'for file; do mv "$file" "${file%/*}/S3000_${file##*/}"; done' bash {} +
-                '''
-                archiveArtifacts artifacts: 'dist/*.egg', fingerprint: true, allowEmptyArchive: true
-              }
-            }
-          }
-        }
-        stage('s80 Stable Build & Test') {
-          agent {
-            kubernetes {
-              yamlFile "${new PodTemplateFiles().getPodTemplateFile('MThreads GPU S80')}"
-              defaultContainer 'main'
-            }
-          }
-          stages {
-            stage('Build') {
-              steps {
-                withCredentials([string(credentialsId: 'mt-ai-ops-gitlab-api-key', variable: 'GITLAB_API_KEY')]) {
-                  sh 'git config --global url."https://mt-ai-ops:${GITLAB_API_KEY}@sh-code.mthreads.com".insteadOf "https://sh-code.mthreads.com"'
-                }
-                sh 'git config --global --add safe.directory \"*\"'
-                sh 'pip uninstall torch_musa -y'
-                sh '/bin/bash --login -c "KINETO_URL=https://sh-code.mthreads.com/ai/kineto.git conda run -n py38 --no-capture-output /bin/bash build.sh -c"'
-              }
-            }
-            stage('Unit Test') {
-              steps {
-                script {
-                  lock('s80-ut-lock') {
-                    sh '/bin/bash --login -c "conda run -n py38 --no-capture-output python scripts/run_unittest_dist.py --gpu-type S80"'
-                  }
-                }
-              }
-            }
-            stage('Integration Test') {
-              steps {
-                sh 'GPU_TYPE=S80 /bin/bash --login scripts/run_integration_test.sh'
-              }
-            }
-            stage('Archive Test Reports and Artifacts') {
-              steps {
-                sh '''
-                    cwd=$(pwd) find build/reports -type f -name '*.xml' -execdir bash -c 'for file; do python ${cwd}/scripts/extract_failed_tests.py ${file}; done' bash {} +
-                '''
-                junit allowEmptyResults: true, testResults: 'build/reports/**/*.xml'
-                sh '''
-                    find dist -type f -name '*.egg' -execdir bash -c 'for file; do mv "$file" "${file%/*}/S80_${file##*/}"; done' bash {} +
                 '''
                 archiveArtifacts artifacts: 'dist/*.egg', fingerprint: true, allowEmptyArchive: true
               }

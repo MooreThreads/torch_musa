@@ -1,10 +1,9 @@
 diff --git a/torch/ao/nn/intrinsic/quantized/modules/conv_silu.py b/torch/ao/nn/intrinsic/quantized/modules/conv_silu.py
 new file mode 100644
-index 0000000..9d54af4
+index 00000000000..14be57162e4
 --- /dev/null
 +++ b/torch/ao/nn/intrinsic/quantized/modules/conv_silu.py
-@@ -0,0 +1,64 @@
-+
+@@ -0,0 +1,63 @@
 +import torch
 +import torch.ao.nn.intrinsic
 +import torch.ao.nn.intrinsic.qat
@@ -68,4 +67,3 @@ index 0000000..9d54af4
 +        assert type(ref_qconv) != torch.ao.nn.intrinsic.ConvBnReLU2d, \
 +            "BatchNorm2d should be fused into Conv2d before converting to reference module"
 +        return super().from_reference(ref_qconv[0], output_scale, output_zero_point)
-\ No newline at end of file

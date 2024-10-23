@@ -1,22 +1,20 @@
-#!/bin/bash  
-versions=("38")  
-archs=("qy2")
-MUDNN_VERSION=dev2.6.0
-WHL_URL="oss.mthreads.com/ai-product/release-rc/torch_musa/rc1.2.0" 
+#!/bin/bash
+# TODO: update torchaudio, torchvision versions
+versions=("38" "39" "310")  
+archs=("qy1" "qy2")
+MUDNN_VERSION=rc2.7.0
+MCCL_VERSION=rc1.7.0
+TORCH_MUSA_VERSION=1.3.0
+WHL_URL="oss.mthreads.com/ai-product/release-rc/torch_musa/rc${TORCH_MUSA_VERSION}"
+SW_TAG=rc3.1.0
 
 for arch in "${archs[@]}"; do
 for version in "${versions[@]}"; do
-    MUSA_TOOLKITS_URL="https://oss.mthreads.com/release-rc/cuda_compatible/dev3.0.0/${arch}/musa_toolkits_dev3.0.0-${arch}.tar.gz"
-    MUDNN_URL="https://oss.mthreads.com/release-rc/cuda_compatible/dev3.0.0/${arch}/mudnn_${MUDNN_VERSION}-${arch}.tar.gz"
-    
-    if [ $arch=="qy1" ]; then
-      echo "qy1 mccl..."
-      MCCL_URL="https://oss.mthreads.com/release-rc/cuda_compatible/rc2.0.0/${arch}/mccl_rc1.4.0-${arch}.tar.gz"
-    else
-      echo "qy2 mccl..."
-      MCCL_URL="https://oss.mthreads.com/release-rc/cuda_compatible/dev3.0.0/${arch}/mccl_dev1.6.0-${arch}.tar.gz"
-    fi
-    TAG="dev3.0.0-v1.2.0-${arch}"
+    MUSA_TOOLKITS_URL="https://oss.mthreads.com/release-rc/cuda_compatible/${SW_TAG}/musa_toolkits_${SW_TAG}.tar.gz"
+    MUDNN_URL="https://oss.mthreads.com/release-rc/cuda_compatible/${SW_TAG}/mudnn_${MUDNN_VERSION}.tar.gz"
+    MCCL_URL="https://oss.mthreads.com/release-rc/cuda_compatible/${SW_TAG}/mccl_${MCCL_VERSION}.tar.gz"
+
+    TAG="${SW_TAG}-v${TORCH_MUSA_VERSION}-${arch}"
     command="bash build.sh -n sh-harbor.mthreads.com/mt-ai/musa-pytorch-release-py$version                  \
               -b ubuntu:20.04                                                                               \
               -f ./ubuntu/dockerfile.release                                                                \
@@ -26,9 +24,9 @@ for version in "${versions[@]}"; do
               --mudnn_url ${MUDNN_URL}                                                                      \
               --mccl_url ${MCCL_URL}                                                                        \
               --torch_whl_url ${WHL_URL}/torch-2.0.0-cp$version-cp$version-linux_x86_64.whl           \
-              --torch_musa_whl_url ${WHL_URL}/${arch}/torch_musa-1.2.0-cp$version-cp$version-linux_x86_64.whl \
-              --torchaudio_whl_url ${WHL_URL}/torchaudio-2.0.1+3b40834-cp38-cp38-linux_x86_64.whl \
-              --torchvision_whl_url ${WHL_URL}/torchvision-0.15.2a0+fa99a53-cp38-cp38-linux_x86_64.whl \
+              --torch_musa_whl_url ${WHL_URL}/${arch}/torch_musa-${TORCH_MUSA_VERSION}-cp$version-cp$version-linux_x86_64.whl \
+              --torchaudio_whl_url ${WHL_URL}/2.2.2+cefdb36-cp$version-cp$version-linux_x86_64.whl \
+              --torchvision_whl_url ${WHL_URL}/0.17.2+c1d70fe-cp$version-cp$version-linux_x86_64.whl \
               --release"
     $command
     if [ $? -ne 0 ]; then

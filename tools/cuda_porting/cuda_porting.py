@@ -118,7 +118,7 @@ def port_cuda(
         # TODO(caizhi): enable cub library porting
         "at::musa::cub::mask_exclusive_sum[(]": "",
         "mask_data, maskPrefixSum_data, mask_numel[)];": "",
-        "set_cuda_dispatch_ptr[(]value[)]": "set_musa_dispatch_ptr(value)",
+        "set_cuda_dispatch_ptr[(]value[)]": "set_privateuse1_dispatch_ptr(value)",
         "namespace cuda {": "namespace musa {",
         "C10_CUDA_KERNEL_LAUNCH_CHECK": "C10_MUSA_KERNEL_LAUNCH_CHECK",
         "C10_CUDA_IGNORE_ERROR": "C10_MUSA_IGNORE_ERROR",
@@ -150,7 +150,8 @@ def port_cuda(
         "<ATen/musa/PinnedMemoryAllocator\.h>": '"torch_musa/csrc/core/PinnedMemoryAllocator.h"',
         "<ATen/musa/CachingHostAllocator\.h>": '"torch_musa/csrc/core/CachingHostAllocator.h"',
         "<ATen/musa/MUSAGeneratorImpl\.h>": '"torch_musa/csrc/aten/musa/MUSAGeneratorImpl.h"',
-        "<ATen/musa/detail/PhiloxCudaStateRaw\.muh>": '"torch_musa/csrc/aten/musa/PhiloxCudaStateRaw.muh"',
+        "<ATen/musa/detail/PhiloxCudaStateRaw\.muh>": '"torch_musa/csrc/aten/musa/PhiloxMusaStateRaw.muh"',
+        "<ATen/musa/PhiloxMusaState\.h>": "<ATen/musa/PhiloxCudaState.h>",
         "<ATen/musa/detail/UnpackRaw\.muh>": '"torch_musa/csrc/aten/musa/UnpackRaw.muh"',
         "<ATen/musa/CUDAGraphsUtils\.muh>": '"torch_musa/csrc/aten/musa/MUSAGraphsUtils.muh"',
         "Device\(kCUDA, current_device\(\)\)": "Device(kMUSA, current_device())",

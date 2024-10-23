@@ -1,37 +1,19 @@
 diff --git a/torch/cuda/_utils.py b/torch/cuda/_utils.py
-index 0dfc56c..b005c38 100644
+index 1794ca9..b14d39e 100644
 --- a/torch/cuda/_utils.py
 +++ b/torch/cuda/_utils.py
-@@ -10,14 +10,14 @@ def _get_device_index(device: Any, optional: bool = False,
-     object, a Python integer, or ``None``.
- 
-     If :attr:`device` is a torch.device object, returns the device index if it
--    is a CUDA device. Note that for a CUDA device without a specified index,
--    i.e., ``torch.device('cuda')``, this will return the current default CUDA
-+    is a MUSA device. Note that for a MUSA device without a specified index,
-+    i.e., ``torch.device('musa')``, this will return the current default MUSA
-     device if :attr:`optional` is ``True``. If :attr:`allow_cpu` is ``True``,
-     CPU devices will be accepted and ``-1`` will be returned in this case.
- 
-     If :attr:`device` is a Python integer, it is returned as is.
- 
--    If :attr:`device` is ``None``, this will return the current default CUDA
-+    If :attr:`device` is ``None``, this will return the current default MUSA
-     device if :attr:`optional` is ``True``.
-     """
-     if isinstance(device, int):
-@@ -26,12 +26,12 @@ def _get_device_index(device: Any, optional: bool = False,
+@@ -28,12 +28,12 @@ def _get_device_index(
          device = torch.device(device)
      if isinstance(device, torch.device):
          if allow_cpu:
--            if device.type not in ['cuda', 'cpu']:
--                raise ValueError('Expected a cuda or cpu device, but got: {}'.format(device))
--        elif device.type != 'cuda':
--            raise ValueError('Expected a cuda device, but got: {}'.format(device))
-+            if device.type not in ['cpu', 'musa']:
-+                raise ValueError('Expected a musa or cpu device, but got: {}'.format(device))
-+        elif device.type != 'musa':
-+            raise ValueError('Expected a musa device, but got: {}'.format(device))
+-            if device.type not in ["cuda", "cpu"]:
+-                raise ValueError(f"Expected a cuda or cpu device, but got: {device}")
+-        elif device.type != "cuda":
+-            raise ValueError(f"Expected a cuda device, but got: {device}")
++            if device.type not in ["musa", "cpu"]:
++                raise ValueError(f"Expected a musa or cpu device, but got: {device}")
++        elif device.type != "musa":
++            raise ValueError(f"Expected a musa device, but got: {device}")
      if not torch.jit.is_scripting():
 -        if isinstance(device, torch.cuda.device):
 +        if isinstance(device, torch.musa.device):

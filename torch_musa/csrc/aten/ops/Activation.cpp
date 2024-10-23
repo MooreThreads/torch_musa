@@ -104,21 +104,8 @@ void UnaryBoolCall(
     const Tensor& input,
     const Scalar& value,
     UNARY_MODE mode) {
-  auto i_dtype = input.scalar_type();
-  const auto v_dtype = value.type();
-
-  using Proxy = typename c10::MaybeOwned<Tensor>;
-  Proxy proxy_input;
-  if (isFloatingType(v_dtype) && isIntegralType(i_dtype, true) &&
-      static_cast<double>(value.to<int64_t>()) != value.to<double>()) {
-    proxy_input = Proxy::owned(input.to(v_dtype));
-    i_dtype = v_dtype;
-  } else {
-    proxy_input = Proxy::borrowed(input);
-  }
-
-  UnaryCall(op_name, output, *proxy_input, [&](::musa::dnn::Unary& op) {
-    if (isIntegralType(i_dtype, true)) {
+  UnaryCall(op_name, output, input, [&](::musa::dnn::Unary& op) {
+    if (isIntegralType(value.type(), true)) {
       CHECK_MUDNN_STATUS(op.SetAlpha(value.to<int64_t>()), "SetAlpha");
     } else {
       CHECK_MUDNN_STATUS(op.SetAlpha(value.to<double>()), "SetAlpha");
@@ -127,8 +114,6 @@ void UnaryBoolCall(
   });
 }
 
-// TODO(songtao.liu): muDNN requires bool tensor for lt/le... output,
-// which cannot be autocast in muDNN now.
 Tensor UnaryBool(
     const std::string& op_name,
     const Tensor& input,
@@ -560,6 +545,7 @@ Tensor LogicalNot(const Tensor& self) {
 }
 
 Tensor& LogicalNot_(Tensor& self) {
+  // TODO(@mt-ai): use inplace op to avoid overhead
   auto out_tmp = LogicalNot(self);
   self.resize_as_(out_tmp);
   self.copy_(out_tmp);
@@ -567,11 +553,13 @@ Tensor& LogicalNot_(Tensor& self) {
 }
 
 Tensor& LogicalNotOut(const Tensor& self, Tensor& out) {
+  // TODO(@mt-ai): use inplace op to avoid overhead
   auto out_tmp = LogicalNot(self).to(out.scalar_type());
   out.resize_as_(out_tmp);
   out.copy_(out_tmp);
   return out;
 }
+
 Tensor PowScalar(const Tensor& self, const Scalar& value) {
   const c10::musa::MUSAGuard device_guard(self.device());
   return Unary(__func__, self, [&](::musa::dnn::Unary& op) {

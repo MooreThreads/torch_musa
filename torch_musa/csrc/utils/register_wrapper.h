@@ -16,7 +16,10 @@ Use config files or Environment to Enable/Disable print of operator info.
 #include <cctype>
 #include <cfloat>
 #include <cmath>
+#include <fstream>
+#include <iostream>
 #include <sstream>
+#include <tuple>
 
 /*
     To support enable/disable Wrapper of a specified function,
@@ -298,7 +301,7 @@ inline void ProcessArgs(std::tuple<Args...>& item) {
   if constexpr (Index < std::tuple_size<std::tuple<Args...>>::value) {
     std::ofstream args_stream(GlobalConfig.arg_log_name, std::ios::app);
     args_stream << "Item " << Index << " Of Tuple:" << std::endl;
-    ProcessArgs(get<Index>(item));
+    ProcessArgs(std::get<Index>(item));
     ProcessArgs<Index + 1>(item);
     args_stream.close();
     return;

@@ -56,7 +56,8 @@ def test_save_cpu_load_musa():
     traced_net = torch.jit.trace(net, [input], check_trace=False)
     with pytest.raises(
         RuntimeError,
-        match="Device of weight tensor of Convolution must be MUSA, but now is cpu",
+        match="Expected weight tensor and input tensor to be on the same MUSA device, "
+        "but got weight on cpu and input on musa:\\d",
     ):
         traced_net(input.to("musa"))
 

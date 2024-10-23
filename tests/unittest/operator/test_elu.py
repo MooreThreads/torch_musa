@@ -61,10 +61,15 @@ if testing.get_musa_arch() >= 22:
 def test_elu_fwd(input_data, dtype):
     elu = torch.nn.ELU
     elu_args = {}
+    if dtype in [torch.bfloat16, torch.float16]:
+        abs_diff, rel_diff = 1e-3, 1e-3
+    else:
+        abs_diff, rel_diff = 1e-6, 1e-6
+
     test = testing.OpTest(
         func=elu,
         input_args=elu_args,
-        comparators=testing.DefaultComparator(abs_diff=1e-6),
+        comparators=testing.DefaultComparator(abs_diff, rel_diff),
     )
     if dtype == torch.float16:
         test.check_musafp16_vs_musafp32(

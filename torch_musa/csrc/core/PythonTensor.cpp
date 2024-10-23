@@ -196,7 +196,7 @@ static at::Tensor dispatch_to(
     bool non_blocking,
     bool copy,
     c10::optional<c10::MemoryFormat> optional_memory_format) {
-  AutoNoGIL no_gil;
+  pybind11::gil_scoped_release no_gil;
   return self.to(
       self.options().memory_format(optional_memory_format), non_blocking, copy);
 }

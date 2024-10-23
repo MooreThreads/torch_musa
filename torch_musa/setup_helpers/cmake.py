@@ -5,7 +5,7 @@ import os
 import platform
 import sys
 import sysconfig
-from distutils.version import LooseVersion
+from distutils.version import LooseVersion  # pylint: disable=W4901
 from subprocess import CalledProcessError, check_call, check_output
 from typing import Any, cast, Dict, List, Optional
 

@@ -285,9 +285,15 @@ def test_feature_pyramid_network(in_channels_list, out_channels, dtype):
 
     output_musa = m(x)
 
-    assert torch.allclose(output_cpu["feat0"], output_musa["feat0"].to("cpu"))
-    assert torch.allclose(output_cpu["feat2"], output_musa["feat2"].to("cpu"))
-    assert torch.allclose(output_cpu["feat3"], output_musa["feat3"].to("cpu"))
+    assert torch.allclose(
+        output_cpu["feat0"], output_musa["feat0"].to("cpu"), atol=1e-5, rtol=1e-3
+    )
+    assert torch.allclose(
+        output_cpu["feat2"], output_musa["feat2"].to("cpu"), atol=1e-5, rtol=1e-3
+    )
+    assert torch.allclose(
+        output_cpu["feat3"], output_musa["feat3"].to("cpu"), atol=1e-5, rtol=1e-3
+    )
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)

@@ -7,7 +7,6 @@
 #include <ATen/quantized/QTensorImpl.h>
 #include <torch/library.h>
 
-#include "torch_musa/csrc/aten/quantized/Quantizer.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 namespace at {

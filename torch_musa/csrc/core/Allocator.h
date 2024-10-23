@@ -6,6 +6,7 @@
 #include <c10/core/DeviceType.h>
 #include <c10/musa/MUSA_PORT_Macros.h>
 #include <list>
+#include <set>
 
 #include <mudnn.h>
 #include <musa_runtime.h>

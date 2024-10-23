@@ -1,7 +1,6 @@
 #include <ATen/ATen.h>
 #include <ATen/core/functional.h>
 #include <torch/csrc/musa/comm.h>
-#include <torch/csrc/utils/auto_gil.h>
 #include <torch/csrc/utils/pybind.h>
 
 #include "torch_musa/csrc/core/StreamUtils.h"
@@ -46,7 +45,7 @@ void InitCommMethods(PyObject* module) {
                   handle.ptr());
             }
             // Note: We're holding the GIL up to here.
-            AutoNoGIL no_gil;
+            pybind11::gil_scoped_release no_gil;
             return scatter(tensor, devices, chunk_sizes, dim, streams);
           },
           py::arg("tensor"),

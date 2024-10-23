@@ -1,5 +1,6 @@
 #include <ATen/Parallel.h>
 #include <ATen/Utils.h>
+#include <c10/util/Backtrace.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <torch/csrc/Device.h>
@@ -30,9 +31,12 @@
 #endif
 #include "torch_musa/csrc/aten/utils/Context.h"
 #include "torch_musa/csrc/core/MusaIPCTypes.h"
+#include "torch_musa/csrc/core/Storage.h"
 #include "torch_musa/csrc/core/StorageSharing.h"
 #include "torch_musa/csrc/utils/Logging.h"
 #include "torch_musa/csrc/utils/musa_lazy_init.h"
+
+#include <pthread.h>
 
 bool in_bad_fork = false; // True for children forked after musa init
 
@@ -466,7 +470,6 @@ static void BindGetDeviceProperties(PyObject* module) {
 static PyObject* PyMusaInitExtension(
     PyObject* /* unused */,
     PyObject* /* unused */) {
-  HANDLE_TH_ERRORS
 #if C10_ASAN_ENABLED
   TORCH_WARN(
       "torch.musa: your pytorch binary has address sanitizer (asan) built in, "
@@ -474,9 +477,11 @@ static PyObject* PyMusaInitExtension(
       "you might get unexpected behavior (eg. out of memory, crash, etc.), "
       "please rebuild pytorch without asan if you need to use this module");
 #endif
+  HANDLE_TH_ERRORS
   TORCH_INTERNAL_ASSERT(!in_bad_fork); // Handled at python level
   poison_fork();
   at::musa::lazyInitMUSA();
+
   auto m = THPObjectPtr(PyImport_ImportModule("torch_musa"));
   if (!m)
     throw python_error();
@@ -770,6 +775,7 @@ PyObject* InitMusaModule() {
   AddPyMethodDefs(methods, MusaDtypeMethods);
   AddPyMethodDefs(methods, at::musa::autocast::GetAutocastMethods());
   AddPyMethodDefs(methods, at::musa::GetContextMethods());
+  AddPyMethodDefs(methods, at::musa::GetStorageMethods());
 
   static struct PyModuleDef musa_module = {
       PyModuleDef_HEAD_INIT, "torch_musa._MUSAC", nullptr, -1, methods.data()};

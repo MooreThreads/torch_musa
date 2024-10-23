@@ -1,0 +1,12 @@
+diff --git a/aten/src/ATen/functorch/BatchRulesDecompositions.cpp b/aten/src/ATen/functorch/BatchRulesDecompositions.cpp
+index 1b179a505e9..4c0c3957d90 100644
+--- a/aten/src/ATen/functorch/BatchRulesDecompositions.cpp
++++ b/aten/src/ATen/functorch/BatchRulesDecompositions.cpp
+@@ -226,6 +226,7 @@ TORCH_LIBRARY_IMPL(aten, FuncTorchBatchedDecomposition, m) {
+   m.impl("reshape", native::reshape_symint);
+   OP_DECOMPOSE(resolve_conj);
+   OP_DECOMPOSE(resolve_neg);
++  OP_DECOMPOSE(rms_norm);
+   OP_DECOMPOSE(row_stack);
+   OP_DECOMPOSE(rrelu);
+   OP_DECOMPOSE(rrelu_);

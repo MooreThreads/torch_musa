@@ -6,8 +6,8 @@
 #include <torch/library.h>
 
 #include <ATen/core/op_registration/adaption.h>
-#include "torch_musa/csrc/aten/quantized/Quantizer.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/core/MUSAGuard.h"
 
 inline std::tuple<int, int> QValueRangeHelper(c10::ScalarType dtype) {
   if (dtype == c10::ScalarType::QUInt8) {
@@ -32,8 +32,9 @@ Tensor QuantizePerTensor(
   (void)common_device; // Suppress unused variable warning
   c10::impl::check_and_update_common_device(
       common_device, self, "QuantizePerTensor", "self");
-  const OptionalDeviceGuard device_guard(device_of(self));
-  auto quantizer = at::MakePerTensorAffineQuantizer(scale, zero_point, dtype);
+  c10::musa::MUSAGuard device_guard(self.device());
+  auto quantizer =
+      at::make_per_tensor_affine_quantizer(scale, zero_point, dtype);
   return quantizer->quantize(self);
 }
 
@@ -53,8 +54,8 @@ Tensor QuantizePerTensorTensorQParams(
       zero_point,
       "QuantizePerTensorTensorQParams",
       "zero_point");
-  const OptionalDeviceGuard device_guard(device_of(self));
-  auto quantizer = at::MakePerTensorAffineQuantizer(
+  c10::musa::MUSAGuard device_guard(self.device());
+  auto quantizer = at::make_per_tensor_affine_quantizer(
       scale.item().toDouble(), zero_point.item().toLong(), dtype);
   return quantizer->quantize(self);
 }
@@ -73,9 +74,9 @@ Tensor QuantizePerChannel(
       common_device, scales, "QuantizePerChannel", "scales");
   c10::impl::check_and_update_common_device(
       common_device, zero_points, "QuantizePerChannel", "zero_points");
-  const OptionalDeviceGuard device_guard(device_of(self));
+  c10::musa::MUSAGuard device_guard(self.device());
   auto quantizer =
-      at::MakePerChannelAffineQuantizer(scales, zero_points, axis, dtype);
+      at::make_per_channel_affine_quantizer(scales, zero_points, axis, dtype);
   return quantizer->quantize(self);
 }
 
@@ -87,7 +88,7 @@ Tensor QuantizePerTensorDynamic(
   (void)common_device; // Suppress unused variable warning
   c10::impl::check_and_update_common_device(
       common_device, self, "QuantizePerTensorDynamic", "self");
-  const OptionalDeviceGuard device_guard(device_of(self));
+  c10::musa::MUSAGuard device_guard(self.device());
   TORCH_CHECK(
       (dtype == ScalarType::QInt8 || dtype == ScalarType::QUInt8 ||
        dtype == ScalarType::Half),
@@ -126,8 +127,8 @@ double QScaleQuant(const Tensor& self) {
   (void)common_device; // Suppress unused variable warning
   c10::impl::check_and_update_common_device(
       common_device, self, "QScaleQuant", "self");
-  const OptionalDeviceGuard device_guard(device_of(self));
-  auto quantizer = at::GetQTensorImpl(self)->quantizer();
+  c10::musa::MUSAGuard device_guard(self.device());
+  auto quantizer = get_qtensorimpl(self)->quantizer();
   TORCH_CHECK(quantizer->qscheme() == kPerTensorAffine);
   return static_cast<PerTensorAffineQuantizer*>(quantizer.get())->scale();
 }
@@ -137,8 +138,8 @@ int64_t QZeroPointQuant(const Tensor& self) {
   (void)common_device; // Suppress unused variable warning
   c10::impl::check_and_update_common_device(
       common_device, self, "QZeroPointQuant", "self");
-  const OptionalDeviceGuard device_guard(device_of(self));
-  auto quantizer = at::GetQTensorImpl(self)->quantizer();
+  c10::musa::MUSAGuard device_guard(self.device());
+  auto quantizer = get_qtensorimpl(self)->quantizer();
   TORCH_CHECK(quantizer->qscheme() == kPerTensorAffine);
   return static_cast<PerTensorAffineQuantizer*>(quantizer.get())->zero_point();
 }
@@ -148,8 +149,8 @@ Tensor QPerChannelScales(const Tensor& self) {
   (void)common_device; // Suppress unused variable warning
   c10::impl::check_and_update_common_device(
       common_device, self, "QPerChannelScales", "self");
-  const OptionalDeviceGuard device_guard(device_of(self));
-  auto quantizer = at::GetQTensorImpl(self)->quantizer();
+  c10::musa::MUSAGuard device_guard(self.device());
+  auto quantizer = get_qtensorimpl(self)->quantizer();
   TORCH_CHECK(
       quantizer->qscheme() == kPerChannelAffine ||
       quantizer->qscheme() == kPerChannelAffineFloatQParams);
@@ -161,8 +162,8 @@ Tensor QPerChannelZeroPoints(const Tensor& self) {
   (void)common_device; // Suppress unused variable warning
   c10::impl::check_and_update_common_device(
       common_device, self, "QPerChannelZeroPoints", "self");
-  const OptionalDeviceGuard device_guard(device_of(self));
-  auto quantizer = at::GetQTensorImpl(self)->quantizer();
+  c10::musa::MUSAGuard device_guard(self.device());
+  auto quantizer = get_qtensorimpl(self)->quantizer();
   TORCH_CHECK(
       quantizer->qscheme() == kPerChannelAffine ||
       quantizer->qscheme() == kPerChannelAffineFloatQParams);
@@ -175,8 +176,8 @@ int64_t QPerChannelAxis(const Tensor& self) {
   (void)common_device; // Suppress unused variable warning
   c10::impl::check_and_update_common_device(
       common_device, self, "QPerChannelAxis", "self");
-  const OptionalDeviceGuard device_guard(device_of(self));
-  auto quantizer = at::GetQTensorImpl(self)->quantizer();
+  c10::musa::MUSAGuard device_guard(self.device());
+  auto quantizer = get_qtensorimpl(self)->quantizer();
   TORCH_CHECK(
       quantizer->qscheme() == kPerChannelAffine ||
       quantizer->qscheme() == kPerChannelAffineFloatQParams);
@@ -201,8 +202,8 @@ QScheme QSchemeQuant(const Tensor& self) {
   (void)common_device; // Suppress unused variable warning
   c10::impl::check_and_update_common_device(
       common_device, self, "QSchemeQuant", "self");
-  const OptionalDeviceGuard device_guard(device_of(self));
-  auto quantizer = at::GetQTensorImpl(self)->quantizer();
+  c10::musa::MUSAGuard device_guard(self.device());
+  auto quantizer = get_qtensorimpl(self)->quantizer();
   return quantizer->qscheme();
 }
 
@@ -211,8 +212,8 @@ Tensor DequantizeQuantized(const Tensor& self) {
   (void)common_device; // Suppress unused variable warning
   c10::impl::check_and_update_common_device(
       common_device, self, "DequantizeQuantized", "self");
-  const OptionalDeviceGuard device_guard(device_of(self));
-  return at::GetQTensorImpl(self)->quantizer()->dequantize(self);
+  c10::musa::MUSAGuard device_guard(self.device());
+  return get_qtensorimpl(self)->quantizer()->dequantize(self);
 }
 
 Tensor QuantizedClone(
@@ -222,7 +223,7 @@ Tensor QuantizedClone(
   (void)common_device; // Suppress unused variable warning
   c10::impl::check_and_update_common_device(
       common_device, self, "QuantizedClone", "self");
-  const OptionalDeviceGuard device_guard(device_of(self));
+  c10::musa::MUSAGuard device_guard(self.device());
   auto memory_format =
       optional_memory_format.value_or(MemoryFormat::Contiguous);
 

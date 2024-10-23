@@ -104,7 +104,6 @@
 #include <ATen/ops/zeros_like.h>
 #endif
 
-#include "torch_musa/csrc/aten/ops/Reduce.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/utils/musa_lazy_init.h"
@@ -112,34 +111,6 @@
 #include <mudnn.h>
 
 namespace at {
-namespace native { // this namespace is used to define logsumexp stub only
-
-DEFINE_DISPATCH(logsumexp_stub);
-REGISTER_NO_CPU_DISPATCH(logsumexp_stub);
-
-Tensor& LogSumExpOutImpl(Tensor& result, const Tensor& self, IntArrayRef dims) {
-  // For multi-dim reduction, we iteratively run musa kernel
-  // TODO(@fan.mo): optimize and speedup
-  if (dims.size() > 1) {
-    Tensor cur_self = self;
-    Tensor cur_result;
-    for (int i = 0; i < dims.size(); ++i) {
-      DimVector cur_dim({dims[i]});
-      maybe_wrap_dims(cur_dim, self.dim());
-      auto cur_shape =
-          at::meta::get_reduction_shape(cur_self, cur_dim, /*keepdim=*/true);
-      cur_result = at::empty(cur_shape, result.options());
-      logsumexp_stub(kMUSA, cur_result, cur_self, cur_dim[0]);
-      cur_self = cur_result;
-    }
-    result.copy_(cur_self);
-  } else {
-    logsumexp_stub(kMUSA, result, self, dims[0]);
-  }
-  return result;
-}
-} // namespace native
-
 namespace musa {
 
 // Copy from ReduceOps.cpp
@@ -184,14 +155,7 @@ void ReduceCall(
   if (C10_UNLIKELY(self.numel() == 0)) {
     return;
   }
-  // TODO(kang.chen): mudnn not support uint8, cast to int64 temporarily.
-  Tensor self_;
-  if (self.scalar_type() == ScalarType::Byte) {
-    self_ = self.to(ScalarType::Long);
-  } else {
-    self_ = self;
-  }
-  auto input = Contiguous(self_);
+  auto input = Contiguous(self);
   auto out = CreateMUTensor(output);
   auto in = CreateMUTensor(input);
 
@@ -427,77 +391,142 @@ Tensor& NormOut(
   return out;
 }
 
-Tensor CumsumCall(
+namespace {
+
+using CUM_MODE = ::musa::dnn::Cum::Mode;
+
+void CumulativeImpl(Tensor& out, const Tensor& in, int64_t dim, CUM_MODE mode) {
+  namedinference::propagate_names(out, in);
+
+  if (in.numel() == 0) {
+    return;
+  }
+  if (in.dim() == 0) {
+    out.fill_(in);
+  }
+
+  const c10::musa::MUSAGuard device_guard(in.device());
+  auto in_ctype = in.scalar_type();
+  auto out_ctype = out.scalar_type();
+
+  if (isFloatingType(in_ctype) || isFloatingType(out_ctype)) {
+    out_ctype = promoteTypes(in_ctype, out_ctype);
+    in_ctype = out_ctype;
+  } else if (out_ctype == ScalarType::Int || out_ctype == ScalarType::Long) {
+    if (in_ctype == ScalarType::Byte || in_ctype == ScalarType::Short) {
+      in_ctype = ScalarType::Int;
+    } else if (in_ctype == ScalarType::Long) {
+      out_ctype = in_ctype;
+    }
+  } else {
+    // Special cases for muDNN workarounds.
+    if (in_ctype == ScalarType::Long) {
+      out_ctype = in_ctype;
+    } else {
+      out_ctype = ScalarType::Int;
+      if (in_ctype == ScalarType::Byte || in_ctype == ScalarType::Short) {
+        in_ctype = out_ctype;
+      }
+    }
+  }
+
+  using Proxy = typename c10::MaybeOwned<Tensor>;
+  auto make_proxy = [](const Tensor& in, ScalarType dtype) -> Proxy {
+    if (dtype != in.scalar_type()) {
+      return Proxy::owned(in.to(dtype));
+    }
+    return Proxy::borrowed(in);
+  };
+  auto c_in = make_proxy(in, in_ctype);
+  auto c_out = make_proxy(out, out_ctype);
+  auto contig_c_in = FormatContiguous(*c_in, MemoryFormat::Contiguous);
+  auto contig_c_out = FormatContiguous(*c_out, MemoryFormat::Contiguous);
+
+  auto mudnn_out = CreateMUTensor(contig_c_out);
+  auto mudnn_in = CreateMUTensor(contig_c_in);
+  muHandle& h = GetMudnnHandle();
+  ::musa::dnn::Cum cum;
+  CHECK_MUDNN_STATUS(cum.SetDim(static_cast<int>(dim)), "SetDim");
+  CHECK_MUDNN_STATUS(cum.SetMode(mode), "SetMode");
+  CHECK_MUDNN_STATUS(
+      cum.Run(h, mudnn_out, mudnn_in, InternalMemAlloc), "CumRun");
+
+  if (out_ctype != out.scalar_type()) {
+    out.copy_(contig_c_out);
+  }
+}
+
+Tensor& CumulativeOut(
     const Tensor& self,
     int64_t dim,
-    c10::optional<ScalarType> dtype_opt,
-    Tensor& out) {
-  UNUSED(dtype_opt);
-  c10::musa::MUSAGuard device_guard(self.device());
-  muTensor self_mt = CreateMUTensor(self);
-  muTensor out_mt = CreateMUTensor(out);
-
-  muHandle& h = GetMudnnHandle();
-  ::musa::dnn::Cumsum csop;
-  CHECK_MUDNN_STATUS(csop.SetDim(dim), "SetDim");
-  CHECK_MUDNN_STATUS(csop.Run(h, out_mt, self_mt, InternalMemAlloc), "Run");
+    c10::optional<ScalarType> dtype,
+    Tensor& out,
+    CUM_MODE mode) {
+  // Keep logical consistency with torch.
+  if (dtype) {
+    const auto out_dtype = out.scalar_type();
+    const auto expect_dtype = dtype.value();
+    TORCH_CHECK(
+        expect_dtype == out_dtype,
+        "Expected out tensor to have dtype ",
+        expect_dtype,
+        ", but got ",
+        out_dtype,
+        " instead");
+  }
+  native::resize_output(out, self.sizes());
+  CumulativeImpl(out, self, dim, mode);
   return out;
 }
 
-Tensor Cumsum(
-    const Tensor& self,
-    int64_t dim,
-    c10::optional<ScalarType> dtype_opt) {
-  Tensor self_ = FormatContiguous(self, at::MemoryFormat::Contiguous);
-  Tensor out = at::empty_like(self, at::MemoryFormat::Contiguous);
-  if (self.dtype() == at::kBool) {
-    out = out.to(at::kLong);
-  }
-  return CumsumCall(self_, dim, dtype_opt, out);
-}
-
-Tensor& Cumsum_(
+Tensor& Cumulative_(
     Tensor& self,
     int64_t dim,
-    c10::optional<ScalarType> dtype_opt) {
-  Tensor self_ = self.contiguous();
-  if (self.dtype() == at::kBool) {
-    Tensor out = at::empty_like(self, at::kLong, at::MemoryFormat::Contiguous);
-    CumsumCall(self_, dim, dtype_opt, out);
-    self.copy_(out);
-    return self;
-  } else {
-    auto out = self;
-    self = CumsumCall(self_, dim, dtype_opt, out);
-    return self;
-  }
+    c10::optional<ScalarType> dtype,
+    CUM_MODE mode) {
+  // Since check_inplace(...) does not modify the `self` tensor in torch,
+  // we ignore the `dtype` parameter here, even though it may have a value.
+  CumulativeImpl(self, self, dim, mode);
+  return self;
 }
 
-Tensor& Cumsum_Out(
+Tensor Cumulative(
     const Tensor& self,
     int64_t dim,
-    c10::optional<ScalarType> dtype_opt,
-    Tensor& out) {
-  Tensor self_ = FormatContiguous(self, at::MemoryFormat::Contiguous);
-  if (self.dtype() == at::kBool) {
-    Tensor out_ = at::empty_like(self, at::kLong, at::MemoryFormat::Contiguous);
-    CumsumCall(self_, dim, dtype_opt, out_);
-    out.copy_(out_);
-    return out;
-  } else {
-    CumsumCall(self_, dim, dtype_opt, out);
-    return out;
-  }
+    c10::optional<ScalarType> dtype,
+    CUM_MODE mode) {
+  const auto in_dtype = self.scalar_type();
+  const auto out_dtype = dtype.value_or(
+      isIntegralType(in_dtype, true) ? ScalarType::Long : in_dtype);
+  Tensor out = at::empty(self.sizes(), self.options().dtype(out_dtype));
+  CumulativeImpl(out, self, dim, mode);
+  return out;
 }
 
-// same like at::cuda::cumsum_out
-// TORCH_API at::Tensor& cumsum_out(
-//     at::Tensor& out,
-//     const at::Tensor& self,
-//     int64_t dim,
-//     c10::optional<at::ScalarType> dtype) {
-//   return at::musa::Cumsum_Out(self, dim, dtype, out);
-// }
+} // anonymous namespace
+
+#define GEN_CUMULATIVE_FUNCTION(OP, MODE)                                     \
+  Tensor OP(                                                                  \
+      const Tensor& self, int64_t dim, c10::optional<ScalarType> dtype) {     \
+    return Cumulative(self, dim, dtype, MODE);                                \
+  }                                                                           \
+                                                                              \
+  Tensor& OP##_(Tensor& self, int64_t dim, c10::optional<ScalarType> dtype) { \
+    return Cumulative_(self, dim, dtype, MODE);                               \
+  }                                                                           \
+                                                                              \
+  Tensor& OP##Out(                                                            \
+      const Tensor& self,                                                     \
+      int64_t dim,                                                            \
+      c10::optional<ScalarType> dtype,                                        \
+      Tensor& out) {                                                          \
+    return CumulativeOut(self, dim, dtype, out, MODE);                        \
+  }
+
+GEN_CUMULATIVE_FUNCTION(CumSum, CUM_MODE::ADD)
+GEN_CUMULATIVE_FUNCTION(CumProd, CUM_MODE::MUL)
+
+#undef GEN_CUMULATIVE_FUNCTION
 
 Tensor Any(const Tensor& self) {
   Tensor out = Reduction(
@@ -569,36 +598,14 @@ void ReduceIndicesCall(
       self.scalar_type(),
       " and: ",
       output.scalar_type());
-  TORCH_CHECK(indices.scalar_type() == kLong, "Only support int64 indices now");
 
   c10::musa::MUSAGuard device(self.device());
+  Tensor out_tmp = FormatContiguous(output, at::MemoryFormat::Contiguous);
+  Tensor indices_tmp = FormatContiguous(indices, at::MemoryFormat::Contiguous);
 
-  // TODO(mt-ai): remove this workaround once muDNN support these dtypes
-  auto should_dtype_workaround = [](ScalarType dtype) {
-    return (
-        dtype == ScalarType::Byte || dtype == ScalarType::Char ||
-        dtype == ScalarType::Short || dtype == ScalarType::Bool);
-  };
-
-  Tensor input_tmp;
-  Tensor output_tmp;
-
-  if (should_dtype_workaround(self.scalar_type())) {
-    input_tmp = at::empty_like(
-        self, self.options().dtype(at::kHalf), at::MemoryFormat::Contiguous);
-    output_tmp = at::empty_like(
-        output,
-        output.options().dtype(at::kHalf),
-        at::MemoryFormat::Contiguous);
-    input_tmp.copy_(self);
-  } else {
-    input_tmp = Contiguous(self, at::MemoryFormat::Contiguous);
-    output_tmp = output;
-  }
-
-  auto out = CreateMUTensor(output_tmp);
-  auto ids = CreateMUTensor(indices);
-  auto in = CreateMUTensor(input_tmp);
+  auto out = CreateMUTensor(out_tmp);
+  auto ids = CreateMUTensor(indices_tmp);
+  auto in = CreateMUTensor(self, /*permute_if_not_contiguous=*/false);
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Reduce r;
@@ -608,8 +615,33 @@ void ReduceIndicesCall(
   CHECK_MUDNN_STATUS(
       r.RunWithIndices(h, out, ids, in, InternalMemAlloc), "RunWithIndices");
 
-  if (should_dtype_workaround(self.scalar_type())) {
-    output.copy_(output_tmp);
+  if (C10_UNLIKELY(!output.is_same(out_tmp))) {
+    output.copy_(out_tmp);
+  }
+  if (C10_UNLIKELY(!indices.is_same(indices_tmp))) {
+    indices.copy_(indices_tmp);
+  }
+}
+
+void ReduceIndicesOnlyCall(
+    Tensor& output,
+    const Tensor& self,
+    int64_t dim,
+    ::musa::dnn::Reduce::Mode m) {
+  c10::musa::MUSAGuard device(self.device());
+
+  Tensor out_tmp = FormatContiguous(output, at::MemoryFormat::Contiguous);
+  auto out = CreateMUTensor(out_tmp);
+  auto in = CreateMUTensor(self, /*permute_if_not_contiguous=*/false);
+
+  muHandle& h = GetMudnnHandle();
+  ::musa::dnn::Reduce r;
+  CHECK_MUDNN_STATUS(r.SetMode(m), "SetMode");
+  int dim_int = dim;
+  CHECK_MUDNN_STATUS(r.SetDim({dim_int}), "SetDim");
+  CHECK_MUDNN_STATUS(r.RunIndices(h, out, in, InternalMemAlloc), "RunIndices");
+  if (C10_UNLIKELY(!output.is_same(out_tmp))) {
+    output.copy_(out_tmp);
   }
 }
 
@@ -780,36 +812,31 @@ Tensor& AllDimOut(const Tensor& self, int64_t dim, bool keepdim, Tensor& out) {
 void ArgMinOrMaxOutTemplate(
     const Tensor& self,
     c10::optional<int64_t> dim,
-    bool keepdim,
     Tensor& result,
     ::musa::dnn::Reduce::Mode m) {
-  Tensor contiguous_self = self.contiguous();
-  if (!dim.has_value()) {
-    contiguous_self = contiguous_self.flatten();
-  }
-  Tensor out_data =
-      at::empty(result.sizes(), self.options().dtype(self.scalar_type()));
+  Tensor self_ = dim.has_value() ? self : self.flatten();
   auto dim_ = dim.has_value() ? maybe_wrap_dim(dim.value(), self.dim()) : 0;
-  ReduceIndicesCall(out_data, result, contiguous_self, dim_, m);
-}
-Tensor& ArgmaxOut(
-    const Tensor& self,
-    c10::optional<int64_t> dim,
-    bool keepdim,
-    Tensor& result) {
-  ArgMinOrMaxOutTemplate(
-      self, dim, keepdim, result, ::musa::dnn::Reduce::Mode::MAX);
-  return result;
+  ReduceIndicesOnlyCall(result, self_, dim_, m);
 }
 
-Tensor& ArgminOut(
-    const Tensor& self,
-    c10::optional<int64_t> dim,
-    bool keepdim,
-    Tensor& result) {
+TORCH_IMPL_FUNC(argmax_out_musa)
+(const Tensor& self,
+ c10::optional<int64_t> dim,
+ bool keepdim,
+ const Tensor& result) {
+  (void)keepdim;
   ArgMinOrMaxOutTemplate(
-      self, dim, keepdim, result, ::musa::dnn::Reduce::Mode::MIN);
-  return result;
+      self, dim, const_cast<Tensor&>(result), ::musa::dnn::Reduce::Mode::MAX);
+}
+
+TORCH_IMPL_FUNC(argmin_out_musa)
+(const Tensor& self,
+ c10::optional<int64_t> dim,
+ bool keepdim,
+ const Tensor& result) {
+  (void)keepdim;
+  ArgMinOrMaxOutTemplate(
+      self, dim, const_cast<Tensor&>(result), ::musa::dnn::Reduce::Mode::MIN);
 }
 
 Tensor MinAllCall(const Tensor& self, ::musa::dnn::Reduce::Mode m) {
@@ -881,7 +908,7 @@ std::tuple<Tensor&, Tensor&> MinNamesDimMin(
 std::tuple<at::Tensor, at::Tensor> VarMeanCorrection(
     const at::Tensor& self,
     at::OptionalIntArrayRef dim,
-    c10::optional<int64_t> correction,
+    const c10::optional<at::Scalar>& correction,
     bool keepdim) {
   // No device check
   torch::utils::musa_lazy_init();
@@ -889,50 +916,10 @@ std::tuple<at::Tensor, at::Tensor> VarMeanCorrection(
   return at::native::var_mean(self, dim, correction, keepdim);
 }
 
-Tensor& LogSumExpOut(
-    const Tensor& self,
-    IntArrayRef dims,
-    bool keepdim,
-    Tensor& result) {
-  c10::musa::MUSAGuard device_guard(self.device());
-  TORCH_CHECK(
-      at::isFloatingType(result.scalar_type()),
-      "logsumexp(): Expected floating point type for result tensor, but got: ",
-      result.scalar_type());
-  namedinference::propagate_names_for_reduction(result, self, dims, keepdim);
-
-  if (at::isIntegralType(self.scalar_type(), /*includeBool=*/true)) {
-    // for integral inputs, promote input to default floating type.
-    auto default_dtype = at::typeMetaToScalarType(c10::get_default_dtype());
-    at::native::LogSumExpOutImpl(result, self.to(default_dtype), dims);
-  } else {
-    at::native::LogSumExpOutImpl(result, self, dims);
-  }
-
-  return result;
-}
-
-Tensor LogSumExp(const Tensor& self, IntArrayRef dims, bool keepdim) {
-  TensorOptions result_options;
-  DimVector dims_vec(dims);
-  maybe_wrap_dims(dims_vec, self.dim());
-  auto shape = at::meta::get_reduction_shape(self, dims_vec, keepdim);
-
-  if (at::isIntegralType(self.scalar_type(), /*includeBool=*/true)) {
-    // even for integral inputs, result is floating dtype
-    auto default_dtype = at::typeMetaToScalarType(c10::get_default_dtype());
-    result_options = self.options().dtype(default_dtype);
-  } else {
-    result_options = self.options();
-  }
-  auto result = at::empty(shape, result_options);
-  return LogSumExpOut(self, dims_vec, keepdim, result);
-}
-
 at::Tensor VarCorrection(
     const at::Tensor& self,
     at::OptionalIntArrayRef dim,
-    c10::optional<int64_t> correction,
+    const c10::optional<at::Scalar>& correction,
     bool keepdim) {
   // No device check
   const OptionalDeviceGuard device_guard(device_of(self));
@@ -942,7 +929,7 @@ at::Tensor VarCorrection(
 at::Tensor& VarOutCorrection(
     const at::Tensor& self,
     at::OptionalIntArrayRef dim,
-    c10::optional<int64_t> correction,
+    const c10::optional<at::Scalar>& correction,
     bool keepdim,
     at::Tensor& out) {
   // No device check

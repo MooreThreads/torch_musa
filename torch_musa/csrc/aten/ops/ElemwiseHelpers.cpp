@@ -42,35 +42,14 @@ optional<Scalar> CPUFastScalarReciprocal(const Scalar& input) {
 }
 
 template <typename MUDNN_OP>
-C10_ALWAYS_INLINE constexpr const char* MudnnOpName() noexcept {
-  using typename ::musa::dnn::Binary;
-  using typename ::musa::dnn::Unary;
-  if constexpr (std::is_same_v<MUDNN_OP, Unary>) {
-    return "::musa::dnn::Unary";
-  } else if constexpr (std::is_same_v<MUDNN_OP, Binary>) {
-    return "::musa::dnn::Binary";
+void SetAlpha(MUDNN_OP& op, const Scalar& alpha) {
+  if (alpha.isFloatingPoint()) {
+    CHECK_MUDNN_STATUS(op.SetAlpha(alpha.toDouble()), "SetAlpha");
+  } else if (alpha.isBoolean()) {
+    const auto v = static_cast<int64_t>(alpha.to<bool>());
+    CHECK_MUDNN_STATUS(op.SetAlpha(v), "SetAlpha");
   } else {
-    AT_ASSERT(false, "Not supported op!");
-  }
-}
-
-template <typename MUDNN_OP>
-void SetAlpha(MUDNN_OP& op, const Scalar& alpha, ScalarType ref) {
-  const bool pass_by_integer = isIntegralType(ref, true);
-  if (alpha.isFloatingPoint() || alpha.isIntegral(false)) {
-    if (pass_by_integer) {
-      CHECK_MUDNN_STATUS(op.SetAlpha(alpha.toLong()), "SetAlpha");
-    } else {
-      CHECK_MUDNN_STATUS(op.SetAlpha(alpha.toDouble()), "SetAlpha");
-    }
-  } else {
-    AT_ERROR(
-        alpha.type(),
-        " is not supported for ",
-        MudnnOpName<MUDNN_OP>(),
-        "::SetAlpha(",
-        pass_by_integer ? "int64_t" : "double",
-        ")");
+    CHECK_MUDNN_STATUS(op.SetAlpha(alpha.toLong()), "SetAlpha");
   }
 }
 
@@ -119,7 +98,7 @@ void UnaryAlphaCall(
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Unary op;
   CHECK_MUDNN_STATUS(op.SetMode(mode), "SetMode");
-  SetAlpha(op, alpha, iter.dtype(1));
+  SetAlpha(op, alpha);
   auto out = iter.mu_output(0);
   auto in = iter.mu_input(0);
   CHECK_MUDNN_STATUS(op.Run(h, out, in), "Run " + op_name);
@@ -145,7 +124,7 @@ void BinaryAlphaCall(
     const std::string& op_name) {
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Binary op;
-  SetAlpha(op, alpha, iter.dtype(1));
+  SetAlpha(op, alpha);
   CHECK_MUDNN_STATUS(op.SetMode(mode), "SetMode");
   auto out = iter.mu_output(0);
   auto lhs = iter.mu_input(0);

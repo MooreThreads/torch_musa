@@ -1,15 +1,17 @@
 #!/bin/bash
+set -e
 
 CUR_DIR=$(
   cd $(dirname $0)
   pwd
 )
 TORCH_MUSA_HOME=$CUR_DIR
-PYTORCH_PATH=${PYTORCH_REPO_PATH:-${TORCH_MUSA_HOME}/../pytorch}
+PYTORCH_PATH=${PYTORCH_REPO_PATH:-$(realpath ${TORCH_MUSA_HOME}/../pytorch)}
 KINETO_PATH=${PYTORCH_PATH}/third_party/kineto
 TORCH_PATCHES_DIR=${TORCH_MUSA_HOME}/torch_patches/
 KINETO_PATCHES_DIR=${TORCH_MUSA_HOME}/kineto_patches/
 KINETO_URL=${KINETO_URL:-https://github.com/MooreThreads/kineto.git}
+KINETO_TAG=v1.2.2
 
 BUILD_WHEEL=0
 DEBUG_MODE=0
@@ -20,8 +22,7 @@ USE_KINETO=1
 ONLY_PATCH=0
 CLEAN=0
 COMPILE_FP64=1
-PYTORCH_TAG=v2.0.0
-KINETO_BASE_COMMIT_ID=2da532c
+PYTORCH_TAG=v2.2.0
 PYTORCH_BUILD_VERSION="${PYTORCH_TAG:1}"
 PYTORCH_BUILD_NUMBER=0 # This is used for official torch distribution.
 USE_STATIC_MKL=${USE_STATIC_MKL:-1}
@@ -207,11 +208,18 @@ apply_torch_patches() {
 }
 
 update_kineto_source() {
-  pushd ${PYTORCH_PATH}/third_party/kineto
-  git remote set-url origin ${KINETO_URL}
-  git fetch
-  git checkout main
-  git reset --hard origin/main
+  echo -e "\033[34mUpdating kineto...\033[0m"
+  pushd ${PYTORCH_PATH}/third_party
+  rm -rf ./kineto
+  if [ -d /home/kineto ]; then
+    pushd /home/kineto
+    git checkout ${KINETO_TAG}
+    git submodule update --init --recursive
+    popd
+    cp -r /home/kineto .
+  else
+    git clone ${KINETO_URL} -b ${KINETO_TAG} --depth 1 --recursive
+  fi
   popd
 }
 
@@ -270,17 +278,14 @@ build_torch_musa() {
     PYTORCH_REPO_PATH=${PYTORCH_PATH} DEBUG=${DEBUG_MODE} USE_ASAN=${ASAN_MODE} ENABLE_COMPILE_FP64=${COMPILE_FP64} USE_MCCL=${USE_MCCL} python setup.py install
     status=$?
   fi
-
-  if [ ${USE_KINETO} -eq 1 ]; then
-    echo -e "\033[31mInstalling tb_plugin... \033[0m"
-    pushd ${PYTORCH_PATH}/third_party/kineto/tb_plugin
-    python setup.py sdist bdist_wheel
-    pip install dist/torch_tb_profiler*.whl
-    popd
+  if [ $status -ne 0 ]; then
+    exit $status
   fi
+
   # scan and output ops list for each building
   bash ${CUR_DIR}/scripts/scan_ops.sh
   popd
+
   return $status
 }
 

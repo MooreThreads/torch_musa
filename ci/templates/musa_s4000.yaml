@@ -31,7 +31,7 @@ spec:
   containers:
   - name: main
     tty: true
-    image: sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py38:dev3.0.0-v1.1.0-qy2
+    image: sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py38:rc3.1.0-v1.3.0-qy2
     imagePullPolicy: Always
     env:
     - name: TARGET_DEVICE
@@ -39,13 +39,13 @@ spec:
     - name: PYTORCH_REPO_PATH
       value: /home/pytorch
     - name: MUSA_VISIBLE_DEVICES
-      value: all
+      value: 4,5,6,7
     - name: MTHREADS_VISIBLE_DEVICES
-      value: all
+      value: 4,5,6,7
     command:
     - sleep
     securityContext:
-       privileged: true
+       privileged: false
     args:
     - infinity
     resources:
@@ -65,4 +65,3 @@ spec:
     - mountPath: /data/torch_musa_integration/shared
       name: integration-data-shared
       readOnly: true
-

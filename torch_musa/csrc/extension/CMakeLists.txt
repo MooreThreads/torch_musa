@@ -8,6 +8,7 @@ append_cxx_flag_if_supported("-Wno-unused-parameter" CMAKE_CXX_FLAGS)
 append_cxx_flag_if_supported("-Wno-unused-variable" CMAKE_CXX_FLAGS)
 append_cxx_flag_if_supported("-Wno-sign-compare" CMAKE_CXX_FLAGS)
 append_cxx_flag_if_supported("-w" CMAKE_CXX_FLAGS)
+append_cxx_flag_if_supported("-std=c++17" CMAKE_CXX_FLAGS)
 string(APPEND MUSA_MCC_FLAGS " -U__CUDA__")
 
 if(NOT ENABLE_COMPILE_FP64)

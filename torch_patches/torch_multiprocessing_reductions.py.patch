@@ -1,13 +1,24 @@
 diff --git a/torch/multiprocessing/reductions.py b/torch/multiprocessing/reductions.py
-index 6389fc9..0f40bab 100644
+index f5eb0a6abd..4d46a6201a 100644
 --- a/torch/multiprocessing/reductions.py
 +++ b/torch/multiprocessing/reductions.py
-@@ -250,7 +250,7 @@ def reduce_tensor(tensor):
-     # eliminated it so that we could just use tensor views to implement the same
-     # thing.
-     #
--    if storage._untyped_storage.device.type == 'cuda':
-+    if storage._untyped_storage.device.type in ['cuda', 'musa']:
-         (device,
-          handle,
-          storage_size_bytes,
+@@ -308,7 +308,7 @@ def reduce_tensor(tensor):
+ 
+     storage = tensor._typed_storage()
+ 
+-    if storage._untyped_storage.device.type == "cuda":
++    if storage._untyped_storage.device.type in ["cuda", "musa"]:
+         (
+             device,
+             handle,
+@@ -553,6 +553,10 @@ def reduce_storage(storage):
+         raise RuntimeError(
+             "Cannot pickle CUDA storage; try pickling a CUDA tensor instead"
+         )
++    elif storage.is_musa:
++        raise RuntimeError(
++            "Cannot pickle MUSA storage; try pickling a MUSA tensor instead"
++        )
+     elif get_sharing_strategy() == "file_system":
+         metadata = storage._share_filename_cpu_()
+         cache_key = metadata[1]

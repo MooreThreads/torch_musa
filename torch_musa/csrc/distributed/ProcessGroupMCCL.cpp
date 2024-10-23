@@ -347,6 +347,10 @@ void ProcessGroupMCCL::WorkMCCL::synchronizeStreams() {
     // Block the current stream on the MCCL stream
     (*mcclEndEvents_)[i].block(currentStream);
   }
+  if (avoidRecordStreams_) {
+    TORCH_CHECK(false, "Warning: MCCL_AVOID_RECORD_STREAMS has not supported.");
+    stashed_for_allocator_safety_->clear();
+  }
 }
 
 // Waiting on the work's corresponding MUSA events
@@ -426,7 +430,8 @@ bool ProcessGroupMCCL::WorkMCCL::wait(std::chrono::milliseconds timeout) {
       0, // outSize
       at::kByte, // dType
       std::vector<int64_t>(), // inSplitSizes
-      std::vector<int64_t>()); // outSplitSizes
+      std::vector<int64_t>(), // outSplitSizes
+      static_cast<int>(devices_.size()));
   synchronizeInternal(timeout);
   // Always return true, because abort API is not implemented.
   return true;
@@ -490,11 +495,13 @@ ProcessGroupMCCL::ProcessGroupMCCL(
   TORCH_CHECK(
       c10::musa::device_count() != 0,
       "ProcessGroupMCCL is only supported with GPUs, no GPUs found!");
-  blockingWait_ = parseEnvVarFlag(MCCL_BLOCKING_WAIT);
+  blockingWait_ = getCvarBool(TORCH_MCCL_BLOCKING_WAIT, false);
   asyncErrorHandling_ = static_cast<ErrorHandlingMode>(
-      parseEnvVarIntDefault(MCCL_ASYNC_ERROR_HANDLING, 0));
-  desyncDebug_ = parseEnvVarFlag(MCCL_DESYNC_DEBUG) ||
+      getCvarInt(TORCH_MCCL_ASYNC_ERROR_HANDLING, 3 /*SkipCleanUp*/));
+  desyncDebug_ = getCvarBool(TORCH_MCCL_DESYNC_DEBUG, false) ||
       (dist_debug_level_ >= DebugLevel::Detail);
+
+  avoidRecordStreams_ = getCvarBool(TORCH_MCCL_AVOID_RECORD_STREAMS, false);
 
   if (blockingWait_) {
     if (asyncErrorHandling_ != NoHandling || desyncDebug_) {
@@ -515,7 +522,7 @@ ProcessGroupMCCL::ProcessGroupMCCL(
     }
   }
 
-  if (parseEnvVarFlag(ENABLE_MCCL_HEALTH_CHECK)) {
+  if (getCvarBool(ENABLE_MCCL_HEALTH_CHECK, false)) {
     // Perform health check by initializing dummy communicators and destroying
     // them. This will help indicate any MCCL-related issues prior to the first
     // collective.
@@ -550,7 +557,8 @@ ProcessGroupMCCL::ProcessGroupMCCL(
       0, // outSize
       at::kByte, // dType
       std::vector<int64_t>(), // inSplitSizes
-      std::vector<int64_t>()); // outSplitSizes
+      std::vector<int64_t>(), // outSplitSizes
+      size_);
 }
 
 void ProcessGroupMCCL::runHealthCheck() {
@@ -1123,7 +1131,7 @@ std::vector<std::shared_ptr<MCCLComm>>& ProcessGroupMCCL::getMCCLComm(
   // At this point MCCL should have been initialized, hence we can accurately
   // get the env value even if MCCL sets it by reading from mccl.conf file
   if (getRank() == 0) {
-    LOG(INFO) << "MCCL_DEBUG: " << parse_env("MCCL_DEBUG");
+    LOG(INFO) << "MCCL_DEBUG: " << getCvarString({"MCCL_DEBUG"}, "N/A");
   }
 
   // See [Group Start/End Note]
@@ -1353,31 +1361,48 @@ ProcessGroupMCCL::Options::Options(bool is_high_priority_stream)
     : Backend::Options(MCCL_BACKEND_NAME),
       is_high_priority_stream(is_high_priority_stream) {}
 
+static constexpr int CoalActive = 0x01, CoalColl = 0x02, CoalP2P = 0x04;
+
 void ProcessGroupMCCL::startCoalescing() {
   coalescedDevices_.clear();
-  coalescing_active_ = true;
+  coalescedComms_.clear();
+  coalescing_state_ |= CoalActive;
   groupStart();
 }
 
-void ProcessGroupMCCL::endCoalescing(
-    std::vector<c10::intrusive_ptr<Work>>& reqs) {
+c10::intrusive_ptr<Work> ProcessGroupMCCL::endCoalescing() {
+  /* TODO(tyr)
+   here skiped
+   "if !nccl_use_nonblocking() or coalescedComms_.size() == 0"
+   as torch-musa only support non_blocking mode yet.
+  */
   groupEnd();
-  if (reqs.size() != coalescedDevices_.size()) {
-    TORCH_CHECK(false, "Number of requests do not match number of collectives");
+
+  coalescing_state_ = 0;
+  if (coalescedDevices_.size() == 0) {
+    return nullptr;
   }
 
-  int batch_idx = 0;
-  for (const auto& req : reqs) {
-    auto mcclWork = static_cast<ProcessGroupMCCL::WorkMCCL*>(req.get());
-    std::vector<at::Device> devices = coalescedDevices_[batch_idx];
-    const auto key = getKeyFromDevices(devices);
-    auto& mcclStreams = mcclStreams_[key];
-    for (const auto i : c10::irange(devices.size())) {
-      (*mcclWork->mcclEndEvents_)[i].record(mcclStreams[i]);
-    }
-    batch_idx += 1;
+  auto devices = coalescedDevices_[0];
+
+  auto work = initWork(
+      devices, rank_, OpType::COALESCED, "mccl:coalesced", c10::nullopt);
+  const auto key = getKeyFromDevices(devices);
+  auto& mcclStreams = mcclStreams_[key];
+  for (const auto i : c10::irange(devices.size())) {
+    auto& devEvent = (*work->mcclEndEvents_)[i];
+    devEvent.record(mcclStreams[i]);
   }
-  coalescing_active_ = false;
+
+  work->blockingWait_ = blockingWait_;
+  work->avoidRecordStreams_ = avoidRecordStreams_;
+  work->opTimeout_ = options_->timeout;
+  work->store_ = store_;
+
+  if (coalescing_state_ & CoalColl) {
+    workEnqueue(work);
+  }
+  return work;
 }
 
 template <typename Fn, typename PreProcess, typename PostProcess>
@@ -1411,8 +1436,10 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::collective(
   const auto key = getKeyFromDevices(devices);
   auto& mcclComms = getMCCLComm(key, devices, opType);
 
-  if (coalescing_active_) {
+  if (coalescing_state_ & CoalActive) {
+    coalescing_state_ |= CoalColl;
     coalescedDevices_.push_back(devices);
+    coalescedComms_.push_back(mcclComms);
   }
 
   // Used many times below, so we stash the unordered_map lookup
@@ -1434,6 +1461,11 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::collective(
   // Store references to outputs to be used by WorkMCCL::result and operator<<.
   work->outputs_ = std::make_shared<std::vector<at::Tensor>>(outputs);
 
+  if (avoidRecordStreams_) {
+    work->stashed_for_allocator_safety_ =
+        std::make_shared<std::vector<at::Tensor>>(inputs);
+  }
+
   c10::musa::OptionalMUSAGuard gpuGuard;
 
   // Start event should only be recorded before the mcclGroupStart()
@@ -1444,7 +1476,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::collective(
     }
   }
 
-  pre(mcclStreams);
+  pre(mcclStreams, work);
 
   {
     AutoMcclGroup mccl_group_guard;
@@ -1463,8 +1495,13 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::collective(
       // operations where `inputs' and `outputs' are not the same.
       //
       // See [Sync Streams].
-      c10::musa::MUSACachingAllocator::recordStream(
-          inputs[i].storage().data_ptr(), mcclStream);
+      if (!avoidRecordStreams_) {
+        c10::musa::MUSACachingAllocator::recordStream(
+            inputs[i].storage().data_ptr(), mcclStream);
+      } else {
+        // TODO(tyr): remove after test.
+        TORCH_CHECK(false, "Avoid record streams is not fully supported");
+      }
       C10D_MCCL_CHECK(
           fn(inputs[i], outputs[i], mcclComm->getMcclComm(), mcclStream),
           mcclComm->getMcclCommFailureReason());
@@ -1476,7 +1513,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::collective(
   // End event should only be recorded after the mcclGroupEnd()
   for (const auto i : c10::irange(devices.size())) {
     c10::musa::MUSAStream& mcclStream = mcclStreams[i];
-    if (!coalescing_active_) {
+    if (!coalescing_state_) {
       (*work->mcclEndEvents_)[i].record(mcclStream);
     }
     work->mcclComms_[i] = mcclComms[i];
@@ -1500,12 +1537,23 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::collective(
 
   // Set appropriate work parameters.
   work->blockingWait_ = blockingWait_;
+  work->avoidRecordStreams_ = avoidRecordStreams_;
   work->opTimeout_ = options_->timeout;
   work->store_ = store_;
 
-  if (asyncErrorHandling_ != NoHandling) {
+  if (!coalescing_state_ || asyncErrorHandling_ != NoHandling) {
     workEnqueue(work);
   }
+
+  // TODO(tyr): Combined asyncErrorHandling and coalescing state.
+  // maybe should use && instead of ||. check it in the future.
+  //
+  //  if (!coalescing_state_) {
+  //    workEnqueue(work);
+  //  }
+  //  if (asyncErrorHandling_ != NoHandling) {
+  //    workEnqueue(work);
+  //  }
 
   return work;
 }
@@ -1519,6 +1567,10 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::pointToPoint(
     PreProcess pre,
     PostProcess post,
     const char* profilingTitle) {
+  TORCH_WARN_ONCE(
+      !avoidRecordStreams_,
+      "MCCL_AVOID_RECORD_STREAMS=1 has no effect for point-to-point "
+      "collectives.");
   const auto devices = getDeviceList(tensors);
   std::string key;
   int p2pRank = 0, p2pTargetRank = 0;
@@ -1541,8 +1593,10 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::pointToPoint(
   }
   auto& mcclComms = getMCCLComm(key, devices, opType, p2pRank, isSendRecvSelf);
 
-  if (coalescing_active_) {
+  if (coalescing_state_ & CoalActive) {
+    coalescing_state_ |= CoalP2P;
     coalescedDevices_.push_back(devices);
+    coalescedComms_.push_back(mcclComms);
   }
 
   // First let MCCL streams wait for input tensors allocation streams
@@ -1574,7 +1628,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::pointToPoint(
     }
   }
 
-  pre(mcclStreams_[key]);
+  pre(mcclStreams_[key], work);
 
   for (const auto i : c10::irange(tensors.size())) {
     gpuGuard.set_index(devices[i].index());
@@ -1608,7 +1662,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::pointToPoint(
   // End event should only be recorded after the mcclGroupEnd()
   for (const auto i : c10::irange(tensors.size())) {
     c10::musa::MUSAStream& mcclStream = mcclStreams_[key][i];
-    if (!coalescing_active_) {
+    if (!coalescing_state_) {
       (*work->mcclEndEvents_)[i].record(mcclStream);
     }
     work->mcclComms_[i] = mcclComms[i];
@@ -1650,7 +1704,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::collective(
       inputs,
       outputs,
       fn,
-      [](std::vector<c10::musa::MUSAStream>&) {},
+      [](std::vector<c10::musa::MUSAStream>&,
+         c10::intrusive_ptr<ProcessGroupMCCL::WorkMCCL>& work) {},
       [](std::vector<c10::musa::MUSAStream>&) {},
       opType,
       profilingTitle);
@@ -1668,7 +1723,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::pointToPoint(
       fn,
       peer,
       opType,
-      [](std::vector<c10::musa::MUSAStream>&) {},
+      [](std::vector<c10::musa::MUSAStream>&,
+         c10::intrusive_ptr<ProcessGroupMCCL::WorkMCCL>& work) {},
       [](std::vector<c10::musa::MUSAStream>&) {},
       profilingTitle);
 }
@@ -1719,7 +1775,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::allreduce(
       tensor.numel(), // outSize
       tensor.scalar_type(), // dType
       std::vector<int64_t>(), // inSplitSizes
-      std::vector<int64_t>()); // outSplitSizes
+      std::vector<int64_t>(), // outSplitSizes
+      this->getSize());
 
   return allreduce_impl(tensors, opts);
 }
@@ -1743,7 +1800,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::allreduce_coalesced(
       tensors[0].scalar_type(), // dType
       // I'm not sure what in,outSplitSizes mean here.
       std::vector<int64_t>(), // inSplitSizes
-      std::vector<int64_t>()); // outSplitSizes
+      std::vector<int64_t>(), // outSplitSizes
+      this->getSize());
 
   return allreduce_impl(tensors, opts);
 }
@@ -1768,7 +1826,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::broadcast(
       tensor.numel(), // outSize
       tensor.scalar_type(), // dType
       std::vector<int64_t>(), // inSplitSizes
-      std::vector<int64_t>()); // outSplitSizes
+      std::vector<int64_t>(), // outSplitSizes
+      this->getSize());
 
   return collective(
       tensors,
@@ -1826,7 +1885,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::_broadcast_oop(
       tensor.numel(), // outSize
       tensor.scalar_type(), // dType
       std::vector<int64_t>(), // inSplitSizes
-      std::vector<int64_t>()); // outSplitSizes
+      std::vector<int64_t>(), // outSplitSizes
+      this->getSize());
 
   return collective(
       inputTensors,
@@ -1867,7 +1927,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::reduce(
       tensor.numel(), // outSize
       tensor.scalar_type(), // dType
       std::vector<int64_t>(), // inSplitSizes
-      std::vector<int64_t>()); // outSplitSizes
+      std::vector<int64_t>(), // outSplitSizes
+      this->getSize());
 
   int dev_in_group = 0;
   return collective(
@@ -1929,7 +1990,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::_reduce_oop(
       tensor.numel(), // outSize
       tensor.scalar_type(), // dType
       std::vector<int64_t>(), // inSplitSizes
-      std::vector<int64_t>()); // outSplitSizes
+      std::vector<int64_t>(), // outSplitSizes
+      this->getSize());
 
   int dev_in_group{0};
   return collective(
@@ -1986,7 +2048,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::allgather(
             this->getSize(), // dType
         tensor.scalar_type(),
         std::vector<int64_t>(), // inSplitSizes
-        std::vector<int64_t>()); // outSplitSize
+        std::vector<int64_t>(), // outSplitSize
+        this->getSize());
 
     return collective(
         inputTensors,
@@ -1995,8 +2058,10 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::allgather(
             at::Tensor& output,
             mcclComm_t comm,
             c10::musa::MUSAStream& stream) {
-          c10::musa::MUSACachingAllocator::recordStream(
-              output.storage().data_ptr(), stream);
+          if (!avoidRecordStreams_) {
+            c10::musa::MUSACachingAllocator::recordStream(
+                output.storage().data_ptr(), stream);
+          }
           return mcclAllGather(
               input.data_ptr(),
               output.data_ptr(),
@@ -2005,16 +2070,18 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::allgather(
               comm,
               stream.stream());
         },
-        [&](std::vector<c10::musa::MUSAStream>& mcclStreams) {},
+        [](std::vector<c10::musa::MUSAStream>& mcclStreams,
+           c10::intrusive_ptr<ProcessGroupMCCL::WorkMCCL>& work) {},
         [&](std::vector<c10::musa::MUSAStream>& mcclStreams) {
           // Copy the flattened output tensors to the outputs.
           for (const auto i : c10::irange(outputTensors.size())) {
             c10::musa::MUSAStreamGuard guard(mcclStreams[i]);
             for (const auto j : c10::irange(outputTensors[0].size())) {
               // See [Sync Streams].
-              c10::musa::MUSACachingAllocator::recordStream(
-                  outputTensors[i][j].storage().data_ptr(), mcclStreams[i]);
-
+              if (!avoidRecordStreams_) {
+                c10::musa::MUSACachingAllocator::recordStream(
+                    outputTensors[i][j].storage().data_ptr(), mcclStreams[i]);
+              }
               outputTensors[i][j].copy_(outputFlattened[i][j], true);
             }
           }
@@ -2045,8 +2112,9 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::allgather(
           _broadcast_oop(outputs_multi_dev, inputs_multi_dev, broadcastOpts);
       works.push_back(work);
     }
-    endCoalescing(works);
-    return initCoalescedWork(works, rank_, OpType::BROADCAST);
+    auto work = endCoalescing();
+    return work;
+    // return initCoalescedWork(works, rank_, OpType::BROADCAST);
   }
 }
 
@@ -2087,7 +2155,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::reduce_scatter(
         tensor.numel(), // outSize
         tensor.scalar_type(), // dType
         std::vector<int64_t>(), // inSplitSizes
-        std::vector<int64_t>()); // outSplitSizes
+        std::vector<int64_t>(), // outSplitSizes
+        this->getSize());
 
     return collective(
         inputFlattened,
@@ -2096,8 +2165,10 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::reduce_scatter(
             at::Tensor& output,
             mcclComm_t comm,
             c10::musa::MUSAStream& stream) {
-          c10::musa::MUSACachingAllocator::recordStream(
-              output.storage().data_ptr(), stream);
+          if (!avoidRecordStreams_) {
+            c10::musa::MUSACachingAllocator::recordStream(
+                output.storage().data_ptr(), stream);
+          }
           const auto mcclDataType = getMcclDataType(input.scalar_type());
           const auto mcclReduceOp = getMcclReduceOp(
               opts.reduceOp, input, mcclDataType, comm, dev_in_group++);
@@ -2110,15 +2181,21 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::reduce_scatter(
               comm,
               stream.stream());
         },
-        [&](std::vector<c10::musa::MUSAStream>& mcclStreams) {
+        [&](std::vector<c10::musa::MUSAStream>& mcclStreams,
+            c10::intrusive_ptr<ProcessGroupMCCL::WorkMCCL>& work) {
+          if (avoidRecordStreams_) {
+            // TODO(tyr): Not supported!
+            TORCH_CHECK(false, "AvoidRecordStreams is not supported");
+          }
           // Copy the input tensors to the flattened inputs.
           for (const auto i : c10::irange(inputTensors.size())) {
             c10::musa::MUSAStreamGuard guard(mcclStreams[i]);
             for (const auto j : c10::irange(inputTensors[0].size())) {
               // See [Sync Streams].
-              c10::musa::MUSACachingAllocator::recordStream(
-                  inputTensors[i][j].storage().data_ptr(), mcclStreams[i]);
-
+              if (!avoidRecordStreams_) {
+                c10::musa::MUSACachingAllocator::recordStream(
+                    inputTensors[i][j].storage().data_ptr(), mcclStreams[i]);
+              }
               inputFlattened[i][j].copy_(inputTensors[i][j], true);
             }
           }
@@ -2150,8 +2227,9 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::reduce_scatter(
       auto work = _reduce_oop(outputs_multi_dev, inputs_multi_dev, reduceOpts);
       works.push_back(work);
     }
-    endCoalescing(works);
-    return initCoalescedWork(works, rank_, OpType::REDUCE);
+    auto work = endCoalescing();
+    return work;
+    // return initCoalescedWork(works, rank_, OpType::REDUCE);
   }
 }
 
@@ -2186,7 +2264,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::_reduce_scatter_base(
       tensor.numel(), // outSize
       tensor.scalar_type(), // dtype
       std::vector<int64_t>(), // inSplitSizes
-      std::vector<int64_t>()); // outSplitSizes
+      std::vector<int64_t>(), // outSplitSizes
+      this->getSize());
 
   auto inputs = std::vector<at::Tensor>{inputTensor};
   auto outputs = std::vector<at::Tensor>{outputTensor};
@@ -2199,8 +2278,10 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::_reduce_scatter_base(
           at::Tensor& output,
           mcclComm_t comm,
           c10::musa::MUSAStream& stream) {
-        c10::musa::MUSACachingAllocator::recordStream(
-            output.storage().data_ptr(), stream);
+        if (!avoidRecordStreams_) {
+          c10::musa::MUSACachingAllocator::recordStream(
+              output.storage().data_ptr(), stream);
+        }
         auto mcclDataType = getMcclDataType(input.scalar_type());
         auto mcclReduceOp = getMcclReduceOp(
             opts.reduceOp, input, mcclDataType, comm, dev_in_group++);
@@ -2213,8 +2294,9 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::_reduce_scatter_base(
             comm,
             stream.stream());
       },
-      [&](std::vector<c10::musa::MUSAStream>&) {},
-      [&](std::vector<c10::musa::MUSAStream>&) {},
+      [](std::vector<c10::musa::MUSAStream>&,
+         c10::intrusive_ptr<ProcessGroupMCCL::WorkMCCL>& work) {},
+      [](std::vector<c10::musa::MUSAStream>&) {},
       OpType::_REDUCE_SCATTER_BASE,
       "mccl:_reduce_scatter_base");
 }
@@ -2230,7 +2312,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::barrier(const BarrierOptions& opts) {
       0, // outSize
       at::kByte, // dType
       std::vector<int64_t>(), // inSplitSizes
-      std::vector<int64_t>()); // outSplitSizes
+      std::vector<int64_t>(), // outSplitSizes
+      this->getSize());
 
   std::vector<at::Device> devices;
 
@@ -2414,7 +2497,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::alltoall_base(
         outputTensor.numel(), // outSize
         inputTensor.scalar_type(), // dType
         std::vector<int64_t>(), // inSplitSizes
-        std::vector<int64_t>()); // outSplitSizes
+        std::vector<int64_t>(), // outSplitSizes
+        this->getSize());
 
     return collective(
         inputTensors,
@@ -2424,8 +2508,10 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::alltoall_base(
             mcclComm_t comm,
             c10::musa::MUSAStream& stream) {
           // See [Sync Streams].
-          c10::musa::MUSACachingAllocator::recordStream(
-              output.storage().data_ptr(), stream);
+          if (!avoidRecordStreams_) {
+            c10::musa::MUSACachingAllocator::recordStream(
+                output.storage().data_ptr(), stream);
+          }
           return all2all_single_equal_split_impl(
               input, output, this->getSize(), comm, stream);
         },
@@ -2450,7 +2536,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::alltoall_base(
         outputTensor.numel(), // outSize
         inputTensor.scalar_type(), // dType
         inputSplitSizes, // inSplitSizes
-        outputSplitSizes); // outSplitSizes
+        outputSplitSizes, // outSplitSizes
+        this->getSize());
 
     return collective(
         inputTensors,
@@ -2468,8 +2555,10 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::alltoall_base(
           c10d::computeLengthsAndOffsets(
               outputSplitSizes, output, &recv_lengths, &recv_offsets);
           // See [Sync Streams].
-          c10::musa::MUSACachingAllocator::recordStream(
-              output.storage().data_ptr(), stream);
+          if (!avoidRecordStreams_) {
+            c10::musa::MUSACachingAllocator::recordStream(
+                output.storage().data_ptr(), stream);
+          }
           return all2all_single_unequal_split_impl(
               input.data_ptr(),
               send_lengths.data(),
@@ -2511,6 +2600,17 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::alltoall(
           c10::musa::MUSAStream& stream) {
         return all2all_impl(outputTensors, inputTensors, comm, stream);
       },
+      [&](std::vector<c10::musa::MUSAStream>&,
+          c10::intrusive_ptr<ProcessGroupMCCL::WorkMCCL>& work) {
+        if (avoidRecordStreams_) {
+          // TODO(tyr): remove after test.
+          TORCH_CHECK(false, "NOT Supported avoidRecordStreams");
+          auto& v = work->stashed_for_allocator_safety_;
+          v->insert(v->end(), inputTensors.begin(), inputTensors.end());
+          v->insert(v->end(), outputTensors.begin(), outputTensors.end());
+        }
+      },
+      [](std::vector<c10::musa::MUSAStream>&) {},
       OpType::ALLTOALL);
 }
 
@@ -2670,7 +2770,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::gather(
       tensor.numel() * this->getSize(), // outSize
       tensor.scalar_type(), // dType
       std::vector<int64_t>(), // inSplitSizes
-      std::vector<int64_t>()); // outSplitSize
+      std::vector<int64_t>(), // outSplitSize
+      this->getSize());
 
   return collective(
       inputTensors,
@@ -2681,9 +2782,11 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::gather(
           c10::musa::MUSAStream& stream) {
         const auto root = opts.rootRank;
         if (getRank() == root) {
-          for (auto output : outputs) {
-            c10::musa::MUSACachingAllocator::recordStream(
-                output.storage().data_ptr(), stream);
+          if (!avoidRecordStreams_) {
+            for (auto output : outputs) {
+              c10::musa::MUSACachingAllocator::recordStream(
+                  output.storage().data_ptr(), stream);
+            }
           }
         }
         return gather_impl(inputTensors[0], outputs, comm, stream, root);
@@ -2786,7 +2889,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::scatter(
       tensor.numel() * this->getSize(), // outSize
       tensor.scalar_type(), // dType
       std::vector<int64_t>(), // inSplitSizes
-      std::vector<int64_t>()); // outSplitSize
+      std::vector<int64_t>(), // outSplitSize
+      this->getSize());
 
   return collective(
       outputTensors,
@@ -2797,9 +2901,11 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::scatter(
           c10::musa::MUSAStream& stream) {
         const auto root = opts.rootRank;
         if (getRank() == root) {
-          for (auto input : inputs) {
-            c10::musa::MUSACachingAllocator::recordStream(
-                input.storage().data_ptr(), stream);
+          if (!avoidRecordStreams_) {
+            for (auto input : inputs) {
+              c10::musa::MUSACachingAllocator::recordStream(
+                  input.storage().data_ptr(), stream);
+            }
           }
         }
         return scatter_impl(inputs, outputTensors[0], comm, stream, root);
@@ -2842,8 +2948,10 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::_allgather_base(
           at::Tensor& output,
           mcclComm_t comm,
           c10::musa::MUSAStream& stream) {
-        c10::musa::MUSACachingAllocator::recordStream(
-            output.storage().data_ptr(), stream);
+        if (!avoidRecordStreams_) {
+          c10::musa::MUSACachingAllocator::recordStream(
+              output.storage().data_ptr(), stream);
+        }
         return mcclAllGather(
             input.data_ptr(),
             output.data_ptr(),
@@ -2852,8 +2960,6 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::_allgather_base(
             comm,
             stream.stream());
       },
-      [&](std::vector<c10::musa::MUSAStream>&) {},
-      [&](std::vector<c10::musa::MUSAStream>&) {},
       OpType::_ALLGATHER_BASE,
       "mccl:_all_gather_base");
 }

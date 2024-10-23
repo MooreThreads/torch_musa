@@ -34,6 +34,6 @@ all_support_types = [torch.float32]
 @pytest.mark.parametrize("dtype", all_support_types)
 def test_act(input_data, init, dtype):
     test = testing.OpTest(
-        func=torch.nn.PReLU, input_args={"init": init, "dtype": dtype}
+        func=torch.nn.PReLU, input_args={"init": init, "dtype": dtype}, test_dtype=dtype
     )
     test.check_result(inputs={"input": input_data.to(dtype)}, train=True)

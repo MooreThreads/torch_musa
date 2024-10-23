@@ -16,27 +16,6 @@ namespace musa {
 
 namespace {
 
-C10_ALWAYS_INLINE bool IsMudnnSupportedUpSampleNdDtype(c10::ScalarType dtype) {
-  return dtype == c10::ScalarType::Float || dtype == c10::ScalarType::Half ||
-      dtype == c10::ScalarType::BFloat16;
-}
-
-void UpSampleNdDtypeCheck(
-    const char* test_from,
-    const Tensor& test,
-    const char* func_from) {
-  const auto test_dtype = test.scalar_type();
-  if (C10_UNLIKELY(!IsMudnnSupportedUpSampleNdDtype(test_dtype))) {
-    TORCH_CHECK(
-        false,
-        func_from,
-        " expects dtype of ",
-        test_from,
-        " in [float, half, bfloat16], but got ",
-        test_dtype);
-  }
-}
-
 void UpSampleNdCommonDtypeCheck(
     const char* ref_from,
     const Tensor& ref,
@@ -100,7 +79,8 @@ Tensor& UpSampleNearest2dOut(
     c10::optional<double> scales_h,
     c10::optional<double> scales_w,
     Tensor& result) {
-  MUSA_TENSOR_TYPE_CHECK(self);
+  TORCH_MUSA_CHECK_FLOATING_TYPES_AND_N(
+      self.scalar_type(), "UpSampleNearest2dOut", ScalarType::Byte);
   c10::musa::MUSAGuard device_guard(self.device());
   TORCH_CHECK(
       self.dim() == 4,
@@ -110,12 +90,6 @@ Tensor& UpSampleNearest2dOut(
       result.dim() == 4,
       "UpSampleNearest2dOut needs output to be a 4-D tensor, which is ",
       result.dim());
-  TORCH_CHECK(
-      self.scalar_type() == c10::ScalarType::Float ||
-          self.scalar_type() == c10::ScalarType::Half ||
-          self.scalar_type() == c10::ScalarType::BFloat16,
-      "UpSampleNearest2dOut needs input to be a float or half/bfloat16 dtype tensor, which is",
-      self.scalar_type());
 
   if (self.numel() == 0) {
     return result;
@@ -205,7 +179,8 @@ Tensor& UpSampleNearest2dBwdOut(
     c10::optional<double> scales_h,
     c10::optional<double> scales_w,
     Tensor& grad_input) {
-  MUSA_TENSOR_TYPE_CHECK(grad_output);
+  TORCH_MUSA_CHECK_FLOATING_TYPES_AND_N(
+      grad_output.scalar_type(), "UpSampleNearest2dBwdOut", ScalarType::Byte);
   c10::musa::MUSAGuard device_guard(grad_output.device());
 
   int output_height = output_size[0];
@@ -266,7 +241,7 @@ Tensor& UpSampleBilinear2dOut(
     c10::optional<double> scales_h,
     c10::optional<double> scales_w,
     Tensor& result) {
-  MUSA_TENSOR_TYPE_CHECK(self);
+  TORCH_MUSA_CHECK_FLOATING_TYPES(self.scalar_type(), "UpSampleBilinear2dOut");
   c10::musa::MUSAGuard device_guard(self.device());
 
   int output_height = output_size[0];
@@ -326,7 +301,8 @@ Tensor& UpSampleBilinear2dBwdOut(
     c10::optional<double> scales_h,
     c10::optional<double> scales_w,
     Tensor& grad_input) {
-  MUSA_TENSOR_TYPE_CHECK(grad_output);
+  TORCH_MUSA_CHECK_FLOATING_TYPES(
+      grad_output.scalar_type(), "UpSampleBilinear2dBwdOut");
   c10::musa::MUSAGuard device_guard(grad_output.device());
 
   int output_height = output_size[0];
@@ -392,7 +368,8 @@ Tensor& UpSampleNearest3dOut(
     c10::optional<double> scales_w,
     at::Tensor& output) {
   UpSampleNdCommonDeviceCheck("self", self, "output", output, __func__);
-  UpSampleNdDtypeCheck("self", self, __func__);
+  TORCH_MUSA_CHECK_FLOATING_TYPES_AND_N(
+      self.scalar_type(), "UpSampleNearest3dOut", ScalarType::Byte);
   UpSampleNdCommonDtypeCheck("self", self, "output", output, __func__);
 
   if (C10_UNLIKELY(self.numel() == 0)) {
@@ -474,7 +451,8 @@ Tensor& UpSampleNearest3dBwdOut(
     at::Tensor& grad_input) {
   UpSampleNdCommonDeviceCheck(
       "grad_output", grad_output, "grad_input", grad_input, __func__);
-  UpSampleNdDtypeCheck("grad_output", grad_output, __func__);
+  TORCH_MUSA_CHECK_FLOATING_TYPES_AND_N(
+      grad_output.scalar_type(), "UpSampleNearest3dOut", ScalarType::Byte);
   UpSampleNdCommonDtypeCheck(
       "grad_output", grad_output, "grad_input", grad_input, __func__);
 

@@ -178,7 +178,7 @@ Tensor QAdd(
 
   at::Tensor quantized_output = at::_empty_affine_quantized(
       qa.sizes(),
-      at::device(at::kPrivateUse1).dtype(output_type),
+      qa.options().dtype(output_type),
       output_scale,
       output_zero_point,
       qa.suggest_memory_format());

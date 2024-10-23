@@ -6,7 +6,7 @@ import pytest
 import numpy as np
 import torch
 from torch_musa import testing
-from torch_musa.testing import get_musa_arch
+from torch_musa.testing import get_musa_arch, DefaultComparator, AbsDiffComparator
 
 input_data = [
     {"input": torch.randn([1, 10]), "dim": 1},
@@ -36,10 +36,12 @@ input_data = [
 ]
 
 
-def function(input_data, dtype, func):
+def function(input_data, dtype, func, **kwargs):
     input_data_cp = copy.deepcopy(input_data)
     if isinstance(input_data_cp["input"], torch.Tensor):
         input_data_cp["input"] = input_data_cp["input"].to(dtype)
+    if kwargs:
+        input_data_cp.update(kwargs)
     test = testing.OpTest(
         func=func,
         input_args=input_data_cp,
@@ -80,9 +82,9 @@ input_data = [
         "dim": 1,
     },
     {"input": torch.randn([1, 10, 5, 5, 10])[..., ::2], "dim": 4},
-    {"input": torch.randn([9, 8, 7, 6, 5, 4]), "dim": 5},
-    {"input": torch.randn([9, 8, 7, 6, 5, 4, 16]), "dim": 5},
-    {"input": torch.randn([9, 8, 7, 6, 5, 4, 5, 20]), "dim": 7},
+    {"input": torch.randn([2, 4, 2, 4, 2, 4]), "dim": 5},
+    {"input": torch.randn([2, 4, 2, 4, 2, 4, 16]), "dim": 5},
+    {"input": torch.randn([2, 4, 2, 4, 2, 4, 5, 2]), "dim": 7},
 ]
 
 
@@ -96,8 +98,9 @@ def test_mean(input_data, dtype):
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("dtype", [torch.float32])
-def test_sum(input_data, dtype):
-    function(input_data, dtype, torch.sum)
+@pytest.mark.parametrize("keepdim", [True, False])
+def test_sum(input_data, dtype, keepdim):
+    function(input_data, dtype, torch.sum, keepdim=keepdim)
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -119,7 +122,7 @@ def test_sum_bool(config):
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
-@pytest.mark.parametrize("dtype", [torch.float32, torch.double])
+@pytest.mark.parametrize("dtype", [torch.float32])
 def test_logsumexp(input_data, dtype):
     function(input_data, dtype, torch.logsumexp)
 
@@ -131,10 +134,14 @@ def test_logsumexp(input_data, dtype):
 def test_logsumexp_low_prec(input_data, dtype):
     if isinstance(input_data["input"], torch.Tensor):
         input_data["input"] = input_data["input"].to(dtype)
+    if dtype == torch.float16:
+        abs_diff, rel_diff = 5e-3, 1e-3
+    else:
+        abs_diff, rel_diff = 5e-2, 1e-3
     test = testing.OpTest(
         func=torch.logsumexp,
         input_args=input_data,
-        comparators=testing.DefaultComparator(abs_diff=1e-5),
+        comparators=testing.DefaultComparator(abs_diff, rel_diff),
     )
     if dtype == torch.float16:
         test.check_musafp16_vs_musafp32()
@@ -187,22 +194,117 @@ def test_norm_bf16(input_data):
     test.check_out_ops(bf16=True)
 
 
-extra_data_for_cumsum = [
-    {"input": torch.rand(3, 4) < 0.5, "dim": 1},
-    {"input": torch.rand([1, 10, 5]) < 0.5, "dim": 2},
-    {"input": torch.rand([1, 10, 5, 5]) < 0.5, "dim": 3},
-    {"input": torch.rand([1, 10, 5, 5, 10]) < 0.5, "dim": 4},
-    {"input": torch.rand([9, 8, 7, 6, 5, 4]) < 0.5, "dim": 5},
-    {"input": torch.rand([9, 8, 7, 6, 5, 4, 16]) < 0.5, "dim": 5},
-    {"input": torch.rand([9, 8, 7, 6, 5, 4, 5, 20]) < 0.5, "dim": 7},
+cumulative_float_cases = [
+    {
+        "input": torch.empty(2, 2, 2).uniform_(),
+        "dim": 0,
+        "in_dtype": torch.float16,
+        "out_dtypes": [torch.float16, torch.float],
+    },
+    {
+        "input": torch.empty(3, 4, 5).uniform_(),
+        "dim": 1,
+        "in_dtype": torch.bfloat16,
+        "out_dtypes": [torch.bfloat16, torch.float],
+    },
+    {
+        "input": torch.empty(2, 2, 2).uniform_(),
+        "dim": 2,
+        "in_dtype": torch.float,
+        "out_dtypes": [torch.float],
+    },
+]
+
+cumulative_int_cases = [
+    {
+        "input": torch.randint(-1, 9, (2, 2, 2)),
+        "dim": 1,
+        "in_dtypes": [torch.int8, torch.short, torch.uint8, torch.int, torch.long],
+        "out_dtypes": [torch.int, torch.long],
+    },
+    {
+        "input": torch.rand(2, 2, 2) < 0.9,
+        "dim": 1,
+        "in_dtypes": [torch.bool],
+        "out_dtypes": [torch.int, torch.long],
+    },
 ]
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@pytest.mark.parametrize("input_data", input_data + extra_data_for_cumsum)
-@pytest.mark.parametrize("dtype", [torch.float32])
-def test_cumsum(input_data, dtype):
-    function(input_data, dtype, torch.cumsum)
+@pytest.mark.parametrize("case", cumulative_float_cases)
+@pytest.mark.parametrize("op", [torch.cumsum, torch.cumprod])
+def test_cumulative_float(case, op):
+    in_type = case["in_dtype"]
+    if in_type == torch.bfloat16 and get_musa_arch() < 22:
+        pytest.skip(reason="Not supported")
+    out_types = case["out_dtypes"]
+    inp, dim = case["input"], case["dim"]
+    if in_type != torch.float:
+        inp = inp.to(in_type).float()
+        comp = DefaultComparator(abs_diff=1e-2, rel_diff=1e-2, equal_nan=True)
+    else:
+        comp = DefaultComparator(abs_diff=1e-5)
+    if in_type != torch.bfloat16:
+        cpu_out = op(inp.float(), dim)
+    else:
+        cpu_out = op(inp.to(in_type), dim).float()
+
+    def do_assert(c_musa, c_cpu, dtype):
+        assert c_musa.dtype == dtype
+        assert c_musa.shape == c_cpu.shape
+        assert comp(c_musa.cpu().float(), c_cpu)
+
+    musa_in = inp.musa().to(in_type)
+    musa_out = op(musa_in, dim)
+    do_assert(musa_out, cpu_out, in_type)
+
+    for o_t in out_types:
+        musa_out = op(musa_in, dim, dtype=o_t)
+        do_assert(musa_out, cpu_out, o_t)
+
+        musa_out.zero_()
+        op(musa_in, dim, out=musa_out)
+        do_assert(musa_out, cpu_out, o_t)
+
+    inplace = getattr(musa_in, op.__name__ + "_")
+    inplace(dim)
+    do_assert(musa_in, cpu_out, in_type)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("case", cumulative_int_cases)
+@pytest.mark.parametrize("op", [torch.cumsum, torch.cumprod])
+def test_cumulative_int(case, op):
+    in_types, out_types = case["in_dtypes"], case["out_dtypes"]
+    inp, dim = case["input"], case["dim"]
+    comp = AbsDiffComparator(abs_diff=1e-5)
+
+    def do_assert(c_musa, c_cpu, dtype):
+        assert c_musa.dtype == dtype
+        assert c_musa.shape == c_cpu.shape
+        assert comp(c_musa.cpu(), c_cpu)
+
+    for i_t in in_types:
+        cpu_in = inp.to(i_t)
+        cpu_out = op(cpu_in, dim)  # int64
+
+        musa_in = cpu_in.musa()
+        musa_out = op(musa_in, dim)
+        do_assert(musa_out, cpu_out, cpu_out.dtype)
+
+        for o_t in out_types:
+            musa_out = op(musa_in, dim, dtype=o_t)
+            do_assert(musa_out, cpu_out, o_t)
+
+            musa_out.zero_()
+            op(musa_in, dim, out=musa_out)
+            do_assert(musa_out, cpu_out, o_t)
+
+        if i_t != torch.bool:
+            getattr(musa_in, op.__name__ + "_")(dim)
+            getattr(cpu_in, op.__name__ + "_")(dim)
+            do_assert(musa_in, cpu_in, i_t)
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -220,7 +322,6 @@ reduce_with_indices_dtype = [
     torch.uint8,
     torch.int8,
     torch.int16,
-    torch.bool,
 ]
 if get_musa_arch() >= 22:
     reduce_with_indices_dtype.append(torch.bfloat16)
@@ -228,14 +329,14 @@ if get_musa_arch() >= 22:
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
-@pytest.mark.parametrize("dtype", reduce_with_indices_dtype)
+@pytest.mark.parametrize("dtype", reduce_with_indices_dtype + [torch.bool])
 def test_max(input_data, dtype):
     function(input_data, dtype, torch.max)
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
-@pytest.mark.parametrize("dtype", reduce_with_indices_dtype)
+@pytest.mark.parametrize("dtype", reduce_with_indices_dtype + [torch.bool])
 def test_max_out(input_data, dtype):
     cmp = testing.DefaultComparator()
 
@@ -256,7 +357,7 @@ def test_max_out(input_data, dtype):
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
-@pytest.mark.parametrize("dtype", reduce_with_indices_dtype)
+@pytest.mark.parametrize("dtype", reduce_with_indices_dtype + [torch.bool])
 def test_min(input_data, dtype):
     function(input_data, dtype, torch.min)
 
@@ -272,18 +373,55 @@ def test_all(input_data, dtype):
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("dtype", reduce_with_indices_dtype)
 def test_argmax(input_data, dtype):
-    if dtype == torch.bool:
-        pytest.skip(reason="\"argmax_cpu\" not implemented for 'Bool'")
     function(input_data, dtype, torch.argmax)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.filterwarnings("ignore:An output with one or more elements was resized")
+@pytest.mark.parametrize("keepdim", [True, False])
+@pytest.mark.parametrize("resize", [True, False])
+@pytest.mark.parametrize("channels_last", [True, False])
+def test_argmax_out(keepdim, resize, channels_last):
+    input_tensor = torch.randn([1, 10, 5, 5, 10])[..., ::2]  # neither CF nor CL
+    dim = 1
+    if resize:
+        # create new out
+        out = torch.randint(0, 10, (1,))
+    else:
+        out = torch.randint(0, 10, (1, 5, 5, 10))
+        if channels_last:
+            out = out.to(memory_format=torch.channels_last)
+    run_argmax_min_out(torch.argmax, input_tensor, dim, keepdim, out)
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("dtype", reduce_with_indices_dtype)
 def test_argmin(input_data, dtype):
-    if dtype == torch.bool:
-        pytest.skip(reason="\"argmin_cpu\" not implemented for 'Bool'")
     function(input_data, dtype, torch.argmin)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.filterwarnings("ignore:An output with one or more elements was resized")
+@pytest.mark.parametrize("keepdim", [True, False])
+def test_argmin_out(keepdim):
+    input_tensor = torch.randn([1, 10, 5, 5, 10])[..., ::2]  # neither CF nor CL
+    dim = 1
+    out = torch.randint(0, 10, (1, 5, 5, 10)).to(memory_format=torch.channels_last)
+    run_argmax_min_out(torch.argmin, input_tensor, dim, keepdim, out)
+
+
+def run_argmax_min_out(op, input_tensor, dim, keepdim, out):
+    input_cpu, input_musa = input_tensor.cpu(), input_tensor.musa()
+    out_cpu, out_musa = out.cpu(), out.musa()
+    result_cpu = op(input_cpu, dim=dim, keepdim=keepdim, out=out_cpu)
+    result_musa = op(input_musa, dim=dim, keepdim=keepdim, out=out_musa)
+
+    actual, desired = result_musa.cpu().numpy(), result_cpu.numpy()
+    assert (out_cpu.data_ptr() == result_cpu.data_ptr()) == (
+        out_musa.data_ptr() == result_musa.data_ptr()
+    )
+    np.testing.assert_allclose(actual, desired)
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)

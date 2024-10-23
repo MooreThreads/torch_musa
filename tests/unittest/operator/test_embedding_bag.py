@@ -47,8 +47,13 @@ def test_embedding_bag_1d(input_data, mode):
         func=torch.nn.EmbeddingBag,
         input_args=embedding_args,
         comparators=testing.DefaultComparator(abs_diff=1e-6),
+        test_dtype=torch.float32,
     )
-    test.check_result({"input": input_data["input"], "offsets": offsets}, train=False)
+    test.check_result(
+        {"input": input_data["input"], "offsets": offsets},
+        train=False,
+        dtype_nocast_map={"input": True, "offsets": True},
+    )
 
 
 input_data = [
@@ -83,8 +88,11 @@ def test_embedding_bag_2d(input_data, mode):
         func=torch.nn.EmbeddingBag,
         input_args=embedding_args,
         comparators=testing.DefaultComparator(abs_diff=1e-6),
+        test_dtype=torch.float32,
     )
-    test.check_result({"input": input_data["input"]}, train=False)
+    test.check_result(
+        {"input": input_data["input"]}, train=False, dtype_nocast_map={"input": True}
+    )
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)

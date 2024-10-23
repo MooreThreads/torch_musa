@@ -13,10 +13,12 @@ at::Tensor& RandpermGeneratorOut(
     at::Tensor& out) {
   const OptionalDeviceGuard device_guard(device_of(out));
   constexpr int64_t randperm_threshold = 256;
-  if (n <= randperm_threshold) {
-    return at::native::randperm_out_cuda(n, generator, out);
-  } else {
+  const bool is_support_dtype = out.scalar_type() == at::ScalarType::Int ||
+      out.scalar_type() == at::ScalarType::Long;
+  if (n > randperm_threshold && is_support_dtype) {
     return RandpermOutMusa(n, generator, out);
+  } else {
+    return at::native::randperm_out_cuda(n, generator, out);
   }
 }
 

@@ -3,6 +3,7 @@
 #include <ATen/ATen.h>
 #include <ATen/NativeFunctions.h>
 #include <ATen/native/TensorFactories.h>
+#include <ATen/ops/_make_per_tensor_quantized_tensor.h>
 #include <torch/library.h>
 
 namespace at {

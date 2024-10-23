@@ -39,8 +39,10 @@ def set_autocast_musa_dtype(dtype):
     if dtype == torch.bfloat16:
         assert (
             _get_musa_arch() > 21
-        ), f"Currently, autocast only support arch greater 21, such as\
-        S4000/S90, but now it is {torch.musa.get_device_properties(0).name}"
+        ), 'autocast detects that the current GPU is MTT S80, please install \
+        the GPU Driver and MUSA SDK for "CHUNXIAO" GPU arch. For more \
+        information, please refer to \
+        https://docs.mthreads.com/musa-sdk/musa-sdk-doc-online/install_guide/'
     return torch_musa._MUSAC._set_autocast_musa_dtype(dtype)
 
 

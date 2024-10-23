@@ -77,24 +77,37 @@ all_nn_funcs = [
     torch.nn.Hardsigmoid(),
 ]
 
+ACT_TEST_TOLERANCE = {
+    # abs_diff, rel_diff
+    torch.float32: (1e-6, 1e-6),
+    torch.float16: (5e-4, 5e-4),
+    torch.bfloat16: (5e-2, 5e-3),
+}
+
 
 def function(input_data, dtype, func, train=False):
     if isinstance(input_data["input"], torch.Tensor):
-        input_data["input"] = input_data["input"].to(dtype)
+        # NOTE: we should avoid using same input_data between multiple tests
+        input_data_new = copy.deepcopy(input_data)
+        input_data_new["input"] = input_data_new["input"].to(dtype)
     if "out" in input_data.keys() and isinstance(input_data["out"], torch.Tensor):
-        input_data["out"] = input_data["out"].to(dtype)
+        input_data_new["out"] = input_data_new["out"].to(dtype)
     if "min" in input_data.keys() and isinstance(input_data["min"], torch.Tensor):
-        input_data["min"] = input_data["min"].to(dtype)
+        input_data_new["min"] = input_data_new["min"].to(dtype)
     if "max" in input_data.keys() and isinstance(input_data["max"], torch.Tensor):
-        input_data["max"] = input_data["max"].to(dtype)
-    comparator = testing.DefaultComparator(abs_diff=1e-6, equal_nan=True)
-    if dtype == torch.bfloat16:
-        comparator = testing.DefaultComparator(
-            abs_diff=5e-2, rel_diff=5e-3, equal_nan=True
-        )
+        input_data_new["max"] = input_data_new["max"].to(dtype)
+    if func in (torch.reciprocal, torch.reciprocal_):
+        input_data_new["input"] = input_data_new["input"] + 2.0
+
+    abs_diff, rel_diff = ACT_TEST_TOLERANCE.get(
+        dtype, ACT_TEST_TOLERANCE[torch.float32]
+    )
+    if dtype == torch.float16 and repr(func) == "Hardswish()":
+        abs_diff, rel_diff = (2e-3, 5e-4)
+    comparator = testing.DefaultComparator(abs_diff, rel_diff, equal_nan=True)
     test = testing.OpTest(
         func=func,
-        input_args=input_data,
+        input_args=input_data_new,
         comparators=comparator,
     )
 
@@ -102,14 +115,11 @@ def function(input_data, dtype, func, train=False):
         test.check_musafp16_vs_musafp32()
         test.check_out_ops(fp16=True)
         test.check_grad_fn(fp16=True)
-    elif dtype == torch.bfloat16:
-        test.check_musabf16_vs_musafp16()
-        test.check_out_ops(bf16=True)
-        test.check_grad_fn(bf16=True)
     else:
+        bf16 = dtype == torch.bfloat16
         test.check_result(train=train)
-        test.check_out_ops()
-        test.check_grad_fn()
+        test.check_out_ops(bf16=bf16)
+        test.check_grad_fn(bf16=bf16)
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -271,13 +281,13 @@ input_datas = [
     {"input": torch.arange(0, 24 * 5).reshape(1, 2, 3, 4, 5, -1), "exponent": 1.0},
     {
         "input": torch.linspace(-10, 10, 24 * 5 * 6).reshape(1, 2, 3, 4, 5, 6, -1),
-        "exponent": 8.0,
+        "exponent": 2.0,  # avoid over/under flow when testing low precision
     },
     {
         "input": torch.linspace(-100, 100, 24 * 5 * 6 * 4).reshape(
             1, 2, 3, 4, 5, 6, 2, 2
         ),
-        "exponent": 4.0,
+        "exponent": 2.0,
     },
     {
         "input": torch.rand(4, 6, 0, 4, 1),
@@ -430,7 +440,11 @@ def test_softplus(shape, dtype, beta, threshold, test_out):
     if test_out:
         out = torch.tensor(np.array([]), dtype=dtype)
         input_args["out"] = out
-    test = testing.OpTest(func=torch.nn.functional.softplus, input_args=input_args)
+    abs_diff, rel_diff = ACT_TEST_TOLERANCE[dtype]
+    comparator = testing.DefaultComparator(abs_diff, rel_diff)
+    test = testing.OpTest(
+        func=torch.nn.functional.softplus, input_args=input_args, comparators=comparator
+    )
     if dtype == torch.float16:
         test.check_musafp16_vs_musafp32()
     elif dtype == torch.bfloat16:
@@ -509,10 +523,22 @@ unary_compare_datas = [
         "input": torch.tensor([-2, -1, 0, 1, 2], dtype=torch.int8),
         "other": 0,
     },
+    {
+        "input": torch.tensor([-2, -1, 0, 1, 2], dtype=torch.int16),
+        "other": 0,
+    },
     # int @ float
     {
         "input": torch.tensor([-2, -1, 0, 1, 2], dtype=torch.int8),
         "other": 1.1,
+    },
+    {
+        "input": torch.tensor([-2, -1, 0, 1, 2], dtype=torch.int16),
+        "other": 1.1,
+    },
+    {
+        "input": torch.tensor([-2, -1, 0, 1, 2], dtype=torch.int16),
+        "other": 1.0,
     },
     # uint @ float
     {
@@ -539,6 +565,7 @@ unary_compare_ops = [
     torch.le,
 ]
 
+
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", unary_compare_datas)
 @pytest.mark.parametrize("func", unary_compare_ops)
@@ -552,3 +579,122 @@ def test_unary_compare_mixed_dtypes_ops(input_data, func):
     test.check_result()
     test.check_out_ops()
     test.check_grad_fn()
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize(
+    "shape",
+    [
+        {
+            "shape": [128, 128],
+            "uncontig_func": lambda t: t[:64, 64:],
+        },
+        {
+            "shape": [128, 0],
+            "uncontig_func": lambda t: t[:64, :],
+        },
+    ],
+)
+@pytest.mark.parametrize(
+    "io_types",
+    [
+        [[torch.uint8, torch.int8], [torch.float16, torch.int32, torch.float]],
+        [[torch.int16], [torch.int32, torch.float]],
+        [[torch.int32], [torch.int64]],
+        [[torch.int64], []],
+    ],
+)
+@pytest.mark.parametrize("alpha", [2, 2.0, -2.0, -2])
+def test_unary_fmod_int(shape, io_types, alpha):
+    i_raw = torch.randint(-100, 100, shape["shape"])
+    i_ts, o_ts = io_types
+    u_f = shape["uncontig_func"]
+
+    def do_assert(golden, result):
+        assert golden.dtype == result.dtype
+        assert golden.shape == result.shape
+        assert torch.allclose(golden, result.cpu())
+
+    for i_t in i_ts:
+        cpu_i = i_raw.to(i_t)
+        musa_i = cpu_i.musa()
+
+        cpu_o = cpu_i.fmod(alpha)
+        musa_o = musa_i.fmod(alpha)
+        do_assert(cpu_o, musa_o)
+
+        uncontig_cpu_o = u_f(cpu_i).fmod(alpha)
+        uncontig_musa_o = u_f(musa_i).fmod(alpha)
+        do_assert(uncontig_cpu_o, uncontig_musa_o)
+
+        cpu_o.copy_(cpu_i)
+        cpu_o.fmod_(alpha)
+        musa_o.copy_(musa_i)
+        musa_o.fmod_(alpha)
+        do_assert(cpu_o, musa_o)
+
+        for o_t in o_ts:
+            can_run = False
+            try:
+                cpu_o.zero_()
+                cpu_o = cpu_o.to(o_t)
+                torch.fmod(cpu_i, alpha, out=cpu_o)
+                can_run = True
+            except RuntimeError:
+                pass
+            finally:
+                if can_run:
+                    musa_o.zero_()
+                    musa_o = musa_o.to(o_t)
+                    torch.fmod(musa_i, alpha, out=musa_o)
+                    do_assert(cpu_o, musa_o)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("shape", [[128, 128]])
+@pytest.mark.parametrize(
+    "io_types",
+    [
+        [[torch.float16], [torch.float]],
+        [[torch.bfloat16], [torch.float]],
+        [[torch.float], []],
+    ],
+)
+@pytest.mark.parametrize("alpha", [2, 2.0, -2.0, -2, 0])
+def test_unary_fmod_float(shape, io_types, alpha):
+    i_raw = torch.empty(shape)
+    i_raw.uniform_(-9.0, 9.0)
+    i_ts, o_ts = io_types
+
+    def do_assert(golden, result):
+        if result.dtype == torch.bfloat16:
+            assert golden.dtype == result.dtype
+        assert golden.shape == result.shape
+        atol = 2e-5
+        if result.dtype == torch.float16:
+            atol = 2e-3
+        elif result.dtype == torch.bfloat16:
+            atol = 2e-2
+        assert torch.allclose(
+            golden.float(), result.cpu().float(), atol=atol, equal_nan=True
+        )
+
+    for i_t in i_ts:
+        cpu_i = i_raw.to(i_t)
+        musa_i = cpu_i.musa()
+        if i_t != torch.bfloat16:
+            cpu_i = cpu_i.float()
+
+        cpu_o = cpu_i.fmod(alpha)
+        musa_o = musa_i.fmod(alpha)
+        do_assert(cpu_o, musa_o)
+
+        musa_o.copy_(musa_i)
+        musa_o.fmod_(alpha)
+        do_assert(cpu_o, musa_o)
+
+        for o_t in o_ts:
+            musa_o.zero_()
+            musa_o = musa_o.to(o_t)
+            torch.fmod(musa_i, alpha, out=musa_o)
+            do_assert(cpu_o, musa_o)

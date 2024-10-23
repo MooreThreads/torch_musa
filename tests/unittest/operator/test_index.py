@@ -356,7 +356,8 @@ def test_index_select(input_data, dtype):
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_datas)
 def test_index_select_bf16(input_data):
-    input_data["input"] = input_data["input"].to(torch.bfloat16)
-    test = testing.OpTest(func=torch.index_select, input_args=input_data)
-    test.check_result(bf16=True)
+    input_args = copy.deepcopy(input_data)
+    input_args["input"] = input_args["input"].to(torch.bfloat16)
+    test = testing.OpTest(func=torch.index_select, input_args=input_args)
+    test.check_result()
     test.check_grad_fn()

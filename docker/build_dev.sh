@@ -1,21 +1,15 @@
 #!/bin/bash
-TORCH_MUSA_TAG='main'
-versions=("38")
+TORCH_MUSA_TAG='v1.3.0'
+versions=("38" "39" "310")
+archs=("qy1" "qy2")
 
-
-BUILD_GPU_ARCH=${BUILD_GPU_ARCH:-qy2}
-
-if [ ${BUILD_GPU_ARCH} = "qy2" ]; then
-  MUSA_TOOLKITS_URL="https://oss.mthreads.com/release-rc/cuda_compatible/dev3.0.0/qy2/musa_toolkits_dev3.0.0-qy2.tar.gz"
-  MUDNN_URL="https://oss.mthreads.com/release-rc/cuda_compatible/dev3.0.0/qy2/mudnn_dev2.6.0-qy2.tar.gz"
-  MCCL_URL="https://oss.mthreads.com/release-rc/cuda_compatible/dev3.0.0/qy2/mccl_dev1.6.0-qy2.tar.gz"
-  TAG="dev3.0.0-v1.1.0-qy2"
-elif [ ${BUILD_GPU_ARCH} = "qy1" ]; then
-  MUSA_TOOLKITS_URL="https://oss.mthreads.com/release-rc/cuda_compatible/dev3.0.0/qy1/musa_toolkits_dev3.0.0-qy1.tar.gz"
-  MUDNN_URL="https://oss.mthreads.com/release-rc/cuda_compatible/dev3.0.0/qy1/mudnn_dev2.6.0-qy1.tar.gz"
-  MCCL_URL="https://oss.mthreads.com/release-rc/cuda_compatible/rc2.0.0/qy1/mccl_rc1.4.0-qy1.tar.gz"
-  TAG="dev3.0.0-v1.1.0-qy1"
-fi
+SW_TAG=rc3.1.0
+MUDNN_VERSION=rc2.7.0
+MCCL_VERSION=rc1.7.0
+TORCH_MUSA_VERSION=1.3.0
+MUSA_TOOLKITS_URL="https://oss.mthreads.com/release-rc/cuda_compatible/${SW_TAG}/musa_toolkits_${SW_TAG}.tar.gz"
+MUDNN_URL="https://oss.mthreads.com/release-rc/cuda_compatible/${SW_TAG}/mudnn_${MUDNN_VERSION}.tar.gz"
+MCCL_URL="https://oss.mthreads.com/release-rc/cuda_compatible/${SW_TAG}/mccl_${MCCL_VERSION}.tar.gz"
 
 function prepare_build_context() {
   # preprare files will be used when building docker image
@@ -45,15 +39,18 @@ if [ ${NO_PREPARE} = "0" ]; then
 fi
 
 
-for version in "${versions[@]}"; do  
-    command="bash build.sh -n sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py$version    \
-        -b sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py$version:base-pytorch2.0.0     \
-        -f ./ubuntu/dockerfile.dev                                                        \ 
-        -t ${TAG}                                                                         \       
-        -m ${MUSA_TOOLKITS_URL}                                                           \
-        --mudnn_url ${MUDNN_URL}                                                          \
-        --mccl_url  ${MCCL_URL}                                                           \    
-        --torch_musa_tag  ${TORCH_MUSA_TAG}                                               \    
+for arch in "${archs[@]}"; do
+for version in "${versions[@]}"; do
+    TAG="${SW_TAG}-v${TORCH_MUSA_VERSION}-${arch}"
+    command="bash build.sh -n sh-harbor.mthreads.com/mt-ai/musa-pytorch2.2.0-dev-py$version   \
+        -b sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py$version:base-$TAG                 \
+        -f ./ubuntu/dockerfile.dev                                                            \
+        -v ${version:0:1}.${version:1}                                                        \ 
+        -t ${TAG}                                                                             \       
+        -m ${MUSA_TOOLKITS_URL}                                                               \
+        --mudnn_url ${MUDNN_URL}                                                              \
+        --mccl_url  ${MCCL_URL}                                                               \    
+        --torch_musa_tag  ${TORCH_MUSA_TAG}                                                   \    
         --no_prepare"
     $command
     if [ $? -ne 0 ]; then

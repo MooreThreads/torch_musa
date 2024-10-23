@@ -20,8 +20,6 @@
 namespace at {
 namespace musa {
 
-using Status = ::musa::dnn::Status;
-
 void SortCall(
     Tensor& values,
     Tensor& indices,
@@ -29,39 +27,26 @@ void SortCall(
     int64_t dim,
     bool descending,
     bool stable) {
+  if C10_UNLIKELY (in.numel() == 0) {
+    return;
+  }
   if (in.dim() == 0 && in.numel() == 1) {
     values.copy_(in);
     indices.zero_();
     return;
   }
-  TORCH_CHECK(
-      in.scalar_type() == at::ScalarType::Half ||
-          in.scalar_type() == at::ScalarType::BFloat16 ||
-          in.scalar_type() == at::ScalarType::Float ||
-          in.scalar_type() == at::ScalarType::Int ||
-          in.scalar_type() == at::ScalarType::Long,
-      "Sort only support half/bfloat16/float/int32/int64, got ",
-      in.scalar_type());
-  auto input_ = CreateMUTensor(in);
-  auto values_ = CreateMUTensor(values);
-  auto indices_ = CreateMUTensor(indices);
+  muTensor input_ = CreateMUTensor(in);
+  muTensor values_ = CreateMUTensor(values);
+  muTensor indices_ = CreateMUTensor(indices);
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Sort mSort;
-  TORCH_CHECK(
-      Status::SUCCESS == mSort.SetDim(dim), "Sort set dim param failed");
-
-  TORCH_CHECK(
-      Status::SUCCESS == mSort.SetDescending(descending),
-      "Sort set descending flag failed");
-
-  TORCH_CHECK(
-      Status::SUCCESS == mSort.SetStable(stable),
-      "Sort set stable flag failed");
-
-  TORCH_CHECK(
-      Status::SUCCESS ==
-          mSort.Run(h, values_, indices_, input_, InternalMemAlloc),
+  CHECK_MUDNN_STATUS(mSort.SetDim(dim), "Sort set dim param failed");
+  CHECK_MUDNN_STATUS(
+      mSort.SetDescending(descending), "Sort set descending flag failed");
+  CHECK_MUDNN_STATUS(mSort.SetStable(stable), "Sort set stable flag failed");
+  CHECK_MUDNN_STATUS(
+      mSort.Run(h, values_, indices_, input_, InternalMemAlloc),
       "Sort run kernel failed");
 }
 

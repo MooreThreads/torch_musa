@@ -178,11 +178,25 @@
 - func: pow.Scalar
 - func: pow.Scalar_out
 
+- func: replication_pad3d
+- func: replication_pad3d.out
+
+- func: argmax
+- func: argmax.out
+  dispatch:
+    PrivateUse1: argmax_out_musa
+
+- func: argmin
+- func: argmin.out
+  dispatch:
+    PrivateUse1: argmin_out_musa
+
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 #
 #                         UNSTRUCTURED FUNCTIONS
 #
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
+
 
 - func: _scaled_dot_product_attention_flash_musa
   dispatch:
@@ -199,14 +213,14 @@
 - func: _scaled_dot_product_attention_math_musa_backward
   dispatch:
     PrivateUse1: MuDNNMathSDPABwd
-
-- func: rms_norm_forward
+    
+- func: _fused_rmsnorm_forward
   dispatch:
-    PrivateUse1: RMSNormForward
+    PrivateUse1: FusedRMSNormForward
 
-- func: rms_norm_backward
+- func: _fused_rmsnorm_backward
   dispatch:
-    PrivateUse1: RMSNormBackward
+    PrivateUse1: FusedRMSNormBackward
 
 - func: abs
   dispatch:
@@ -342,6 +356,17 @@
   structured: false
   dispatch:
     PrivateUse1: RsqrtOut
+
+- func: fmod.Tensor
+  dispatch:
+    PrivateUse1: FModTensor
+- func: fmod_.Tensor
+  dispatch:
+    PrivateUse1: FModTensor_
+- func: fmod.Tensor_out
+  structured: false
+  dispatch:
+    PrivateUse1: FModTensorOut
 
 - func: hardswish
   dispatch:
@@ -1030,14 +1055,6 @@
     PrivateUse1: MaskedFillTensor
     QuantizedPrivateUse1: MaskedFillQuantizeTensor
 
-- func: _foreach_add.Scalar
-  dispatch:
-    PrivateUse1: foreach_tensor_add_scalar_kernel_musa
-
-- func: _foreach_add_.Scalar
-  dispatch:
-    PrivateUse1: foreach_tensor_add_scalar_kernel_musa_
-
 - func: _foreach_mul.Scalar
   dispatch:
     PrivateUse1: foreach_tensor_mul_scalar_kernel_musa
@@ -1046,6 +1063,14 @@
   dispatch:
     PrivateUse1: foreach_tensor_mul_scalar_kernel_musa_
 
+- func: _foreach_mul_.Tensor
+  dispatch:
+    PrivateUse1: foreach_tensor_mul_tensor_kernel_cuda_
+
+- func: _foreach_mul.Tensor
+  dispatch:
+    PrivateUse1: foreach_tensor_mul_tensor_kernel_cuda
+
 - func: _foreach_mul_.List
   dispatch:
     PrivateUse1: foreach_tensor_mul_list_kernel_musa_
@@ -1053,6 +1078,14 @@
 - func: _foreach_mul.List
   dispatch:
     PrivateUse1: foreach_tensor_mul_list_kernel_musa
+
+- func: _foreach_mul.ScalarList
+  dispatch:
+    PrivateUse1: foreach_tensor_mul_scalarlist_kernel_musa
+
+- func: _foreach_mul_.ScalarList
+  dispatch:
+    PrivateUse1: foreach_tensor_mul_scalarlist_kernel_musa_
 
 - func: _foreach_div_.List
   dispatch:
@@ -1102,6 +1135,46 @@
   dispatch:
     PrivateUse1: foreach_tensor_add_list_alpha_kernel_musa_
 
+- func: _foreach_add.Scalar
+  dispatch:
+    PrivateUse1: foreach_tensor_add_scalar_kernel_musa
+
+- func: _foreach_add_.Scalar
+  dispatch:
+    PrivateUse1: foreach_tensor_add_scalar_kernel_musa_
+
+- func: _foreach_add.ScalarList
+  dispatch:
+    PrivateUse1: foreach_tensor_add_scalarlist_kernel_musa
+
+- func: _foreach_add_.ScalarList
+  dispatch:
+    PrivateUse1: foreach_tensor_add_scalarlist_kernel_musa_
+
+- func: _foreach_sub.List
+  dispatch:
+    PrivateUse1: foreach_tensor_sub_list_alpha_kernel_musa
+
+- func: _foreach_sub_.List
+  dispatch:
+    PrivateUse1: foreach_tensor_sub_list_alpha_kernel_musa_
+
+- func: _foreach_sub.Scalar
+  dispatch:
+    PrivateUse1: foreach_tensor_sub_scalar_kernel_musa
+
+- func: _foreach_sub_.Scalar
+  dispatch:
+    PrivateUse1: foreach_tensor_sub_scalar_kernel_musa_
+
+- func: _foreach_sub.ScalarList
+  dispatch:
+    PrivateUse1: foreach_tensor_sub_scalarlist_kernel_musa
+
+- func: _foreach_sub_.ScalarList
+  dispatch:
+    PrivateUse1: foreach_tensor_sub_scalarlist_kernel_musa_
+
 - func: _foreach_div.ScalarList
   dispatch:
     PrivateUse1: foreach_tensor_div_scalarlist_kernel_musa
@@ -1141,6 +1214,46 @@
 - func: _foreach_addcdiv_.ScalarList
   dispatch:
     PrivateUse1: foreach_tensor_addcdiv_scalarlist_musa_
+
+- func: _foreach_copy_
+  dispatch:
+    PrivateUse1: foreach_tensor_copy_list_kernel_musa_
+
+- func: _foreach_sign
+  dispatch:
+    PrivateUse1: foreach_tensor_sign_musa
+
+- func: _foreach_sign_
+  dispatch:
+    PrivateUse1: foreach_tensor_sign_musa_
+
+- func: _foreach_lerp.List
+  dispatch:
+    PrivateUse1: foreach_tensor_lerp_list_kernel_musa
+
+- func: _foreach_lerp_.List
+  dispatch:
+    PrivateUse1: foreach_tensor_lerp_list_kernel_musa_
+
+- func: _foreach_lerp.Scalar
+  dispatch:
+    PrivateUse1: foreach_tensor_lerp_scalar_kernel_musa
+
+- func: _foreach_lerp_.Scalar
+  dispatch:
+    PrivateUse1: foreach_tensor_lerp_scalar_kernel_musa_
+
+- func: _foreach_reciprocal
+  dispatch:
+    PrivateUse1: foreach_tensor_reciprocal_musa
+
+- func: _foreach_reciprocal_
+  dispatch:
+    PrivateUse1: foreach_tensor_reciprocal_musa_
+
+- func: _foreach_norm.Scalar
+  dispatch:
+    PrivateUse1: foreach_tensor_norm_cuda
 
 - func: gated_silu
   dispatch:
@@ -1325,6 +1438,14 @@
   dispatch:
     PrivateUse1: MmOut
 
+- func: mv
+  dispatch:
+    PrivateUse1: Mv
+
+- func: mv.out
+  dispatch:
+    PrivateUse1: MvOut
+
 - func: bmm
   dispatch:
     PrivateUse1: Bmm
@@ -1498,14 +1619,25 @@
 
 - func: cumsum
   dispatch:
-    PrivateUse1: Cumsum
+    PrivateUse1: CumSum
 - func: cumsum_
   dispatch:
-    PrivateUse1: Cumsum_
+    PrivateUse1: CumSum_
 - func: cumsum.out
   structured: false
   dispatch:
-    PrivateUse1: Cumsum_Out
+    PrivateUse1: CumSumOut
+
+- func: cumprod
+  dispatch:
+    PrivateUse1: CumProd
+- func: cumprod_
+  dispatch:
+    PrivateUse1: CumProd_
+- func: cumprod.out
+  structured: false
+  dispatch:
+    PrivateUse1: CumProdOut
 
 - func: any
   dispatch:
@@ -1576,16 +1708,6 @@
   structured: false
   dispatch:
     PrivateUse1: AllDimOut
-
-- func: argmax.out
-  structured: false
-  dispatch:
-    PrivateUse1: ArgmaxOut
-
-- func: argmin.out
-  structured: false
-  dispatch:
-    PrivateUse1: ArgminOut
 
 - func: var_mean.correction
   dispatch:
@@ -2121,3 +2243,27 @@
 - func: _adaptive_avg_pool3d_backward
   dispatch:
     PrivateUse1: AdaptiveAvgPool3dBackward
+
+- func: nan_to_num.out
+  dispatch:
+    PrivateUse1: nan_to_num_out
+
+- func: bincount
+  dispatch:
+    PrivateUse1: Bincount
+
+- func: fmin
+  dispatch:
+    PrivateUse1: FMin
+- func: fmin.out
+  structured: false
+  dispatch:
+    PrivateUse1: FMinOut
+
+- func: fmax
+  dispatch:
+    PrivateUse1: FMax
+- func: fmax.out
+  structured: false
+  dispatch:
+    PrivateUse1: FMaxOut

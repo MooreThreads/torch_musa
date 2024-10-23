@@ -56,13 +56,15 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/AbsKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationHardsigmoidKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationHardswishKernel.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationHardtanhKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationLeakyReluKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationLogSigmoidKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationGeluKernel.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationPreluKernel.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationHardtanhKernel.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationSoftplusKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationGluKernel.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationPreluKernel.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationSoftplusKernel.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationThresholdKernel.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/AdaptiveMaxPooling3d.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/AmpKernels.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/AveragePool3d.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/BinaryMiscBackwardOpsKernels.mu
@@ -77,12 +79,14 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistributionRandomKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DilatedMaxPool3d.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistributionExponentialKernel.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/FillKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachBinaryOpList.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachBinaryOpScalar.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachBinaryOpScalarTensor.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachBinaryOpScalarList.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachPointwiseOp.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachTernaryOp.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachUnaryOp.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachReduceOp.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/group_norm_kernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/GridSampler.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Indexing.mu
@@ -102,7 +106,6 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Repeat.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ReplicationPadding.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ScatterGatherKernel.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Shape.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TensorTransformations.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryFractionKernels.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnarySignKernels.mu
@@ -115,8 +118,6 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleNearest3d.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryOpsKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/WeightNorm.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationThresholdKernel.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/AdaptiveMaxPooling3d.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/Activation.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/IntReprQuant.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/MakePerTensorQuantizedTensor.mu
@@ -131,6 +132,7 @@ append_cxx_flag_if_supported("-Wno-unused-parameter" CMAKE_CXX_FLAGS)
 append_cxx_flag_if_supported("-Wno-unused-variable" CMAKE_CXX_FLAGS)
 append_cxx_flag_if_supported("-Wno-sign-compare" CMAKE_CXX_FLAGS)
 append_cxx_flag_if_supported("-w" CMAKE_CXX_FLAGS)
+append_cxx_flag_if_supported("-std=c++17" CMAKE_CXX_FLAGS)
 string(APPEND MUSA_MCC_FLAGS " -U__CUDA__")
 string(APPEND MUSA_MCC_FLAGS " -mllvm -mtgpu-enable-const-calc=0"
 )# TODO(mt-ai): remove after mtcc constCalc pass bug fixed
