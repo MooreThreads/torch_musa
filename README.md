@@ -128,31 +128,34 @@ python setup.py install
 
 #### Docker Image for Developer
 ```bash
-#To run the Docker for qy2, simply replace 'qy1' with 'qy2' in the following command.
-#To run the Docker for different python version, simply replace 'py39' 'py310' with 'py38' in the following command.
-#Python3.8
-docker run -it --privileged --pull always --network=host --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py38:rc2.1.0-v1.1.0-qy1 /bin/bash
+#To run the Docker for s3000/s80, simply replace 's3000/s80' with 's4000' in the following command.
+#To run the Docker for different python version, simply replace 'py38' 'py39' with 'py310' in the following command.
+#Python3.10
+docker run -it --privileged --pull always --network=host --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g registry.mthreads.com/mcconline/musa-pytorch-dev-public:rc3.1.0-v1.3.0-S4000-py310 /bin/bash
 ```
 <details>
 <summary>Docker Image List</summary>
 
 | Docker Tag | Description |
 | ---- | --- |
+| **rc3.1.0-v1.3.0-S80/rc3.1.0-v1.3.0-S3000/rc3.1.0-v1.3.0-S4000** <br>[ **Python3.8** ](https://mcconline.mthreads.com/repo/musa-pytorch-dev-public?repoName=musa-pytorch-dev-public&repoNamespace=mcconline&displayName=Pytorch%20on%20MUSA%20Dev) <br> [ **Python3.9** ](https://mcconline.mthreads.com/repo/musa-pytorch-dev-public?repoName=musa-pytorch-dev-public&repoNamespace=mcconline&displayName=Pytorch%20on%20MUSA%20Dev) <br> [ **Python3.10** ](https://mcconline.mthreads.com/repo/musa-pytorch-dev-public?repoName=musa-pytorch-dev-public&repoNamespace=mcconline&displayName=Pytorch%20on%20MUSA%20Dev)| musatoolkits rc3.1.0 <br> mudnn rc2.7.0 <br> mccl rc1.7.0 <br> [ **MUSA SDK rc3.1.0** ](https://developer.mthreads.com/sdk/download/musa?equipment=&os=&driverVersion=&version=) |
 | **rc2.1.0-v1.1.0-qy1/rc2.1.0-v1.1.0-qy2** <br>[ **Python3.8** ](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev-py38/artifacts-tab) <br> [ **Python3.9** ](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev-py39/artifacts-tab) <br> [ **Python3.10** ](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev-py310/artifacts-tab)| musatoolkits rc2.1.0 <br> mudnn rc2.5.0 <br> mccl rc2.0.0 <br> muAlg_dev-0.3.0  <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.3.0 <br> torch_musa branch v1.1.0-rc1 |
 
 </details>  
 
 #### Docker Image for User
 ```bash
-#To run the Docker for qy2, simply replace 'qy1' with 'qy2' in the following command.
-#python3.8
-docker run -it --privileged --pull always --network=host --name=torch_musa_release --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-release-py38:rc2.1.0-v1.1.0-qy1 /bin/bash
+#To run the Docker for s3000/s80, simply replace 's3000/s80' with 's4000' in the following command.
+#To run the Docker for different python version, simply replace 'py38' 'py39' with 'py310' in the following command.
+#python3.10
+docker run -it --privileged --pull always --network=host --name=torch_musa_release --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g registry.mthreads.com/mcconline/musa-pytorch-release-public:rc3.1.0-v1.3.0-S4000-py310 /bin/bash
 ```
 <details>
 <summary>Docker Image List</summary>
 
 | Docker Tag | Description |
 | ---- | --- |
+| **rc3.1.0-v1.3.0-S80/rc3.1.0-v1.3.0-S3000/rc3.1.0-v1.3.0-S4000** <br>[ **Python3.8** ](https://mcconline.mthreads.com/repo/musa-pytorch-release-public?repoName=musa-pytorch-release-public&repoNamespace=mcconline&displayName=Pytorch%20on%20MUSA%20Release) <br> [ **Python3.9** ](https://mcconline.mthreads.com/repo/musa-pytorch-release-public?repoName=musa-pytorch-release-public&repoNamespace=mcconline&displayName=Pytorch%20on%20MUSA%20Release) <br> [ **Python3.10** ](https://mcconline.mthreads.com/repo/musa-pytorch-release-public?repoName=musa-pytorch-release-public&repoNamespace=mcconline&displayName=Pytorch%20on%20MUSA%20Release)| musatoolkits rc3.1.0 <br> mudnn rc2.7.0 <br> mccl rc1.7.0 <br> [ **MUSA SDK rc3.1.0** ](https://developer.mthreads.com/sdk/download/musa?equipment=&os=&driverVersion=&version=)  |
 |**rc2.1.0-v1.1.0-qy1/rc2.1.0-v1.1.0-qy2**  <br> [ **Python3.8** ](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-release-py38/artifacts-tab) <br> [ **Python3.9** ](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-release-py39/artifacts-tab) <br> [ **Python3.10** ](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-release-py310/artifacts-tab)| musatoolkits rc2.1.0 <br> mudnn rc2.5.0 <br> mccl rc2.0.0 <br> muAlg_dev-0.3.0  <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.3.0 <br> torch_musa branch v1.1.0-rc1 |
 </details>  
 
