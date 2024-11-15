@@ -122,7 +122,7 @@ python setup.py install
 
 ### Docker Image
 
-**NOTE:** If you want to use **torch_musa** in docker container, please install [mt-container-toolkit](https://mcconline.mthreads.com/software/1?id=1) first and use '--env MTHREADS_VISIBLE_DEVICES=all' when starting a container. During its initial startup, Docker performs a self-check. The unit tests and integration test results for **torch_musa** in the develop docker are located in /home/integration_test_output.txt and /home/ut_output.txt. The develop docker has already installed torch and **torch_musa** and the source code is located in /home. 
+**NOTE:** If you want to use **torch_musa** in docker container, please install [mt-container-toolkit](https://mcconline.mthreads.com/software/1?id=1) first and use '--env MTHREADS_VISIBLE_DEVICES=all' when starting a container. During its initial startup, Docker performs a self-check. The unit tests and integration test results for **torch_musa** in the develop docker are located in /home/integration_test_output.txt and /home/ut_output.txt. The develop docker has already installed torch and **torch_musa** and the source code is located in /home.
 
 
 
