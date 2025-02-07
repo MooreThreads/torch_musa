@@ -40,21 +40,8 @@
 ## Installation
 
 ### From Python Package
-- [Package Download Link](https://oss.mthreads.com:9001/buckets/ai-product/browse/ZGFpbHkvZnJhbWV3b3JrL3RvcmNoX211c2E=)
 
-```bash
-# for Python3.8
-pip install torch-2.0.0-cp38-cp38-linux_x86_64.whl
-pip install torch_musa-2.0.0-cp38-cp38-linux_x86_64.whl
-
-# for Python3.9
-pip install torch-2.0.0-cp39-cp39-linux_x86_64.whl
-pip install torch_musa-2.0.0-cp39-cp39-linux_x86_64.whl
-
-# for python3.10
-pip install torch-2.0.0-cp310-cp310-linux_x86_64.whl
-pip install torch_musa-2.0.0-cp310-cp310-linux_x86_64.whl
-```
+**(WIP)** We are uploading our torch_musa to PyPi so that users can install torch_musa with `pip`.
 
 ### From Source
 
