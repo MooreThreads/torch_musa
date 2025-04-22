@@ -1,0 +1,13 @@
+diff --git a/torch/csrc/distributed/c10d/socket.h b/torch/csrc/distributed/c10d/socket.h
+index 5283272..a91f84f 100644
+--- a/torch/csrc/distributed/c10d/socket.h
++++ b/torch/csrc/distributed/c10d/socket.h
+@@ -42,7 +42,7 @@ class SocketOptions {
+ 
+  private:
+   bool prefer_ipv6_ = true;
+-  std::chrono::seconds connect_timeout_{30};
++  std::chrono::seconds connect_timeout_{60};
+ };
+ 
+ class SocketImpl;

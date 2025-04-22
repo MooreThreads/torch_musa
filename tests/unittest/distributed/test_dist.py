@@ -65,6 +65,11 @@ def _test_broacast():
     for _ in tensor:
         assert _ != 0
 
+    tmp_tensor = torch.tensor([], device=device)
+    dist.broadcast(tmp_tensor, src=0, async_op=False)
+    for _ in tmp_tensor:
+        assert _ != 0
+
 
 def _test_allreduce():
     rank = dist.get_rank()

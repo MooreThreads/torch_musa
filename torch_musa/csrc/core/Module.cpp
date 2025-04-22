@@ -1,5 +1,6 @@
 #include <ATen/Parallel.h>
 #include <ATen/Utils.h>
+#include <ATen/autocast_mode.h>
 #include <c10/util/Backtrace.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -35,6 +36,8 @@
 #include "torch_musa/csrc/core/StorageSharing.h"
 #include "torch_musa/csrc/utils/Logging.h"
 #include "torch_musa/csrc/utils/musa_lazy_init.h"
+
+#include "torch_musa/csrc/aten/ConvUtils.h"
 
 #include <pthread.h>
 
@@ -714,6 +717,42 @@ PyObject* PyMusaSetDefaultDtype(PyObject* _unused, PyObject* type) {
   END_HANDLE_TH_ERRORS
 }
 
+at::MemoryFormat DetermineBackendMemoryFormat(
+    const at::Tensor& input,
+    const at::Tensor& weight,
+    const at::native::ConvBackend backend) {
+  at::MemoryFormat backend_memory_format = at::MemoryFormat::Contiguous;
+  auto k = weight.ndimension();
+
+  switch (backend) {
+    // Cudnn and Miopen backend are removed
+    case at::native::ConvBackend::Mkldnn:
+    case at::native::ConvBackend::MkldnnTranspose:
+      if (at::native::mkldnn_conv_use_channels_last(input, weight)) {
+        backend_memory_format = (k == 5) ? at::MemoryFormat::ChannelsLast3d
+                                         : at::MemoryFormat::ChannelsLast;
+      }
+      break;
+    case at::native::ConvBackend::Slow2d:
+    case at::native::ConvBackend::SlowDilated2d:
+    case at::native::ConvBackend::SlowTranspose2d:
+      if (at::native::thnn_conv_use_channels_last(input, weight)) {
+        backend_memory_format = at::MemoryFormat::ChannelsLast;
+      }
+      break;
+    case at::native::ConvBackend::Overrideable:
+      if (at::musa::musa_conv_use_channels_last(input, weight)) {
+        backend_memory_format = (k == 5) ? at::MemoryFormat::ChannelsLast3d
+                                         : at::MemoryFormat::ChannelsLast;
+      }
+      break;
+    default:
+      backend_memory_format = at::MemoryFormat::Contiguous;
+  }
+
+  return backend_memory_format;
+}
+
 static PyMethodDef MusaMemoryMethods[] = {
     {"_musa_emptyCache", PyMusaEmptyCache, METH_NOARGS, nullptr},
     {"_musa_memoryStats", PyMusaMemoryStats, METH_O, nullptr},
@@ -773,7 +812,7 @@ PyObject* InitMusaModule() {
   AddPyMethodDefs(methods, MusaStreamMethods);
   AddPyMethodDefs(methods, MusaMemoryMethods);
   AddPyMethodDefs(methods, MusaDtypeMethods);
-  AddPyMethodDefs(methods, at::musa::autocast::GetAutocastMethods());
+  AddPyMethodDefs(methods, at::autocast::musa::GetAutocastMethods());
   AddPyMethodDefs(methods, at::musa::GetContextMethods());
   AddPyMethodDefs(methods, at::musa::GetStorageMethods());
 
@@ -783,13 +822,19 @@ PyObject* InitMusaModule() {
 
   THMPStream_init(module);
   THMPEvent_init(module);
-  torch::musa::python::InitCommMethods(module);
 
 #ifdef USE_MCCL
+  torch::musa::python::InitCommMethods(module);
   AddMusaProcessGroupMethods(module);
 #endif
   // Register MUSA device properties
   RegisterMusaDeviceProperties(module);
+
+  // for methods that may rely on backend's behavior,
+  // we will replace PyTorch's original implementation
+  auto py_module = py::reinterpret_borrow<py::module>(module);
+  py_module.def(
+      "_conv_determine_backend_memory_format", DetermineBackendMemoryFormat);
 
   return module;
 }

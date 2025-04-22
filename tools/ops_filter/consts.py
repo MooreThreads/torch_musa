@@ -4,7 +4,6 @@ from torchgen.model import (
     DispatchKey,
 )
 
-
 class OpKind(Enum):
     ONLY_CPU = auto()
     CUDA_CUSTOM = auto()
@@ -16,16 +15,12 @@ class OpKind(Enum):
         if self is OpKind.ONLY_CPU:
             return "Explicitly registered only by CPU kernel, missing CUDA dispatch."
         elif self is OpKind.CUDA_CUSTOM:
-            return (
-                "CUDA customized kernel, CPU dispatch function is different or missing."
-            )
+            return "CUDA customized kernel, CPU dispatch function is different or missing."
         elif self is OpKind.ONLY_COMPOSITE:
             return "Composite kernel entrypoint, no CPU/CUDA specialized dispatches."
         elif self is OpKind.SAME_CPU_CUDA:
             return "CPU/CUDA share the same kernel explicitly."
-        return (
-            "Temporarily ignored by torch_musa, may further be processed in the future."
-        )
+        return "Temporarily ignored by torch_musa, may further be processed in the future."
 
     @classmethod
     def choices(cls):

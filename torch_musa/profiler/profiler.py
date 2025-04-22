@@ -498,6 +498,7 @@ class profile(_KinetoProfile):
         with_flops: bool = False,
         with_modules: bool = False,
         experimental_config: Optional[_ExperimentalConfig] = None,
+        start_step: int = 0,
         # deprecated:
         use_musa: Optional[bool] = None,
     ):
@@ -528,7 +529,7 @@ class profile(_KinetoProfile):
             self.schedule = _default_schedule_fn
             self.record_steps = False
         self.on_trace_ready = on_trace_ready
-        self.step_num = 0
+        self.step_num = start_step
         self.current_action = self.schedule(self.step_num)
         self.step_rec_fn: Optional[prof.record_function] = None
 
@@ -627,8 +628,8 @@ class profile(_KinetoProfile):
         if self.record_steps and self.step_rec_fn:
             self.step_rec_fn.__exit__(None, None, None)
         prev_action = self.current_action
-        cur_step = self.step_num
         self.step_num += 1
+        cur_step = self.step_num
         self.current_action = self.schedule(self.step_num)
 
         self._transit_action(prev_action, self.current_action)

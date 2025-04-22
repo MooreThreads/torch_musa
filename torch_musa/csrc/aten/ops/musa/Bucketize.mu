@@ -2,6 +2,7 @@
 #include <ATen/core/Tensor.h>
 
 #include "torch_musa/csrc/aten/mudnn/Handle.h"
+#include "torch_musa/csrc/aten/musa/MUSAMarcos.muh"
 #include "torch_musa/csrc/aten/musa/MUSAMath.muh"
 #include "torch_musa/csrc/aten/ops/Bucketize.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
@@ -54,7 +55,7 @@ __global__ void BucketizeSmallBDKernel(
   for (int i = lidx; i < bd_num; i += block_size) {
     shared_bd[i] = bd_ptr[i];
   }
-  __syncthreads();
+  __SYNCTHREADS;
 
   for (int index = blockIdx.x * blockDim.x + threadIdx.x; index < elements;
        index += blockDim.x * gridDim.x) {

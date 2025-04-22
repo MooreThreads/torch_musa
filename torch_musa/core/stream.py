@@ -4,6 +4,7 @@
 import ctypes
 from typing import Any, Optional
 import torch
+from torch._streambase import _EventBase, _StreamBase
 import torch_musa
 from ._lazy_init import _lazy_init
 from ._utils import _dummy_type, _get_musa_device_index
@@ -15,7 +16,7 @@ if not hasattr(torch_musa._MUSAC, "_MusaStreamBase"):
     torch_musa._MUSAC.__dict__["_MusaEventBase"] = _dummy_type("_MusaEventBase")
 
 
-class Stream(torch_musa._MUSAC._MusaStreamBase):
+class Stream(torch_musa._MUSAC._MusaStreamBase, _StreamBase):
     """Wrapper around a MUSA stream.
 
     A MUSA stream is a linear sequence of execution that belongs to a specific
@@ -116,7 +117,7 @@ class ExternalStream(Stream):
             )
 
 
-class Event(torch_musa._MUSAC._MusaEventBase):
+class Event(torch_musa._MUSAC._MusaEventBase, _EventBase):
     """Wrapper around a MUSA event.
 
     MUSA events are synchronization markers that can be used to monitor the

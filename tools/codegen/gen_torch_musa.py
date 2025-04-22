@@ -306,7 +306,10 @@ def musa_override_native_function_info(
         assert dk in impl_kinds
         assert (
             impl_kinds[dk] != FunctionImplKind.Legacy or same_device_behaviour is True
-        )
+        ), f"{musa_op['func']} info mismatch! \
+        Op kind: {impl_kinds[dk]}, \n\
+        musa_device_check: {musa_device_check}, musa_device_guard: {musa_device_guard}\n\
+        torch_device_check: {torch_device_check}, torch_device_guard: {torch_device_guard})"
 
     if musa_device_check is not None:
         pop_one("device_check")

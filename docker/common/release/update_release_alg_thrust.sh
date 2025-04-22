@@ -3,7 +3,7 @@ set -e
 
 # clone mualg and install
 read MUALG MUALG_TAG <<< `sed -n 5p $(dirname $0)/version.txt | awk -F: '{print $1, $2}'`
-if [ $MUALG != "MUALG" ]; then
+if [ "$MUALG" != "MUALG" ]; then
   echo -e "\033[31mload wrong muthrust version: $MUALG:$MUALG_TAG, check ./version.txt! \033[0m"
   exit 1
 fi
@@ -23,7 +23,7 @@ rm -rf muAlg
 
 # clone muthrust and install
 read MUTHRUST MUTHRUST_TAG <<< `sed -n 6p $(dirname $0)/version.txt | awk -F: '{print $1, $2}'`
-if [ $MUTHRUST != "MUTHRUST" ]; then
+if [ "$MUTHRUST" != "MUTHRUST" ]; then
   echo -e "\033[31mload wrong muthrust version: $MUTHRUST:$MUTHRUST_TAG, check ./version.txt! \033[0m"
   exit 1
 fi

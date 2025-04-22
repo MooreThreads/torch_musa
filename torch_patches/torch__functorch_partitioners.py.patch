@@ -1,0 +1,21 @@
+diff --git a/torch/_functorch/partitioners.py b/torch/_functorch/partitioners.py
+index 1a7f974..44e5aa5 100644
+--- a/torch/_functorch/partitioners.py
++++ b/torch/_functorch/partitioners.py
+@@ -516,12 +516,16 @@ def functionalize_rng_ops(joint_module, fw_module, bw_module, num_sym_nodes):
+             if isinstance(candidate, torch.Tensor):
+                 if candidate.device.type == "cuda":
+                     return "cuda"
++                elif candidate.device.type == "musa":
++                    return "musa"
+ 
+         return "cpu"
+ 
+     def get_sample_rng_state(device):
+         if device == "cuda":
+             return torch.cuda.get_rng_state()
++        elif device == "musa":
++            return torch.musa.get_rng_state()
+         return torch.get_rng_state()
+ 
+     # Step 1 - Construct a mapping of rng node between the fwd and its counterpart in bwd.

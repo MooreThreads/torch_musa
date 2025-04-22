@@ -1,5 +1,5 @@
 diff --git a/torch/distributed/distributed_c10d.py b/torch/distributed/distributed_c10d.py
-index 27d7919598f..23b47999995 100644
+index 27d7919..8566c78 100644
 --- a/torch/distributed/distributed_c10d.py
 +++ b/torch/distributed/distributed_c10d.py
 @@ -50,7 +50,7 @@ __all__ = [
@@ -57,3 +57,15 @@ index 27d7919598f..23b47999995 100644
          # NCCL style coalescing
          with _coalescing_manager(group, device, async_ops=True) as cm:
              for p2p_op in p2p_op_list:
+@@ -1899,7 +1906,10 @@ def broadcast(tensor, src, group=None, async_op=False):
+     if _rank_not_in_group(group):
+         _warn_not_in_group("broadcast")
+         return
+-
++    if tensor is None or tensor.numel() == 0:
++        warnings.warn(f"input tensor is empty ")
++        return
++    
+     opts = BroadcastOptions()
+     opts.rootRank = src
+     opts.rootTensor = 0

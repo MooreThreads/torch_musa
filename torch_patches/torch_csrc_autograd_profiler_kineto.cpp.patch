@@ -1,0 +1,40 @@
+diff --git a/torch/csrc/autograd/profiler_kineto.cpp b/torch/csrc/autograd/profiler_kineto.cpp
+index 12fba7f..47f89b2 100644
+--- a/torch/csrc/autograd/profiler_kineto.cpp
++++ b/torch/csrc/autograd/profiler_kineto.cpp
+@@ -383,16 +383,20 @@ struct KinetoThreadLocalState : public ProfilerStateBase {
+     auto records_and_trace =
+         record_queue_.getRecords(std::move(converter), start_time_, end_time);
+ 
+-    materializeOpEvents(records_and_trace.first);
++    if (std::getenv("PROFILING_DISABLE_MATERIALIZE_OP_EVENTS") == nullptr ) {
++      materializeOpEvents(records_and_trace.first);
++    }
+ 
+     // `kineto_events_` does not include Python events. Instead it exposes them
+     // via the `stacks` property.
+-    kineto_events_.erase(
++    if (std::getenv("PROFILING_DISABLE_KINETO_EVENTS_ERASE") == nullptr) {
++      kineto_events_.erase(
+         std::remove_if(
+             kineto_events_.begin(),
+             kineto_events_.end(),
+             [](const auto& i) { return i.isPythonFunction(); }),
+         kineto_events_.end());
++    }
+ 
+     return std::move(records_and_trace.second);
+   }
+@@ -469,8 +473,10 @@ void onFunctionExit(
+     try {
+       auto fallback = kineto_ctx_ptr->fallback_;
+       TORCH_INTERNAL_ASSERT(fallback != nullptr);
+-      torch::profiler::impl::cudaStubs()->record(
+-          nullptr, &fallback->device_event_end_, nullptr);
++      // musaStubs does not exist temporarily hence comment the following lines
++      // which won't affect the functionality of torch musa profiler
++      // torch::profiler::impl::cudaStubs()->record(
++      //     nullptr, &fallback->cuda_event_end_, nullptr);
+     } catch (const std::exception& e) {
+       LOG(WARNING) << "Failed to record CUDA event. " << e.what();
+     }

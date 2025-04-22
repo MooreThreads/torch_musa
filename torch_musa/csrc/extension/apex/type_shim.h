@@ -1,6 +1,12 @@
 #include <ATen/ATen.h>
 #include "compat.h"
 
+#if (defined(__MUSA_ARCH__) && __MUSA_ARCH__ == 310)
+#define __SYNCTHREADS __syncthreads_lm()
+#else
+#define __SYNCTHREADS __syncthreads()
+#endif
+
 // Forward/backward compatiblity hack around
 // https://github.com/pytorch/pytorch/commit/3aeb78079bcd68282fe9117088e138b77318e288
 // pending more future-proof guidance from upstream.
@@ -275,14 +281,14 @@ __device__ __forceinline__ T reduce_block_into_lanes(
 
   if (blockSize >= 64) {
     x[tid] = val;
-    __syncthreads();
+    __SYNCTHREADS;
   }
 
 #pragma unroll
   for (int i = (blockSize >> 1); i >= 64; i >>= 1) {
     if (tid < i)
       x[tid] = x[tid] + x[tid + i];
-    __syncthreads();
+    __SYNCTHREADS;
   }
 
   T final;
@@ -303,7 +309,7 @@ __device__ __forceinline__ T reduce_block_into_lanes(
     if (tid < lanes)
       x[tid] = final; // EpilogueOp
     // Make sure the smem result is visible to all warps.
-    __syncthreads();
+    __SYNCTHREADS;
   }
 
   return final;
@@ -322,14 +328,14 @@ __device__ __forceinline__ T reduce_block_into_lanes_max_op(
 
   if (blockSize >= 64) {
     x[tid] = val;
-    __syncthreads();
+    __SYNCTHREADS;
   }
 
 #pragma unroll
   for (int i = (blockSize >> 1); i >= 64; i >>= 1) {
     if (tid < i)
       x[tid] = fmaxf(fabsf(x[tid]), fabsf(x[tid + i]));
-    __syncthreads();
+    __SYNCTHREADS;
   }
 
   T final;
@@ -351,7 +357,7 @@ __device__ __forceinline__ T reduce_block_into_lanes_max_op(
     if (tid < lanes)
       x[tid] = final; // EpilogueOp
     // Make sure the smem result is visible to all warps.
-    __syncthreads();
+    __SYNCTHREADS;
   }
 
   return final;

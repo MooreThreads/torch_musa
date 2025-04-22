@@ -3,5 +3,6 @@
 """
 
 from .fused_lamb import FusedLAMB
+from .fused_adam import FusedAdam
 
-__all__ = ["FusedLAMB"]
+__all__ = ["FusedLAMB", "FusedAdam"]

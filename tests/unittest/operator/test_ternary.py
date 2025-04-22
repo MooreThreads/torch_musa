@@ -519,6 +519,44 @@ def test_where_bf16(data, dtype):
     test.check_grad_fn()
 
 
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize(
+    "cond",
+    [
+        torch.randint(0, 2, (128, 128)).bool(),
+    ],
+)
+@pytest.mark.parametrize(
+    "self",
+    [
+        torch.tensor(1),
+        torch.tensor(1.0),
+    ],
+)
+@pytest.mark.parametrize(
+    "other",
+    [
+        torch.tensor(2),
+        torch.tensor(2.0),
+    ],
+)
+def test_where_mixed_dtypes_devices(cond, self, other):
+    f = torch.where
+    cpu_cond, musa_cond = cond, cond.musa()
+    musa_self, musa_other = self.musa(), other.musa()
+    cmp = testing.DefaultComparator()
+    cpu_out = f(cpu_cond, self, other)
+
+    musa_out = f(musa_cond, self, other)
+    assert cmp(cpu_out, musa_out.cpu())
+
+    musa_out = f(musa_cond, musa_self, other)
+    assert cmp(cpu_out, musa_out.cpu())
+
+    musa_out = f(musa_cond, self, musa_other)
+    assert cmp(cpu_out, musa_out.cpu())
+
+
 dtypes = [torch.float32, torch.half, torch.uint8, torch.int8, torch.int16, torch.int32]
 
 

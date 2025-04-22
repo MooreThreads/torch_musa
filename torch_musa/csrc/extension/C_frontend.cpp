@@ -23,7 +23,45 @@ extern void multi_tensor_lamb_musa(
     const float max_grad_norm,
     at::optional<bool> use_nvlamb_python);
 
+#define FUSED_ADAM_PARAMS                              \
+  std::vector<at::Tensor>, /*params*/                  \
+      std::vector<at::Tensor>, /*grads*/               \
+      std::vector<at::Tensor>, /*exp_avgs*/            \
+      std::vector<at::Tensor>, /*exp_avgs_sqs*/        \
+      std::vector<at::Tensor>, /*max_exp_avg_sqs*/     \
+      std::vector<at::Tensor>, /*state_steps*/         \
+      const double, /*lr*/                             \
+      const double, /*beta1*/                          \
+      const double, /*beta2*/                          \
+      const double, /*weight_decay*/                   \
+      const double, /*eps*/                            \
+      const bool, /*amsgrad*/                          \
+      const bool, /*maximize*/                         \
+      const c10::optional<at::Tensor>&, /*grad_scale*/ \
+      const c10::optional<at::Tensor>& /*found_inf*/
+
+#define FUSED_ADAM_TENSOR_LR_PARAMS                    \
+  std::vector<at::Tensor>, /*params*/                  \
+      std::vector<at::Tensor>, /*grads*/               \
+      std::vector<at::Tensor>, /*exp_avgs*/            \
+      std::vector<at::Tensor>, /*exp_avgs_sqs*/        \
+      std::vector<at::Tensor>, /*max_exp_avg_sqs*/     \
+      std::vector<at::Tensor>, /*state_steps*/         \
+      const at::Tensor&, /*lr*/                        \
+      const double, /*beta1*/                          \
+      const double, /*beta2*/                          \
+      const double, /*weight_decay*/                   \
+      const double, /*eps*/                            \
+      const bool, /*amsgrad*/                          \
+      const bool, /*maximize*/                         \
+      const c10::optional<at::Tensor>&, /*grad_scale*/ \
+      const c10::optional<at::Tensor>& /*found_inf*/
+
+extern void FusedAdamKernel(FUSED_ADAM_PARAMS);
+extern void FusedAdamKernel(FUSED_ADAM_TENSOR_LR_PARAMS);
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+  // ported from apex
   m.def(
       "multi_tensor_l2norm",
       &multi_tensor_l2norm_musa,
@@ -32,4 +70,12 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
       "multi_tensor_lamb",
       &multi_tensor_lamb_musa,
       "Computes and apply update for LAMB optimizer");
+  m.def(
+      "fused_adam",
+      py::overload_cast<FUSED_ADAM_PARAMS>(&FusedAdamKernel),
+      "Apply update for FusedAdam optimizer");
+  m.def(
+      "fused_adam",
+      py::overload_cast<FUSED_ADAM_TENSOR_LR_PARAMS>(&FusedAdamKernel),
+      "Apply update for FusedAdam optimizer");
 }

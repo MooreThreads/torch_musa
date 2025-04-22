@@ -10,11 +10,10 @@
 #include <ATen/musa/DeviceUtils.muh>
 #include <ATen/musa/detail/OffsetCalculator.muh>
 #include <ATen/native/musa/MemoryAccess.muh>
-#include <functional>
 #include <iosfwd>
 #include <type_traits>
-#include <utility>
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
+#include "torch_musa/csrc/aten/musa/MUSAMarcos.muh"
 #include "torch_musa/csrc/core/Allocator.h"
 
 #include <ATen/native/musa/jit_utils.h>
@@ -418,12 +417,13 @@ struct ReduceOp {
 
   template <int output_vec_size>
   C10_DEVICE void run() const {
-    extern __shared__ char shared_memory[];
+    using arg_vec_t = at::detail::Array<arg_t, output_vec_size>;
+
+    extern __shared__ __align__(alignof(arg_vec_t)) char shared_memory[];
     index_t output_idx = config.output_idx<output_vec_size>();
     index_t input_idx = config.input_idx();
     auto base_offsets1 = output_calc.get(output_idx)[1];
 
-    using arg_vec_t = at::detail::Array<arg_t, output_vec_size>;
     arg_vec_t value;
 
     if (output_idx < config.num_outputs && input_idx < config.num_inputs) {
@@ -504,7 +504,6 @@ struct ReduceOp {
   C10_DEVICE at::detail::Array<arg_t, output_vec_size> thread_reduce(
       const scalar_t* data) const {
     if (config.vectorize_input) {
-      CUDA_KERNEL_ASSERT(output_vec_size == 1);
       // reduce at the header of input_slice where memory is not aligned,
       // so that thread_reduce will have an aligned memory to work on.
       return {input_vectorized_thread_reduce_impl(data)};
@@ -682,7 +681,7 @@ struct ReduceOp {
       int address_base = threadIdx.x + threadIdx.y * blockDim.x;
       shared[address_base] = value;
       for (int offset = dim_x / 2; offset >= 32; offset >>= 1) {
-        __syncthreads();
+        __SYNCTHREADS;
         if (threadIdx.x < offset && threadIdx.x + offset < blockDim.x) {
           args_vec_t other = shared[address_base + offset];
 #pragma unroll
@@ -695,7 +694,7 @@ struct ReduceOp {
       dim_x = 32;
     }
 
-    __syncthreads();
+    __SYNCTHREADS;
 
     for (int offset = 1; offset < dim_x; offset <<= 1) {
 #pragma unroll
@@ -715,7 +714,7 @@ struct ReduceOp {
     args_vec_t* shared = (args_vec_t*)shared_memory;
     shared[config.shared_memory_offset(0)] = value;
     for (int offset = blockDim.y / 2; offset > 0; offset >>= 1) {
-      __syncthreads();
+      __SYNCTHREADS;
       if (threadIdx.y < offset && threadIdx.y + offset < blockDim.y) {
         args_vec_t other = shared[config.shared_memory_offset(offset)];
 #pragma unroll
@@ -731,13 +730,13 @@ struct ReduceOp {
   C10_DEVICE bool mark_block_finished() const {
     __shared__ bool is_last_block_done_shared;
 
-    __syncthreads();
+    __SYNCTHREADS;
     if (threadIdx.x == 0 && threadIdx.y == 0) {
       int prev_blocks_finished = atomicAdd(&semaphores[blockIdx.x], 1);
       is_last_block_done_shared = (prev_blocks_finished == gridDim.y - 1);
     }
 
-    __syncthreads();
+    __SYNCTHREADS;
 
     return is_last_block_done_shared;
   }
@@ -760,7 +759,6 @@ struct ReduceOp {
       out_scalar_t* out,
       arg_t value,
       typename std::enable_if<can_acc>::type* = nullptr) const {
-    CUDA_KERNEL_ASSERT(!final_output);
     return (out_scalar_t)value;
   }
 
@@ -772,7 +770,6 @@ struct ReduceOp {
       at::detail::Array<out_scalar_t*, output_vec_size>,
       at::detail::Array<arg_t, output_vec_size>,
       typename std::enable_if<!can_acc>::type* = nullptr) const {
-    CUDA_KERNEL_ASSERT(false);
     return arg_t{};
   }
 
@@ -784,13 +781,11 @@ struct ReduceOp {
       out_scalar_t* out,
       arg_t value,
       typename std::enable_if<!can_acc>::type* = nullptr) const {
-    CUDA_KERNEL_ASSERT(false);
     return *out;
   }
 
   template <class T>
   C10_DEVICE void set_results(const T x, const index_t base_offset) const {
-    CUDA_KERNEL_ASSERT(noutputs == 1);
     auto res = (out_scalar_t*)((char*)dst[0] + base_offset);
     *res = x;
   }
@@ -816,7 +811,6 @@ struct ReduceOp {
   C10_DEVICE void set_results_to_output(
       at::detail::Array<arg_t, output_vec_size> value,
       at::detail::Array<index_t, output_vec_size> base_offset) const {
-    CUDA_KERNEL_ASSERT(final_output);
 #pragma unroll
     for (int i = 0; i < output_vec_size; i++) {
       set_results(ops.project(value[i]), base_offset[i]);
@@ -850,8 +844,8 @@ struct ReduceOp {
     }
 
     __threadfence(); // make sure writes are globally visible
-    __syncthreads(); // if multiple warps in this block wrote to staging, make
-                     // sure they're all done
+    __SYNCTHREADS; // if multiple warps in this block wrote to staging, make
+                   // sure they're all done
     bool is_last_block_done = mark_block_finished();
 
     if (is_last_block_done) {

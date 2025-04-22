@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.10)
 
-file(GLOB _EXT_MU_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/apex/*.mu)
+file(GLOB _EXT_MU_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/*.mu
+     ${CMAKE_CURRENT_SOURCE_DIR}/apex/*.mu)
+musa_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/)
 musa_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/apex)
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/utils.cmake)
@@ -10,6 +12,7 @@ append_cxx_flag_if_supported("-Wno-sign-compare" CMAKE_CXX_FLAGS)
 append_cxx_flag_if_supported("-w" CMAKE_CXX_FLAGS)
 append_cxx_flag_if_supported("-std=c++17" CMAKE_CXX_FLAGS)
 string(APPEND MUSA_MCC_FLAGS " -U__CUDA__")
+string(APPEND MUSA_MCC_FLAGS " -mllvm -mtgpu-enable-const-calc=0")
 
 if(NOT ENABLE_COMPILE_FP64)
   string(APPEND MUSA_MCC_FLAGS " -mathx-disable-fp64") # disable fp64

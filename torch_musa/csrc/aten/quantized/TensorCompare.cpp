@@ -4,7 +4,6 @@
 #include <ATen/native/TensorCompare.h>
 #include <torch/library.h>
 
-#include "torch_musa/csrc/aten/quantized/TensorFactories.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 
 namespace at {

@@ -104,6 +104,7 @@ static PyObject* THMPStorageShareMusa(
 
     // NOLINTNEXTLINE(cppcoreguidelines-init-variables)
     musaIpcMemHandle_t handle;
+    std::memset((void*)(&handle), 0, MUSA_IPC_HANDLE_SIZE);
     C10_MUSA_CHECK(musaIpcGetMemHandle(&handle, base_ptr));
 
     _handle = PyBytes_FromStringAndSize((char*)&handle, MUSA_IPC_HANDLE_SIZE);

@@ -108,7 +108,7 @@ void ClampScalarCall(
       break;
     }
     default:
-      TORCH_CHECK(false, "Unsupported tensor dtype: ", t_type);
+      TORCH_CHECK(false, "ClampScalar Unsupported tensor dtype: ", t_type);
       throw;
   }
 }
@@ -321,7 +321,10 @@ Tensor& ClampTensorOut(
     // process.
     return ClampOut(self, min.value().item(), max.value().item(), output);
   }
-  ClampTensorCall(output, self, min.value(), max.value());
+  // TODO(@kang.chen): mudnn now only support the inputs of same dtypes.
+  Tensor min_ = min.value().to(self.scalar_type());
+  Tensor max_ = max.value().to(self.scalar_type());
+  ClampTensorCall(output, self, min_, max_);
   return output;
 }
 

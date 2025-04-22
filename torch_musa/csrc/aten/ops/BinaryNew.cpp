@@ -57,6 +57,9 @@ void AddMeta(
   auto dtype_lifter = [](ScalarType t) -> ScalarType {
     auto promote_type = t;
     switch (t) {
+      case ScalarType::Bool:
+        promote_type = ScalarType::Char;
+        break;
       case ScalarType::Byte:
         promote_type = ScalarType::Short;
         break;
@@ -321,31 +324,31 @@ void FModImpl(MusaTensorIterator& iter, const std::string& op_name) {
   }
 }
 
-#define FOPS_TPL(F_NAME, M_NAME)                        \
-   void F##F_NAME##Meta(                                \
-       MusaTensorIterator& iter,                        \
-       const Tensor& out,                               \
-       const Tensor& lhs,                               \
-       const Tensor& rhs) {                             \
-     InitBinaryIterator(iter, out, lhs, rhs);           \
-     TensorIteratorConfig config;                       \
-     SetUpBinaryConfig(config);                         \
-     iter.build(config);                                \
-   }                                                    \
-   void F##F_NAME##Impl(MusaTensorIterator& iter, const std::string& op_name) { \
-     if (iter.is_cpu_scalar(1)) {                                               \
-       const auto unary_alpha = iter.input(0).item();                           \
-       UnaryAlphaCall(iter, unary_alpha, UNARY_MODE::M_NAME, op_name);          \
-     } else if (iter.is_cpu_scalar(2)) {                                        \
-       const auto unary_alpha = iter.input(1).item();                           \
-       UnaryAlphaCall(iter, unary_alpha, UNARY_MODE::M_NAME, op_name);          \
-     } else {                                                                   \
-       BinaryCall(iter, BINARY_MODE::M_NAME, op_name);                          \
-     }                                                                          \
-   }
+#define FOPS_TPL(F_NAME, M_NAME)                                               \
+  void F##F_NAME##Meta(                                                        \
+      MusaTensorIterator& iter,                                                \
+      const Tensor& out,                                                       \
+      const Tensor& lhs,                                                       \
+      const Tensor& rhs) {                                                     \
+    InitBinaryIterator(iter, out, lhs, rhs);                                   \
+    TensorIteratorConfig config;                                               \
+    SetUpBinaryConfig(config);                                                 \
+    iter.build(config);                                                        \
+  }                                                                            \
+  void F##F_NAME##Impl(MusaTensorIterator& iter, const std::string& op_name) { \
+    if (iter.is_cpu_scalar(1)) {                                               \
+      const auto unary_alpha = iter.input(0).item();                           \
+      UnaryAlphaCall(iter, unary_alpha, UNARY_MODE::M_NAME, op_name);          \
+    } else if (iter.is_cpu_scalar(2)) {                                        \
+      const auto unary_alpha = iter.input(1).item();                           \
+      UnaryAlphaCall(iter, unary_alpha, UNARY_MODE::M_NAME, op_name);          \
+    } else {                                                                   \
+      BinaryCall(iter, BINARY_MODE::M_NAME, op_name);                          \
+    }                                                                          \
+  }
 
-   FOPS_TPL(Min, MIN)
-   FOPS_TPL(Max, MAX)
+FOPS_TPL(Min, MIN)
+FOPS_TPL(Max, MAX)
 
 #undef FOPS_TPL
 
@@ -487,6 +490,22 @@ Tensor& DivTensorModeOut(
   OutTensorIterator iter;
   BinaryDivDispatch(iter, output, self, other, rounding_mode, __func__);
   return output;
+}
+
+Tensor& RSubTensorOut(
+    const Tensor& self,
+    const Tensor& other,
+    const Scalar& alpha,
+    Tensor& out) {
+  return SubTensorOut(other, self, alpha, out);
+}
+
+Tensor& RSubScalarOut(
+    const Tensor& self,
+    const Scalar& other,
+    const Scalar& alpha,
+    Tensor& out) {
+  return RSubTensorOut(self, native::wrapped_scalar_tensor(other), alpha, out);
 }
 
 } // namespace musa

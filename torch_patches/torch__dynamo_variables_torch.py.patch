@@ -1,0 +1,13 @@
+diff --git a/torch/_dynamo/variables/torch.py b/torch/_dynamo/variables/torch.py
+index 6952b0d..b8697af 100644
+--- a/torch/_dynamo/variables/torch.py
++++ b/torch/_dynamo/variables/torch.py
+@@ -185,7 +185,7 @@ class TorchCtxManagerClassVariable(BaseTorchVariable):
+             torch.amp.autocast_mode.autocast,
+             torch.cuda.amp.autocast,
+             torch.cpu.amp.autocast,
+-        ]:
++        ] + ([torch.musa.amp.autocast,] if hasattr(torch, "musa") else []):
+             return AutocastModeVariable.create(self.value, args, kwargs)
+         elif self.value in (
+             torch.profiler.profile,

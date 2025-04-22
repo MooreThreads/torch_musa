@@ -61,6 +61,7 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationLogSigmoidKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationGeluKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationGluKernel.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationMishKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationPreluKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationSoftplusKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationThresholdKernel.mu
@@ -89,11 +90,8 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachReduceOp.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/group_norm_kernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/GridSampler.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Indexing.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/IndexKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/LegacyThrustHelpers.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Lerp.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/LossCTC.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Loss.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/MultinomialKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Nonzero.mu
@@ -112,7 +110,6 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnarySpecialOpsKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleBicubic2d.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleTrilinear3d.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleBilinear2d.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleLinear1d.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleNearest1d.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleNearest3d.mu
@@ -134,8 +131,16 @@ append_cxx_flag_if_supported("-Wno-sign-compare" CMAKE_CXX_FLAGS)
 append_cxx_flag_if_supported("-w" CMAKE_CXX_FLAGS)
 append_cxx_flag_if_supported("-std=c++17" CMAKE_CXX_FLAGS)
 string(APPEND MUSA_MCC_FLAGS " -U__CUDA__")
-string(APPEND MUSA_MCC_FLAGS " -mllvm -mtgpu-enable-const-calc=0"
-)# TODO(mt-ai): remove after mtcc constCalc pass bug fixed
+string(APPEND MUSA_MCC_FLAGS " -mllvm -mtgpu-enable-const-calc")
+string(APPEND MUSA_MCC_FLAGS " -mllvm -mtgpu-if-convert")
+string(APPEND MUSA_MCC_FLAGS " -mllvm -enable-post-misched")
+# string(APPEND MUSA_MCC_FLAGS " -mllvm
+# -mtgpu-enable-max-ilp-scheduling-strategy=1")
+string(APPEND MUSA_MCC_FLAGS " -mllvm -mtgpu-load-store-opt")
+
+if(${MUSA_ARCH} EQUAL 22)
+  string(APPEND MUSA_MCC_FLAGS " -mllvm -enable-ldma-index")
+endif()
 
 if(NOT ENABLE_COMPILE_FP64)
   string(APPEND MUSA_MCC_FLAGS " -mathx-disable-fp64") # disable fp64

@@ -15,6 +15,7 @@
 
 #include <ATen/TensorIterator.h>
 
+#include "torch_musa/csrc/aten/ops/ElemwiseHelpers.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
@@ -146,109 +147,73 @@ Tensor& WhereSelfOut(
     const Tensor& self,
     const Tensor& other,
     Tensor& out) {
-  c10::musa::MUSAGuard device_guard(self.device());
-  // check if shapes can be broadcastable and compute output shape
-  DimVector output_shape;
-  std::vector<std::vector<int64_t>> operands_shape = {
-      condition.sizes().vec(), self.sizes().vec(), other.sizes().vec()};
-  for (const auto& shape : operands_shape) {
-    if (output_shape.empty()) {
-      output_shape = DimVector(shape.begin(), shape.end());
-    }
-    if (output_shape != DimVector(shape.begin(), shape.end())) {
-      output_shape = infer_size_dimvector(output_shape, shape);
-    }
+  using Proxy = typename c10::MaybeOwned<Tensor>;
+  Proxy proxy_self, proxy_other;
+  const auto result_type = native::result_type(self, other);
+  if (result_type != self.scalar_type()) {
+    proxy_self = Proxy::owned(self.to(result_type));
+  } else {
+    proxy_self = Proxy::borrowed(self);
+  }
+  if (result_type != other.scalar_type()) {
+    proxy_other = Proxy::owned(other.to(result_type));
+  } else {
+    proxy_other = Proxy::borrowed(other);
   }
 
-  Tensor contiguous_self, contiguous_other;
-  auto result_type = at::native::result_type(self, other);
-  if (self.dtype() != other.dtype()) {
-    contiguous_self = self.to(result_type).contiguous();
-    contiguous_other = other.to(result_type).contiguous();
+  const auto out_device = OutDevice(condition, *proxy_self, *proxy_other);
+  Proxy proxy_cond;
+  if (condition.device() != out_device && condition.dim() == 0) {
+    proxy_cond = Proxy::owned(condition.to(out_device));
   } else {
-    contiguous_self = self.contiguous();
-    contiguous_other = other.contiguous();
+    proxy_cond = Proxy::borrowed(condition);
   }
-  if (condition.scalar_type() == ScalarType::Byte) {
+  if (proxy_self->device() != out_device && proxy_self->dim() == 0) {
+    proxy_self = Proxy::owned(proxy_self->to(out_device));
+  }
+  if (proxy_other->device() != out_device && proxy_other->dim() == 0) {
+    proxy_other = Proxy::owned(proxy_other->to(out_device));
+  }
+
+  if (proxy_cond->scalar_type() == ScalarType::Byte) {
     TORCH_WARN_ONCE(
         "where received a uint8 condition tensor. This behavior is deprecated "
         "and will be removed in a future version of PyTorch. Use a boolean "
         "condition instead.");
+    proxy_cond = Proxy::owned(proxy_cond->to(ScalarType::Bool));
   } else {
     TORCH_CHECK(
-        condition.scalar_type() == ScalarType::Bool,
+        proxy_cond->scalar_type() == ScalarType::Bool,
         "where expected condition to be a boolean tensor, but got a "
         "tensor with dtype ",
-        condition.scalar_type());
-  }
-  Tensor cond_bool = condition.scalar_type() == ScalarType::Byte
-      ? condition.to(ScalarType::Bool)
-      : condition;
-
-  // Keep self, other and condition's shape consistent
-  int64_t max_dim = std::max(contiguous_self.dim(), contiguous_other.dim());
-  max_dim = std::max(max_dim, cond_bool.dim());
-
-  std::vector<int64_t> expanded_sizes_self(max_dim, 1);
-  std::vector<int64_t> expanded_sizes_other(max_dim, 1);
-  std::vector<int64_t> expanded_sizes_condition(max_dim, 1);
-
-  int self_len = contiguous_self.dim();
-  int other_len = contiguous_other.dim();
-  int cond_len = cond_bool.dim();
-  for (int i = 0; i < max_dim; ++i) {
-    if (i < self_len) {
-      expanded_sizes_self[max_dim - 1 - i] =
-          contiguous_self.sizes()[self_len - 1 - i];
-    }
-    if (i < other_len) {
-      expanded_sizes_other[max_dim - 1 - i] =
-          contiguous_other.sizes()[other_len - 1 - i];
-    }
-    if (i < cond_len) {
-      expanded_sizes_condition[max_dim - 1 - i] =
-          cond_bool.sizes()[cond_len - 1 - i];
-    }
+        proxy_cond->scalar_type());
   }
 
-  if (!out.sizes().equals(output_shape)) {
-    out.resize_(output_shape);
+  OutTensorIterator iter;
+  iter.add_output(out);
+  iter.add_input(*proxy_cond);
+  iter.add_input(*proxy_self);
+  iter.add_input(*proxy_other);
+  {
+    TensorIteratorConfig config;
+    config.check_all_same_dtype(false);
+    iter.build(config);
   }
 
-  if (!out.numel()) {
-    return out;
+  if (iter.numel() != 0) {
+    TernaryCall(iter, TERNARY_MODE::SELECT, "WhereSelfOut");
   }
-
-  // Manually broadcast tensor to match the maximum dimensions, 1.add new
-  // axis 2.expand
-  Tensor broadcasted_self =
-      contiguous_self.reshape(expanded_sizes_self).expand(output_shape);
-  Tensor broadcasted_other =
-      contiguous_other.reshape(expanded_sizes_other).expand(output_shape);
-  Tensor broadcasted_condition =
-      cond_bool.reshape(expanded_sizes_condition).expand(output_shape);
-
-  Tensor contiguous_out = out.contiguous();
-  return TernaryOut(
-      out,
-      broadcasted_condition,
-      broadcasted_self,
-      broadcasted_other,
-      TERNARY_MODE::SELECT,
-      1);
+  return out;
 }
 
 Tensor WhereSelf(
     const Tensor& condition,
     const Tensor& self,
     const Tensor& other) {
-  c10::musa::MUSAGuard device_guard(self.device());
-  auto result_type = at::native::result_type(self, other);
-  Tensor output = at::empty(
-      other.sizes(),
-      self.options()
-          .dtype(result_type)
-          .memory_format(at::MemoryFormat::Contiguous));
+  const auto out_device = OutDevice(condition, self, other);
+  const auto result_type = native::result_type(self, other);
+  Tensor output =
+      at::empty({0}, self.options().dtype(result_type).device(out_device));
   WhereSelfOut(condition, self, other, output);
   return output;
 }

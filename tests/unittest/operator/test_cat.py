@@ -88,6 +88,31 @@ inputdata = [
         ],
         "dim": 3,
     },
+    {
+        "input": [
+            torch.randn(1, 2, 3, 4),
+            torch.tensor([]),
+            torch.randn(1, 2, 3, 4),
+        ],
+        "dim": 3,
+    },
+    {
+        "input": [
+            torch.tensor([]),
+            torch.randn(1, 2, 3, 4),
+            torch.randn(1, 2, 3, 4),
+        ],
+        "dim": -2,
+    },
+    {
+        "input": [
+            torch.tensor([]),
+            torch.randn(1, 2, 3, 4),
+            torch.randn(1, 2, 1, 4),
+            torch.randn(1, 2, 10, 4),
+        ],
+        "dim": 2,
+    },
 ]
 
 
@@ -169,6 +194,31 @@ inputdata = [
         ],
         "dim": 3,
     },
+    {
+        "input": [
+            torch.randn(1, 2, 3, 4).half(),
+            torch.tensor([]),
+            torch.randn(1, 2, 3, 4).half(),
+        ],
+        "dim": 3,
+    },
+    {
+        "input": [
+            torch.tensor([]),
+            torch.randn(1, 2, 3, 4).half(),
+            torch.randn(1, 2, 3, 4),
+        ],
+        "dim": -2,
+    },
+    {
+        "input": [
+            torch.tensor([]),
+            torch.randn(1, 2, 3, 4).half(),
+            torch.randn(1, 2, 1, 4),
+            torch.randn(1, 2, 10, 4).half(),
+        ],
+        "dim": 2,
+    },
 ]
 
 
@@ -217,6 +267,23 @@ inputdata = [
             torch.randn(1, 2, 2, 2, 2),
         ],
         "dim": 1,
+    },
+    {
+        "input": [
+            torch.tensor([]),
+            torch.randn(1, 2, 2, 2, 2).to(memory_format=torch.channels_last_3d),
+            torch.randn(1, 2, 2, 2, 2),
+        ],
+        "dim": -2,
+    },
+    {
+        "input": [
+            torch.tensor([]),
+            torch.randn(1, 2, 2, 2, 2).to(memory_format=torch.channels_last_3d),
+            torch.randn(1, 2, 2, 2, 2),
+            torch.randn(1, 2, 2, 2, 2).to(memory_format=torch.channels_last_3d),
+        ],
+        "dim": 2,
     },
 ]
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)

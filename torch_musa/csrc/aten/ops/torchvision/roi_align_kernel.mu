@@ -1,11 +1,12 @@
 #include <ATen/ATen.h>
+#include <ATen/autocast_mode.h>
 #include <ATen/core/dispatch/Dispatcher.h>
 #include <torch/library.h>
 #include <ATen/native/musa/KernelUtils.muh>
-#include "torch_musa/csrc/amp/autocast_mode.h"
 #include "torch_musa/csrc/aten/mudnn/Handle.h"
 #include "torch_musa/csrc/aten/musa/MUSAAtomic.muh"
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
+#include "torch_musa/csrc/aten/musa/MUSAMarcos.muh"
 #include "torch_musa/csrc/aten/musa/MUSAMath.muh"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 
@@ -369,32 +370,32 @@ __global__ void rois_reorder_kernel(
   for (int i = tid; i < 4096; i += blockDim.x) {
     smem[i] = 0;
   }
-  __syncthreads();
+  __SYNCTHREADS;
 
   for (int i = tid; i < num_rois; i += blockDim.x) {
     int roi_batch_ind = *(rois + i * 5);
     at::musa::gpuAtomicAdd(&smem[roi_batch_ind], 1);
   }
-  __syncthreads();
+  __SYNCTHREADS;
 
   // num of each batch
   for (int i = tid; i < batch_size; i += blockDim.x) {
     reorderd_rois[i] = smem[i];
   }
-  __syncthreads();
+  __SYNCTHREADS;
 
 #pragma unroll
   for (int i = 0; i < 4; i++) {
     if (i > 0) {
       smem[i * 1024] += smem[i * 1024 - 1];
     }
-    __syncthreads();
+    __SYNCTHREADS;
 #pragma unroll
     for (int j = 1; j < 1024; j <<= 1) {
       if (tid >= j) {
         smem[i * 1024 + tid] += smem[i * 1024 + tid - j];
       }
-      __syncthreads();
+      __SYNCTHREADS;
     }
   }
 
@@ -403,7 +404,7 @@ __global__ void rois_reorder_kernel(
   for (int i = tid + 1; i < batch_size; i += blockDim.x) {
     reorderd_rois[i + batch_size] = smem[i - 1];
   }
-  __syncthreads();
+  __SYNCTHREADS;
 
   // reorder
   T* offset_rois_out = reorderd_rois + batch_size * 2;
@@ -866,8 +867,8 @@ at::Tensor roi_align_autocast(
   c10::impl::ExcludeDispatchKeyGuard no_autocast(
       c10::DispatchKey::AutocastPrivateUse1);
   return roi_align(
-             at::musa::autocast::cached_cast(at::kFloat, input),
-             at::musa::autocast::cached_cast(at::kFloat, rois),
+             at::autocast::cached_cast(at::kFloat, input),
+             at::autocast::cached_cast(at::kFloat, rois),
              spatial_scale,
              pooled_height,
              pooled_width,

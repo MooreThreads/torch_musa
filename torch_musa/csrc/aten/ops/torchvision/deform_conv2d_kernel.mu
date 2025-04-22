@@ -67,10 +67,10 @@
 // https://github.com/open-mmlab/mmdetection/blob/master/mmdet/ops/dcn/src/deform_conv_musa.cpp
 
 #include <ATen/ATen.h>
+#include <ATen/autocast_mode.h>
 #include <ATen/core/dispatch/Dispatcher.h>
 #include <torch/library.h>
 #include <ATen/native/musa/KernelUtils.muh>
-#include "torch_musa/csrc/amp/autocast_mode.h"
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 
@@ -1379,11 +1379,11 @@ at::Tensor deform_conv2d_autocast(
   c10::impl::ExcludeDispatchKeyGuard no_autocast(
       c10::DispatchKey::AutocastPrivateUse1);
   return deform_conv2d(
-             at::musa::autocast::cached_cast(at::kFloat, input),
-             at::musa::autocast::cached_cast(at::kFloat, weight),
-             at::musa::autocast::cached_cast(at::kFloat, offset),
-             at::musa::autocast::cached_cast(at::kFloat, mask),
-             at::musa::autocast::cached_cast(at::kFloat, bias),
+             at::autocast::cached_cast(at::kFloat, input),
+             at::autocast::cached_cast(at::kFloat, weight),
+             at::autocast::cached_cast(at::kFloat, offset),
+             at::autocast::cached_cast(at::kFloat, mask),
+             at::autocast::cached_cast(at::kFloat, bias),
              stride_h,
              stride_w,
              pad_h,

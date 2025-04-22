@@ -7,9 +7,7 @@ CUR_DIR=$(
 )
 TORCH_MUSA_HOME=$CUR_DIR
 PYTORCH_PATH=${PYTORCH_REPO_PATH:-$(realpath ${TORCH_MUSA_HOME}/../pytorch)}
-KINETO_PATH=${PYTORCH_PATH}/third_party/kineto
 TORCH_PATCHES_DIR=${TORCH_MUSA_HOME}/torch_patches/
-KINETO_PATCHES_DIR=${TORCH_MUSA_HOME}/kineto_patches/
 KINETO_URL=${KINETO_URL:-https://github.com/MooreThreads/kineto.git}
 KINETO_TAG=v1.2.2
 
@@ -18,13 +16,14 @@ DEBUG_MODE=0
 ASAN_MODE=0
 BUILD_TORCH=1
 BUILD_TORCH_MUSA=1
-USE_KINETO=1
+USE_KINETO=${USE_KINETO:-1}
 ONLY_PATCH=0
 CLEAN=0
 COMPILE_FP64=1
 PYTORCH_TAG=v2.2.0
 PYTORCH_BUILD_VERSION="${PYTORCH_TAG:1}"
 PYTORCH_BUILD_NUMBER=0 # This is used for official torch distribution.
+USE_MKL=${USE_MKL:-1}
 USE_STATIC_MKL=${USE_STATIC_MKL:-1}
 USE_MCCL=${USE_MCCL:-1}
 MUSA_DIR="/usr/local/musa"
@@ -168,7 +167,7 @@ clone_pytorch() {
   fi
   # to make sure submodules are fetched
   pushd ${PYTORCH_PATH}
-  git submodule update --init --recursive
+  update_submodule
 }
 
 apply_torch_patches() {
@@ -192,35 +191,72 @@ apply_torch_patches() {
       popd
     fi
   done
-
-  # apply kineto-related patches into PyTorch
-  if [ ${USE_KINETO} -eq 1 ]; then
-    for file in $(find ${KINETO_PATCHES_DIR} -type f -print); do
-      if [ "${file##*.}"x = "patch"x ]; then
-        echo -e "\033[34mapplying kineto-related patch: $file \033[0m"
-        pushd $PYTORCH_PATH
-        git apply --check $file
-        git apply $file
-        popd
-      fi
-    done
-  fi
 }
 
 update_kineto_source() {
-  echo -e "\033[34mUpdating kineto...\033[0m"
-  pushd ${PYTORCH_PATH}/third_party
-  rm -rf ./kineto
+  pushd ${PYTORCH_PATH}
+  rm -rf ${PYTORCH_PATH}/third_party/kineto # rm original kineto since the urls don't match
+  git submodule update --init --recursive --depth 1
+  rm -rf ${PYTORCH_PATH}/third_party/kineto # rm official kineto
+  popd
+  echo -e "\033[34mUpdating KINETO_URL, might take a while...\033[0m"
   if [ -d /home/kineto ]; then
     pushd /home/kineto
     git checkout ${KINETO_TAG}
-    git submodule update --init --recursive
+    git submodule update --init --recursive --depth 1
     popd
-    cp -r /home/kineto .
+    cp -r /home/kineto ${PYTORCH_PATH}/third_party
   else
-    git clone ${KINETO_URL} -b ${KINETO_TAG} --depth 1 --recursive
+    git clone ${KINETO_URL} -b ${KINETO_TAG} --depth 1 --recursive ${PYTORCH_PATH}/third_party/kineto
   fi
+}
+
+# Since the initial environment uses musa kineto by default, we should
+# manually redirect torch kineto's url && commitid if `USE_KINETO=0`.
+# Currently, it's only required for the internal testing purpose.
+revert_torch_kineto() {
+  echo -e "\033[34mReverting to torch kineto...\033[0m"
+  echo -e "\033[34mRemoving mupti...\033[0m"
+  pushd ${PYTORCH_PATH}
+  rm -rf third_party/kineto
+  git submodule update --init --recursive third_party/kineto
   popd
+}
+
+update_submodule() {
+  if [ -d ${PYTORCH_PATH}/third_party/kineto ]; then
+    pushd ${PYTORCH_PATH}/third_party/kineto
+    remote_url=$(git remote get-url origin)
+    popd
+
+    if [ ${USE_KINETO} -eq 0 ]; then
+      if [ "${remote_url}" = "${KINETO_URL}" ]; then
+        rm -rf ${PYTORCH_PATH}/third_party/kineto
+      fi
+      pushd ${PYTORCH_PATH}
+      git submodule update --init --recursive --depth 1
+      popd
+    elif [ "${remote_url}" = "${KINETO_URL}" ]; then
+      pushd ${PYTORCH_PATH}/third_party/kineto
+      echo  -e "\033[34mUpdating KINETO_URL, might take a while...\033[0m"
+      git submodule update --init --recursive
+      popd
+      mv ${PYTORCH_PATH}/third_party/kineto /tmp
+      pushd ${PYTORCH_PATH}
+      git submodule update --init --recursive --depth 1
+      popd
+      rm -rf ${PYTORCH_PATH}/third_party/kineto
+      mv /tmp/kineto ${PYTORCH_PATH}/third_party
+    else
+      update_kineto_source
+    fi
+  elif [ ${USE_KINETO} -eq 1 ]; then
+    update_kineto_source
+  else
+    pushd ${PYTORCH_PATH}
+    git submodule update --init --recursive --depth 1
+    popd
+  fi
 }
 
 build_pytorch() {
@@ -237,12 +273,28 @@ build_pytorch() {
   if [ $BUILD_WHEEL -eq 1 ]; then
     rm -rf dist
     pip uninstall torch -y
-    PYTORCH_BUILD_NUMBER=${PYTORCH_BUILD_NUMBER} PYTORCH_BUILD_VERSION=${PYTORCH_BUILD_VERSION} DEBUG=${DEBUG_MODE} USE_ASAN=${ASAN_MODE} USE_STATIC_MKL=${USE_STATIC_MKL} USE_MKL=1 USE_MKLDNN=1 USE_MKLDNN_CBLAS=1 python setup.py bdist_wheel
+    PYTORCH_BUILD_NUMBER=${PYTORCH_BUILD_NUMBER} \
+      PYTORCH_BUILD_VERSION=${PYTORCH_BUILD_VERSION} \
+      DEBUG=${DEBUG_MODE} \
+      USE_ASAN=${ASAN_MODE} \
+      USE_STATIC_MKL=${USE_STATIC_MKL} \
+      USE_MKL=${USE_MKL} \
+      USE_MKLDNN=${USE_MKL} \
+      USE_MKLDNN_CBLAS=${USE_MKL} \
+      USE_KINETO=${USE_KINETO} python setup.py bdist_wheel
     status=$?
     rm -rf torch.egg-info
     pip install dist/*.whl
   else
-    PYTORCH_BUILD_NUMBER=${PYTORCH_BUILD_NUMBER} PYTORCH_BUILD_VERSION=${PYTORCH_BUILD_VERSION} DEBUG=${DEBUG_MODE} USE_ASAN=${ASAN_MODE} USE_STATIC_MKL=${USE_STATIC_MKL} USE_MKL=1 USE_MKLDNN=1 USE_MKLDNN_CBLAS=1 python setup.py install
+    PYTORCH_BUILD_NUMBER=${PYTORCH_BUILD_NUMBER} \
+      PYTORCH_BUILD_VERSION=${PYTORCH_BUILD_VERSION} \
+      DEBUG=${DEBUG_MODE} \
+      USE_ASAN=${ASAN_MODE} \
+      USE_STATIC_MKL=${USE_STATIC_MKL} \
+      USE_MKL=${USE_MKL} \
+      USE_MKLDNN=${USE_MKL} \
+      USE_MKLDNN_CBLAS=${USE_MKL} \
+      USE_KINETO=${USE_KINETO} python setup.py install
     status=$?
   fi
   popd
@@ -270,12 +322,22 @@ build_torch_musa() {
   pushd ${TORCH_MUSA_HOME}
   if [ $BUILD_WHEEL -eq 1 ]; then
     rm -rf dist build
-    PYTORCH_REPO_PATH=${PYTORCH_PATH} DEBUG=${DEBUG_MODE} USE_ASAN=${ASAN_MODE} ENABLE_COMPILE_FP64=${COMPILE_FP64}  USE_MCCL=${USE_MCCL} python setup.py bdist_wheel
+    PYTORCH_REPO_PATH=${PYTORCH_PATH} \
+      DEBUG=${DEBUG_MODE} \
+      USE_ASAN=${ASAN_MODE} \
+      ENABLE_COMPILE_FP64=${COMPILE_FP64}  \
+      USE_MCCL=${USE_MCCL} \
+      USE_KINETO=${USE_KINETO} python setup.py bdist_wheel
     status=$?
     rm -rf torch_musa.egg-info
     pip install dist/*.whl
   else
-    PYTORCH_REPO_PATH=${PYTORCH_PATH} DEBUG=${DEBUG_MODE} USE_ASAN=${ASAN_MODE} ENABLE_COMPILE_FP64=${COMPILE_FP64} USE_MCCL=${USE_MCCL} python setup.py install
+    PYTORCH_REPO_PATH=${PYTORCH_PATH} \
+      DEBUG=${DEBUG_MODE} \
+      USE_ASAN=${ASAN_MODE} \
+      ENABLE_COMPILE_FP64=${COMPILE_FP64} \
+      USE_MCCL=${USE_MCCL} \
+      USE_KINETO=${USE_KINETO} python setup.py install
     status=$?
   fi
   if [ $status -ne 0 ]; then
@@ -322,9 +384,6 @@ main() {
       clean_pytorch
     fi
     apply_torch_patches
-    if [ ${USE_KINETO} -eq 1 ]; then
-      update_kineto_source
-    fi
     build_pytorch
     build_pytorch_status=$?
     if [ $build_pytorch_status -ne 0 ]; then

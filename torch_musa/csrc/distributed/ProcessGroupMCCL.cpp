@@ -19,7 +19,7 @@ const std::map<at::ScalarType, mcclDataType_t> mcclDataType = {
     {at::kHalf, mcclFloat16},
     {at::kDouble, mcclFloat64},
     {at::kBool, mcclUint8},
-#if MARCH_TYPE == 220
+#if defined(TORCH_MUSA_ARCH) && TORCH_MUSA_ARCH >= 220
     {at::kBFloat16, mcclBfloat16},
 #endif
 };
@@ -1200,6 +1200,8 @@ void check_gpu_tensors_different_devices(
     // if (!t.is_cuda() || t.is_sparse()) {
     //   TORCH_CHECK(false, "Tensors must be CUDA and dense");
     // }
+    TORCH_CHECK(t.numel() > 0, "Tensor must be nonempty");
+
     if (t.scalar_type() != first.scalar_type()) {
       TORCH_CHECK(false, "Tensors must have identical type");
     }
@@ -2125,6 +2127,29 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::allgather_coalesced(
   TORCH_CHECK(false, "ProcessGroupMCCL does not support allgather_coalesced");
 }
 
+c10::intrusive_ptr<Work> ProcessGroupMCCL::allgather_into_tensor_coalesced(
+    std::vector<at::Tensor>& outputs,
+    std::vector<at::Tensor>& inputs,
+    const AllgatherOptions& opts) {
+  return collective(
+      inputs,
+      outputs,
+      [&](at::Tensor& input,
+          at::Tensor& output,
+          mcclComm_t comm,
+          c10::musa::MUSAStream& stream) {
+        return mcclAllGather(
+            input.data_ptr(),
+            output.data_ptr(),
+            input.numel(),
+            getMcclDataType(input.scalar_type()),
+            comm,
+            stream.stream());
+      },
+      OpType::COALESCED,
+      "mccl:all_gather_into_tensor_coalesced");
+}
+
 c10::intrusive_ptr<Work> ProcessGroupMCCL::reduce_scatter(
     std::vector<at::Tensor>& outputTensors,
     std::vector<std::vector<at::Tensor>>& inputTensors,
@@ -2299,6 +2324,37 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::_reduce_scatter_base(
       [](std::vector<c10::musa::MUSAStream>&) {},
       OpType::_REDUCE_SCATTER_BASE,
       "mccl:_reduce_scatter_base");
+}
+
+c10::intrusive_ptr<Work> ProcessGroupMCCL::reduce_scatter_tensor_coalesced(
+    std::vector<at::Tensor>& outputs,
+    std::vector<at::Tensor>& inputs,
+    const ReduceScatterOptions& opts) {
+  return collective(
+      inputs,
+      outputs,
+      [&](at::Tensor& input,
+          at::Tensor& output,
+          mcclComm_t comm,
+          c10::musa::MUSAStream& stream) {
+        if (!avoidRecordStreams_) {
+          c10::musa::MUSACachingAllocator::recordStream(
+              output.storage().data_ptr(), stream);
+        }
+        auto mcclDataType = getMcclDataType(input.scalar_type());
+        auto mcclReduceOp = getMcclReduceOp(
+            opts.reduceOp, input, mcclDataType, comm, /*dev_in_group=*/0);
+        return mcclReduceScatter(
+            input.data_ptr(),
+            output.data_ptr(),
+            output.numel(),
+            mcclDataType,
+            mcclReduceOp,
+            comm,
+            stream.stream());
+      },
+      OpType::COALESCED,
+      "mccl:reduce_scatter_tensor_coalesced");
 }
 
 c10::intrusive_ptr<Work> ProcessGroupMCCL::barrier(const BarrierOptions& opts) {

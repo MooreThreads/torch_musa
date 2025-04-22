@@ -10,7 +10,6 @@
 #include <torch/library.h>
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
-#include "torch_musa/csrc/aten/quantized/QTensor.h"
 #include "torch_musa/csrc/aten/quantized/mudnn/Linear.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 

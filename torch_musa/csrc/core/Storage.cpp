@@ -1,6 +1,10 @@
 #include "torch_musa/csrc/core/Storage.h"
 
 #include <ATen/native/Resize.h>
+#include <torch/csrc/Exceptions.h>
+#include <torch/csrc/Export.h>
+#include <torch/csrc/Storage.h>
+#include <torch/csrc/THP.h>
 #include <torch/csrc/utils.h>
 
 namespace at {

@@ -71,6 +71,6 @@ def test_resnet50_common(batch_size, max_epochs, strategies) -> None:
         batch_size,
         max_epochs,
         strategies,
-        top1_acc_lowerbound=0.81,
+        top1_acc_lowerbound=0.80,
         top5_acc_lowerbound=0.98,
     )

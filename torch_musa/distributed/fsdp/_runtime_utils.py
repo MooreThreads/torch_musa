@@ -20,7 +20,7 @@ from torch.distributed.fsdp._runtime_utils import (
     _post_reduce_grad_callback,
     _get_reduce_scatter_tensors,
     _div_if_needed,
-)
+    )
 
 # flag for compare multiple computation streams with single computation stream, default is True
 # TODO(mingyuan.wang): try `_TORCH_MUSA_FSDP_DEFAULT_STREAM_ONLY=False` on musa arch'version greater than 22
@@ -28,7 +28,6 @@ _TORCH_MUSA_FSDP_DEFAULT_STREAM_ONLY = True
 
 # flag for disable async all-reduce in HSDP, default is False
 _TORCH_MUSA_FSDP_FORCE_SYNC_ALL_REDUCE = False
-
 
 @no_type_check
 def _init_streams(
@@ -54,36 +53,18 @@ def _init_streams(
     state._default_stream = state._device_handle.current_stream()
     # Stream for unshard logic, including allocating the all-gather destination
     # tensors and the all-gathers themselves
-    state._unshard_stream = (
-        state._default_stream
-        if default_stream_only
-        else state._device_handle.Stream(priority=high_priority)
-    )
+    state._unshard_stream = state._default_stream if default_stream_only else state._device_handle.Stream(priority=high_priority)
     # Stream for overlapping gradient reduction with the backward pass gradient
     # computation
-    state._post_backward_stream = (
-        state._default_stream
-        if default_stream_only
-        else state._device_handle.Stream(priority=high_priority)
-    )
+    state._post_backward_stream = state._default_stream if default_stream_only else state._device_handle.Stream(priority=high_priority)
     # Stream for pre-unshard logic, namely allocations and writes for CPU
     # offloading (H2D copy) and mixed precision (low precision cast)
-    state._pre_unshard_stream = (
-        state._default_stream
-        if default_stream_only
-        else state._device_handle.Stream(priority=high_priority)
-    )
+    state._pre_unshard_stream = state._default_stream if default_stream_only else state._device_handle.Stream(priority=high_priority)
     # Stream to run HSDP's all-reduce as async (if using HSDP)
     state._all_reduce_stream = (
-        state._default_stream
-        if default_stream_only
-        else (
-            state._device_handle.Stream()
-            if uses_hybrid_sharding
-            else state._default_stream
-        )
+        state._default_stream if default_stream_only else \
+            state._device_handle.Stream() if uses_hybrid_sharding else state._default_stream
     )
-
 
 @no_type_check
 def _reduce_grad(state: _FSDPState, handle: FlatParamHandle) -> None:
@@ -133,10 +114,8 @@ def _reduce_grad(state: _FSDPState, handle: FlatParamHandle) -> None:
                     state, handle, new_sharded_grad
                 )
                 _post_reduce_grad_callback(state, handle, grad_to_offload)
-                if (
-                    state._all_reduce_stream is not state._default_stream
-                    and _TORCH_MUSA_FSDP_FORCE_SYNC_ALL_REDUCE
-                ):
+                if state._all_reduce_stream is not state._default_stream and \
+                    _TORCH_MUSA_FSDP_FORCE_SYNC_ALL_REDUCE:
                     # TODO(mingyuan.wang): implicit synchronization by not using `_all_reduce_stream` still hangs, but explicit sync works
                     state._device_handle.current_stream().synchronize()
                 return
@@ -149,10 +128,11 @@ def _reduce_grad(state: _FSDPState, handle: FlatParamHandle) -> None:
     grad_to_offload = _accumulate_sharded_grad(state, handle, new_sharded_grad)
     _post_reduce_grad_callback(state, handle, grad_to_offload)
 
-
 def _apply_runtime_utils_patch():
     # object level substitution should be okay
-    torch.distributed.fsdp._runtime_utils._reduce_grad = _reduce_grad
+    torch.distributed.fsdp._runtime_utils._reduce_grad = (
+        _reduce_grad
+    )
     # torch.distributed.fsdp._runtime_utils._reduce_grad.__code__ = (
     #     _reduce_grad.__code__
     # )
@@ -160,12 +140,10 @@ def _apply_runtime_utils_patch():
     global _TORCH_MUSA_FSDP_DEFAULT_STREAM_ONLY
     global _TORCH_MUSA_FSDP_FORCE_SYNC_ALL_REDUCE
 
-    _TORCH_MUSA_FSDP_DEFAULT_STREAM_ONLY = (
-        os.environ.get("TORCH_MUSA_FSDP_DEFAULT_STREAM_ONLY", "1") == "1"
-    )
+    _TORCH_MUSA_FSDP_DEFAULT_STREAM_ONLY = os.environ.get("TORCH_MUSA_FSDP_DEFAULT_STREAM_ONLY", "1") == "1"
     if _TORCH_MUSA_FSDP_DEFAULT_STREAM_ONLY:
-        _TORCH_MUSA_FSDP_FORCE_SYNC_ALL_REDUCE = (
-            os.environ.get("TORCH_MUSA_FSDP_FORCE_SYNC_ALL_REDUCE", "0") == "1"
-        )
+        _TORCH_MUSA_FSDP_FORCE_SYNC_ALL_REDUCE = os.environ.get("TORCH_MUSA_FSDP_FORCE_SYNC_ALL_REDUCE", "0") == "1"
 
-    torch.distributed.fsdp._runtime_utils._init_streams = _init_streams
+    torch.distributed.fsdp._runtime_utils._init_streams = (
+        _init_streams
+    )

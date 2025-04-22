@@ -232,6 +232,7 @@ if(DEFINED ENV{MUSA_ARCH})
     add_definitions(-DMARCH_TYPE=220)
   elseif(${MUSA_ARCH} EQUAL 31)
     add_definitions(-DTORCH_MUSA_ARCH=310)
+    add_definitions(-DMARCH_TYPE=310)
   else()
     add_definitions(-DTORCH_MUSA_ARCH=110)
   endif()
@@ -373,6 +374,7 @@ set_target_properties(
              LIBRARY_OUTPUT_DIRECTORY ${INSTALL_LIB_DIR}
              ARCHIVE_OUTPUT_DIRECTORY ${INSTALL_LIB_DIR})
 set_target_properties(${PLUGIN_NAME} PROPERTIES LINK_FLAGS "-Wl,-rpath,$ORIGIN")
+set_target_properties(${PLUGIN_NAME} PROPERTIES INSTALL_RPATH "$ORIGIN")
 
 install(TARGETS ${PLUGIN_NAME})
 

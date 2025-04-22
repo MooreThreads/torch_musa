@@ -1,0 +1,22 @@
+diff --git a/torch/csrc/distributed/c10d/TCPStore.hpp b/torch/csrc/distributed/c10d/TCPStore.hpp
+index 6771baa..0f82977 100644
+--- a/torch/csrc/distributed/c10d/TCPStore.hpp
++++ b/torch/csrc/distributed/c10d/TCPStore.hpp
+@@ -63,7 +63,7 @@ struct TCPStoreOptions {
+   c10::optional<int> masterListenFd = c10::nullopt;
+ 
+   // A boolean value indicating whether to use the experimental libUV backend.
+-  bool useLibUV = false;
++  bool useLibUV = true;
+ };
+ 
+ class TORCH_API TCPStore : public Store {
+@@ -155,7 +155,7 @@ class TORCH_API TCPStore : public Store {
+   const std::string keyPrefix_ = "/";
+   std::mutex activeOpLock_;
+   std::unordered_map<std::string, detail::Counter> clientCounters_;
+-  bool usingLibUv_ = false;
++  bool usingLibUv_ = true;
+ };
+ 
+ } // namespace c10d

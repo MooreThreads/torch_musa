@@ -19,6 +19,7 @@
 #include <ATen/ops/zeros.h>
 #endif
 
+#include "torch_musa/csrc/aten/musa/MUSAMarcos.muh"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 namespace at {
@@ -86,7 +87,7 @@ __global__ void kernelHistogram1D(
     for (IndexType i = threadIdx.x; i < a.sizes[0]; i += blockDim.x) {
       smem[i] = 0;
     }
-    __syncthreads();
+    __SYNCTHREADS;
     FOR_KERNEL_LOOP(linearIndex, totalElements) {
       // Convert `linearIndex` into an offset of `b`
       const IndexType bOffset =
@@ -99,7 +100,7 @@ __global__ void kernelHistogram1D(
         gpuAtomicAddNoReturn(&smem[bin], getOp(linearIndex));
       }
     }
-    __syncthreads();
+    __SYNCTHREADS;
     // NOTE: atomically update output bin count.
     //   Atomic update is imp since __syncthread() will only synchronize threads
     //   in a given block, not across blocks.
@@ -129,7 +130,7 @@ __global__ void kernelHistogram1D(
         gpuAtomicAddNoReturn(&p.data[pOffset], getOp(linearIndex));
       }
     }
-    __syncthreads();
+    __SYNCTHREADS;
     // NOTE: atomically update output bin count.
     //   Atomic update is imp since __syncthread() will only synchronize threads
     //   in a given block, not across blocks.
@@ -419,9 +420,8 @@ Tensor Histc(
     const Scalar& max) {
   TORCH_CHECK(
       self.scalar_type() != ScalarType::Half &&
-          self.scalar_type() != ScalarType::Long &&
           self.scalar_type() != ScalarType::Double,
-      "histc doesn't support half, double and long tenesor, now is ",
+      "histc doesn't support half, double tenesor, now is ",
       self.scalar_type());
   // See Note [Writing Nondeterministic Operations]
   // Nondeterministic because of atomicAdd usage

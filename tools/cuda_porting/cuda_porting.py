@@ -155,6 +155,7 @@ def port_cuda(
         "<ATen/musa/detail/UnpackRaw\.muh>": '"torch_musa/csrc/aten/musa/UnpackRaw.muh"',
         "<ATen/musa/CUDAGraphsUtils\.muh>": '"torch_musa/csrc/aten/musa/MUSAGraphsUtils.muh"',
         "Device\(kCUDA, current_device\(\)\)": "Device(kMUSA, current_device())",
+        "__syncthreads\(\)": "__SYNCTHREADS",  # check file before applying this
     }
 
     # unregister CUDA kernel bindings that managed by stub mechiasm,
@@ -168,6 +169,16 @@ def port_cuda(
     }
     extra_replace_map.update(unregister_cuda_dispatch_stub_map)
 
+    # Not all files' content should be replaced.
+    # This only works on file level, substitution is consistent within the file
+    excluded_files_mapping = {
+        "__syncthreads\(\)": (
+            "LossCTC.cu",
+            "RreluWithNoise.cu",
+            "DistributionTemplates.h",
+            "Dropout.cu",
+        )
+    }
     # 1. Copy and cuda-port files
     for port_file in PORT_FILES:
         src_root = (
@@ -206,7 +217,9 @@ def port_cuda(
                     shutil.copy(file_path, destination_folder)
 
                 dst_file = os.path.join(destination_folder, f)
-                dst_file = transform_file(dst_file, main_automaton, extra_replace_map)
+                dst_file = transform_file(
+                    dst_file, main_automaton, extra_replace_map, excluded_files_mapping
+                )
 
     # 2. Copy several special files about macros files
     special_copy_files = {

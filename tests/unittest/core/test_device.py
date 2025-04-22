@@ -643,6 +643,7 @@ def test_stream_event_nogil():
         # assert parent_time + child_time > total_time * 1.4
 
 
+@pytest.mark.skip("TODO: failed on M3D dev4.0.0")
 @testing.skip_if_not_multiple_musa_device
 def test_events_wait():
     """

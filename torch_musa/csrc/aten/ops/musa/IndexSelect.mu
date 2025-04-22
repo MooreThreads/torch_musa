@@ -7,7 +7,6 @@
 #include "torch_musa/csrc/aten/musa/MUSADtype.muh"
 #include "torch_musa/csrc/aten/musa/MUSAMath.muh"
 #include "torch_musa/csrc/aten/ops/TensorShape.h"
-#include "torch_musa/csrc/aten/ops/musa/IndexUtils.muh"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/MUSAStream.h"
 
@@ -182,6 +181,11 @@ struct KernelTable {
     REGISTER_KERNEL(at::ScalarType::Long, int64_t);
     REGISTER_KERNEL(at::ScalarType::Char, int8_t);
     REGISTER_KERNEL(at::ScalarType::BFloat16, bfloat16_t);
+    REGISTER_KERNEL(at::ScalarType::Byte, int8_t);
+    REGISTER_KERNEL(at::ScalarType::Bool, int8_t);
+    REGISTER_KERNEL(at::ScalarType::Short, int16_t);
+    REGISTER_KERNEL(at::ScalarType::QInt8, int8_t);
+    REGISTER_KERNEL(at::ScalarType::QUInt8, uint8_t);
   }
 
   void launch(
@@ -233,14 +237,8 @@ void IndexSelectRun(
     const Tensor& in) {
   TORCH_CHECK(desc_dim < in.dim(), "Indexing dim is out of bounds");
   TORCH_CHECK(
-      (in.scalar_type() == at::ScalarType::Float) ||
-          (in.scalar_type() == at::ScalarType::Long) ||
-          (in.scalar_type() == at::ScalarType::Int) ||
-          (in.scalar_type() == at::ScalarType::Char) ||
-          (in.scalar_type() == at::ScalarType::Half) ||
-          (in.scalar_type() == at::ScalarType::Double) ||
-          (in.scalar_type() == at::ScalarType::BFloat16),
-      "Index only support input dtype float16, bfloat16, float32, float64, int32, int64, but got ",
+      in.scalar_type() != at::ScalarType::QInt32,
+      "Unsupported dtype of IndexSelect kernel input: ",
       out.scalar_type());
 
   int select_dim = desc_dim < 0 ? (desc_dim + in.dim()) : desc_dim;
@@ -268,9 +266,12 @@ void IndexSelectRun(
   const int block_dim_x = 16;
   const int block_dim_y = 64;
   const uint32_t grid_dim_x = can_vector_load
-      ? at::musa::ceil_div(at::musa::ceil_div(s0, max_load_vlen), block_dim_x)
-      : at::musa::ceil_div(s0, block_dim_x);
-  const uint32_t grid_dim_y = at::musa::ceil_div(num_indices, block_dim_y);
+      ? at::musa::ceil_div(
+            at::musa::ceil_div(s0, (int64_t)max_load_vlen),
+            (int64_t)block_dim_x)
+      : at::musa::ceil_div(s0, (int64_t)block_dim_x);
+  const uint32_t grid_dim_y =
+      at::musa::ceil_div(num_indices, (int64_t)block_dim_y);
   const uint32_t grid_dim_z = s1;
   dim3 block_size{(uint32_t)block_dim_x, (uint32_t)block_dim_y, 1};
   dim3 grid_size{grid_dim_x, grid_dim_y, grid_dim_z};

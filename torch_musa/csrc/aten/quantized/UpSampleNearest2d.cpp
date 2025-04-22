@@ -8,10 +8,10 @@
 
 #include <torch/library.h>
 
-#include "torch_musa/csrc/aten/quantized/QTensor.h"
-
 namespace at {
 namespace musa {
+
+// TODO(@fan.mo): upsample qtensor without dequantize
 Tensor UpsampleNearest2dQuantized(
     const Tensor& input,
     IntArrayRef output_size,
@@ -31,12 +31,12 @@ Tensor UpsampleNearest2dQuantized(
       at::upsample_nearest2d(input_fp32, output_size, scale_h, scale_w);
 
   if (qscheme == kPerTensorAffine) {
-    output = at::musa::QuantizePerTensor(
+    output = at::native::quantize_per_tensor(
         output_fp32, input.q_scale(), input.q_zero_point(), dtype);
   } else if (
       qscheme == kPerChannelAffine ||
       qscheme == kPerChannelAffineFloatQParams) {
-    output = at::musa::QuantizePerChannel(
+    output = at::native::quantize_per_channel(
         output_fp32,
         input.q_per_channel_scales(),
         input.q_per_channel_zero_points(),

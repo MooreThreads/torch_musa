@@ -41,7 +41,11 @@ inline bool check_musa_attention_input(
     const sdp_params& params,
     bool is_debug) {
   auto head_dim = params.query.size(-1);
-  if (!(head_dim == 160 || head_dim <= 128)) {
+  if (!(head_dim <= 128
+#if defined(TORCH_MUSA_ARCH) && TORCH_MUSA_ARCH == 220
+        || head_dim == 160
+#endif
+        )) {
     if (is_debug) {
       TORCH_WARN(
           "FlashAttention in MUSA backend now requires head_dim to be less equal to 128, but got: ",

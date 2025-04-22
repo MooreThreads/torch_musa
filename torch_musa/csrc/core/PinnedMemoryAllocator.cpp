@@ -8,6 +8,7 @@
 
 #include "torch_musa/csrc/core/MUSAException.h"
 #include "torch_musa/csrc/core/MUSAFunctions.h"
+#include "torch_musa/csrc/core/MUSAGuard.h"
 #include "torch_musa/csrc/core/PinnedMemoryAllocator.h"
 
 namespace at {
@@ -41,6 +42,10 @@ bool IsPinnedMusa(const Tensor& self, c10::optional<Device> device) {
 }
 
 Tensor PinMemoryMusa(const Tensor& self, c10::optional<Device> device) {
+  c10::musa::OptionalMUSAGuard device_guard;
+  if (device.has_value()) {
+    device_guard.set_device(device.value());
+  }
   auto* allocator = at::musa::getPinnedMemoryAllocator();
   auto storage = Storage(
       Storage::use_byte_size_t(),

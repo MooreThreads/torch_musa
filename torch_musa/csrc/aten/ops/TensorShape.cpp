@@ -175,41 +175,13 @@ static TensorIterator make_index_put_iterator(
 
 namespace musa {
 
-Tensor& IndexSelectOutPorting(
-    const Tensor& self,
-    int64_t dim,
-    const Tensor& index,
-    Tensor& out) {
-  c10::optional<Device> common_device = nullopt;
-  (void)common_device; // Suppress unused variable warning
-  c10::impl::check_and_update_common_device(
-      common_device, out, "IndexSelectOutPorting", "out");
-  c10::impl::check_and_update_common_device(
-      common_device, self, "IndexSelectOutPorting", "self");
-  c10::impl::check_and_update_common_device(
-      common_device, index, "IndexSelectOutPorting", "index");
-  const OptionalDeviceGuard device_guard(device_of(self));
-  return at::native::index_select_out_cuda(self, dim, index, out);
-}
-
 Tensor& IndexSelectOut(
     const Tensor& self,
     int64_t dim,
     const Tensor& index,
     Tensor& out) {
-  // TODO(@mt-ai): IndexSelect kernel doesn't support Short and Byte dtypes
-  if (self.scalar_type() == at::ScalarType::Short ||
-      self.scalar_type() == at::ScalarType::Byte) {
-    return IndexSelectOutPorting(self, dim, index, out);
-  }
   TORCH_CHECK(
-      self.scalar_type() == at::ScalarType::Half ||
-          self.scalar_type() == at::ScalarType::Float ||
-          self.scalar_type() == at::ScalarType::Double ||
-          self.scalar_type() == at::ScalarType::Int ||
-          self.scalar_type() == at::ScalarType::Char ||
-          self.scalar_type() == at::ScalarType::Long ||
-          self.scalar_type() == at::ScalarType::BFloat16,
+      self.scalar_type() != at::ScalarType::QInt32,
       "Unsupported IndexSelect input dtype: ",
       self.scalar_type());
   TORCH_CHECK(
@@ -236,11 +208,17 @@ Tensor IndexSelect(const Tensor& self, int64_t dim, const Tensor& index) {
   int64_t index_len = index.numel();
   dim = (dim + self.dim()) % self.dim();
   out_shape[dim] = index_len;
-  Tensor out = at::empty(
-      out_shape,
-      self.options()
-          .dtype(self.scalar_type())
-          .memory_format(at::MemoryFormat::Contiguous));
+  Tensor out;
+  if (self.is_quantized()) {
+    out = at::empty_quantized(
+        out_shape, self, self.options().dtype(self.scalar_type()));
+  } else {
+    out = at::empty(
+        out_shape,
+        self.options()
+            .dtype(self.scalar_type())
+            .memory_format(at::MemoryFormat::Contiguous));
+  }
   out = IndexSelectOut(self, dim, index, out);
   return out;
 }

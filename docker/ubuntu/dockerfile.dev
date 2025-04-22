@@ -35,23 +35,16 @@ COPY ./common/install_mccl.sh install_mccl.sh
 RUN bash install_mccl.sh --mccl_url ${MCCL_URL} && \
     rm -f install_mccl.sh 
 
-# install muAlg & muThrust
-COPY ./common/release/update_release_alg_thrust.sh install_math.sh
-RUN bash install_math.sh && \
-    rm -f install_math.sh 
-
-# install mupti
-COPY ./common/release/update_release_mupti.sh install_mupti.sh
-RUN bash install_mupti.sh && \
-    rm -f install_mupti.sh
-
 ENV MTHREADS_VISIBLE_DEVICES=all
 ENV MUSA_HOME=/usr/local/musa
 ENV LD_LIBRARY_PATH=$MUSA_HOME/lib:$LD_LIBRARY_PATH
 ENV PATH=${MUSA_HOME}/bin:$PATH
 
 COPY ./torch_musa /home/torch_musa
-COPY ./data /data/torch_musa_integration/local
+COPY ./kineto /home/kineto
+COPY ./muAlg /home/muAlg
+COPY ./muThrust /home/muThrust
+# COPY ./data /data/torch_musa_integration/local
 
 COPY ./common/change_conda_mirror.sh change_conda_mirror.sh
 
@@ -62,10 +55,12 @@ RUN bash change_conda_mirror.sh && \
     # if mkl was not installed via pip
     # pytorch will look for it under /opt/intel/oneapi
     pip install --no-cache-dir -r requirements.txt && \
+    # install mualg and muthrust
+    bash docker/common/release/update_release_alg_thrust.sh && \
     # install mkl librarie (for static linking)
     bash docker/common/install_mkl.sh && \
     echo 'export LIBRARY_PATH="/opt/intel/oneapi/mkl/lib/intel64:${LIBRARY_PATH}"'>>~/.bashrc && \
-    echo 'export LD_LIBRARY_PATH="/usr/local/musa/lib:${LD_LIBRARY_PATH}"'>>~/.bashrc && \
+    echo 'export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:/usr/local/musa/lib"'>>~/.bashrc && \
     # maybe create softlink for mkl libraries
     bash docker/common/create_softlink4mkl.sh $(dirname $(dirname $(which python)))/lib && \
     pip install pytest==7.2.2 protobuf==3.19.0 \

@@ -7,22 +7,21 @@ from typing import Any, Dict, List, Optional
 from warnings import warn
 
 import torch
-from torch._C._profiler import _ExperimentalConfig
+from torch._C._profiler import _ExperimentalConfig, RecordScope
 from torch.autograd import (
     _disable_profiler,
-    _is_prepare_profiler_succeed,
-    _finish_profiler,
     _enable_profiler,
     _kineto_step,
     _prepare_profiler,
     _ProfilerResult,
     _supported_activities,
+    _is_prepare_profiler_succeed,
+    _finish_profiler,
     DeviceType,
     kineto_available,
     ProfilerActivity,
     ProfilerConfig,
     ProfilerState,
-    RecordScope,
 )
 from torch.futures import Future
 
@@ -72,6 +71,22 @@ except ImportError:
                     return func(*args, **kwargs)
 
             return wrapped
+
+
+_is_profiler_enabled: bool = False
+
+
+def _set_is_profiler_enabled(enable: bool):
+    global _is_profiler_enabled
+    _is_profiler_enabled = enable
+
+
+def _run_on_profiler_start():
+    _set_is_profiler_enabled(True)
+
+
+def _run_on_profiler_stop():
+    _set_is_profiler_enabled(False)
 
 
 # pylint: disable=C0103
@@ -250,6 +265,7 @@ class profile:
         self.entered = True
         if not _is_prepare_profiler_succeed():
             return
+        _run_on_profiler_start()
         _enable_profiler(self.config(), self.kineto_activities, self.scopes)
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -260,6 +276,7 @@ class profile:
         if not _is_prepare_profiler_succeed():
             return None
         self.kineto_results = _disable_profiler()
+        _run_on_profiler_stop()
         parsed_results = self._parse_kineto_results(self.kineto_results)
         self.function_events = EventList(
             parsed_results,
@@ -668,6 +685,7 @@ class emit_itt:
         if self.entered:
             raise RuntimeError("ITT annotation context manager is not reentrant")
         self.entered = True
+        _run_on_profiler_start()
         _enable_profiler(
             ProfilerConfig(
                 ProfilerState.ITT,
@@ -686,6 +704,7 @@ class emit_itt:
         if not self.enabled:
             return None
         _disable_profiler()
+        _run_on_profiler_stop()
         return False
 
 
@@ -783,6 +802,7 @@ class emit_nvtx:
             raise RuntimeError("NVTX annotation context manager is not reentrant")
         self.entered = True
         torch.musa.synchronize()
+        _run_on_profiler_start()
         _enable_profiler(
             ProfilerConfig(
                 ProfilerState.NVTX,
@@ -802,6 +822,7 @@ class emit_nvtx:
             return None
         torch.musa.synchronize()
         _disable_profiler()
+        _run_on_profiler_stop()
         return False
 
 
@@ -865,12 +886,12 @@ def parse_nvprof_trace(path):
 
     # Now, correlate all kernels with FunctionEvents
     kernel_query = """SELECT start.id AS marker_id, start.name, start.timestamp, end.timestamp,
-    runtime._id_ AS runtime_id, runtime.cbid, runtime.start AS runtime_start, runtime.end AS 
-    runtime_end, kernel.start AS kernel_start, kernel.end AS kernel_end, kernel.name AS 
-    kernel_name FROM CUPTI_ACTIVITY_KIND_MARKER AS start INNER JOIN CUPTI_ACTIVITY_KIND_MARKER AS 
+    runtime._id_ AS runtime_id, runtime.cbid, runtime.start AS runtime_start, runtime.end AS
+    runtime_end, kernel.start AS kernel_start, kernel.end AS kernel_end, kernel.name AS
+    kernel_name FROM CUPTI_ACTIVITY_KIND_MARKER AS start INNER JOIN CUPTI_ACTIVITY_KIND_MARKER AS
     end ON start.id = end.id INNER JOIN CUPTI_ACTIVITY_KIND_RUNTIME as runtime ON (
-    start.timestamp < runtime.start AND runtime.end < end.timestamp) INNER JOIN 
-    CUPTI_ACTIVITY_KIND_CONCURRENT_KERNEL AS kernel ON kernel.correlationId = 
+    start.timestamp < runtime.start AND runtime.end < end.timestamp) INNER JOIN
+    CUPTI_ACTIVITY_KIND_CONCURRENT_KERNEL AS kernel ON kernel.correlationId =
     runtime.correlationId """
     unique = EnforceUnique()
     for row in conn.execute(kernel_query):

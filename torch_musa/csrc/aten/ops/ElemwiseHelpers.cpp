@@ -132,6 +132,20 @@ void BinaryAlphaCall(
   CHECK_MUDNN_STATUS(op.Run(h, out, lhs, rhs), "Run " + op_name);
 }
 
+void TernaryCall(
+    MusaTensorIterator& iter,
+    TERNARY_MODE mode,
+    const std::string& op_name) {
+  muHandle& h = GetMudnnHandle();
+  ::musa::dnn::Ternary op;
+  CHECK_MUDNN_STATUS(op.SetMode(mode), "SetMode");
+  auto out = iter.mu_output(0);
+  auto inp0 = iter.mu_input(0);
+  auto inp1 = iter.mu_input(1);
+  auto inp2 = iter.mu_input(2);
+  CHECK_MUDNN_STATUS(op.Run(h, out, inp0, inp1, inp2), "Run");
+}
+
 std::pair<ScalarType, ScalarType> BinaryTrueDivSuggestInputTypes(
     MusaTensorIterator& iter) {
   const auto c_type = iter.common_dtype();

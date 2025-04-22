@@ -2,9 +2,9 @@
 cmake==3.25.2
 cffi==1.15.1
 ninja==1.11.1
-mkl==2023.0.0
-mkl-include==2023.0.0
-mkl-devel==2023.0.0
+mkl==2023.0.0; platform_machine == "x86_64"
+mkl-include==2023.0.0; platform_machine == "x86_64"
+mkl-devel==2023.0.0; platform_machine == "x86_64"
 openpyxl~=3.1.2
 setuptools>=60.2.0
 pyahocorasick==2.0.0
@@ -13,9 +13,6 @@ cmake_format==0.6.13
 pre-commit==3.5.0
 black==23.12.1
 packaging
-# Integration tests required
-transformers
-datasets
 pytest==8.2.2
 # torch_musa.utils required
 tqdm==4.66.2

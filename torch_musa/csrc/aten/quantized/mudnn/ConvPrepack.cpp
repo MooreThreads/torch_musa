@@ -4,7 +4,6 @@
 #include <ATen/native/quantized/cpu/QuantUtils.h>
 #include <torch/library.h>
 
-#include "torch_musa/csrc/aten/quantized/QTensor.h"
 #include "torch_musa/csrc/aten/quantized/mudnn/Conv.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 

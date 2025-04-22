@@ -47,15 +47,15 @@ index 7b5f5e1d939..fb1e8773fdc 100644
 +        at::ScalarType::BFloat16,
 +        input.scalar_type(),
 +        "rms_norm",[&]{
-+            scalar_t eps_val;
++            double eps_val;
 +            if (!eps.has_value()) {
-+                eps_val = std::numeric_limits<at::scalar_value_type<scalar_t>::type>::epsilon();
++                eps_val = std::numeric_limits<at::scalar_value_type<double>::type>::epsilon();
 +            } else {
 +                eps_val = eps.value();
 +            }
 +
 +            auto outputs_and_invvar =
-+                at::_fused_rmsnorm_forward(input, normalized_shape, static_cast<double>(eps_val), weight_opt);
++                at::_fused_rmsnorm_forward(input, normalized_shape, eps_val, weight_opt);
 +            return std::get<0>(outputs_and_invvar);
 +        });
 +    return result;

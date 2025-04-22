@@ -64,14 +64,20 @@ def is_word_boundary(code: str, start_idx: int, end_idx: int) -> bool:
 
 
 def transform_line(
-    line: str, automaton: ahocorasick.Automaton, replace_map: Dict[str, str] = {}
+    file_path: str,
+    line: str,
+    automaton: ahocorasick.Automaton,
+    replace_map: Dict[str, str] = {},
+    excluded_files_mapping: Dict[str, tuple] = {},
 ) -> None:
     r"""Match and replace specific strings for a line in file.
 
     Args:
+        file_path (str): path of file which will be transformed.
         line (str): a line in file which will be transformed.
         automaton (ahocorasick.Automaton): an instance of Automaton with matching and replacing information.
         replace_map (Dict[str, str]): an extra map used to match and replace which could not be handled by Automaton.
+        excluded_files_mapping (Dict[str, tuple]): an map used to filter out files that we don't want to apply rules on.
 
     Returns: None.
     """
@@ -85,7 +91,12 @@ def transform_line(
             last_end_idx = end_idx + 1
 
     new_line += line[last_end_idx:]
+    base_filename = os.path.basename(file_path)
     for key, value in replace_map.items():
+
+        # only filter __syncthreads() for now
+        if base_filename in excluded_files_mapping.get(key, []):
+            continue
         # Note: header files in cub library are suffixed with ".cuh" instead of ".muh",
         # which is not consistent with other musa libraries. So here we need to skip
         # header files replacement of cub library.
@@ -115,7 +126,10 @@ def writer(file_name: str = None) -> None:
 
 
 def transform_file(
-    path: str, automaton: ahocorasick.Automaton, replace_map: Dict[str, str] = {}
+    path: str,
+    automaton: ahocorasick.Automaton,
+    replace_map: Dict[str, str] = {},
+    excluded_files_mapping: Dict[str, tuple] = {},
 ) -> str:
     r"""Match and replace specific strings for cuda compatibility.
 
@@ -123,6 +137,7 @@ def transform_file(
         path (str): path of file which will be transformed.
         automaton (ahocorasick.Automaton): an instance of Automaton with matching and replacing information.
         replace_map (Dict[str, str]): an extra map used to match and replace which could not be handled by Automaton.
+        excluded_files_mapping (Dict[str, tuple]): an map used to filter out files that we don't want to apply rules on.
 
     Returns:
         file_name (str): new file name after transforming.
@@ -130,6 +145,17 @@ def transform_file(
     write_path = path + ".mt"
     with open(path, "rb") as read_handle:
         with writer(write_path) as write_handle:
+            if (
+                path.endswith("cu")
+                or path.endswith("cuh")
+                or os.path.basename(path)
+                in [
+                    "DistributionTemplates.h",
+                ]
+            ):
+                write_handle.write(
+                    '#include "torch_musa/csrc/aten/musa/MUSAMarcos.muh"\n'
+                )
             lines = read_handle.readlines()
             old_line = "null"
             for line in lines:
@@ -142,7 +168,9 @@ def transform_file(
                 ):
                     new_line = line
                 else:
-                    new_line = transform_line(line, automaton, replace_map)
+                    new_line = transform_line(
+                        path, line, automaton, replace_map, excluded_files_mapping
+                    )
                 write_handle.write(new_line)
                 old_line = line
     file_name = os.path.basename(path)

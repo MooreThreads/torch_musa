@@ -10,6 +10,14 @@ from torch_musa import testing
 
 input_data = [
     {
+        "input": torch.randint(-128, 127, (4, 10), dtype=torch.int8),
+        "other": 4,
+    },
+    {
+        "input": torch.randint(-(2**31), 2**31 - 1, (12, 6), dtype=torch.int32),
+        "other": 8,
+    },
+    {
         "input": torch.randint(-128, 127, (4, 10, 5), dtype=torch.int8),
         "other": torch.randint(0, 8, (4, 10, 5), dtype=torch.int8),
     },
