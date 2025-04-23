@@ -5,20 +5,19 @@ DATE=$(date +%Y%m%d)
 mudnn_path=./daily_mudnn_${DATE}
 
 GPU=$(mthreads-gmi -q -i 0 | grep "Product Name" | awk -F: '{print $2}' | tr -d '[:space:]')
-
-ARCH="x86_64-ubuntu-mp_21"
-
-if [ "$GPU" = "MTTS3000" ] || [ "$GPU" = "MTTS80" ] || [ "$GPU" = "MTTS80ES" ]; then
-    ARCH="x86_64-ubuntu-mp_21"
-elif [ "$GPU" = "MTTS4000" ]; then
-    ARCH="x86_64-ubuntu-mp_22"
-else
-    echo -e "\033[31mThe output of mthreads-gmi -q -i 0 | grep \"Product Name\" | awk -F: '{print \$2}' | tr -d '[:space:]' is not correct! Now GPU ARCH is set to qy1 by default! \033[0m"
+ARCH="cc3.1"
+if [ "$GPU" = "MTTS3000" ] || [ "$GPU" = "MTTS80" ] || [ "$GPU" = "MTTS80ES" ] || [ "$GPU" = "MTTS4000" ]; then
+    ARCH="cc2.2"
 fi
 
-yesterday_date=$(TZ=Asia/Shanghai date -d "yesterday" +%Y%m%d)
+yesterday_date=$(TZ=Asia/Shanghai date -d "yesterday" +%Y-%m-%d)
+oss_link="https://oss.mthreads.com/release-ci/computeQA/cuda_compatible/release_KUAE_2.0_for_PH1_M3D/${yesterday_date}"
 
-mudnn_oss_link="https://oss.mthreads.com/release-ci/computeQA/cuda_compatible/${yesterday_date}/${ARCH}/mudnn.tar.gz"
+if [ "${ARCH}" = "cc3.1" ]; then
+    mudnn_oss_link="${oss_link}/mudnn_dev2.8.0.PH1.tar.gz"
+else
+    mudnn_oss_link="${oss_link}/mudnn_dev2.8.0.tar.gz"
+fi
 
 wget --no-check-certificate ${mudnn_oss_link} -P ${mudnn_path}
 tar -xvzf ${mudnn_path}/mudnn.tar.gz -C ${mudnn_path}

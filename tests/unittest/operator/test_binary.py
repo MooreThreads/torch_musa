@@ -3,9 +3,9 @@
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import, W0106
 import random
 import copy
-import numpy as np
 import pytest
 import torch
+import torch_musa
 from torch_musa import testing
 
 input_datas = [
@@ -717,7 +717,7 @@ if testing.get_musa_arch() >= 22:
 @pytest.mark.parametrize("dtype", dtypes)
 @pytest.mark.parametrize(
     "func",
-    [torch.logical_and, torch.logical_or],
+    [torch.logical_and, torch.logical_or, torch.logical_xor],
 )
 def test_logical_(input_data, dtype, func):
     function(input_data, dtype, dtype, func)
@@ -987,6 +987,22 @@ def test_uint_binary_add_sub(input_data, func, dtype):
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_boolean_binary_add():
+    c_x, c_y = torch.randn((128, 128)), torch.randn((128, 128))
+    m_x, m_y = c_x.musa(), c_y.musa()
+
+    c_x, c_y = c_x > 0.5, c_y > 0.5
+    m_x, m_y = m_x > 0.5, m_y > 0.5
+
+    c_x += c_y
+    m_x += m_y
+
+    assert c_x.dtype == torch.bool and c_x.dtype == m_x.dtype
+    cmp = testing.BooleanComparator()
+    assert cmp(c_x, m_x.cpu())
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize(
     "shape",
     [
@@ -1049,16 +1065,17 @@ def test_binary_fmod_int(shape, io_types):
             do_assert(cpu_o, musa_o)
 
 
+dtypes = [
+    [[torch.float16], [torch.float]],
+    [[torch.float], []],
+]
+if testing.get_musa_arch() >= 22:
+    dtypes.append([[torch.bfloat16], [torch.float]])
+
+
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("shape", [[128, 128]])
-@pytest.mark.parametrize(
-    "io_types",
-    [
-        [[torch.float16], [torch.float]],
-        [[torch.bfloat16], [torch.float]],
-        [[torch.float], []],
-    ],
-)
+@pytest.mark.parametrize("io_types", dtypes)
 def test_binary_fmod_float(shape, io_types):
     i_raw = torch.empty(shape)
     i_raw.uniform_(-9.0, 9.0)
@@ -1181,16 +1198,17 @@ def test_binary_fmin_fmax_int(shape, io_types):
             assert_detail(cpu_o, musa_o)
 
 
+dtypes = [
+    [[torch.float16], [torch.float]],
+    [[torch.float], []],
+]
+if testing.get_musa_arch() >= 22:
+    dtypes.append([[torch.bfloat16], [torch.float]])
+
+
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("shape", [[128, 128]])
-@pytest.mark.parametrize(
-    "io_types",
-    [
-        [[torch.float16], [torch.float]],
-        [[torch.bfloat16], [torch.float]],
-        [[torch.float], []],
-    ],
-)
+@pytest.mark.parametrize("io_types", dtypes)
 def test_binary_fmin_fmax_float(shape, io_types):
     i_raw = torch.empty(shape)
     i_raw.uniform_(-9.0, 9.0)

@@ -1,9 +1,10 @@
 #include <ATen/ATen.h>
 #include <ATen/AccumulateType.h>
+#include <ATen/autocast_mode.h>
 #include <ATen/core/dispatch/Dispatcher.h>
 #include <torch/library.h>
-#include "torch_musa/csrc/amp/autocast_mode.h"
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
+#include "torch_musa/csrc/aten/musa/MUSAMarcos.muh"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 
 #include "musa_helpers.h"
@@ -58,7 +59,7 @@ __global__ void nms_kernel_impl(
     block_boxes[threadIdx.x * 4 + 3] =
         dev_boxes[(threadsPerBlock * col_start + threadIdx.x) * 4 + 3];
   }
-  __syncthreads();
+  __SYNCTHREADS;
 
   if (threadIdx.x < row_size) {
     const int cur_box_idx = threadsPerBlock * row_start + threadIdx.x;
@@ -187,8 +188,8 @@ at::Tensor nms_autocast(
   c10::impl::ExcludeDispatchKeyGuard no_autocast(
       c10::DispatchKey::AutocastPrivateUse1);
   return nms(
-      at::musa::autocast::cached_cast(at::kFloat, dets),
-      at::musa::autocast::cached_cast(at::kFloat, scores),
+      at::autocast::cached_cast(at::kFloat, dets),
+      at::autocast::cached_cast(at::kFloat, scores),
       iou_threshold);
 }
 } // namespace

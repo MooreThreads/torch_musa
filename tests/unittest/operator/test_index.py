@@ -254,7 +254,8 @@ def test_index_put_bool_index(input_data, dtype):
 )
 @pytest.mark.parametrize("tensor_dtype", dtypes)
 @pytest.mark.parametrize("ind_dtype", ind_dtypes)
-def test_index_tensor(config, tensor_dtype, ind_dtype):
+@pytest.mark.parametrize("neg_indices", [False, True])
+def test_index_tensor(config, tensor_dtype, ind_dtype, neg_indices):
     if testing.get_musa_arch() < 22 and tensor_dtype == torch.bfloat16:
         return
 
@@ -267,11 +268,15 @@ def test_index_tensor(config, tensor_dtype, ind_dtype):
     for i, index_shape in enumerate(config[1]):
         if index_shape:
             index_num = reduce((lambda x, y: x * y), index_shape)
-            indices.append(
+            inds = (
                 torch.randperm(config[0][i])[:index_num]
                 .to(ind_dtype)
                 .reshape(index_shape)
             )
+            if neg_indices:
+                mask = torch.randn(index_shape) > 0.2
+                inds[mask] -= config[0][i]
+            indices.append(inds)
         else:
             indices.append(slice(None))
     self = (
@@ -337,7 +342,7 @@ input_datas = [
     },
 ]
 dtypes = testing.get_all_support_types()
-dtypes.extend([torch.uint8, torch.int16, torch.float16, torch.float64])
+dtypes.extend([torch.uint8, torch.int16, torch.float16, torch.float64, torch.bool])
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)

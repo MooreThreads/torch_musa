@@ -7,6 +7,7 @@ import shlex
 import subprocess
 import sys
 import warnings
+import platform
 from os.path import dirname, realpath, join
 from typing import List, Optional, Tuple
 
@@ -28,6 +29,14 @@ if os.getenv("MAX_JOBS") is None:
     os.environ["MAX_JOBS"] = str(multiprocessing.cpu_count())
 
 SUBPROCESS_DECODE_ARGS = ()
+
+
+def _get_cpu_arch():
+    if any(x in platform.machine() for x in ["arm", "aarch64"]):
+        return "arm"
+    if any(x in platform.machine() for x in ["x86", "x64"]):
+        return "x86"
+    raise ValueError(f"Unidentified CPU arch: {platform.machine()}")
 
 
 def get_cxx_compiler():
@@ -390,8 +399,9 @@ def MUSAExtension(name, sources, *args, **kwargs):
         ]
     if "cxx" not in kwargs["extra_compile_args"]:
         kwargs["extra_compile_args"]["cxx"] = []
-    kwargs["extra_compile_args"]["mcc"].append("-march=native")
-    kwargs["extra_compile_args"]["cxx"].append("-march=native")
+    if _get_cpu_arch() != "arm":
+        kwargs["extra_compile_args"]["mcc"].append("-march=native")
+        kwargs["extra_compile_args"]["cxx"].append("-march=native")
     return setuptools.Extension(name, sources, *args, **kwargs)
 
 

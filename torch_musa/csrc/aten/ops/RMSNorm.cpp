@@ -2,6 +2,8 @@
 #include <ATen/native/layer_norm.h>
 
 #include "torch_musa/csrc/aten/utils/Utils.h"
+
+#include "torch_musa/csrc/aten/ops/RMSNorm.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 
 namespace at {
@@ -47,54 +49,63 @@ std::vector<int> CreateMuDNNNormAxes(
   return norm_axes;
 }
 
-} // anonymous namespace
+void CheckDevice(
+    const char* dst_name,
+    Device dst,
+    const char* src_name,
+    const Tensor& src,
+    const char* op) {
+  TORCH_CHECK(
+      !src.defined() || src.device() == dst,
+      "Devices of ",
+      dst_name,
+      "/",
+      src_name,
+      " tensors of ",
+      op,
+      " must be the same, but now ",
+      dst_name,
+      " in ",
+      dst,
+      ", ",
+      src_name,
+      " in ",
+      src.device());
+}
 
-std::tuple<Tensor, Tensor> FusedRMSNormForward(
-    const Tensor& input,
+void CheckDType(
+    const char* dst_name,
+    ScalarType dst,
+    const char* src_name,
+    const Tensor& src,
+    const char* op) {
+  TORCH_CHECK(
+      !src.defined() || src.scalar_type() == dst,
+      "DTypes of ",
+      dst_name,
+      "/",
+      src_name,
+      " tensors of ",
+      op,
+      " must be the same, but now ",
+      dst_name,
+      " in ",
+      dst,
+      ", ",
+      src_name,
+      " in ",
+      src.scalar_type());
+}
+
+void FusedRMSNormForwardCall(
+    const Tensor& contig_input,
+    const Tensor& contig_gamma,
     IntArrayRef normalized_shape,
     double eps,
-    const c10::optional<Tensor>& weight_opt) {
-  const auto weight = weight_opt.value_or(Tensor());
-  (void)native::_check_layer_norm_inputs(
-      input, normalized_shape, weight, Tensor());
-
-  const auto input_device = input.device();
-  TORCH_CHECK(
-      input_device.is_privateuseone(),
-      "Device of input tensor of RMSNorm must be MUSA, but now is ",
-      input_device);
-  TORCH_CHECK(
-      !weight.defined() || weight.device() == input_device,
-      "Devices of input/weight tensors of RMSNorm must be the same, but now ",
-      "input in ",
-      input_device,
-      ", weight in ",
-      weight.device());
-
-  const auto input_dtype = input.scalar_type();
-  TORCH_CHECK(
-      input_dtype == ScalarType::Float || input_dtype == ScalarType::Half ||
-          input_dtype == ScalarType::BFloat16,
-      "Dtype of input tensor of RMSNorm only supports Float32, Half and BFloat16, but now is ",
-      input_dtype);
-  TORCH_CHECK(
-      !weight.defined() || weight.scalar_type() == input_dtype,
-      "Dtypes of input/weight tensors of RMSNorm must be the same, but now ",
-      "input in ",
-      input_dtype,
-      ", weight in ",
-      weight.scalar_type());
-
-  const c10::musa::MUSAGuard device_guard(input_device);
-  const auto contig_input = FormatContiguous(input, MemoryFormat::Contiguous);
-  const auto contig_gamma = weight.defined()
-      ? FormatContiguous(weight, MemoryFormat::Contiguous)
-      : Tensor();
-  auto contig_output = at::empty_like(contig_input);
-  auto contig_invvar = CreateRMSNormFwdInvvar(contig_input, normalized_shape);
-
+    Tensor& contig_output,
+    Tensor& contig_invvar) {
   if (C10_UNLIKELY(contig_output.numel() == 0)) {
-    return {contig_output, contig_invvar};
+    return;
   }
 
   ::musa::dnn::RMSNorm op;
@@ -110,7 +121,131 @@ std::tuple<Tensor, Tensor> FusedRMSNormForward(
   CHECK_MUDNN_STATUS(
       op.Run(h, mudnn_out, mudnn_invvar, mudnn_in, mudnn_gamma),
       "RunRMSNormFwd");
+}
 
+} // anonymous namespace
+
+std::tuple<Tensor&, Tensor&> FusedRMSNormForwardOut(
+    const Tensor& input,
+    IntArrayRef normalized_shape,
+    double eps,
+    const c10::optional<Tensor>& weight_opt,
+    Tensor& output,
+    Tensor& invvar) {
+  const auto weight = weight_opt.value_or(Tensor());
+  (void)native::_check_layer_norm_inputs(
+      input, normalized_shape, weight, Tensor());
+
+  const auto input_device = input.device();
+  TORCH_CHECK(
+      input_device.is_privateuseone(),
+      "Device of input tensor of RMSNorm must be MUSA, but now is ",
+      input_device);
+  TORCH_CHECK(
+      !input.defined() || input.sizes().equals(output.sizes()),
+      "Expected input to be of same shape as output, but got ",
+      "input of shape = ",
+      input.sizes(),
+      " and output of shape = ",
+      output.sizes());
+  CheckDevice(
+      "input", input_device, "weight", weight, "FusedRMSNormForwardOut");
+  CheckDevice(
+      "input", input_device, "output", output, "FusedRMSNormForwardOut");
+  CheckDevice(
+      "input", input_device, "invvar", invvar, "FusedRMSNormForwardOut");
+
+  const auto input_dtype = input.scalar_type();
+  TORCH_CHECK(
+      input_dtype == ScalarType::Float || input_dtype == ScalarType::Half ||
+          input_dtype == ScalarType::BFloat16,
+      "Dtype of input tensor of RMSNorm only supports Float32, Half and BFloat16, but now is ",
+      input_dtype);
+  CheckDType("input", input_dtype, "weight", weight, "FusedRMSNormForwardOut");
+  CheckDType("input", input_dtype, "output", output, "FusedRMSNormForwardOut");
+
+  const c10::musa::MUSAGuard device_guard(input_device);
+  const auto contig_input = FormatContiguous(input, MemoryFormat::Contiguous);
+  const auto contig_gamma = weight.defined()
+      ? FormatContiguous(weight, MemoryFormat::Contiguous)
+      : Tensor();
+
+  const auto input_shape = contig_input.sizes();
+  if (!output.defined()) {
+    output = at::empty_like(contig_input);
+  } else {
+    output = FormatContiguous(output, MemoryFormat::Contiguous);
+  }
+
+  const auto invvar_ndim = input_shape.size() - normalized_shape.size();
+  const auto invvar_shape = IntArrayRef(input_shape.data(), invvar_ndim);
+  const auto invvar_dtype = InferInvvarDType(input_dtype);
+  if ((!invvar.defined()) || (invvar.scalar_type() != invvar_dtype)) {
+    invvar = CreateRMSNormFwdInvvar(contig_input, normalized_shape);
+  } else if (invvar.sizes() != invvar_shape) {
+    invvar.resize_(invvar_shape, MemoryFormat::Contiguous);
+  } else {
+    invvar = FormatContiguous(invvar, MemoryFormat::Contiguous);
+  }
+
+  FusedRMSNormForwardCall(
+      contig_input, contig_gamma, normalized_shape, eps, output, invvar);
+
+  return {output, invvar};
+}
+
+std::tuple<Tensor&, Tensor> FusedRMSNormForwardOut(
+    const Tensor& input,
+    Tensor& output,
+    IntArrayRef normalized_shape,
+    double eps,
+    const c10::optional<Tensor>& weight_opt) {
+  Tensor invvar = at::empty({0}).to(input.device());
+  FusedRMSNormForwardOut(
+      input, normalized_shape, eps, weight_opt, output, invvar);
+  return {output, invvar};
+}
+
+std::tuple<Tensor, Tensor> FusedRMSNormForward(
+    const Tensor& input,
+    IntArrayRef normalized_shape,
+    double eps,
+    const c10::optional<Tensor>& weight_opt) {
+  const auto weight = weight_opt.value_or(Tensor());
+  (void)native::_check_layer_norm_inputs(
+      input, normalized_shape, weight, Tensor());
+
+  const auto input_device = input.device();
+  TORCH_CHECK(
+      input_device.is_privateuseone(),
+      "Device of input tensor of RMSNorm must be MUSA, but now is ",
+      input_device);
+  CheckDevice(
+      "input", input_device, "weight", weight, "FusedRMSNormForwardOut");
+
+  const auto input_dtype = input.scalar_type();
+  TORCH_CHECK(
+      input_dtype == ScalarType::Float || input_dtype == ScalarType::Half ||
+          input_dtype == ScalarType::BFloat16,
+      "Dtype of input tensor of RMSNorm only supports Float32, Half and BFloat16, but now is ",
+      input_dtype);
+  CheckDType("input", input_dtype, "weight", weight, "FusedRMSNormForwardOut");
+
+  const c10::musa::MUSAGuard device_guard(input_device);
+  const auto contig_input = FormatContiguous(input, MemoryFormat::Contiguous);
+  const auto contig_gamma = weight.defined()
+      ? FormatContiguous(weight, MemoryFormat::Contiguous)
+      : Tensor();
+  auto contig_output = at::empty_like(contig_input);
+  auto contig_invvar = CreateRMSNormFwdInvvar(contig_input, normalized_shape);
+
+  FusedRMSNormForwardCall(
+      contig_input,
+      contig_gamma,
+      normalized_shape,
+      eps,
+      contig_output,
+      contig_invvar);
   return {contig_output, contig_invvar};
 }
 

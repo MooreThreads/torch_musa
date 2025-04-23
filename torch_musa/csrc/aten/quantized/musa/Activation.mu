@@ -8,7 +8,6 @@
 #include <ATen/NativeFunctions.h>
 #endif
 
-#include "torch_musa/csrc/aten/quantized/QTensor.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/MUSAStream.h"
 

@@ -11,16 +11,48 @@
 #include <ATen/Functions.h>
 #include <ATen/NativeFunctions.h>
 #else
+#include <ATen/native/quantized/AffineQuantizer.h>
+#include <ATen/native/quantized/cpu/QuantUtils.h>
 #include <ATen/ops/masked_fill_native.h>
 #include <ATen/ops/ones.h>
+#include <ATen/quantized/QTensorImpl.h>
 #endif
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
-#include "torch_musa/csrc/aten/quantized/QTensor.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 namespace at {
 namespace musa {
+
+Tensor& QTensorCopy(Tensor& self, const Tensor& src) {
+  TORCH_CHECK(
+      src.scalar_type() == at::kFloat,
+      "Quantized copy only works with kFloat as source Tensor");
+  TORCH_CHECK(
+      (self.is_contiguous() && src.is_contiguous()) ||
+          (self.is_contiguous(at::MemoryFormat::ChannelsLast) &&
+           src.is_contiguous(at::MemoryFormat::ChannelsLast)),
+      "Quantized copy only works with contiguous and NHWC Tensors");
+  TORCH_CHECK(
+      self.sizes().equals(src.sizes()),
+      "Quantized copy only works with Tensor with the same shape");
+  AT_DISPATCH_QINT_TYPES(self.scalar_type(), "Copy", [&]() {
+    if (self.qscheme() == kPerChannelAffine ||
+        self.qscheme() == kPerChannelAffineFloatQParams ||
+        self.qscheme() == kPerChannelSymmetric) {
+      at::native::quantize_tensor_per_channel_affine(
+          src,
+          self,
+          self.q_per_channel_scales(),
+          self.q_per_channel_zero_points(),
+          self.q_per_channel_axis());
+    } else {
+      at::native::quantize_tensor_per_tensor_affine(
+          src, self, self.q_scale(), self.q_zero_point());
+    }
+  });
+  return self;
+}
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ fill ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 static Tensor& FillOutQuantized(Tensor& self, const Scalar& value) {
@@ -44,22 +76,6 @@ Tensor& FillQuantizedTensor(Tensor& self, const Tensor& value) {
       value.dim(),
       " dimensions.");
   return FillOutQuantized(self, value.item());
-}
-
-Tensor& MaskedFillQuantize(
-    Tensor& self,
-    const Tensor& mask,
-    const Scalar& value) {
-  c10::musa::MUSAGuard device_guard(self.device());
-  return at::native::masked_fill__quantized_cuda(self, mask, value);
-}
-
-Tensor& MaskedFillQuantizeTensor(
-    Tensor& self,
-    const Tensor& mask,
-    const Tensor& value) {
-  c10::musa::MUSAGuard device_guard(self.device());
-  return at::native::masked_fill__quantized_cuda(self, mask, value);
 }
 
 } // namespace musa

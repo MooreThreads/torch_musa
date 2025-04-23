@@ -18,6 +18,14 @@ import numpy as np
 import torch
 import torch_musa
 
+from .common_utils import get_musa_arch
+
+try:
+    import triton
+
+    _HAS_TRITON = True
+except ImportError:
+    _HAS_TRITON = False
 
 MUSA_AVAILABLE = torch_musa.is_available()
 MULTIGPU_AVAILABLE = MUSA_AVAILABLE and torch_musa.device_count() >= 2
@@ -97,7 +105,10 @@ def get_all_support_types_withfp16():
 
 
 def get_float_types():
-    return [torch.float32, torch.half, torch.bfloat16]
+    dtypes = [torch.float32, torch.float16]
+    if get_musa_arch() >= 22:
+        dtypes.append(torch.bfloat16)
+    return dtypes
 
 
 def get_all_types():

@@ -1,4 +1,8 @@
-Total amount of ops: 681
+Total amount of ops: 710
+- `__lshift__.Scalar`
+- `__lshift__.Tensor`
+- `__rshift__.Scalar`
+- `__rshift__.Tensor`
 - `_adaptive_avg_pool2d_backward`
 - `_adaptive_avg_pool2d`
 - `_adaptive_avg_pool3d_backward`
@@ -61,6 +65,8 @@ Total amount of ops: 681
 - `_foreach_sub_.List`
 - `_foreach_sub_.ScalarList`
 - `_foreach_sub_.Scalar`
+- `_fused_adam_.tensor_lr`
+- `_fused_adam_`
 - `_fused_rmsnorm_backward`
 - `_fused_rmsnorm_forward`
 - `_index_put_impl_`
@@ -79,12 +85,19 @@ Total amount of ops: 681
 - `_scaled_dot_product_attention_flash_musa`
 - `_scaled_dot_product_attention_math_musa_backward`
 - `_scaled_dot_product_attention_math_musa`
+- `_scaled_mm.out`
+- `_scaled_mm`
 - `_softmax.out`
 - `_softmax_backward_data.out`
 - `_softmax_backward_data`
 - `_softmax`
 - `_unique2`
 - `_unique`
+- `_upsample_bicubic2d_aa.out`
+- `_upsample_bicubic2d_aa_backward.grad_input`
+- `_upsample_bicubic2d_aa_backward`
+- `_upsample_bicubic2d_aa`
+- `_weight_norm_interface_backward`
 - `_weight_norm_interface`
 - `abs.out`
 - `abs_`
@@ -367,6 +380,10 @@ Total amount of ops: 681
 - `log2_`
 - `log2`
 - `log_`
+- `log_sigmoid_backward.grad_input`
+- `log_sigmoid_backward`
+- `log_sigmoid_forward.output`
+- `log_sigmoid_forward`
 - `log_softmax.Dimname`
 - `log`
 - `logical_and.out`
@@ -378,6 +395,9 @@ Total amount of ops: 681
 - `logical_or.out`
 - `logical_or_`
 - `logical_or`
+- `logical_xor.out`
+- `logical_xor_`
+- `logical_xor`
 - `logsumexp.out`
 - `logsumexp`
 - `lt.Scalar_out`
@@ -418,6 +438,9 @@ Total amount of ops: 681
 - `min`
 - `minimum.out`
 - `minimum`
+- `mish.out`
+- `mish_`
+- `mish`
 - `mm.out`
 - `mm`
 - `mode.values`
@@ -518,6 +541,8 @@ Total amount of ops: 681
 - `reflection_pad1d_backward.grad_input`
 - `reflection_pad1d_backward`
 - `reflection_pad1d`
+- `reflection_pad2d_backward.grad_input`
+- `reflection_pad2d_backward`
 - `reflection_pad2d`
 - `relu.out`
 - `relu_`
@@ -541,6 +566,9 @@ Total amount of ops: 681
 - `rsqrt.out`
 - `rsqrt_`
 - `rsqrt`
+- `rsub.Scalar_out`
+- `rsub.Tensor_out`
+- `rsub.Tensor`
 - `scatter.src_out`
 - `scatter.src`
 - `scatter.value_out`
@@ -595,15 +623,16 @@ Total amount of ops: 681
 - `squeeze.dim`
 - `squeeze.dims`
 - `squeeze`
+- `std.correction_out`
+- `std.correction`
 - `stft.center`
 - `stft`
 - `sub.Tensor`
 - `sub.out`
 - `sub_.Tensor`
-- `sum.DimnameList_out`
 - `sum.IntList_out`
-- `sum.dim_DimnameList`
 - `sum.dim_IntList`
+- `sum.out`
 - `sum`
 - `take`
 - `tan.out`

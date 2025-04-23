@@ -26,44 +26,5 @@ Tensor& BernoulliFloat(
   return self;
 #endif
 }
-
-Tensor& BernoulliTensor(
-    Tensor& self,
-    const Tensor& p,
-    c10::optional<at::Generator> generator) {
-  torch::utils::musa_lazy_init();
-  c10::musa::MUSAGuard device_guard(self.device());
-  return at::native::bernoulli_(self, p, generator);
-}
-
-Tensor& BernoulliOut(
-    const Tensor& self,
-    c10::optional<at::Generator> generator,
-    Tensor& out) {
-  torch::utils::musa_lazy_init();
-  c10::musa::MUSAGuard device_guard(self.device());
-  return at::native::bernoulli_out(self, generator, out);
-}
-
-Tensor& Normal(
-    Tensor& self,
-    double mean,
-    double std,
-    c10::optional<Generator> gen) {
-  torch::utils::musa_lazy_init();
-  c10::musa::MUSAGuard device_guard(self.device());
-  return at::native::normal_(self, mean, std, gen);
-}
-
-Tensor& Uniform(
-    Tensor& self,
-    double from,
-    double to,
-    c10::optional<Generator> gen) {
-  torch::utils::musa_lazy_init();
-  c10::musa::MUSAGuard device_guard(self.device());
-  return at::native::uniform_(self, from, to, gen);
-}
-
 } // namespace musa
 } // namespace at

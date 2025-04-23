@@ -1,0 +1,19 @@
+diff --git a/caffe2/CMakeLists.txt b/caffe2/CMakeLists.txt
+index 7483637..0692730 100644
+--- a/caffe2/CMakeLists.txt
++++ b/caffe2/CMakeLists.txt
+@@ -1181,6 +1181,14 @@ target_include_directories(torch_cpu PRIVATE
+ if(USE_KINETO)
+   target_include_directories(torch_cpu PRIVATE
+     ${TORCH_ROOT}/third_party/kineto/libkineto/src)
++  if(DEFINED ENV{MUSA_HOME})
++    set(MUSA_HOME $ENV{MUSA_HOME})
++  else()
++    set(MUSA_HOME "/usr/local/musa")
++  endif()
++  target_link_libraries(torch_cpu PUBLIC ${MUSA_HOME}/lib/libmupti.so)
++  target_link_libraries(torch_cpu PUBLIC ${MUSA_HOME}/lib/libmusa.so)
++  target_link_libraries(torch_cpu PUBLIC ${MUSA_HOME}/lib/libmusart.so)
+ endif()
+ 
+ install(DIRECTORY "${TORCH_SRC_DIR}/csrc"

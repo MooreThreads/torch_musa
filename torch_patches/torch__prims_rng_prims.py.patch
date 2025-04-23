@@ -1,0 +1,57 @@
+diff --git a/torch/_prims/rng_prims.py b/torch/_prims/rng_prims.py
+index 1a14904..69f43bd 100644
+--- a/torch/_prims/rng_prims.py
++++ b/torch/_prims/rng_prims.py
+@@ -153,6 +153,8 @@ def get_device(args, kwargs):
+     devices = {arg.device.type for arg in args if isinstance(arg, torch.Tensor)}
+     if any(dev == "cuda" for dev in devices):
+         return "cuda"
++    elif any(dev == "musa" for dev in devices):
++        return "musa"
+     elif any(dev == "cpu" for dev in devices):
+         return "cpu"
+     return None
+@@ -165,6 +167,10 @@ def register_run_and_save_rng_state_op():
+         autograd_not_implemented(run_and_save_rng_state, deferred_error=True)
+     )
+ 
++    @run_and_save_rng_state.py_impl(DispatchKey.PrivateUse1)
++    def impl_musa(op, *args, **kwargs):
++        return torch.musa.get_rng_state(), op(*args, **kwargs)
++
+     @run_and_save_rng_state.py_impl(DispatchKey.CUDA)
+     def impl_cuda(op, *args, **kwargs):
+         return torch.cuda.get_rng_state(), op(*args, **kwargs)
+@@ -175,7 +181,7 @@ def register_run_and_save_rng_state_op():
+ 
+     @run_and_save_rng_state.py_impl(DispatchKey.BackendSelect)
+     def impl_backend_select(op, *args, **kwargs):
+-        impl_map = {"cuda": impl_cuda, "cpu": impl_cpu}
++        impl_map = {"cuda": impl_cuda, "cpu": impl_cpu, "musa": impl_musa}
+         device = get_device(args, kwargs)
+         assert device in impl_map, f"Backend not supported for {device}"
+         impl = impl_map[device]
+@@ -210,6 +216,14 @@ def register_run_with_rng_state_op():
+         autograd_not_implemented(run_with_rng_state, deferred_error=True)
+     )
+ 
++    @run_with_rng_state.py_impl(DispatchKey.PrivateUse1)
++    def impl_musa(rng_state, op, *args, **kwargs):
++        current_state = torch.musa.get_rng_state()
++        torch.musa.set_rng_state(rng_state)
++        out = op(*args, **kwargs)
++        torch.musa.set_rng_state(current_state)
++        return out
++
+     @run_with_rng_state.py_impl(DispatchKey.CUDA)
+     def impl_cuda(rng_state, op, *args, **kwargs):
+         current_state = torch.cuda.get_rng_state()
+@@ -244,7 +258,7 @@ def register_run_with_rng_state_op():
+ 
+     @run_with_rng_state.py_impl(DispatchKey.BackendSelect)
+     def impl_backend_select(rng_state, op, *args, **kwargs):
+-        impl_map = {"cuda": impl_cuda, "cpu": impl_cpu}
++        impl_map = {"cuda": impl_cuda, "cpu": impl_cpu, "musa": impl_musa}
+         device = get_device(args, kwargs)
+         assert device in impl_map, f"Backend not supported for {device}"
+         impl = impl_map[device]

@@ -16,8 +16,8 @@ RUN UBUNTU_VERSION=${UBUNTU_VERSION} bash change_ubuntu_mirror.sh && \
     rm -f install_base.sh
 
 # install conda
-ARG ENV_NAME="py38"
-ARG PYTHON_VERSION="3.8"
+ARG ENV_NAME="py310"
+ARG PYTHON_VERSION="3.10"
 # ARG CONDA_FILE="Miniconda3-py38_4.12.0-Linux-x86_64.sh"
 COPY ./common/install_conda.sh install_conda.sh
 RUN bash install_conda.sh && \
@@ -36,8 +36,10 @@ ENV PATH=/opt/conda/envs/${ENV_NAME}/bin:${PATH}
 COPY ./pytorch /home/pytorch
 COPY ./vision /home/vision
 COPY ./audio /home/audio
+COPY ./common/pip.conf /etc
 
 RUN rm -rf ~/.bashrc && \
+    echo -e "export PIP_CONFIG_FILE=/etc/pip.conf" >> ~/.bashrc && \
     echo -e ". /opt/conda/etc/profile.d/conda.sh" >> ~/.bashrc && \
     echo -e "conda activate ${ENV_NAME}" >> ~/.bashrc && \
     echo -e "export CMAKE_PREFIX_PATH=\${CONDA_PREFIX:-\"\$(dirname \$(which conda))/../\"}""" >> ~/.bashrc

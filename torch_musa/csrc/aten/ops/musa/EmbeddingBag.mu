@@ -4,6 +4,7 @@
 #include <ATen/core/Tensor.h>
 
 #include "torch_musa/csrc/aten/mudnn/Handle.h"
+#include "torch_musa/csrc/aten/musa/MUSAMarcos.muh"
 #include "torch_musa/csrc/aten/musa/MUSAMath.muh"
 #include "torch_musa/csrc/aten/ops/Embedding.h"
 #include "torch_musa/csrc/aten/ops/musa/EmbeddingBagHelper.muh"
@@ -115,14 +116,14 @@ __global__ void EmbeddingBag2DKernel(
       op.apply(v1, v2);
     }
     share_array[tidy][tidx] = v1;
-    __syncthreads();
+    __SYNCTHREADS;
 
 #pragma unroll
     for (int s = BLOCK_Y / 2; s >= 2; s >>= 1) {
       if (tidy < s) {
         op.apply(share_array[tidy][tidx], share_array[tidy + s][tidx]);
       }
-      __syncthreads();
+      __SYNCTHREADS;
     }
 
     if (tidy == 0) {

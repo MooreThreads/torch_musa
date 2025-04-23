@@ -106,29 +106,30 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/utils/musa_lazy_init.h"
 
 #include <mudnn.h>
 
 namespace at {
 namespace musa {
 
-// Copy from ReduceOps.cpp
-inline ScalarType musa_get_dtype_from_self(
+extern void check_inplace(
     const Tensor& self,
-    const optional<ScalarType>& dtype,
-    bool promote_integers) {
-  if (dtype.has_value()) {
-    return dtype.value();
-  }
-  ScalarType src_type = self.scalar_type();
-  if (promote_integers && at::isIntegralType(src_type, /*includeBool=*/true)) {
-    return kLong;
-  }
-  return src_type;
-}
+    IntArrayRef sizes,
+    const TensorOptions& options);
 
-// Copy from ReduceOps.cpp
+extern void resize_out(
+    const Tensor& out,
+    IntArrayRef sizes,
+    IntArrayRef strides,
+    const TensorOptions& options);
+
+extern Tensor create_out(
+    IntArrayRef sizes,
+    IntArrayRef strides,
+    const TensorOptions& options);
+
+namespace {
+
 ScalarType musa_infer_dtype_from_optional(
     const Tensor& self,
     const optional<ScalarType>& opt_dtype,
@@ -140,9 +141,35 @@ ScalarType musa_infer_dtype_from_optional(
   } else {
     // Last case is to get the self type.
     // If the self type is an integer, we promote it to kLong.
-    return musa_get_dtype_from_self(self, opt_dtype, true);
+    return native::get_dtype_from_self(self, opt_dtype, true);
   }
 }
+
+void ResizeReduction(
+    Tensor& output,
+    const Tensor& self,
+    OptionalIntArrayRef opt_dims,
+    bool keepdim,
+    ScalarType out_dtype,
+    bool allow_empty_dims = false) {
+  auto dims = native::make_dim_vector(opt_dims, self.dim());
+  maybe_wrap_dims(dims, self.dim());
+  const auto output_shape =
+      meta::get_reduction_shape(self, dims, keepdim, allow_empty_dims);
+  const auto output_opts = self.options().dtype(out_dtype);
+
+  if (!output.defined()) {
+    output = create_out(output_shape, {}, output_opts);
+  } else if (!output.is_same(self)) {
+    resize_out(output, output_shape, {}, output_opts);
+  } else {
+    check_inplace(self, output_shape, output_opts);
+  }
+
+  namedinference::propagate_names_for_reduction(output, self, dims, keepdim);
+}
+
+} // anonymous namespace
 
 void ReduceCall(
     Tensor& output,
@@ -216,7 +243,6 @@ Tensor Reduction(
   return output;
 }
 
-#define REDUCE_OPERATOR(op_name)
 Tensor Mean(const Tensor& self, c10::optional<ScalarType> dtype) {
   return Reduction(
       self, IntArrayRef{}, false, dtype, ::musa::dnn::Reduce::Mode::MEAN);
@@ -268,52 +294,51 @@ Tensor& MeanNamesDimOut(
   return output;
 }
 
-Tensor Sum(const Tensor& self, c10::optional<ScalarType> dtype) {
-  return Reduction(
-      self, IntArrayRef{}, false, dtype, ::musa::dnn::Reduce::Mode::ADD);
-}
-
 Tensor& SumIntListOut(
     const Tensor& self,
     at::OptionalIntArrayRef dim,
     bool keepdim,
     optional<ScalarType> opt_dtype,
     Tensor& output) {
-  c10::musa::MUSAGuard device_guard(self.device());
-  DimVector dims_vec(dim.value());
-  maybe_wrap_dims(dims_vec, self.dim());
-  auto shape = at::meta::get_reduction_shape(self, dims_vec, keepdim);
-  output.resize_(shape);
-  ReduceCall(output, self, dim.value(), ::musa::dnn::Reduce::Mode::ADD);
-  return output;
-}
+  const auto self_device = self.device();
+  TORCH_CHECK(
+      self_device.is_privateuseone() &&
+          (!output.defined() || output.device() == self_device),
+      "Devices mismatch for sum.IntList_out: input is ",
+      self_device,
+      ", output is ",
+      output.device());
+  const c10::musa::MUSAGuard device_guard(self_device);
 
-Tensor SumDimnameList(
-    const Tensor& self,
-    DimnameList dim,
-    bool keepdim,
-    c10::optional<ScalarType> dtype) {
-  return Reduction(
-      self,
-      dimnames_to_positions(self, dim),
-      keepdim,
-      dtype,
-      ::musa::dnn::Reduce::Mode::ADD);
-}
+  const auto output_dtype =
+      musa_infer_dtype_from_optional(self, opt_dtype, output);
+  ResizeReduction(output, self, dim, keepdim, output_dtype);
 
-Tensor& SumDimnameListOut(
-    const Tensor& self,
-    DimnameList dim,
-    bool keepdim,
-    c10::optional<ScalarType> dtype,
-    Tensor& output) {
-  UNUSED(dtype);
-  UNUSED(keepdim);
-  ReduceCall(
-      output,
-      self,
-      dimnames_to_positions(self, dim),
-      ::musa::dnn::Reduce::Mode::ADD);
+  if (C10_UNLIKELY(self.numel() == 0)) {
+    output.zero_();
+    return output;
+  }
+
+  const auto self_orig_dtype = self.scalar_type();
+  auto self_target_dtype = self_orig_dtype;
+
+  if (isFloatingType(output_dtype) && isIntegralType(self_orig_dtype, true)) {
+    if (elementSize(self_orig_dtype) <= 1UL) {
+      self_target_dtype = ScalarType::Half;
+    } else if (output_dtype == ScalarType::Float) {
+      self_target_dtype = ScalarType::Int;
+    } else {
+      self_target_dtype = ScalarType::Float;
+    }
+  }
+
+  using Proxy = typename c10::MaybeOwned<Tensor>;
+  Proxy proxy_self = (self_orig_dtype != self_target_dtype)
+      ? Proxy::owned(self.to(self_target_dtype))
+      : Proxy::borrowed(self);
+
+  auto dims = dim.value_or(IntArrayRef());
+  ReduceCall(output, *proxy_self, dims, ::musa::dnn::Reduce::Mode::ADD);
   return output;
 }
 
@@ -322,8 +347,20 @@ Tensor SumIntList(
     at::OptionalIntArrayRef dim,
     bool keepdim,
     optional<ScalarType> opt_dtype) {
-  return Reduction(
-      self, dim.value(), keepdim, opt_dtype, ::musa::dnn::Reduce::Mode::ADD);
+  Tensor output;
+  SumIntListOut(self, dim, keepdim, opt_dtype, output);
+  return output;
+}
+
+Tensor Sum(const Tensor& self, c10::optional<ScalarType> dtype) {
+  return SumIntList(self, IntArrayRef{}, false, dtype);
+}
+
+Tensor& SumOut(
+    const Tensor& self,
+    c10::optional<ScalarType> dtype,
+    Tensor& out) {
+  return SumIntListOut(self, IntArrayRef{}, false, dtype, out);
 }
 
 Tensor Prod(const Tensor& self, c10::optional<ScalarType> dtype) {
@@ -903,38 +940,6 @@ std::tuple<Tensor&, Tensor&> MinNamesDimMin(
       dimname_to_position(self, dim),
       ::musa::dnn::Reduce::Mode::MIN);
   return std::tuple<Tensor&, Tensor&>(output, indices);
-}
-
-std::tuple<at::Tensor, at::Tensor> VarMeanCorrection(
-    const at::Tensor& self,
-    at::OptionalIntArrayRef dim,
-    const c10::optional<at::Scalar>& correction,
-    bool keepdim) {
-  // No device check
-  torch::utils::musa_lazy_init();
-  c10::musa::MUSAGuard device_guard(self.device());
-  return at::native::var_mean(self, dim, correction, keepdim);
-}
-
-at::Tensor VarCorrection(
-    const at::Tensor& self,
-    at::OptionalIntArrayRef dim,
-    const c10::optional<at::Scalar>& correction,
-    bool keepdim) {
-  // No device check
-  const OptionalDeviceGuard device_guard(device_of(self));
-  return at::native::var(self, dim, correction, keepdim);
-}
-
-at::Tensor& VarOutCorrection(
-    const at::Tensor& self,
-    at::OptionalIntArrayRef dim,
-    const c10::optional<at::Scalar>& correction,
-    bool keepdim,
-    at::Tensor& out) {
-  // No device check
-  const OptionalDeviceGuard device_guard(device_of(self));
-  return at::native::var_out(self, dim, correction, keepdim, out);
 }
 
 } // namespace musa

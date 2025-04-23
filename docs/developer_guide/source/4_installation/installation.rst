@@ -7,13 +7,13 @@
 - Python == 3.8/3.9/3.10。
 - 摩尔线程MUSA软件包，推荐版本如下：
 
-  * MUSA驱动 musa_2.7.0
-  * MUSAToolkits dev3.0.0
-  * MUDNN 2.6.0
-  * MCCL 2.11.4
-  * muAlg dev0.3.0
-  * muSPARSE dev0.4.0
-  * muThrust dev0.3.0
+  * MUSA驱动 2.7.0-rc4-0822
+  * MUSAToolkits rc3.1.0
+  * MUDNN rc2.7.0
+  * MCCL rc1.7.0
+  * `muAlg <https://github.com/MooreThreads/muAlg>` 
+  * `mutlass <https://github.com/MooreThreads/mutlass>`
+  * `muThrust <https://github.com/MooreThreads/muThrust>`
   * `Docker Container Toolkits <https://mcconline.mthreads.com/software>`_
 
 
@@ -25,7 +25,7 @@
 #. 编译PyTorch
 #. 编译torch_musa
 
-torch_musa rc1.3.0是在PyTorch v2.0.0基础上以插件的方式来支持摩尔线程显卡。开发时涉及到对PyTorch源码的修改，目前是以打patch的方式实现的。PyTorch社区正在积极支持第三方后端接入，这个 `issue <https://github.com/pytorch/pytorch/issues/98406>`_ 下有相关PR。我们也在积极向PyTorch社区提交PR，避免在编译过程中向PyTorch打patch。
+torch_musa rc1.3.0是在PyTorch v2.2.0基础上以插件的方式来支持摩尔线程显卡。开发时涉及到对PyTorch源码的修改，目前是以打patch的方式实现的。PyTorch社区正在积极支持第三方后端接入，这个 `issue <https://github.com/pytorch/pytorch/issues/98406>`_ 下有相关PR。我们也在积极向PyTorch社区提交PR，避免在编译过程中向PyTorch打patch。
 
 
 开发Docker

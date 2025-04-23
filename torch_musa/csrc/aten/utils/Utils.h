@@ -89,16 +89,11 @@ void SetMUTensorDType(ScalarType dtype, muTensor& m_t);
 void SetMUTensorAddr(void* addr, muTensor& m_t);
 
 // Set quantized mudnn tensor info
-void inline SetMudnnQuantizationInfo(
-    at::musa::muTensor& self,
+void SetMudnnQuantizationInfo(
+    muTensor& self,
     double scales,
-    int64_t zero_points) {
-  float scales_ = static_cast<float>(scales);
-  unsigned int zero_points_ = static_cast<unsigned int>(zero_points);
-  CHECK_MUDNN_STATUS(
-      self.SetQuantizationInfo(1, &scales_, &zero_points_),
-      "Set quantization info");
-}
+    int64_t zero_points);
+void SetMudnnQuantizationInfo(muTensor& self, Tensor& scales);
 
 // use for memory handler
 void InternalMemFree(void* ptr);
@@ -203,6 +198,21 @@ inline bool IsAllowedDtype(
   bool cond1 = IS_ALLOWED_FLOATING_DTYPES(_st);                            \
   bool cond2 = IS_ALLOWED_DTYPES(_st, __VA_ARGS__);                        \
   _TORCH_MUSA_CHECK_DTYPES(_st, func_name, cond1 || cond2)
+
+template <typename Args1, typename... ArgsN>
+Device OutDevice(Args1&& first, ArgsN&&... others) {
+  auto dev = first.device();
+  if (!dev.is_cpu()) {
+    return dev;
+  }
+  for (const auto& o : {others...}) {
+    if (!o.is_cpu()) {
+      dev = o.device();
+      break;
+    }
+  }
+  return dev;
+}
 
 } // namespace musa
 

@@ -209,6 +209,9 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> MuDNNMathSDPABwd(
   auto batch_size = query.sizes()[0]; // batch_size
   auto kv_seq_len = key.size(2);
 
+  CHECK_MUDNN_STATUS(
+      sdpa.SetComputeMode(at::musa::GetComputeModeFromCtx(query.scalar_type())),
+      "SetComputeMode");
   // batchfirst doesn't takes effect in SDPA actually.
   CHECK_MUDNN_STATUS(sdpa.SetEmbedDim(head_num * head_dim), "SetEmbedDim");
   CHECK_MUDNN_STATUS(sdpa.SetHeadsNum(head_num), "SetHeadsNum");

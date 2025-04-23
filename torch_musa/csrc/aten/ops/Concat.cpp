@@ -113,7 +113,16 @@ Tensor& CatOut(const at::ITensorListRef& tensors, int64_t dim, Tensor& out) {
 
 Tensor Cat(const at::ITensorListRef& tensors, int64_t dim) {
   const auto& materialized = tensors.materialize();
-  const Tensor& ref = materialized[0].get();
+  int i = 0;
+  for (; i < materialized.size(); i++) {
+    if (materialized[i].get().numel() > 0)
+      break;
+  }
+  if (i == materialized.size()) {
+    Tensor output = at::empty_like(materialized[0].get());
+    return output;
+  }
+  const Tensor& ref = materialized[i].get();
 
   CatCheckNoZeroDim(materialized);
   dim = at::legacy_cat_wrap_dim(dim, materialized);
@@ -125,7 +134,8 @@ Tensor Cat(const at::ITensorListRef& tensors, int64_t dim) {
   std::vector<int64_t> output_shape{ref.sizes().vec()};
   output_shape[dim] = 0;
   for (const Tensor& tensor : materialized) {
-    output_shape[dim] += tensor.size(dim);
+    if (tensor.numel() > 0)
+      output_shape[dim] += tensor.size(dim);
   }
   // Compute the output's dtype and memory_format
   auto out_dtype = at::native::result_type(tensors);

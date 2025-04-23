@@ -542,6 +542,7 @@ class TestProfilerTree(TestCase):
                         <built-in function hash>
                     torch_musa/profiler/profiler.py(...): stop_trace
                       torch_musa/autograd/profiler.py(...): __exit__
+                        <built-in method _is_prepare_profiler_succeed of PyCapsule object at 0xXXXXXXXXXXXX>
                         <built-in method _disable_profiler of PyCapsule object at 0xXXXXXXXXXXXX>""",
         )
 
@@ -690,6 +691,7 @@ class TestProfilerTree(TestCase):
                         <built-in function hash>
                     torch_musa/profiler/profiler.py(...): stop_trace
                       torch_musa/autograd/profiler.py(...): __exit__
+                        <built-in method _is_prepare_profiler_succeed of PyCapsule object at 0xXXXXXXXXXXXX>
                         <built-in method _disable_profiler of PyCapsule object at 0xXXXXXXXXXXXX>""",
         )
 
@@ -749,6 +751,7 @@ class TestProfilerTree(TestCase):
                         <built-in function hash>
                     torch_musa/profiler/profiler.py(...): stop_trace
                       torch_musa/autograd/profiler.py(...): __exit__
+                        <built-in method _is_prepare_profiler_succeed of PyCapsule object at 0xXXXXXXXXXXXX>
                         <built-in method _disable_profiler of PyCapsule object at 0xXXXXXXXXXXXX>""",
         )
 
@@ -800,6 +803,7 @@ class TestProfilerTree(TestCase):
                         <built-in function hash>
                     torch_musa/profiler/profiler.py(...): stop_trace
                       torch_musa/autograd/profiler.py(...): __exit__
+                        <built-in method _is_prepare_profiler_succeed of PyCapsule object at 0xXXXXXXXXXXXX>
                         <built-in method _disable_profiler of PyCapsule object at 0xXXXXXXXXXXXX>""",
         )
 

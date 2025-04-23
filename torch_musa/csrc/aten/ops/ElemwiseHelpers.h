@@ -15,6 +15,7 @@ namespace musa {
 
 using BINARY_MODE = ::musa::dnn::Binary::Mode;
 using UNARY_MODE = ::musa::dnn::Unary::Mode;
+using TERNARY_MODE = ::musa::dnn::Ternary::Mode;
 
 Scalar CPUScalarMulScalar(const Tensor& l_t, const Scalar& r_s);
 
@@ -40,6 +41,11 @@ void BinaryAlphaCall(
     MusaTensorIterator& iter,
     const Scalar& alpha,
     BINARY_MODE mode,
+    const std::string& op_name);
+
+void TernaryCall(
+    MusaTensorIterator& iter,
+    TERNARY_MODE mode,
     const std::string& op_name);
 
 inline bool BinaryMulFallThroughCPU(MusaTensorIterator& iter) {

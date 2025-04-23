@@ -33,22 +33,36 @@ input_data = [
     {"input": torch.randn([9, 8, 7, 6, 5, 4, 16]), "dim": 5},
     {"input": torch.randn([9, 8, 7, 6, 5, 4, 5, 20]), "dim": 7},
     {"input": torch.randn([0, 8, 7, 6, 5, 4, 5, 20]), "dim": 7},
+    {"input": torch.randn([2, 3, 4]), "dim": None},
 ]
 
 
-def function(input_data, dtype, func, **kwargs):
+def function(input_data, input_dtype, func, **kwargs):
     input_data_cp = copy.deepcopy(input_data)
     if isinstance(input_data_cp["input"], torch.Tensor):
-        input_data_cp["input"] = input_data_cp["input"].to(dtype)
+        input_data_cp["input"] = input_data_cp["input"].to(input_dtype)
     if kwargs:
         input_data_cp.update(kwargs)
+    if input_dtype == torch.float16:
+        abs_diff, rel_diff = 1e-3, 1e-3
+    elif input_dtype == torch.bfloat16:
+        abs_diff, rel_diff = 5e-3, 5e-3
+    else:
+        abs_diff, rel_diff = 1e-5, 1e-6
     test = testing.OpTest(
         func=func,
         input_args=input_data_cp,
-        comparators=testing.DefaultComparator(abs_diff=1e-5),
+        comparators=testing.DefaultComparator(abs_diff=abs_diff, rel_diff=rel_diff),
     )
     test.check_result()
     test.check_out_ops()
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_data)
+@pytest.mark.parametrize("dtype", testing.get_float_types())
+def test_std(input_data, dtype):
+    function(input_data, dtype, torch.std)
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -118,6 +132,7 @@ def test_sum_bool(config):
         "dim": config[1],
     }
     function(input_data, torch.bool, torch.sum)
+    function(input_data, torch.bool, torch.sum, dtype=torch.float32)
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)

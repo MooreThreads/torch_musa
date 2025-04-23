@@ -98,14 +98,6 @@ def test_get_amp_supported_dtype():
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("enabled", [True, False])
 def test_set_autocast_musa_enabled(enabled):
-    torch.musa.set_autocast_musa_enabled(enabled)
-    res = torch.musa.is_autocast_musa_enabled()
-    assert res == enabled
-
-
-@testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@pytest.mark.parametrize("enabled", [True, False])
-def test_set_autocast_cache_enabled(enabled):
-    torch.musa.set_autocast_cache_enabled(enabled)
-    res = torch.musa.is_autocast_cache_enabled()
+    torch.musa.set_autocast_enabled(enabled)
+    res = torch.musa.is_autocast_enabled()
     assert res == enabled

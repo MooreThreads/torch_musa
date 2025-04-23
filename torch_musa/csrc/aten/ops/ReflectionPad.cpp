@@ -138,13 +138,5 @@ Tensor ReflectPad1D(const Tensor& self, IntArrayRef pad) {
   return PadInternal(contiguous_self, pad, op);
 }
 
-Tensor ReflectionPad2d(const Tensor& self, IntArrayRef padding) {
-  c10::optional<Device> common_device = nullopt;
-  c10::impl::check_and_update_common_device(
-      common_device, self, "ReflectionPad2d", "self");
-  const OptionalDeviceGuard device_guard(device_of(self));
-  return at::native::reflection_pad2d_cuda(self, padding);
-}
-
 } // namespace musa
 } // namespace at

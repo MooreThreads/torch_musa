@@ -3,6 +3,7 @@
 #include <ATen/ATen.h>
 #include <ATen/NativeFunctions.h>
 #include <ATen/Operators.h>
+#include <ATen/autocast_mode.h>
 #include <torch/library.h>
 
 #include <c10/core/impl/LocalDispatchKeySet.h>
@@ -11,27 +12,11 @@
 #include <exception>
 #include <mutex>
 
-namespace at {
+namespace at::autocast {
 namespace musa {
-namespace autocast {
 
-bool is_enabled() {
-  return !c10::impl::tls_is_dispatch_key_excluded(DispatchKey::AutocastCUDA);
-}
-
-void set_enabled(bool new_enabled) {
-  c10::impl::tls_set_dispatch_key_excluded(
-      DispatchKey::AutocastCUDA, !new_enabled);
-}
-
-bool is_cpu_enabled() {
-  return !c10::impl::tls_is_dispatch_key_excluded(DispatchKey::AutocastCPU);
-}
-
-void set_cpu_enabled(bool new_enabled) {
-  c10::impl::tls_set_dispatch_key_excluded(
-      DispatchKey::AutocastCPU, !new_enabled);
-}
+// autocast_cpu_dtype is the lower_precision_fp used by AutocastCPU.
+thread_local at::ScalarType autocast_musa_dtype = at::kBFloat16;
 
 bool is_autocast_musa_enabled() {
   return !c10::impl::tls_is_dispatch_key_excluded(
@@ -43,301 +28,16 @@ void set_autocast_musa_enabled(bool new_enabled) {
       DispatchKey::AutocastPrivateUse1, !new_enabled);
 }
 
-namespace {
-// Imitate Apex and cache some of the casts to streamline parameter reuse.
-// Our heuristic is to cache lower_precision_fp casts of fp32 model weights (see
-// cached_cast below).
-//
-// After discussion with @ezyang, the cache uses the following structure:
-// The key is the fp32 source tensor's TensorImpl*, a proxy for a Tensor uuid
-// that's unchanged across shallow copies. The value is a tuple with a weakref
-// to the source tensor's TensorImpl as the first element and the casted tensor
-// as the second element.
-//
-// The weakref keeps the source's TensorImpl from being deleted.  We need to
-// because we're using the source TensorImpl* as the key.  If it were deleted,
-// another random Tensor could be allocated whose TensorImpl* happened to have
-// the same value.  This TensorImpl* would then mistakenly hit in cache:  a
-// rare, intermittent, unpredictable bug.
-//
-// I'm not using the weak_intrusive_ptr as the key because it's more difficult
-// to compare directly against incoming TensorImpl*s.
-using weakref_type = c10::weak_intrusive_ptr<TensorImpl, UndefinedTensorImpl>;
-using val_type = std::tuple<weakref_type, Tensor>;
-std::unordered_map<TensorImpl*, val_type> cached_casts;
-std::mutex cached_casts_mutex;
-
-// nesting tracks the nesting depth of the Python-side context manager.
-// When the autocast context manager exits to a nesting level that's outside
-// any instance of autocast (which should occur at the end of each forward pass)
-// it calls clear_cache() to ensure cached Tensors don't leak outside the
-// autocasting region.
-thread_local int nesting = 0;
-// autocast_cpu_dtype is the lower_precision_fp used by AutocastCPU.
-thread_local at::ScalarType autocast_cpu_dtype = at::kBFloat16;
-
-// should we enabled the cache inside autocast.
-thread_local bool cache_enabled = true;
-
-// autocast_privateuseone_dtype is the lower_precision_fp used by
-// AutocastPrivateUse1.
-thread_local at::ScalarType autocast_privateuseone_dtype = at::kHalf;
-
-// autocast_musa_dtype is the lower_precision_fp used by AutocastPrivateUse1.
-thread_local at::ScalarType autocast_musa_dtype = at::kHalf;
-} // namespace
-
-void clear_cache() {
-  const std::lock_guard<std::mutex> lock(cached_casts_mutex);
-  cached_casts.clear();
-}
-
-int increment_nesting() {
-  return ++nesting;
-}
-
-int decrement_nesting() {
-  return --nesting;
-}
-
-at::ScalarType get_autocast_cpu_dtype() {
-  return autocast_cpu_dtype;
-}
-
-void set_autocast_cpu_dtype(at::ScalarType dtype) {
-  TORCH_CHECK(
-      dtype == at::kBFloat16,
-      "Currently, AutocastCPU only support Bfloat16 as the autocast_cpu_dtype");
-  autocast_cpu_dtype = dtype;
-}
-
-bool is_autocast_cache_enabled() {
-  return cache_enabled;
-}
-
-void set_autocast_cache_enabled(bool enabled) {
-  cache_enabled = enabled;
-}
-
 at::ScalarType get_autocast_musa_dtype() {
-  return autocast_musa_dtype;
+  return at::autocast::get_autocast_privateuseone_dtype();
 }
 
 void set_autocast_musa_dtype(at::ScalarType dtype) {
   TORCH_CHECK(
       dtype == at::kHalf || dtype == at::kBFloat16 || dtype == at::kFloat,
       "Currently, AutoCastMusa only support float16/bfloat16/float32 as the autocast_musa_dtype");
-  autocast_musa_dtype = dtype;
+  return at::autocast::set_autocast_privateuseone_dtype(dtype);
 }
-
-// Overload to catch Tensor args
-Tensor cached_cast(
-    at::ScalarType to_type,
-    const Tensor& arg,
-    DeviceType device_type) {
-  if (is_eligible(arg, device_type) && (arg.scalar_type() != to_type)) {
-    // Heuristic:  Do what Apex does, and cache lower_precision_fp casts of fp32
-    // model weights (leaves). See cached_casts declaration above for detailed
-    // strategy.
-    bool can_try_cache =
-        (to_type == get_lower_precision_fp_from_device_type(device_type) &&
-         arg.scalar_type() == at::kFloat && arg.requires_grad() &&
-         arg.is_leaf() && !arg.is_view() && cache_enabled);
-    if (can_try_cache) {
-      const std::lock_guard<std::mutex> lock(cached_casts_mutex);
-      auto it = cached_casts.find(arg.unsafeGetTensorImpl());
-      if (it != cached_casts.end()) {
-        return std::get<1>(it->second);
-      } else {
-        auto casted_arg = arg.to(to_type);
-        cached_casts.emplace(
-            arg.unsafeGetTensorImpl(),
-            val_type{weakref_type(arg.getIntrusivePtr()), casted_arg});
-        return casted_arg;
-      }
-    } else {
-      return arg.to(to_type);
-    }
-  } else {
-    return arg;
-  }
-}
-
-// Policies correspond to op categories that need code-divergent handling.
-// Wrapper templates below are specialized based on a policy template parameter.
-enum class CastPolicy : uint8_t {
-  lower_precision_fp =
-      0, // Cast all inputs to lower_precision_fp before running the op.
-         // Currently, lower_precision_fp is fp16 for AutocastPrivateuse1,
-         // and is defined by user(default bf16) for AutocastCPU.
-  fp32, // Cast all inputs to at::kFloat before running the op.
-  fp32_set_opt_dtype, // Treats functions (like softmax) that
-                      //   1. we'd like to run in fp32 and
-                      //   2. have a c10::optional<ScalarType> arg that controls
-                      //   the output type.
-                      // fp32_set_opt_dtype wrappers' policy is:  if the output
-                      // type is already set, don't touch it, otherwise, set it
-                      // to at::kFloat.
-  fp32_append_dtype, // Treats functions (like norm) that
-                     //   1. we'd like to run in fp32 and
-                     //   2. have some overloads that accept an output type and
-                     //   other overloads that don't.
-                     // fp32_append_dtype wrappers wrap the overloads that don't
-                     // have an output dtype. The wrapper policy is:  append
-                     // at::kFloat to the args, and redispatch to the type-aware
-                     // overload.
-  promote, // Run in the widest dtype among several args.
-};
-
-// Base template for WrapFunction_, which is specialized to contain a "call"
-// method each CastPolicy
-template <
-    CastPolicy policy,
-    DeviceType device_type,
-    class Redispatch,
-    Redispatch* F,
-    class Ret,
-    class ArgList>
-struct WrapFunction_ {};
-
-// CastPolicy::lower_precision_fp General_DeviceType
-template <
-    DeviceType device_type,
-    class Redispatch,
-    Redispatch* F,
-    class Ret,
-    class... Args>
-struct WrapFunction_<
-    CastPolicy::lower_precision_fp,
-    device_type,
-    Redispatch,
-    F,
-    Ret,
-    guts::typelist::typelist<Args...>> {
-  static Ret call(Args... args) {
-    c10::impl::ExcludeDispatchKeyGuard no_autocast(
-        get_autocast_dispatch_key_from_device_type(device_type));
-    return (*F)(cached_cast(
-        get_lower_precision_fp_from_device_type(device_type),
-        args,
-        device_type)...);
-  }
-};
-
-// CastPolicy::fp32 General_DeviceType
-template <
-    DeviceType device_type,
-    class Redispatch,
-    Redispatch* F,
-    class Ret,
-    class... Args>
-struct WrapFunction_<
-    CastPolicy::fp32,
-    device_type,
-    Redispatch,
-    F,
-    Ret,
-    guts::typelist::typelist<Args...>> {
-  static Ret call(Args... args) {
-    c10::impl::ExcludeDispatchKeyGuard no_autocast(
-        get_autocast_dispatch_key_from_device_type(device_type));
-    return (*F)(cached_cast(at::kFloat, args, device_type)...);
-  }
-};
-
-// CastPolicy::fp32_set_opt_dtype DeviceType::PrivateUse1
-template <class Redispatch, Redispatch* F, class Ret, class... Args>
-struct WrapFunction_<
-    CastPolicy::fp32_set_opt_dtype,
-    ::at::musa::kMUSA,
-    Redispatch,
-    F,
-    Ret,
-    guts::typelist::typelist<Args...>> {
-  static Ret call(Args... args) {
-    c10::impl::ExcludeDispatchKeyGuard no_autocast(
-        DispatchKey::AutocastPrivateUse1);
-    if (firstarg_is_eligible(args...)) {
-      return (*F)(set_opt_dtype(at::kFloat, args)...);
-    } else {
-      // If ineligible, calls F with unaltered args.  Does not set opt dtype,
-      // because setting opt dtype explicitly may interfere with internal
-      // implicit promotion decisions.
-      return (*F)(args...);
-    }
-  }
-};
-
-// CastPolicy::fp32_append_dtype DeviceType::PrivateUse1
-template <class Redispatch, Redispatch* F, class Ret, class... Args>
-struct WrapFunction_<
-    CastPolicy::fp32_append_dtype,
-    ::at::musa::kMUSA,
-    Redispatch,
-    F,
-    Ret,
-    guts::typelist::typelist<Args...>> {
-  static Ret call(Args... args) {
-    c10::impl::ExcludeDispatchKeyGuard no_autocast(
-        DispatchKey::AutocastPrivateUse1);
-    at::ScalarType out_type = type_from_firstarg(at::kFloat, args...);
-    return (*F)(args..., out_type);
-  }
-};
-
-// CastPolicy::promote General_DeviceType
-template <
-    DeviceType device_type,
-    class Redispatch,
-    Redispatch* F,
-    class Ret,
-    class... Args>
-struct WrapFunction_<
-    CastPolicy::promote,
-    device_type,
-    Redispatch,
-    F,
-    Ret,
-    guts::typelist::typelist<Args...>> {
-  static Ret call(Args... args) {
-    c10::impl::ExcludeDispatchKeyGuard no_autocast(
-        get_autocast_dispatch_key_from_device_type(device_type));
-    auto to_type = promote_type(
-        get_lower_precision_fp_from_device_type(device_type),
-        device_type,
-        args...);
-    return (*F)(cached_cast(to_type, args, device_type)...);
-  }
-};
-
-// Wrapper to infer return_type and parameter_types for WrapFunction_ (imitating
-// core/boxing/impl/WrapFunctionIntoFunctor.h)
-template <
-    CastPolicy policy,
-    DeviceType device_type,
-    class Registered, // The signature for which we're registering.  The
-                      // dispatcher's calling code invokes our registered
-                      // functions with arguments matching Registered, so we
-                      // register WrapFunction_::call methods with a matching
-                      // signature to properly field those arguments.
-                      // guts::function_traits below extracts return_type and
-                      // parameter_types from Registered, which WrapFunction_
-                      // templates above use to declare their call methods.
-    class Redispatch, // The signature for the function we're redispatching to.
-                      // In most cases this is the same as Registered, but for
-                      // some ops (for example, ops where we append a dtype)
-                      // it's useful to redispatch to a function with a
-                      // different signature.
-    Redispatch* F> // The actual function we're redispatching to.
-struct WrapFunction final {
-  using type = WrapFunction_<
-      policy,
-      device_type,
-      Redispatch,
-      F,
-      typename guts::function_traits<Registered>::return_type,
-      typename guts::function_traits<Registered>::parameter_types>;
-};
 
 /*******************************
 Banned functions
@@ -356,55 +56,9 @@ Tensor binary_cross_entropy_banned(
       "safe to autocast.");
 }
 
+} // namespace musa
+
 namespace {
-/*****************************************************************************************************************
-This section performs load-time registration for autocast wrappers.
-It's debatable at what level operations should be patched.  We'd like casts to
-be autograd-exposed and precede autograd history recording, so that for
-lower_precision_fp ops, input tensors are saved for backward in
-lower_precision_fp rather than fp32.  Saving inputs in lower_precision_fp can
-significantly reduce a model's memory footprint.
-*****************************************************************************************************************/
-
-#define ADD_NS(RAW_OP) at::RAW_OP
-
-// Common cases where registration signature matches redispatch signature
-// (that's why SIGNATURE is repeated in the WrapFunction instantiation)
-#define KERNEL_MUSA(OP, POLICY)           \
-  m.impl(                                 \
-      TORCH_SELECTIVE_NAME("aten::" #OP), \
-      &WrapFunction<                      \
-          CastPolicy::POLICY,             \
-          ::at::musa::kMUSA,              \
-          decltype(ATEN_FN(OP)),          \
-          decltype(ATEN_FN(OP)),          \
-          &ATEN_FN(OP)>::type::call);
-#define KERNEL_MUSA_FOR_MULTIFORM(OP, OVERLOAD, POLICY) \
-  m.impl(                                               \
-      TORCH_SELECTIVE_NAME("aten::" #OP "." #OVERLOAD), \
-      &WrapFunction<                                    \
-          CastPolicy::POLICY,                           \
-          ::at::musa::kMUSA,                            \
-          decltype(ATEN_FN2(OP, OVERLOAD)),             \
-          decltype(ATEN_FN2(OP, OVERLOAD)),             \
-          &ATEN_FN2(OP, OVERLOAD)>::type::call);
-
-// Less-common but still useful case: redispatching to a function with a new
-// signature (e.g. appending a dtype)
-#define KERNEL_MUSA_DIFFERENT_REDISPATCH_SIGNATURE( \
-    REDISPATCH_FUNC,                                \
-    REGISTER_NAME,                                  \
-    REGISTER_SIGNATURE,                             \
-    REDISPATCH_SIGNATURE,                           \
-    POLICY)                                         \
-  m.impl(                                           \
-      TORCH_SELECTIVE_NAME("aten::" REGISTER_NAME), \
-      &WrapFunction<                                \
-          CastPolicy::POLICY,                       \
-          ::at::musa::kMUSA,                        \
-          REGISTER_SIGNATURE,                       \
-          REDISPATCH_SIGNATURE,                     \
-          &REDISPATCH_FUNC>::type::call);
 
 /*****************************************
 Explicit registration for out-of-place ops
@@ -564,9 +218,7 @@ TORCH_LIBRARY_IMPL(aten, AutocastPrivateUse1, m) {
 
   m.impl(
       TORCH_SELECTIVE_NAME("aten::binary_cross_entropy"),
-      TORCH_FN((&at::musa::autocast::binary_cross_entropy_banned)));
+      TORCH_FN((&at::autocast::musa::binary_cross_entropy_banned)));
 }
 } // namespace
-} // namespace autocast
-} // namespace musa
-} // namespace at
+} // namespace at::autocast

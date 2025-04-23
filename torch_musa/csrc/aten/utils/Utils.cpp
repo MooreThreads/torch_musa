@@ -117,14 +117,42 @@ void SetMUTensorDType(ScalarType dtype, muTensor& m_t) {
     case ScalarType::BFloat16:
       m_t.SetType(muTensor::Type::BFLOAT16);
       break;
+#if defined(TORCH_MUSA_ARCH) && TORCH_MUSA_ARCH >= 310
+    case ScalarType::Float8_e5m2:
+      m_t.SetType(muTensor::Type::FP8_E5M2);
+      break;
+    case ScalarType::Float8_e4m3fn:
+      m_t.SetType(muTensor::Type::FP8_E4M3);
+      break;
+#endif
     default:
-      TORCH_CHECK(false, "Unsupported tensor dtype: ", dtype);
+      TORCH_CHECK(false, "SetMUTensorDType Unsupported tensor dtype: ", dtype);
       throw;
   }
 }
 
 void SetMUTensorAddr(void* addr, muTensor& m_t) {
   m_t.SetAddr(addr);
+}
+
+void SetMudnnQuantizationInfo(
+    muTensor& self,
+    double scales,
+    int64_t zero_points) {
+  float scales_ = static_cast<float>(scales);
+  unsigned int zero_points_ = static_cast<unsigned int>(zero_points);
+  CHECK_MUDNN_STATUS(
+      self.SetQuantizationInfo(1, &scales_, &zero_points_),
+      "SetQuantizationInfo");
+}
+
+void SetMudnnQuantizationInfo(muTensor& self, Tensor& scales) {
+  // TODO(@fan.mo): we currently only support set per-tensor scale
+  if (scales.numel() == 1) {
+    float* scale = static_cast<float*>(scales.data_ptr());
+    CHECK_MUDNN_STATUS(
+        self.SetQuantizationInfo({scale[0]}, {0}), "SetQuantizationInfo");
+  }
 }
 
 muTensor CreateMUTensorByCompressDim(const Tensor& t) {
@@ -256,6 +284,8 @@ size_t DTypeSize(c10::ScalarType type) {
     case at::ScalarType::Byte:
     case at::ScalarType::QInt8:
     case at::ScalarType::QUInt8:
+    case at::ScalarType::Float8_e5m2:
+    case at::ScalarType::Float8_e4m3fn:
       size = 1;
       break;
     case at::ScalarType::Half:
@@ -273,7 +303,7 @@ size_t DTypeSize(c10::ScalarType type) {
       size = 8;
       break;
     default:
-      TORCH_CHECK(false, "Unsupported tensor dtype: ", type);
+      TORCH_CHECK(false, "DTypeSize Unsupported tensor dtype: ", type);
   }
   return size;
 }

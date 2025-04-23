@@ -1,0 +1,10 @@
+diff --git a/aten/src/ATen/native/quantized/IndexKernel.h b/aten/src/ATen/native/quantized/IndexKernel.h
+index 0e240b5..8cfe2ce 100644
+--- a/aten/src/ATen/native/quantized/IndexKernel.h
++++ b/aten/src/ATen/native/quantized/IndexKernel.h
+@@ -1,4 +1,5 @@
+ #pragma once
++#include <ATen/native/DispatchStub.h>
+ #include <ATen/native/TensorIterator.h>
+ 
+ namespace at {

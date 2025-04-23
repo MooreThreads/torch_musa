@@ -582,6 +582,19 @@ def test_unary_compare_mixed_dtypes_ops(input_data, func):
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", unary_compare_datas)
+@pytest.mark.parametrize("func", unary_compare_ops)
+def test_unary_compare_no_bool_output_ops(input_data, func):
+    lhs_cpu, rhs_cpu = input_data["input"], input_data["other"]
+    out_cpu = torch.empty_like(lhs_cpu)
+    lhs_musa, out_musa = lhs_cpu.musa(), out_cpu.musa()
+
+    func(lhs_cpu, rhs_cpu, out=out_cpu)
+    func(lhs_musa, rhs_cpu, out=out_musa)
+    assert torch.allclose(out_cpu, out_musa.cpu())
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize(
     "shape",
     [
@@ -650,16 +663,17 @@ def test_unary_fmod_int(shape, io_types, alpha):
                     do_assert(cpu_o, musa_o)
 
 
+dtypes = [
+    [[torch.float16], [torch.float]],
+    [[torch.float], []],
+]
+if testing.get_musa_arch() >= 22:
+    dtypes.append([[torch.bfloat16], [torch.float]])
+
+
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("shape", [[128, 128]])
-@pytest.mark.parametrize(
-    "io_types",
-    [
-        [[torch.float16], [torch.float]],
-        [[torch.bfloat16], [torch.float]],
-        [[torch.float], []],
-    ],
-)
+@pytest.mark.parametrize("io_types", dtypes)
 @pytest.mark.parametrize("alpha", [2, 2.0, -2.0, -2, 0])
 def test_unary_fmod_float(shape, io_types, alpha):
     i_raw = torch.empty(shape)

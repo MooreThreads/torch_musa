@@ -1,5 +1,6 @@
-#
 """The setup file"""
+
+# pylint: disable=W4901
 
 import os
 import glob
@@ -101,38 +102,30 @@ def get_mtgpu_arch():
     """
     Get moorethreads gpu arch.
     """
-    mthreads_gmi = "mthreads-gmi"
-
-    # name and arch dict
-    name_arches = {
-        "MTT S2000": "11",
-        "MTT S3000": "21",
-        "MTT S80": "21",
-        "MTT S80ES": "21",
-        "MTT S4000": "22",
-        "MTT S90": "22",
-    }
+    cmd = "musaInfo"
 
     # Get ID, processing and memory utilization for all GPUs
     try:
-        with Popen([mthreads_gmi, "-q -i 0"], stdout=PIPE) as p:
+        with Popen([cmd], stdout=PIPE) as p:
             stdout, _ = p.communicate()
     except Exception as exception:
-        raise RuntimeError("Unable to run the mthreads-gmi command") from exception
+        raise RuntimeError(f"Unable to run the {cmd} command") from exception
     output = stdout.decode("UTF-8")
+    major, minor = None, None
 
     lines = output.split(os.linesep)
 
     for line in lines:
-        kvs = line.split(" : ")
+        kvs = line.split(":")
         if len(kvs) != 2:
             continue
-        if kvs[0].strip().startswith("Product Name"):
-            name = kvs[1].strip()
-            return name_arches[name]
-    raise RuntimeError(
-        "Can not find Product Name in the output of 'mthreads-gmi -q -i 0'"
-    )
+        if kvs[0].strip().startswith("major"):
+            major = kvs[1].strip()
+        elif kvs[0].strip().startswith("minor"):
+            minor = kvs[1].strip()
+        if major and minor:
+            return major + minor
+    raise RuntimeError(f"Can not find Product Name in the output of '{cmd}'")
 
 
 def build_musa_lib():

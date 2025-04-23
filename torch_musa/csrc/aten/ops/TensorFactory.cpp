@@ -18,7 +18,6 @@
 #include "torch_musa/csrc/core/Device.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 #include "torch_musa/csrc/core/PeerToPeerAccess.h"
-#include "torch_musa/csrc/utils/musa_lazy_init.h"
 
 #include <mudnn.h>
 

@@ -1,0 +1,25 @@
+diff --git a/torch/distributed/elastic/rendezvous/registry.py b/torch/distributed/elastic/rendezvous/registry.py
+index eaa5bcf..435b2fe 100644
+--- a/torch/distributed/elastic/rendezvous/registry.py
++++ b/torch/distributed/elastic/rendezvous/registry.py
+@@ -37,11 +37,20 @@ def _create_c10d_handler(params: RendezvousParameters) -> RendezvousHandler:
+ 
+     return create_handler(store, backend, params)
+ 
++def _create_c10d_v2_handler(params: RendezvousParameters) -> RendezvousHandler:
++    from .c10d_rendezvous_backend import create_backend
++    
++    params.use_libuv = True
++    backend, store = create_backend(params)
++
++    return create_handler(store, backend, params)
++
+ 
+ def _register_default_handlers() -> None:
+     handler_registry.register("etcd", _create_etcd_handler)
+     handler_registry.register("etcd-v2", _create_etcd_v2_handler)
+     handler_registry.register("c10d", _create_c10d_handler)
++    handler_registry.register("c10d_v2", _create_c10d_v2_handler)
+     handler_registry.register("static", _create_static_handler)
+ 
+ 

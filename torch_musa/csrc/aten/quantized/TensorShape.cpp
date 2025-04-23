@@ -12,7 +12,6 @@
 #include <ATen/NativeFunctions.h>
 
 #include <torch/library.h>
-#include "torch_musa/csrc/aten/quantized/QTensor.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 #include "torch_musa/csrc/utils/register_wrapper.h"

@@ -1,38 +1,20 @@
 diff --git a/c10/core/DispatchKey.cpp b/c10/core/DispatchKey.cpp
-index 91a606b..b2f54ac 100644
+index d47de57..6b18c1c 100644
 --- a/c10/core/DispatchKey.cpp
 +++ b/c10/core/DispatchKey.cpp
-@@ -84,6 +84,8 @@ const char* toString(DispatchKey t) {
+@@ -372,7 +372,14 @@ c10::DispatchKey parseDispatchKey(const std::string& k) {
+        c10::DispatchKey::FuncTorchBatchedDecomposition},
+   };
+   auto it = key_map.find(k);
+-  TORCH_CHECK(it != key_map.end(), "could not parse dispatch key: ", k);
++  if (it == key_map.end()) {
++    std::string privateuse1_backend_name = c10::get_privateuse1_backend();
++    std::transform(privateuse1_backend_name.begin(), privateuse1_backend_name.end(), privateuse1_backend_name.begin(), ::toupper);
++    if (k == privateuse1_backend_name) {
++      return c10::DispatchKey::PrivateUse1;
++    }
++    TORCH_CHECK(false, "could not parse dispatch key: ", k);
++  }
+   return it->second;
+ }
  
-     case DispatchKey::Quantized:
-       return "Quantized";
-+    case DispatchKey::QuantizedPrivateUse1:
-+      return "QuantizedPrivateUse1";
-     case DispatchKey::CustomRNGKeyId:
-       return "CustomRNGKeyId";
-     case DispatchKey::MkldnnCPU:
-@@ -144,6 +146,8 @@ const char* toString(DispatchKey t) {
-       return "AutocastHPU";
-     case DispatchKey::AutocastCUDA:
-       return "AutocastCUDA";
-+    case DispatchKey::AutocastPrivateUse1:
-+      return "AutocastPrivateUse1";
- 
-     case DispatchKey::FuncTorchBatched:
-       return "FuncTorchBatched";
-@@ -285,6 +289,7 @@ c10::DispatchKey parseDispatchKey(const std::string& k) {
-       {"AutocastXPU", c10::DispatchKey::AutocastXPU},
-       {"AutocastHPU", c10::DispatchKey::AutocastHPU},
-       {"AutocastCUDA", c10::DispatchKey::AutocastCUDA},
-+      {"AutocastPrivateUse1", c10::DispatchKey::AutocastPrivateUse1},
-       {"FuncTorchBatched", c10::DispatchKey::FuncTorchBatched},
-       {"FuncTorchVmapMode", c10::DispatchKey::FuncTorchVmapMode},
-       {"Batched", c10::DispatchKey::Batched},
-@@ -319,6 +324,7 @@ c10::DispatchKey parseDispatchKey(const std::string& k) {
-       {"QuantizedCPU", c10::DispatchKey::QuantizedCPU},
-       {"QuantizedCUDA", c10::DispatchKey::QuantizedCUDA},
-       {"QuantizedXPU", c10::DispatchKey::QuantizedXPU},
-+      {"QuantizedPrivateUse1", c10::DispatchKey::QuantizedPrivateUse1},
- 
-       {"SparseCPU", c10::DispatchKey::SparseCPU},
-       {"SparseCUDA", c10::DispatchKey::SparseCUDA},

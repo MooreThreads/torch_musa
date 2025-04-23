@@ -10,12 +10,11 @@ except ModuleNotFoundError:
     np = None  # type: ignore[assignment]
 from typing import Any
 import torch
-from .autocast_base import AutocastBase
 
 __all__ = ["autocast", "custom_fwd", "custom_bwd"]
 
 
-class autocast(AutocastBase):
+class autocast(torch.amp.autocast_mode.autocast):
     r"""
     See :class:`torch.autocast`.
     ``torch.musa.amp.autocast(args...)`` is equivalent to ``torch.autocast("musa", args...)``

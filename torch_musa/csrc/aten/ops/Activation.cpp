@@ -183,7 +183,22 @@ void UnaryBoolOut(
         ? input
         : FormatContiguous(input, output_memory_format);
   }
-  UnaryBoolCall(op_name, output, input_tmp, value, mode);
+
+  const auto cast_out = (output.scalar_type() != ScalarType::Bool);
+  using Proxy = typename c10::MaybeOwned<Tensor>;
+  Proxy proxy_output;
+  if (cast_out) {
+    proxy_output = Proxy::owned(output.to(ScalarType::Bool));
+  } else {
+    proxy_output = Proxy::borrowed(output);
+  }
+
+  UnaryBoolCall(
+      op_name, const_cast<Tensor&>(*proxy_output), input_tmp, value, mode);
+
+  if (cast_out) {
+    output.copy_(*proxy_output);
+  }
   if (is_transpose_contig) {
     output.transpose_(-1, -2);
   }
@@ -695,6 +710,36 @@ at::Tensor IsNan(const at::Tensor& self) {
 
 Tensor HardSwishBwd(const Tensor& grad_output, const Tensor& self) {
   return at::native::hardswish_backward(grad_output, self);
+}
+
+Tensor LogSigmoidBackward(
+    const Tensor& grad_output,
+    const Tensor& input,
+    const Tensor& buffer) {
+  c10::musa::MUSAGuard device_guard(input.device());
+  auto grad_input = at::empty_like(grad_output);
+  auto iter = at::TensorIteratorConfig()
+                  .add_output(grad_input)
+                  .add_input(input)
+                  .add_input(grad_output)
+                  .build();
+  at::native::log_sigmoid_backward_stub(kMUSA, iter);
+  return iter.output();
+}
+
+Tensor& LogSigmoidBackwardOut(
+    const Tensor& grad_output,
+    const Tensor& input,
+    const Tensor& buffer,
+    Tensor& grad_input) {
+  c10::musa::MUSAGuard device_guard(input.device());
+  auto iter = TensorIteratorConfig()
+                  .add_output(grad_input)
+                  .add_input(input)
+                  .add_input(grad_output)
+                  .build();
+  at::native::log_sigmoid_backward_stub(kMUSA, iter);
+  return grad_input;
 }
 
 } // namespace musa

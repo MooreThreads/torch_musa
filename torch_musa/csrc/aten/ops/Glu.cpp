@@ -52,10 +52,5 @@ Tensor& GluOut(const Tensor& self, int64_t dim, Tensor& out) {
   return out;
 }
 
-Tensor GluBackward(const Tensor& grad_output, const Tensor& self, int64_t dim) {
-  c10::musa::MUSAGuard device_guard(self.device());
-  return at::native::glu_backward_cuda(grad_output, self, dim);
-}
-
 } // namespace musa
 } // namespace at

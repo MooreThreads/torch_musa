@@ -49,16 +49,6 @@ COPY ./common/install_mccl.sh install_mccl.sh
 RUN bash install_mccl.sh --mccl_url ${MCCL_URL} && \
     rm -f install_mccl.sh 
 
-# install muAlg & muThrust
-COPY ./common/release/update_release_alg_thrust.sh install_math.sh
-RUN bash install_math.sh && \
-    rm -f install_math.sh 
-
-# install mupti
-COPY ./common/release/update_release_mupti.sh install_mupti.sh
-RUN bash install_mupti.sh && \
-    rm -f install_mupti.sh
-
 # install conda
 COPY ./common/install_conda.sh install_conda.sh
 RUN bash install_conda.sh && \

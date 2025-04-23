@@ -1,0 +1,137 @@
+#pragma once
+#include <ATen/musa/detail/IndexUtils.muh>
+#include "torch_musa/csrc/aten/musa/MUSAMath.muh"
+
+#include <algorithm>
+
+namespace at {
+namespace musa {
+
+// for uint32 bit indexing, use FastDivmod to improve the efficience of MUSA
+// kernel, for uint64 indexing, naive division will be used.
+template <typename IndexType>
+struct DivmodHelper {
+ public:
+  std::conditional_t<
+      std::is_same_v<IndexType, uint32_t>,
+      at::musa::FastDivmod,
+      IndexType>
+      _divmod_helper;
+
+  explicit __device__ __host__ constexpr DivmodHelper(IndexType divisor) {
+    if constexpr (std::is_same_v<IndexType, uint32_t>) {
+      _divmod_helper = at::musa::FastDivmod(divisor);
+    } else {
+      _divmod_helper = divisor;
+    }
+  }
+
+  __device__ __host__ void operator()(
+      IndexType& q,
+      IndexType& r,
+      IndexType& d) {
+    if constexpr (std::is_same_v<IndexType, uint32_t>) {
+      _divmod_helper(q, r, d);
+    } else {
+      q = d / _divmod_helper;
+      r = d % _divmod_helper;
+    }
+  }
+};
+
+namespace detail {
+// specialized version of IndexToOffset, use FastDivmod
+template <typename T, int Dims>
+struct IndexToOffset<T, uint32_t, Dims> {
+  static __host__ __device__ uint32_t
+  get(uint32_t linearId, const musa::detail::TensorInfo<T, uint32_t>& info) {
+    uint32_t offset = 0;
+
+    // info.sizes[sliceDim] should be 1, hence we could
+    // iterate over all dimensions of TensorInfo to get the offset
+    for (int i = Dims - 1; i > 0; --i) {
+      auto fastdv = FastDivmod(info.sizes[i]);
+      uint32_t curDimIndex, quotient; // uint32_t
+      fastdv(quotient, curDimIndex, linearId);
+      offset += (curDimIndex * info.strides[i]);
+      linearId = quotient;
+    }
+
+    return offset + linearId * info.strides[0];
+  }
+};
+
+template <typename T>
+struct IndexToOffset<T, uint32_t, -1> {
+  static inline __host__ __device__ uint32_t
+  get(uint32_t linearId, const musa::detail::TensorInfo<T, uint32_t>& info) {
+    uint32_t offset = 0;
+
+    for (int i = info.dims - 1; i > 0; --i) {
+      auto fdm = FastDivmod(info.sizes[i]);
+      uint32_t curDimIndex, quotient; // uint32_t
+      fdm(quotient, curDimIndex, linearId);
+      offset += (curDimIndex * info.strides[i]);
+      linearId = quotient;
+    }
+
+    return offset + linearId * info.strides[0];
+  }
+};
+
+// TensorInfo is defined in <ATen/musa/detail/TensorInfo.muh>
+// For the purpose of distinguishing with TensorInfo defined in PyTorch,
+// and we extend the functionality of TensorInfo here, named VariantTensorInfo.
+//
+// VariantTensorInfo.Swap() might be invoked in the cases of running
+// permutations on the sizes and strides of TensorInfo for the sake of
+// simplifying the kernel's calculation.
+template <typename T, typename IndexType>
+struct VariantTensorInfo : public TensorInfo<T, IndexType> {
+  VariantTensorInfo() : TensorInfo<T, IndexType>() {
+    std::fill_n(this->sizes, MAX_TENSORINFO_DIMS, 1);
+    std::fill_n(this->strides, MAX_TENSORINFO_DIMS, 0);
+  }
+  VariantTensorInfo(
+      T* p,
+      int dim,
+      IndexType sz[MAX_TENSORINFO_DIMS],
+      IndexType st[MAX_TENSORINFO_DIMS]) {
+    this->data = p;
+    this->dims = dim;
+    std::copy(sz, sz + dim, this->sizes);
+    std::copy(st, st + dim, this->strides);
+  }
+  VariantTensorInfo(const TensorInfo<T, IndexType>& info) {
+    this->data = info.data;
+    this->dims = info.dims;
+    std::copy(info.sizes, info.sizes + this->dims, this->sizes);
+    std::copy(info.strides, info.strides + this->dims, this->strides);
+  }
+  VariantTensorInfo(const VariantTensorInfo<T, IndexType>& info) {
+    this->data = info.data;
+    this->dims = info.dims;
+    for (int i = 0; i < info.dims; i++) {
+      this->sizes[i] = info.sizes[i];
+      this->strides[i] = info.strides[i];
+    }
+  }
+
+  inline void Fill(IndexType size_value = 1, IndexType stride_value = 0) {
+    std::fill_n(
+        this->sizes + this->dims, MAX_TENSORINFO_DIMS - this->dims, size_value);
+    std::fill_n(
+        this->strides + this->dims,
+        MAX_TENSORINFO_DIMS - this->dims,
+        stride_value);
+  }
+
+  inline void Swap(int64_t dim0, int64_t dim1) {
+    std::swap(this->sizes[dim0], this->sizes[dim1]);
+    std::swap(this->strides[dim0], this->strides[dim1]);
+  }
+};
+} // namespace detail
+
+} // namespace musa
+} // namespace at

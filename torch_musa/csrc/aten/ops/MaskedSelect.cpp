@@ -36,13 +36,6 @@ at::Tensor& MaskedSelectOut(
       " but now is ",
       mask.scalar_type());
   TORCH_CHECK(
-      self.scalar_type() == at::ScalarType::Float ||
-          self.scalar_type() == at::ScalarType::Int ||
-          self.scalar_type() == at::ScalarType::Long,
-      "Dtype of input tensor of masked_select only support ",
-      "Float32/Int32/Int64, but now it is ",
-      self.scalar_type());
-  TORCH_CHECK(
       self.scalar_type() == out.scalar_type(),
       "masked_select(): input and result must have the same scalar type, ",
       "but now the former is : ",
@@ -63,8 +56,7 @@ at::Tensor& MaskedSelectOut(
 
   c10::musa::MUSAGuard device_guard(mask.device());
   c10::MaybeOwned<Tensor> expand_mask, expand_input;
-  std::tie(expand_mask, expand_input) =
-      expand_outplace(*mask_temp, *self_temp);
+  std::tie(expand_mask, expand_input) = expand_outplace(*mask_temp, *self_temp);
   auto contiguous_self = (*expand_input).contiguous();
   auto contiguous_mask = (*expand_mask).contiguous();
 
@@ -121,12 +113,18 @@ at::Tensor& MaskedScatter(
       "Device of source tensor of MaskedScatter must be MUSA, but now is ",
       source.device());
   TORCH_CHECK(
-      self.scalar_type() == at::ScalarType::Float ||
-          self.scalar_type() == at::ScalarType::Int ||
-          self.scalar_type() == at::ScalarType::Long,
-      "Dtype of self tensor of MaskedScatter only support Float32/Int32/Int64,",
-      " but now it is ",
-      self.scalar_type());
+      mask.scalar_type() == ScalarType::Byte ||
+          mask.scalar_type() == ScalarType::Bool,
+      "masked_scatter: expected BoolTensor or ByteTensor for mask,",
+      " but now is ",
+      mask.scalar_type());
+  TORCH_CHECK(
+      self.scalar_type() == source.scalar_type(),
+      "masked_scatter: input and source must have the same scalar type, ",
+      "but now the former is : ",
+      self.scalar_type(),
+      ", and the latter is : ",
+      source.scalar_type());
   at::assert_no_internal_overlap(self);
   TORCH_CHECK(
       self.scalar_type() == source.scalar_type(),

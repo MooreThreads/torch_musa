@@ -1,0 +1,13 @@
+diff --git a/torch/distributed/elastic/agent/server/api.py b/torch/distributed/elastic/agent/server/api.py
+index 23e2ddf..7f30f5e 100644
+--- a/torch/distributed/elastic/agent/server/api.py
++++ b/torch/distributed/elastic/agent/server/api.py
+@@ -397,7 +397,7 @@ class ElasticAgent(abc.ABC):
+     on the specific implementation of the agent and the user's job placement
+     preferences. For instance, to run a distributed training job on GPU with
+     8 trainers (one per GPU) one can:
+-
++    
+     1. Use 8 x single GPU instances, place an agent per instance, managing
+        1 worker per agent.
+     2. Use 4 x double GPU instances, place an agent per instance, managing

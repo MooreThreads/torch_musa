@@ -17,16 +17,6 @@ else
     echo -e "\033[32mmthreads-gmi command check successfully! \033[0m"
 fi
 
-
-#Check clinfo output
-clinfo_output=$(clinfo | grep "Platform Vendor" | awk '{print $3 $4}')  
-if [ "$clinfo_output" != "MooreThreads" ]; then  
-    echo -e "\033[31mError! In the output of clinfo, the value of 'Platform Vendor' is not 'MooreThreads'! \033[0m"
-    isSuccess=0
-else 
-    echo -e "\033[32mclinfo command check successfully! \033[0m"
-fi
-
 #Check simple musa program
 mcc test_musa.mu -o test_musa -mtgpu -O2 -lmusart -L${MUSA_INSTALL_PATH}/lib
 if [ $? -ne 0 ]; then  

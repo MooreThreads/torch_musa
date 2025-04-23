@@ -12,6 +12,9 @@ list(APPEND TorchMusa_INCLUDE_DIRS ${TorchMusa_INSTALL_PREFIX})
 find_library(TorchMusa_LIBRARY REQUIRED NAMES musa_python PATHS "${TorchMusa_INSTALL_PREFIX}/torch_musa/lib" REQUIRED)
 list(APPEND TorchMusa_LIBRARIES ${TorchMusa_LIBRARY})
 
+find_library(MusaKernels_LIBRARY REQUIRED NAMES musa_kernels PATHS "${TorchMusa_INSTALL_PREFIX}/torch_musa/lib" REQUIRED)
+list(APPEND TorchMusa_LIBRARIES ${MusaKernels_LIBRARY})
+
 # For looking for TorchConfig.cmake
 find_library(TorchPython_LIBRARY torch_python PATHS "${PYTHON_PACKAGE_PATH}/torch/lib" REQUIRED)
 list(APPEND TorchMusa_LIBRARIES ${TorchPython_LIBRARY})

@@ -11,32 +11,11 @@
 #include <torch/library.h>
 
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
-#include "torch_musa/csrc/aten/quantized/TensorFactories.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 
 namespace at {
 namespace musa {
-
-Tensor MakePerTensorQuantizedTensor(
-    const Tensor& self,
-    double scale,
-    int64_t zero_point) {
-  const OptionalDeviceGuard device_guard(device_of(self));
-  return at::native::make_per_tensor_quantized_tensor_cuda(
-      self, scale, zero_point);
-}
-
-Tensor MakePerChannelQuantizedTensor(
-    const Tensor& self,
-    const Tensor& scales,
-    const Tensor& zero_points,
-    int64_t axis) {
-  const OptionalDeviceGuard device_guard(device_of(self));
-  return at::native::make_per_channel_quantized_tensor_cuda(
-      self, scales, zero_points, axis);
-}
-
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ empty ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // We explicitly pass in scale and zero_point because we don't have the infra
 // ready to support quantizer in python frontend, once that is ready, we'll
@@ -172,53 +151,6 @@ Tensor EmptyQuantized(
         toString(qtensor.qscheme()));
   }
   return output;
-}
-
-// Basically copied from pytorch official
-Tensor EmptyLikeQuantized(
-    const Tensor& self,
-    c10::optional<ScalarType> dtype,
-    c10::optional<Layout> layout,
-    c10::optional<Device> device,
-    c10::optional<bool> pin_memory,
-    c10::optional<c10::MemoryFormat> optional_memory_format) {
-  // DeviceGuard omitted
-  return at::native::empty_like_quantized(
-      self, dtype, layout, device, pin_memory, optional_memory_format);
-}
-
-// Basically copied from pytorch official
-Tensor EmptyStridedUnknownQuantized(
-    IntArrayRef size,
-    IntArrayRef strided,
-    c10::optional<ScalarType> dtype,
-    c10::optional<Layout> layout,
-    c10::optional<Device> device,
-    c10::optional<bool> pin_memory) {
-  TORCH_CHECK(
-      false,
-      "empty_strided not supported on quantized tensors yet see https://github.com/pytorch/pytorch/issues/74540");
-}
-
-Tensor AsStridedQTensorImpl(
-    const Tensor& self,
-    IntArrayRef size,
-    IntArrayRef stride,
-    optional<int64_t> storage_offset_) {
-  // DeviceGuard omitted
-  auto storage_offset = storage_offset_.value_or(self.storage_offset());
-  auto quantizer = at::get_qtensorimpl(self)->quantizer();
-  TORCH_CHECK(
-      quantizer->qscheme() == QScheme::PER_TENSOR_AFFINE,
-      "Setting strides is possible only on uniformly quantized tensor");
-  auto result = at::detail::make_tensor<QTensorImpl>(
-      c10::TensorImpl::VIEW,
-      Storage(self.storage()),
-      self.key_set(),
-      self.dtype(),
-      quantizer);
-  at::native::setStrided(result, size, stride, storage_offset);
-  return result;
 }
 
 } // namespace musa

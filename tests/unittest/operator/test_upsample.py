@@ -343,3 +343,45 @@ def test_upsample_trilinear3d_bwd(input_data, scale_factor):
     output_musa.sum().backward()
 
     assert testing.DefaultComparator(abs_diff=1e-5)(add_cpu.grad, add_musa.grad.cpu())
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize(
+    "config",
+    [
+        # input_shape, scale_factor, align_corners, is_channels_last
+        [(2, 8, 32, 32), (1.5, 1.5), False, False],
+        [(2, 8, 32, 32), (1.5, 1.5), False, True],
+        [(2, 8, 32, 32), (0.5, 0.5), True, False],
+        [(2, 8, 32, 32), (0.5, 0.5), True, True],
+    ],
+)
+@pytest.mark.parametrize("dtype", testing.get_float_types())
+def test_upsample_bicubic_aa(config, dtype):
+    tensor = torch.randn(config[0], dtype=dtype)
+    if config[3]:
+        memory_format = (
+            torch.channels_last if len(config[0]) == 4 else torch.channels_last_3d
+        )
+        tensor = tensor.to(memory_format=memory_format)
+    tensor.requires_grad_(True)
+    func = partial(
+        torch.nn.functional.interpolate,
+        mode="bicubic",
+        scale_factor=config[1],
+        align_corners=config[2],
+        antialias=True,
+    )
+    input_args = {"input": tensor}
+
+    test = testing.OpTest(
+        func=func,
+        input_args=input_args,
+        comparators=testing.DefaultComparator(abs_diff=5e-2, rel_diff=1e-2),
+    )
+    if dtype == torch.half:
+        test.check_musafp16_vs_musafp32(train=True)
+    elif dtype == torch.bfloat16:
+        test.check_musabf16_vs_musafp16(train=True)
+    else:
+        test.check_result(train=True)

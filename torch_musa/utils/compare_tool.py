@@ -21,9 +21,7 @@ class ModuleInfo(object):
         self.father = father  # Parent module in the hierarchy
         self.children = []  # List of child modules
         self.is_leaf = is_leaf  # Flag indicating if the module is a leaf module
-        self.is_forward = (
-            is_forward  # Flag indicating if the module is in the forward pass
-        )
+        self.is_forward = is_forward  # Flag indicating if the module is in the forward pass
 
     def name_with_prefix(self):
         """
@@ -66,12 +64,9 @@ def pre_forward_hook(module, input):
     - input: The input to the forward method of the module.
     """
     global current_module_info
-    module_info = ModuleInfo(
-        module.__class__.__name__, father=current_module_info, is_forward=True
-    )
+    module_info = ModuleInfo(module.__class__.__name__, father=current_module_info, is_forward=True)
     current_module_info.children.append(module_info)
     current_module_info = module_info
-
 
 def post_forward_hook(module, input, output):
     """
@@ -97,9 +92,7 @@ def pre_backward_hook(module, grad_output):
     - grad_output: The gradients at the output of the module.
     """
     global current_module_info
-    module_info = ModuleInfo(
-        module.__class__.__name__, current_module_info, is_forward=False
-    )
+    module_info = ModuleInfo(module.__class__.__name__, current_module_info, is_forward=False)
     current_module_info.children.append(module_info)
     current_module_info = module_info
 
@@ -286,9 +279,7 @@ def print_tensors_diff(tensor1, tensor2, atol, rtol):
     Returns:
     - A string detailing the indices and values where the tensors differ.
     """
-    not_close = compare_tensors(
-        tensor1.to(tensor2.device).to(tensor2.dtype), tensor2, atol, rtol
-    )
+    not_close = compare_tensors(tensor1.to(tensor2.device).to(tensor2.dtype), tensor2, atol, rtol)
     indices = torch.nonzero(not_close)
     indices_np = indices.cpu().numpy()
     diff_str = ""
@@ -382,9 +373,7 @@ def recursive_compare(out1, out2, atol, rtol, depth=0):
             tensors_diff_str += indent + "Tensor values are not close\n"
             diff_str = print_tensors_diff(out1, out2, atol, rtol)
             # Indent each line of the diff_str
-            indented_diff_str = "\n".join(
-                indent + line for line in diff_str.split("\n")
-            )
+            indented_diff_str = "\n".join(indent + line for line in diff_str.split("\n"))
             tensors_diff_str += indented_diff_str
             return False, tensors_diff_str
         return True, tensors_diff_str
@@ -409,10 +398,7 @@ def recursive_compare(out1, out2, atol, rtol, depth=0):
             tensor_a, tensor_b = torch.tensor(a), torch.tensor(b)
         except TypeError:
             return False
-        return (
-            torch.isnan(tensor_a.detach()).all()
-            and torch.isnan(tensor_b.detach()).all()
-        )
+        return torch.isnan(tensor_a.detach()).all() and torch.isnan(tensor_b.detach()).all()
 
     # Fallback comparison for non-tensor types
     if out1 != out2 and not are_both_nan(out1, out2):
@@ -494,9 +480,7 @@ def compare_for_single_op(inputs_data_save_path, op_func, atol, rtol):
     return correct, args_musa, kwargs_musa, out
 
 
-def compare_for_single_func(
-    func, args, kwargs, atol, rtol, func_name=None, verbose=True
-):
+def compare_for_single_func(func, args, kwargs, atol, rtol, func_name=None, verbose=True):
     """
     Compares the output of a function against expected results with given tolerances.
 
@@ -615,7 +599,6 @@ def nan_inf_track_for_single_func(func, args, kwargs, func_name=None):
 
     return out, has_nan_or_inf
 
-
 def save_data_for_op(out, args, kwargs, save_dir, op_name, file_suffix=""):
     """
     Saves input and output data for an operation to files for later comparison or analysis.
@@ -632,9 +615,7 @@ def save_data_for_op(out, args, kwargs, save_dir, op_name, file_suffix=""):
     None
     """
     inputs_pkl_save_path = os.path.join(save_dir, f"{op_name}_inputs{file_suffix}.pkl")
-    outputs_pkl_save_path = os.path.join(
-        save_dir, f"{op_name}_outputs{file_suffix}.pkl"
-    )
+    outputs_pkl_save_path = os.path.join(save_dir, f"{op_name}_outputs{file_suffix}.pkl")
 
     # Prepare data for saving
     inputs_data = {"args": convert_to_cpu(args), "kwargs": convert_to_cpu(kwargs)}
@@ -669,7 +650,6 @@ class LogToFile:
         original_stdout (io.TextIOWrapper): Reference to the original stdout.
 
     """
-
     _has_cleared_files = {}  # Used to track whether each file has been cleared
 
     def __init__(self, filepath=None):
@@ -696,12 +676,12 @@ class LogToFile:
             # Check if this file has already been cleared
             if self.filepath not in self._has_cleared_files:
                 # If not, open in "w" mode to clear it and mark as cleared
-                self.file = open(self.filepath, "w", encoding="utf-8")
+                self.file = open(self.filepath, "w", encoding='utf-8')
                 self.file.write(datetime.now().strftime("%Y-%m-%d, %H:%M:%S") + "\n")
                 self._has_cleared_files[self.filepath] = True
             else:
                 # If already cleared, open in "a" mode to append content
-                self.file = open(self.filepath, "a", encoding="utf-8")
+                self.file = open(self.filepath, "a", encoding='utf-8')
             sys.stdout = self.file
         return self
 
@@ -721,55 +701,48 @@ class LogToFile:
         if self.filepath:
             self.file.close()
 
-
 # https://github.com/pytorch/pytorch/issues/94403
 class TorchFuncMockNoDispatch:
     """
     Wraps a method to call it without the custom
     pytorch dispatcher
     """
-
     def __init__(self, pt_impl):
         self.pt_impl = pt_impl
-
     def __get__(self, obj, c):
         return partial(self, obj)
-
     def __call__(self, obj, *args, **kwargs):
         with _pop_mode_temporarily():
             return self.pt_impl(obj, *args, **kwargs)
 
-
 class CompareWithCPU(TorchDispatchMode):
     """
-    A class for comparing the outputs of tensor operations against
+    A class for comparing the outputs of tensor operations against 
     their CPU results to ensure correctness.
-    This is useful for debugging and verifying the consistency
+    This is useful for debugging and verifying the consistency 
     of operations across different devices.
 
     Attributes:
         enabled (bool): Flag to enable/disable comparison.
         atol (float): Absolute tolerance for comparison.
         rtol (float): Relative tolerance for comparison.
-        target_list (list[str]):
+        target_list (list[str]): 
             Specific operations to compare; if not empty, only these are considered.
-        white_list (list[str]):
+        white_list (list[str]): 
             Operations to ignore during comparison; considered if target_list is empty.
         dump_error_data (bool): If True, saves args of the first failing op and exits.
         verbose (bool): If True, prints detailed info about the args of the ops being compared.
-        enable_ranks (list[int]):
+        enable_ranks (list[int]): 
             MPI ranks that are allowed to perform comparisons; None means all ranks.
         should_log_to_file (bool): If True, logs comparison results to a file.
         output_dir (str): Directory to save logs and error data.
         start_step (int): Step number to start comparisons.
         end_step (int): Step number to end comparisons.
     """
-
     TENSOR_FUNCS_NO_DISPATCH = [
         # Can't convert Stream argument to Python object
-        "record_stream"
+        'record_stream'
     ]
-
     def __enter__(self) -> None:
         self._pt_impls = {}
         for k in self.TENSOR_FUNCS_NO_DISPATCH:
@@ -777,12 +750,10 @@ class CompareWithCPU(TorchDispatchMode):
             self._pt_impls[k] = impl
             setattr(torch.Tensor, k, TorchFuncMockNoDispatch(impl))
         return super().__enter__()
-
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         for k in self.TENSOR_FUNCS_NO_DISPATCH:
             setattr(torch.Tensor, k, self._pt_impls[k])
         return super().__exit__(exc_type, exc_val, exc_tb)
-
     def __init__(
         self,
         enabled=True,
@@ -844,13 +815,9 @@ class CompareWithCPU(TorchDispatchMode):
         self.end_step = end_step
         self.is_active = True  # Initially active, can be toggled based on step counts
         self.update_active_state()
-        self.global_rank = int(
-            os.environ.get("RANK", "-1")
-        )  # Fetch MPI rank if available
+        self.global_rank = int(os.environ.get("RANK", "-1"))  # Fetch MPI rank if available
         self.file_suffix = f"_rank{self.global_rank}" if self.global_rank >= 0 else ""
-        self.log_file_path = os.path.join(
-            self.output_dir, f"compare_result{self.file_suffix}.txt"
-        )
+        self.log_file_path = os.path.join(self.output_dir, f"compare_result{self.file_suffix}.txt")
 
     def update_active_state(self):
         """
@@ -863,7 +830,7 @@ class CompareWithCPU(TorchDispatchMode):
     def __torch_dispatch__(self, func, types, args=(), kwargs=None):
         """
         The core method that intercepts tensor operations. It compares the output of each operation
-        executed with its CPU counterpart, based on
+        executed with its CPU counterpart, based on 
         the specified tolerances, white list, and target list.
         """
         with torch._C.DisableTorchFunction():
@@ -877,10 +844,7 @@ class CompareWithCPU(TorchDispatchMode):
             # LogToFile context manager for optional file logging
             with LogToFile(self.log_file_path if self.should_log_to_file else None):
                 # Skip comparison for certain conditions (ranks, target list, white list)
-                if (
-                    self.enable_ranks is not None
-                    and self.global_rank not in self.enable_ranks
-                ):
+                if self.enable_ranks is not None and self.global_rank not in self.enable_ranks:
                     return func(*args, **kwargs)
                 if len(self.target_list) > 0 and op_name not in self.target_list:
                     print(f"{full_op_name} is not in target_list, pass")
@@ -902,9 +866,7 @@ class CompareWithCPU(TorchDispatchMode):
 
                 # Handle comparison failure
                 if self.dump_error_data and not correct:
-                    save_data_for_op(
-                        out, args, kwargs, self.output_dir, op_name, self.file_suffix
-                    )
+                    save_data_for_op(out, args, kwargs, self.output_dir, op_name, self.file_suffix)
                     raise Exception("CompareWithCPU Failed!")
 
         return out
@@ -933,31 +895,29 @@ class NanInfTracker(TorchDispatchMode):
     of numerical instabilities in computations.
 
     Attributes:
-        enabled (bool):
+        enabled (bool): 
             Flag to enable/disable NaN/Inf tracking.
-        target_list (list[str]):
+        target_list (list[str]): 
             Specific operations to track; if not empty, only these are considered.
-        white_list (list[str]):
+        white_list (list[str]): 
             Operations to ignore during tracking; considered if target_list is empty.
-        enable_ranks (list[int]):
+        enable_ranks (list[int]): 
             MPI ranks that are allowed to perform tracking; None means all ranks.
-        should_log_to_file (bool):
+        should_log_to_file (bool): 
             If True, logs tracking results to a file.
-        output_dir (str):
+        output_dir (str): 
             Directory to save logs and error data.
-        dump_error_data (bool):
+        dump_error_data (bool): 
             If True, saves args of the first failing op and exits.
-        start_step (int):
+        start_step (int): 
             Step number to start tracking.
-        end_step (int):
+        end_step (int): 
             Step number to end tracking.
     """
-
     TENSOR_FUNCS_NO_DISPATCH = [
         # Can't convert Stream argument to Python object
-        "record_stream"
+        'record_stream'
     ]
-
     def __enter__(self) -> None:
         self._pt_impls = {}
         for k in self.TENSOR_FUNCS_NO_DISPATCH:
@@ -965,12 +925,10 @@ class NanInfTracker(TorchDispatchMode):
             self._pt_impls[k] = impl
             setattr(torch.Tensor, k, TorchFuncMockNoDispatch(impl))
         return super().__enter__()
-
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         for k in self.TENSOR_FUNCS_NO_DISPATCH:
             setattr(torch.Tensor, k, self._pt_impls[k])
         return super().__exit__(exc_type, exc_val, exc_tb)
-
     def __init__(
         self,
         enabled=True,
@@ -1013,13 +971,9 @@ class NanInfTracker(TorchDispatchMode):
         self.end_step = end_step
         self.is_active = True  # Initially active, can be toggled based on step counts
         self.update_active_state()
-        self.global_rank = int(
-            os.environ.get("RANK", "-1")
-        )  # Fetch MPI rank if available
+        self.global_rank = int(os.environ.get("RANK", "-1"))  # Fetch MPI rank if available
         self.file_suffix = f"_rank{self.global_rank}" if self.global_rank >= 0 else ""
-        self.log_file_path = os.path.join(
-            self.output_dir, f"nan_inf_report{self.file_suffix}.txt"
-        )
+        self.log_file_path = os.path.join(self.output_dir, f"nan_inf_report{self.file_suffix}.txt")
 
     def update_active_state(self):
         """
@@ -1042,10 +996,7 @@ class NanInfTracker(TorchDispatchMode):
             full_op_name = get_full_op_name(op_name)  # May include namespace
 
             with LogToFile(self.log_file_path if self.should_log_to_file else None):
-                if (
-                    self.enable_ranks is not None
-                    and self.global_rank not in self.enable_ranks
-                ):
+                if self.enable_ranks is not None and self.global_rank not in self.enable_ranks:
                     return func(*args, **kwargs)
                 if len(self.target_list) > 0 and op_name not in self.target_list:
                     print(f"{full_op_name} is not in target_list, pass")
@@ -1059,9 +1010,7 @@ class NanInfTracker(TorchDispatchMode):
                 )
 
                 if self.dump_error_data and has_nan_or_inf:
-                    save_data_for_op(
-                        out, args, kwargs, self.output_dir, op_name, self.file_suffix
-                    )
+                    save_data_for_op(out, args, kwargs, self.output_dir, op_name, self.file_suffix)
                     raise Exception("Nan or Inf Detected!")
 
                 return out

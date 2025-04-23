@@ -99,12 +99,14 @@ __device__ __host__ __forceinline__ value_t lcm(value_t a, value_t b) {
 
 /// Returns the smallest value in the half-open range [a, a+b) that is a
 /// multiple of b
-__device__ __host__ __forceinline__ constexpr int round_up(int a, int b) {
+template <typename T>
+__device__ __host__ __forceinline__ constexpr T round_up(T a, T b) {
   return ((a + b - 1) / b) * b;
 }
 
 /// Returns the ceiling of (a / b)
-__device__ __host__ __forceinline__ constexpr int ceil_div(int a, int b) {
+template <typename T, typename = std::enable_if_t<std::is_integral<T>::value>>
+__device__ __host__ __forceinline__ constexpr T ceil_div(T a, T b) {
   return (a + b - 1) / b;
 }
 

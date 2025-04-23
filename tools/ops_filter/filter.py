@@ -19,30 +19,25 @@ from .utils import (
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--kinds",
         type=str,
         default="cuda_custom,same_cpu_cuda",
-        help=f"Comma-separated list of torch op types, choises are {OpKind.choices()}",
-    )
+        help=f"Comma-separated list of torch op types, choises are {OpKind.choices()}")
     args = parser.parse_args()
 
     kinds = args.kinds.split(",")
     for i, old_k in enumerate(kinds):
         new_k = old_k.strip()
         if new_k not in OpKind.choices():
-            logger.error(
-                f"Invalid torch op kind `{old_k}`, must be one of {OpKind.choices()}"
-            )
+            logger.error(f"Invalid torch op kind `{old_k}`, must be one of {OpKind.choices()}")
             exit()
         kinds[i] = OpKind.parse(new_k)
     setattr(args, "kinds", kinds)
 
     return args
-
 
 def group_by_overload(torch_ops):
     overload_groups = OrderedDict()
@@ -63,7 +58,6 @@ def group_by_overload(torch_ops):
             unstructured_list.append(group[0])
 
     return overload_groups, unstructured_list
-
 
 def process_overload(overload_groups):
     structured_list = []
@@ -89,14 +83,13 @@ def process_overload(overload_groups):
     structured_list = list(tmp.values())
     return structured_list, unstructured_extra
 
-
 def parse_kind(op):
     flatten_dispatch = op.get("dispatch", {})
     have_cuda = DispatchKey.CUDA in flatten_dispatch
     have_cpu = DispatchKey.CPU in flatten_dispatch
     have_comp_exp = DispatchKey.CompositeExplicitAutograd in flatten_dispatch
     have_comp_imp = DispatchKey.CompositeImplicitAutograd in flatten_dispatch
-
+    
     kind = OpKind.OTHERS
 
     if have_cuda:
@@ -116,7 +109,6 @@ def parse_kind(op):
             kind = OpKind.OTHERS
 
     return kind
-
 
 def process_structured(structured_list, musa_ops_set, args):
     kind_groups = OrderedDict()
@@ -143,9 +135,7 @@ def process_structured(structured_list, musa_ops_set, args):
         if kind not in args.kinds:
             continue
         if not kind.is_exportable():
-            logger.warning(
-                f"Ignore `{kind}` ops, since they are not important for torch_musa."
-            )
+            logger.warning(f"Ignore `{kind}` ops, since they are not important for torch_musa.")
             continue
         topic = f"Structured_{kind}"
         records = []
@@ -171,7 +161,6 @@ def process_structured(structured_list, musa_ops_set, args):
                 records.append(record)
         export_csv(this_dir(), topic, columns, records)
 
-
 def process_unstructured(unstructured_list, musa_ops_set, args):
     kind_groups = OrderedDict()
     for op in unstructured_list:
@@ -189,9 +178,7 @@ def process_unstructured(unstructured_list, musa_ops_set, args):
         if kind not in args.kinds:
             continue
         if not kind.is_exportable():
-            logger.warning(
-                f"Ignore `{kind}` ops, since they are not important for torch_musa."
-            )
+            logger.warning(f"Ignore `{kind}` ops, since they are not important for torch_musa.")
             continue
         topic = f"Unstructured_{kind}"
         records = []
@@ -208,7 +195,6 @@ def process_unstructured(unstructured_list, musa_ops_set, args):
             records.append(record)
         export_csv(this_dir(), topic, columns, records)
 
-
 def main(args):
     assert isinstance(args.kinds, list)
     torch_ops_list = get_torch_ops()
@@ -217,9 +203,7 @@ def main(args):
     logger.info(f"Total musa ops: {len(musa_ops_set)}")
 
     torch_ops_list = clean_torch_ops(torch_ops_list)
-    logger.info(
-        f"After cleaning, there are {len(torch_ops_list)} torch ops left to be further classified."
-    )
+    logger.info(f"After cleaning, there are {len(torch_ops_list)} torch ops left to be further classified.")
     num_ops = len(torch_ops_list)
     overload_groups, unstructured_list = group_by_overload(torch_ops_list)
     structured_list, unstructured_extra = process_overload(overload_groups)
@@ -230,14 +214,11 @@ def main(args):
         structured_ops += len(lst)
     unstructured_ops = len(unstructured_list)
     assert structured_ops + unstructured_ops == num_ops
-    logger.info(
-        f"Total {len(structured_list)} structured groups with {structured_ops} ops."
-    )
+    logger.info(f"Total {len(structured_list)} structured groups with {structured_ops} ops.")
     logger.info(f"Total {unstructured_ops} unstructured ops.")
-
+    
     process_structured(structured_list, musa_ops_set, args)
     process_unstructured(unstructured_list, musa_ops_set, args)
-
 
 if __name__ == "__main__":
     args = get_args()

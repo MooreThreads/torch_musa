@@ -1,9 +1,11 @@
 #include <ATen/Config.h>
 #include <ATen/NativeFunctions.h>
+#include <ATen/native/Resize.h>
 #include <torch/library.h>
 
 #include <mudnn.h>
 
+#include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Context.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
@@ -296,6 +298,193 @@ Tensor Bmm(const Tensor& self, const Tensor& mat2) {
       self.options().memory_format(at::MemoryFormat::Contiguous));
   BmmOut(self, mat2, result);
   return result;
+}
+
+// Computes matrix multiply + bias while applying scaling to input and output
+// matrices and computes amax Scales are only applicable when matrices are of
+// Float8 type and assumbed to be equal to 1.0 by default. If output matrix type
+// is 16 or 32-bit type, neither scale_result is applied nor amax is computed.
+// Known limitations:
+//  - Only works if mat1 is row-major and mat2 is column-major
+//  - Only works if matrices sizes are divisible by 32
+std::tuple<Tensor&, Tensor&> ScaledMatmulOut(
+    const Tensor& mat1,
+    const Tensor& mat2,
+    const c10::optional<at::Tensor>& bias,
+    c10::optional<c10::ScalarType> out_dtype,
+    const c10::optional<at::Tensor>& scale_a,
+    const c10::optional<at::Tensor>& scale_b,
+    const c10::optional<at::Tensor>& scale_result,
+    bool use_fast_accum,
+    Tensor& out,
+    Tensor& amax) {
+#if defined(TORCH_MUSA_ARCH) && (TORCH_MUSA_ARCH >= 310)
+  // Check sizes
+  auto dprops = at::musa::getCurrentDeviceProperties();
+  TORCH_CHECK(
+      dprops->major >= 3,
+      "torch._scaled_mm on MUSA is only supported on devices with compute capability >= 3.1)");
+  TORCH_CHECK(mat1.dim() == 2, "mat1 must be a matrix");
+  TORCH_CHECK(mat2.dim() == 2, "mat2 must be a matrix");
+  TORCH_CHECK(
+      mat1.sizes()[1] == mat2.sizes()[0],
+      "mat1 and mat2 shapes cannot be multiplied (",
+      mat1.sizes()[0],
+      "x",
+      mat1.sizes()[1],
+      " and ",
+      mat2.sizes()[0],
+      "x",
+      mat2.sizes()[1],
+      ")");
+  TORCH_CHECK(
+      !scale_a || (scale_a->numel() == 1 && scale_a->scalar_type() == kFloat),
+      "scale_a must be float scalar");
+  TORCH_CHECK(
+      !scale_b || (scale_b->numel() == 1 && scale_b->scalar_type() == kFloat),
+      "scale_b must be a float scalar");
+  TORCH_CHECK(
+      !scale_result ||
+          (scale_result->numel() == 1 && scale_result->scalar_type() == kFloat),
+      "scale_result must be a float scalar");
+  TORCH_CHECK(
+      !bias || bias->numel() == mat2.sizes()[1],
+      "Bias must be size ",
+      mat2.sizes()[1],
+      " but got ",
+      bias->numel());
+  // Check types
+  TORCH_CHECK(
+      !out_dtype || *out_dtype == out.scalar_type(),
+      "out_dtype must match output matrix type");
+  TORCH_CHECK(amax.scalar_type() == kFloat, "amax must be a float scalar");
+  TORCH_CHECK(
+      c10::isFloat8Type(mat1.scalar_type()),
+      "Expected mat1 to be Float8 matrix got ",
+      mat1.scalar_type());
+  TORCH_CHECK(
+      c10::isFloat8Type(mat2.scalar_type()),
+      "Expected mat2 to be Float8 matrix got ",
+      mat2.scalar_type());
+  if (bias) {
+    TORCH_CHECK(
+        (out.scalar_type() == ScalarType::Float &&
+         bias->scalar_type() == ScalarType::Float) ||
+            (out.scalar_type() != ScalarType::Float &&
+             (bias->scalar_type() == ScalarType::BFloat16 ||
+              bias->scalar_type() == ScalarType::Half)),
+        "Wrong bias dtype: ",
+        bias->scalar_type(),
+        "which doesn't match out dtype: ",
+        out.scalar_type());
+  }
+  auto bias_ = bias.value_or(Tensor());
+  TensorArg targs[]{
+      {out, "out", 0},
+      {amax, "amax", 1},
+      {mat1, "mat1", 2},
+      {mat2, "mat2", 3},
+      {bias_, "bias", 4}};
+  checkAllSameGPU(__func__, targs);
+
+  IntArrayRef mat1_sizes = mat1.sizes();
+  IntArrayRef mat2_sizes = mat2.sizes();
+  at::native::resize_output(out, {mat1_sizes[0], mat2_sizes[1]});
+  at::native::resize_output(amax, {});
+
+  muHandle& h = GetMudnnHandle();
+  Tensor contiguous_l;
+  Tensor contiguous_r;
+  bool trans_l = IsTranspose(mat1);
+  bool trans_r = IsTranspose(mat2);
+  auto lmt = trans_l ? CreateMUTensor(mat1.transpose(-2, -1))
+                     : CreateMUTensor(ContiguousRef(mat1, contiguous_l));
+  auto rmt = trans_r ? CreateMUTensor(mat2.transpose(-2, -1))
+                     : CreateMUTensor(ContiguousRef(mat2, contiguous_r));
+  auto rst = CreateMUTensor(out);
+  // TODO(@muDNN): muDNN now only support scale tensor on host, not device
+  auto scale_a_ = scale_a
+      ? (scale_a->device() == kMUSA ? scale_a.value().to(kCPU)
+                                    : scale_a.value())
+      : Tensor();
+  auto scale_b_ = scale_b
+      ? (scale_b->device() == kMUSA ? scale_b.value().to(kCPU)
+                                    : scale_b.value())
+      : Tensor();
+  auto scale_result_ = scale_result
+      ? (scale_result->device() == kMUSA ? scale_result.value().to(kCPU)
+                                         : scale_result.value())
+      : Tensor();
+  SetMudnnQuantizationInfo(lmt, scale_a_);
+  SetMudnnQuantizationInfo(rmt, scale_b_);
+  SetMudnnQuantizationInfo(rst, scale_result_);
+
+  ::musa::dnn::MatMul mm;
+  CHECK_MUDNN_STATUS(
+      mm.SetComputeMode(at::musa::GetComputeModeFromCtx(mat1.scalar_type())),
+      "SetComputeMode");
+  CHECK_MUDNN_STATUS(mm.SetTranspose(trans_l, trans_r), "SetTranspose");
+
+  if (bias.has_value() && bias->sizes() == out.sizes()) {
+    // For both inplace and outplace, we run muDNN MM with `d = a @ b +
+    // c + bias`, of which the bias is omitted
+    auto bmt = CreateMUTensor(bias.value());
+    CHECK_MUDNN_STATUS(
+        mm.RunWithBiasAdd(h, rst, lmt, rmt, bmt, muTensor(), InternalMemAlloc),
+        "RunWithBiasAdd");
+  } else if (bias.has_value() && bias->dim() == 1) {
+    // TODO(@mt-ai): should we check the bias is broadcastable?
+    // Run muDNN MM with `d = a @ b + c + bias`, of
+    // which c == d
+    auto bmt = CreateMUTensor(bias.value());
+    CHECK_MUDNN_STATUS(
+        mm.RunWithBiasAdd(h, rst, lmt, rmt, rst, bmt, InternalMemAlloc),
+        "RunWithBiasAdd");
+  } else {
+    // Run muDNN with `c = a @ b + c`, then `c += bias`
+    // if bias is given (scalar or [M, 1] for gemm)
+    CHECK_MUDNN_STATUS(mm.Run(h, rst, lmt, rmt, InternalMemAlloc), "Run");
+    if (bias.has_value()) {
+      out.add_(bias.value());
+    }
+  }
+
+  // TODO(@muDNN): muDNN fp8 matmul doesn't support compute amax in parallel
+  if (c10::isFloat8Type(out.scalar_type())) {
+    amax = out.to(kFloat).abs().max();
+  } else {
+    amax = out.abs().max().to(kFloat);
+  }
+
+  return {out, amax};
+#else
+  TORCH_CHECK(false, "scaled_gemm is only supported for MUSA 3.1 and above");
+#endif // TORCH_MUSA_ARCH >= 310
+}
+
+std::tuple<Tensor, Tensor> ScaledMatmul(
+    const Tensor& mat_a,
+    const Tensor& mat_b,
+    const c10::optional<at::Tensor>& bias,
+    c10::optional<c10::ScalarType> out_dtype,
+    const c10::optional<at::Tensor>& scale_a,
+    const c10::optional<at::Tensor>& scale_b,
+    const c10::optional<at::Tensor>& scale_result,
+    bool use_fast_accum) {
+  const auto out_dtype_ = out_dtype.value_or(mat_a.scalar_type());
+  Tensor out = at::empty({0}, mat_a.options().dtype(out_dtype_));
+  Tensor amax = at::empty({0}, mat_a.options().dtype(ScalarType::Float));
+  return ScaledMatmulOut(
+      mat_a,
+      mat_b,
+      bias,
+      out_dtype,
+      scale_a,
+      scale_b,
+      scale_result,
+      use_fast_accum,
+      out,
+      amax);
 }
 
 } // namespace musa

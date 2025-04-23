@@ -1,0 +1,34 @@
+diff --git a/torch/_dynamo/variables/ctx_manager.py b/torch/_dynamo/variables/ctx_manager.py
+index d8dd581..7778e98 100644
+--- a/torch/_dynamo/variables/ctx_manager.py
++++ b/torch/_dynamo/variables/ctx_manager.py
+@@ -379,11 +379,12 @@ class DisabledSavedTensorsHooksVariable(ContextWrappingVariable):
+ class AutocastModeVariable(ContextWrappingVariable):
+     @staticmethod
+     def create(func, args, kwargs):
++        custom_autocast_lst = [torch.musa.amp.autocast,] if hasattr(torch, "musa") else []
+         assert func in [
+             torch.amp.autocast_mode.autocast,
+             torch.cuda.amp.autocast,
+             torch.cpu.amp.autocast,
+-        ]
++        ] + custom_autocast_lst
+         # device_type : str,
+         # dtype : Optional[_dtype] = None,
+         # enabled : bool = True,
+@@ -397,8 +398,13 @@ class AutocastModeVariable(ContextWrappingVariable):
+             if key == "device_type" and func in [
+                 torch.cuda.amp.autocast,
+                 torch.cpu.amp.autocast,
+-            ]:
+-                arg = "cuda" if func is torch.cuda.amp.autocast else "cpu"
++            ] + custom_autocast_lst:
++                if func is torch.cuda.amp.autocast:
++                    arg = "cuda"
++                elif hasattr(torch, "musa") and func is torch.musa.amp.autocast:
++                    arg = "musa"
++                else:
++                    arg = "cpu"
+             else:
+                 arg = bound_args.arguments[key]
+             if isinstance(arg, VariableTracker):

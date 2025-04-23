@@ -13,17 +13,14 @@ from codegen.utils import (
     flatten_dispatch,
 )
 
-
 def this_dir() -> str:
     return dirname(abspath(__file__))
-
 
 def parse_dispatch(raw_dispatch) -> dict:
     if raw_dispatch is None:
         return {}
     new_dispatch = flatten_dispatch(raw_dispatch)
     return {DispatchKey.parse(k): v for k, v in new_dispatch.items()}
-
 
 def get_torch_ops() -> List[dict]:
     yaml_file = join(
@@ -41,7 +38,6 @@ def get_torch_ops() -> List[dict]:
             op["func"] = op_name
             torch_ops.append(op)
     return torch_ops
-
 
 def get_musa_ops() -> Set[str]:
     yaml_file = join(

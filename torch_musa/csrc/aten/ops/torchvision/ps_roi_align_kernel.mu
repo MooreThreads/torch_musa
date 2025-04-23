@@ -1,8 +1,8 @@
 #include <ATen/ATen.h>
+#include <ATen/autocast_mode.h>
 #include <ATen/core/dispatch/Dispatcher.h>
 #include <torch/library.h>
 #include <ATen/native/musa/KernelUtils.muh>
-#include "torch_musa/csrc/amp/autocast_mode.h"
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 
@@ -491,8 +491,8 @@ std::tuple<at::Tensor, at::Tensor> ps_roi_align_autocast(
   c10::impl::ExcludeDispatchKeyGuard no_autocast(
       c10::DispatchKey::AutocastPrivateUse1);
   auto result = ps_roi_align(
-      at::musa::autocast::cached_cast(at::kFloat, input),
-      at::musa::autocast::cached_cast(at::kFloat, rois),
+      at::autocast::cached_cast(at::kFloat, input),
+      at::autocast::cached_cast(at::kFloat, rois),
       spatial_scale,
       pooled_height,
       pooled_width,

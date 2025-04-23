@@ -18,7 +18,9 @@ Context& GlobalContext() {
 // Check if a type is a tensor core type.
 inline bool IsTensorCoreType(const at::ScalarType& dtype) {
   return dtype == at::ScalarType::Half || dtype == at::ScalarType::BFloat16 ||
-      dtype == at::ScalarType::QInt8 || dtype == at::ScalarType::QUInt8;
+      dtype == at::ScalarType::QInt8 || dtype == at::ScalarType::QUInt8 ||
+      dtype == at::ScalarType::Float8_e5m2 ||
+      dtype == at::ScalarType::Float8_e4m3fn;
 }
 
 ::musa::dnn::Convolution::ComputeMode GetComputeModeFromCtx(

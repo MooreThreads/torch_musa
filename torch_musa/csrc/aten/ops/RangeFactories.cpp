@@ -31,27 +31,5 @@ Tensor& ArangeStartOut(
   at::native::arange_start_out_stub(kMUSA, start, end, step, out);
   return out;
 }
-
-Tensor& RangeOut(
-    const Scalar& start,
-    const Scalar& end,
-    const Scalar& step,
-    Tensor& result) {
-  c10::musa::MUSAGuard device_guard(result.device());
-  return at::native::range_cuda_out(start, end, step, result);
-}
-
-at::Tensor& LinspaceOut(
-    const at::Scalar& start,
-    const at::Scalar& end,
-    int64_t steps,
-    at::Tensor& out) {
-  c10::optional<Device> common_device = nullopt;
-  c10::impl::check_and_update_common_device(
-      common_device, out, "LinspaceOut", "out");
-  const OptionalDeviceGuard device_guard(device_of(out));
-  return at::native::linspace_cuda_out(start, end, steps, out);
-}
-
 } // namespace musa
 } // namespace at

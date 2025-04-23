@@ -151,15 +151,11 @@ def musa_gen_class(
     elif k is SchemaKind.inplace:
         output_type = "std::reference_wrapper<Tensor>"
         output_value = "proxy_outputs_[output_idx].has_value() ? *proxy_outputs_[output_idx] : outputs_[output_idx].get()"
-        proxy_field = (
-            f"std::array<c10::optional<Tensor>, {len(f.func.returns)}> proxy_outputs_;"
-        )
+        proxy_field = f"std::array<c10::optional<Tensor>, {len(f.func.returns)}> proxy_outputs_;"
     elif k is SchemaKind.out:
         output_type = "std::reference_wrapper<Tensor>"
         output_value = "proxy_outputs_[output_idx].has_value() ? *proxy_outputs_[output_idx] : outputs_[output_idx].get()"
-        proxy_field = (
-            f"std::array<c10::optional<Tensor>, {len(f.func.returns)}> proxy_outputs_;"
-        )
+        proxy_field = f"std::array<c10::optional<Tensor>, {len(f.func.returns)}> proxy_outputs_;"
 
     if self.backend_index.dispatch_key == MUSA_STRUCTURED_DISPATCH_KEY:
         guard_field = "c10::musa::OptionalMUSAGuard guard_;"
@@ -342,7 +338,8 @@ return {sig.name()}({', '.join(e.expr for e in translate(cpp_sig.arguments(), si
                 ret_expr = "std::move(op.outputs_[0])"  # small optimization
             else:
                 moved = ", ".join(
-                    f"std::move(op.outputs_[{i}])" for i in range(len(f.func.returns))
+                    f"std::move(op.outputs_[{i}])"
+                    for i in range(len(f.func.returns))
                 )
                 ret_expr = f"std::make_tuple({moved})"
         elif k is SchemaKind.inplace:

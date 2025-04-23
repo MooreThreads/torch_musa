@@ -93,18 +93,11 @@ from .core import amp
 from .core.amp.common import (
     amp_definitely_not_available,
     get_amp_supported_dtype,
-    is_autocast_musa_enabled,
-    is_autocast_cache_enabled,
-    set_autocast_musa_enabled,
-    set_autocast_musa_dtype,
-    get_autocast_musa_dtype,
-    set_autocast_cache_enabled,
-    clear_autocast_cache,
-    autocast_increment_nesting,
-    autocast_decrement_nesting,
+    is_autocast_enabled,
+    set_autocast_enabled,
+    set_autocast_dtype,
+    get_autocast_dtype,
 )
-
-torch.autocast = torch.musa.amp.AutocastBase
 
 from .core.serialization import register_deserialization
 
@@ -203,9 +196,28 @@ from .core.reductions import init_reductions
 
 init_reductions()
 
+from . import _dynamo
+
+# for the purpose of lazily import inductor related modules
+from ._inductor import _init_inductor_backend_registration  # internal usage
+
 
 def overwrite_cuda_api():
     torch.cuda._lazy_init = _lazy_init
 
 
 overwrite_cuda_api()
+
+from .core.ao import *
+
+from .core.ao.register_helper import _register_ao_intrinsic_modules
+
+_register_ao_intrinsic_modules()
+
+
+# TODO: more elegant patching
+setattr(
+    torch._C,
+    "_conv_determine_backend_memory_format",
+    torch_musa._MUSAC._conv_determine_backend_memory_format,
+)

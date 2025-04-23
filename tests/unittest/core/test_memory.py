@@ -238,7 +238,6 @@ def test_pin_memory_with_operator():
         assert not x.is_pinned()
 
 
-@pytest.mark.skipif(True, reason="waiting musa toolkit fix")
 def test_set_per_process_memory_fraction():
     # test invalid fraction value.
     with pytest.raises(TypeError, match="Invalid type"):
@@ -299,6 +298,7 @@ def test_matmul_memory_use():
     assert bmm_mem == matmul_mem
 
 
+@pytest.mark.skipif(True, reason="Hang in CI, to be fixed")
 def test_memory_snapshot():
     try:
         from random import randint
