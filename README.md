@@ -1,9 +1,6 @@
 ![Torch MUSA_Logo](docs/images/torch_musa.png)
 --------------------------------------------------------------------------------
 
-[![Build Status](https://jenkins-aidev.mthreads.com/job/torch%20musa%20CI/job/main/badge/icon)](https://jenkins-aidev.mthreads.com/blue/organizations/jenkins/torch%20musa%20CI/activity)
-
-
 **torch_musa** is an extended Python package based on PyTorch. Developing **torch_musa** in a plug-in way allows **torch_musa** to be decoupled from PyTorch, which is convenient for code maintenance. Combined with PyTorch, users can take advantage of the strong power of Moore Threads graphics cards through **torch_musa**. In addition, **torch_musa** has two significant advantages:
 
 * CUDA compatibility could be achieved in **torch_musa**, which greatly reduces the workload of adapting new operators.
@@ -16,13 +13,12 @@
 <!-- toc -->
 
 - [Installation](#installation)
-  - [From Python Package](#from-python-package)
-  - [From Source](#from-source)
   - [Prerequisites](#prerequisites)
-  - [Install Dependencies](#install-dependencies)
-  - [Set Important Environment Variables](#set-important-environment-variables)
-  - [Building With Script](#building-with-script-recommended)
-  - [Building Step by Step From Source](#building-step-by-step-from-source)
+  - [From Python wheels](#from-python-wheels)
+  - [From Source](#from-source)
+    - [Set Important Environment Variables](#set-important-environment-variables)
+    - [Building With Script](#building-with-script)
+  - [torchvision and torchaudio](#torchvision-and-torchaudio)
   - [Docker Image](#docker-image)
     - [Docker Image for Developer](#docker-image-for-developer)
     - [Docker Image for User](#docker-image-for-user)
@@ -39,112 +35,90 @@
 
 ## Installation
 
-### From Python Package
+### Prerequisites
+Before installing torch_musa, here are some software packages that need to be installed on your machine first:
+- [musa-driver, container toolkit, mtml, sgpu](https://mcconline.mthreads.com/software)
+- [MUSA SDK](https://developer.mthreads.com/sdk/download/musa?equipment=&os=&driverVersion=&version=), including musa_toolkit, muDNN and MCCL
+- [muThrust](https://github.com/MooreThreads/muThrust)
+- [muAlg](https://github.com/MooreThreads/muAlg)
 
-**(WIP)** We are uploading our torch_musa to PyPi so that users can install torch_musa with `pip`.
+**NOTE:** we don't provide MCCL in MUSA SDK 4.0.1
 
-### From Source
+### From Python wheels
+After these prerequisites are installed, we can simply install torch_musa from wheels, 
+and we provide multiple wheels in our release page. For example, the wheels of torch_musa v1.3.2 can be found [here](https://github.com/MooreThreads/torch_musa/releases/tag/v1.3.2).
 
-#### Prerequisites
-- [MUSA ToolKit](https://github.mthreads.com/mthreads/musa_toolkit)
-- [MUDNN](https://github.mthreads.com/mthreads/muDNN)
-- Other Libs (including muThrust, muSparse, muAlg, muRand)
-- [PyTorch Source Code](https://github.com/pytorch/pytorch/tree/v2.0.0)
-- [Docker Container Toolkits](https://mcconline.mthreads.com/software)
-
-**NOTE:** Since some of the dependent libraries are in beta and have not yet been officially released, we recommend using the [development docker](#docker-image-for-developer) provided below to compile **torch_musa**. If you really want to compile **torch_musa** in your own environment, then please contact us for additional dependencies.
-
-#### Install Dependencies
+**NOTE:** We only provide wheels that build upon python3.10, so if one need to utilize
+torch_musa with other python versions, check [From source](#From-source) to build your own wheels.
 
 ```bash
-apt-get install ccache
-apt-get install libomp-11-dev
-pip install -r requirements.txt
+# for python3.10
+pip install torch-2.2.0a0+git8ac9b20-cp310-cp310-linux_x86_64.whl
+pip install torch_musa-1.3.0-cp310-cp310-linux_x86_64.whl
 ```
 
+### From Source
+We highly recommand users building torch_musa from source within dockers we provided, and the dockers can be found [here](https://mcconline.mthreads.com/repo).
+
+And for more details about how to create a torch_musa docker container from provided images, one can check the [Docker-image](#Docker-image) below
 #### Set Important Environment Variables
 ```bash
 export MUSA_HOME=path/to/musa_libraries(including mudnn and musa_toolkits) # defalut value is /usr/local/musa/
 export LD_LIBRARY_PATH=$MUSA_HOME/lib:$LD_LIBRARY_PATH
-# if PYTORCH_REPO_PATH is not set, PyTorch-v2.0.0 will be downloaded outside this directory when building with build.sh
-export PYTORCH_REPO_PATH=path/to/PyTorch source code
+# if PYTORCH_REPO_PATH is not set, PyTorch will be downloaded outside this directory when building with build.sh
+export PYTORCH_REPO_PATH=/path/to/PyTorch
 ```
 
-#### Building With Script (Recommended)
+#### Building with Script
 ```bash
-bash build.sh   # build original PyTorch and torch_musa from scratch
+bash build.sh -c  # clean cache then build PyTorch and torch_musa from scratch
 
 # Some important parameters are as follows:
-bash build.sh --torch  # build original PyTorch only
-bash build.sh --musa   # build torch_musa only
-bash build.sh --fp64   # compile fp64 in kernels using mcc in torch_musa
+bash build.sh --torch/-t  # build original PyTorch only
+bash build.sh --musa/-m   # build torch_musa only
 bash build.sh --debug  # build in debug mode
 bash build.sh --asan   # build in asan mode
-bash build.sh --clean  # clean everything built and build
+bash build.sh --clean/-c  # clean everything built and build
+bash build.sh --wheel/-w  # generate wheels
 ```
 
-#### Building Step by Step From Source
-0. Apply PyTorch patches
-```bash
-bash build.sh --patch
+### torchvision and torchaudio
+PyTorch v2.2.0 needs torchvision==0.17.2 and torchaudio==2.2.2, and for torch_musa users we
+shouldn't have them installed like `pip install torchvision==0.17.2`, instead, we should build
+them from source:
+```shell
+# build & install torchvision
+git clone https://github.com/pytorch/vision.git -b v0.17.2 --depth 1
+cd visoin && python setup.py install
+
+# build & install torchaudio
+git clone https://github.com/pytorch/audio.git -b v2.2.2 --depth 1
+cd audio && python setup.py install
 ```
 
-1. Building PyTorch
-```bash
-cd pytorch
-pip install -r requirements.txt
-python setup.py install
-# debug mode: DEBUG=1 python setup.py install
-# asan mode:  USE_ASAN=1 python setup.py install
-```
-
-2. Building torch_musa
-```bash
-cd torch_musa
-pip install -r requirements.txt
-python setup.py install
-# debug mode: DEBUG=1 python setup.py install
-# asan mode:  USE_ASAN=1 python setup.py install
-```
 
 ### Docker Image
 
 **NOTE:** If you want to use **torch_musa** in docker container, please install [mt-container-toolkit](https://mcconline.mthreads.com/software/1?id=1) first and use '--env MTHREADS_VISIBLE_DEVICES=all' when starting a container. During its initial startup, Docker performs a self-check. The unit tests and integration test results for **torch_musa** in the develop docker are located in /home/integration_test_output.txt and /home/ut_output.txt. The develop docker has already installed torch and **torch_musa** and the source code is located in /home.
 
-
+We provide **PyTorch**, **torch_musa**, **kineto**, **torchvision** and **torchaudio** within the docker images.
 
 #### Docker Image for Developer
 ```bash
-#To run the Docker for s3000/s80, simply replace 's3000/s80' with 's4000' in the following command.
-#To run the Docker for different python version, simply replace 'py38' 'py39' with 'py310' in the following command.
-#Python3.10
-docker run -it --privileged --pull always --network=host --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g registry.mthreads.com/mcconline/musa-pytorch-dev-public:rc3.1.0-v1.3.0-S4000-py310 /bin/bash
+# To run the Docker for qy2, simply replace 'qy1' with 'qy2' in the following command.
+# To run the Docker for different python version, simply replace 'py39' 'py310' with 'py38' in the following command.
+
+# For example, start a qy1 docker with Python3.8
+docker run -it --privileged --pull always --network=host --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py38:rc3.1.0-v1.3.0-qy1 /bin/bash
 ```
-<details>
-<summary>Docker Image List</summary>
-
-| Docker Tag | Description |
-| ---- | --- |
-| **rc3.1.0-v1.3.0-S80/rc3.1.0-v1.3.0-S3000/rc3.1.0-v1.3.0-S4000** <br>[ **Python3.8** ](https://mcconline.mthreads.com/repo/musa-pytorch-dev-public?repoName=musa-pytorch-dev-public&repoNamespace=mcconline&displayName=Pytorch%20on%20MUSA%20Dev) <br> [ **Python3.9** ](https://mcconline.mthreads.com/repo/musa-pytorch-dev-public?repoName=musa-pytorch-dev-public&repoNamespace=mcconline&displayName=Pytorch%20on%20MUSA%20Dev) <br> [ **Python3.10** ](https://mcconline.mthreads.com/repo/musa-pytorch-dev-public?repoName=musa-pytorch-dev-public&repoNamespace=mcconline&displayName=Pytorch%20on%20MUSA%20Dev)| musatoolkits rc3.1.0 <br> mudnn rc2.7.0 <br> mccl rc1.7.0 <br> [ **MUSA SDK rc3.1.0** ](https://developer.mthreads.com/sdk/download/musa?equipment=&os=&driverVersion=&version=) |
-| **rc2.1.0-v1.1.0-qy1/rc2.1.0-v1.1.0-qy2** <br>[ **Python3.8** ](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev-py38/artifacts-tab) <br> [ **Python3.9** ](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev-py39/artifacts-tab) <br> [ **Python3.10** ](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-dev-py310/artifacts-tab)| musatoolkits rc2.1.0 <br> mudnn rc2.5.0 <br> mccl rc2.0.0 <br> muAlg_dev-0.3.0  <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.3.0 <br> torch_musa branch v1.1.0-rc1 |
-
-</details>  
-
 #### Docker Image for User
 ```bash
-#To run the Docker for s3000/s80, simply replace 's3000/s80' with 's4000' in the following command.
-#To run the Docker for different python version, simply replace 'py38' 'py39' with 'py310' in the following command.
-#python3.10
-docker run -it --privileged --pull always --network=host --name=torch_musa_release --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g registry.mthreads.com/mcconline/musa-pytorch-release-public:rc3.1.0-v1.3.0-S4000-py310 /bin/bash
-```
-<details>
-<summary>Docker Image List</summary>
+# To run the Docker for qy2, simply replace 'qy1' with 'qy2' in the following command.
+# To run the Docker for different python version, simply replace 'py39' 'py310' with 'py38' in the following command.
 
-| Docker Tag | Description |
-| ---- | --- |
-| **rc3.1.0-v1.3.0-S80/rc3.1.0-v1.3.0-S3000/rc3.1.0-v1.3.0-S4000** <br>[ **Python3.8** ](https://mcconline.mthreads.com/repo/musa-pytorch-release-public?repoName=musa-pytorch-release-public&repoNamespace=mcconline&displayName=Pytorch%20on%20MUSA%20Release) <br> [ **Python3.9** ](https://mcconline.mthreads.com/repo/musa-pytorch-release-public?repoName=musa-pytorch-release-public&repoNamespace=mcconline&displayName=Pytorch%20on%20MUSA%20Release) <br> [ **Python3.10** ](https://mcconline.mthreads.com/repo/musa-pytorch-release-public?repoName=musa-pytorch-release-public&repoNamespace=mcconline&displayName=Pytorch%20on%20MUSA%20Release)| musatoolkits rc3.1.0 <br> mudnn rc2.7.0 <br> mccl rc1.7.0 <br> [ **MUSA SDK rc3.1.0** ](https://developer.mthreads.com/sdk/download/musa?equipment=&os=&driverVersion=&version=)  |
-|**rc2.1.0-v1.1.0-qy1/rc2.1.0-v1.1.0-qy2**  <br> [ **Python3.8** ](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-release-py38/artifacts-tab) <br> [ **Python3.9** ](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-release-py39/artifacts-tab) <br> [ **Python3.10** ](https://sh-harbor.mthreads.com/harbor/projects/20/repositories/musa-pytorch-release-py310/artifacts-tab)| musatoolkits rc2.1.0 <br> mudnn rc2.5.0 <br> mccl rc2.0.0 <br> muAlg_dev-0.3.0  <br> muSPARSE_dev0.1.0 <br> muThrust_dev-0.3.0 <br> torch_musa branch v1.1.0-rc1 |
-</details>  
+# For example, start a qy1 docker with Python3.8
+docker run -it --privileged --pull always --network=host --name=torch_musa_release --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-release-py38:rc3.1.0-v1.3.0-qy1 /bin/bash
+```
 
 ## Getting Started
 ### Coding Style
