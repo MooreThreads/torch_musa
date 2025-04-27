@@ -1,6 +1,7 @@
 #include <ATen/Config.h>
 #include <ATen/NamedTensorUtils.h>
 #include <ATen/NativeFunctions.h>
+#include <ATen/native/TensorShape.h>
 #include <ATen/native/TypeProperties.h>
 #include <torch/library.h>
 
@@ -11,6 +12,10 @@
 
 namespace at {
 namespace musa {
+
+inline bool ShouldSkipTensor(const Tensor& t) {
+  return t.numel() == 0 && t.dim() == 1;
+}
 
 // these two utilities are borrowed from
 // pytorch/aten/src/ATen/native/TensorShape.cpp
@@ -113,16 +118,20 @@ Tensor& CatOut(const at::ITensorListRef& tensors, int64_t dim, Tensor& out) {
 
 Tensor Cat(const at::ITensorListRef& tensors, int64_t dim) {
   const auto& materialized = tensors.materialize();
-  int i = 0;
-  for (; i < materialized.size(); i++) {
-    if (materialized[i].get().numel() > 0)
+  size_t valid = materialized.size();
+  for (const auto i : c10::irange(materialized.size())) {
+    if (!ShouldSkipTensor(materialized[i].get())) {
+      valid = i;
       break;
+    }
   }
-  if (i == materialized.size()) {
-    Tensor output = at::empty_like(materialized[0].get());
-    return output;
+  if (valid == materialized.size()) {
+    // all tensors are invalid, early return
+    return at::empty_like(materialized[0].get());
   }
-  const Tensor& ref = materialized[i].get();
+
+  // first valid tensor
+  const Tensor& ref = materialized[valid].get();
 
   CatCheckNoZeroDim(materialized);
   dim = at::legacy_cat_wrap_dim(dim, materialized);
@@ -133,9 +142,12 @@ Tensor Cat(const at::ITensorListRef& tensors, int64_t dim) {
   // Compute the output's shape
   std::vector<int64_t> output_shape{ref.sizes().vec()};
   output_shape[dim] = 0;
-  for (const Tensor& tensor : materialized) {
-    if (tensor.numel() > 0)
-      output_shape[dim] += tensor.size(dim);
+  for (const auto i : c10::irange(materialized.size())) {
+    const Tensor& t = materialized[i];
+    if (!ShouldSkipTensor(t)) {
+      at::native::check_cat_shape_except_dim(materialized[valid], t, dim, i);
+      output_shape[dim] += t.size(dim);
+    }
   }
   // Compute the output's dtype and memory_format
   auto out_dtype = at::native::result_type(tensors);

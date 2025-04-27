@@ -1,0 +1,23 @@
+diff --git a/aten/src/ATen/native/LossNLL.cpp b/aten/src/ATen/native/LossNLL.cpp
+index 8935e64..521b68c 100644
+--- a/aten/src/ATen/native/LossNLL.cpp
++++ b/aten/src/ATen/native/LossNLL.cpp
+@@ -17,6 +17,8 @@
+ #else
+ #include <ATen/ops/cross_entropy_loss_native.h>
+ #include <ATen/ops/empty.h>
++#include <ATen/ops/cross_entropy_loss_2d_choice.h>
++#include <ATen/ops/_fused_cross_entropy_loss_2d_forward.h>
+ #include <ATen/ops/log_softmax.h>
+ #include <ATen/ops/nll_loss.h>
+ #include <ATen/ops/nll_loss2d.h>
+@@ -638,6 +640,9 @@ Tensor cross_entropy_loss_symint(
+     c10::MaybeOwned<Tensor> weight_maybe_owned = at::borrow_from_optional_tensor(weight);
+     const Tensor& weight_ = *weight_maybe_owned;
+     ret = cross_entropy_loss_label_smoothing(self, target, weight_, reduction, std::move(ignore_index), label_smoothing);
++  } else if ((self.dim() == 2) &&
++             (at::cross_entropy_loss_2d_choice(self, target, weight, reduction, ignore_index.expect_int(), label_smoothing) != 0)) {
++    ret = at::_fused_cross_entropy_loss_2d_forward(self, target, weight, reduction, ignore_index.expect_int(), label_smoothing);
+   } else {
+     auto class_dim = self.dim() == 1 ? 0 : 1;
+     ret = at::nll_loss_nd_symint(

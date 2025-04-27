@@ -1,7 +1,7 @@
 #ifndef TORCH_MUSA_CSRC_CORE_CACHINGHOSTALLOCATOR_H_
 #define TORCH_MUSA_CSRC_CORE_CACHINGHOSTALLOCATOR_H_
 
-#include "torch_musa/csrc/core/Allocator.h"
+#include "torch_musa/csrc/core/MUSACachingAllocator.h"
 #include "torch_musa/csrc/core/MUSAStream.h"
 
 namespace at {

@@ -20,7 +20,7 @@ if [ $NAME != "TRITON" ]; then
   exit 1
 fi
 
-wget --no-check-certificate https://oss.mthreads.com/release-rc/cuda_compatible/${TAG}/triton_${VERSION}.tar.gz -P ${triton_path}
+wget --no-check-certificate https://oss.mthreads.com/release-ci/computeQA/cuda_compatible/CI/release_KUAE_2.0_for_PH1_M3D/2025-03-30/triton_dev1.1.0.tar.gz -P ${triton_path}
 tar -zxvf ${triton_path}/triton_${VERSION}.tar.gz -C ${triton_path}
 pushd ${triton_path}
 pip install triton-*.whl

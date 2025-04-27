@@ -199,6 +199,12 @@ Tensor CatQuantizedMusaImpl(
     return qx0;
   }
 
+  TORCH_CHECK(
+      0 == zero_point,
+      "torch_musa only supports symmetric quantization",
+      "which requires zero_point == 0, got: ",
+      zero_point);
+
   float scale_m = static_cast<float>(scale);
   unsigned int zero_point_m = static_cast<unsigned int>(zero_point);
   auto dtype = qx0.scalar_type();

@@ -93,7 +93,6 @@ void SetMudnnQuantizationInfo(
     muTensor& self,
     double scales,
     int64_t zero_points);
-void SetMudnnQuantizationInfo(muTensor& self, Tensor& scales);
 
 // use for memory handler
 void InternalMemFree(void* ptr);
@@ -126,6 +125,8 @@ c10::optional<Tensor> maybe_create_proxy(
 bool MatContiguous(const Tensor& mat);
 
 bool IsTranspose(const Tensor& mat, bool strict = true);
+
+bool IsLastDimContiguous(const Tensor& input);
 
 Tensor FormatContiguous(const Tensor& t, at::MemoryFormat memory_format);
 

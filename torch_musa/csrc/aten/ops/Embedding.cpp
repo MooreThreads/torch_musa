@@ -35,6 +35,10 @@ REGISTER_NO_CPU_DISPATCH(embedding_dense_backward_stub);
 namespace musa {
 namespace {
 
+constexpr int MODE_SUM = 0;
+constexpr int MODE_MEAN = 1;
+constexpr int MODE_MAX = 2;
+
 std::pair<Tensor, Tensor> promoteIndicesAndOffsets(
     const Tensor& indices,
     const Tensor& offsets) {
@@ -84,6 +88,14 @@ std::tuple<Tensor, Tensor, Tensor, Tensor> _EmbeddingBagImpl(
         "offsets has to be a 1D Tensor, but got Tensor of dimension ",
         offsets_.dim());
   }
+
+  int64_t numBags = offsets_.size(0);
+  if (include_last_offset) {
+    TORCH_CHECK(
+        numBags >= 1, "include_last_offset: numBags should be at lease 1");
+    numBags -= 1;
+  }
+  int64_t featureSize = weight.size(1);
   Tensor indices, offsets;
   std::tie(indices, offsets) = promoteIndicesAndOffsets(indices_, offsets_);
 
@@ -95,7 +107,15 @@ std::tuple<Tensor, Tensor, Tensor, Tensor> _EmbeddingBagImpl(
   Tensor bag_size = at::empty(offsets.sizes(), offsets.options());
   at::native::make_bag_size_out(
       bag_size, offsets, indices, mode, include_last_offset, requires_grad);
-  Tensor max_indices = at::empty(bag_size.sizes(), offsets.options());
+
+  Tensor max_indices;
+  if (mode == MODE_MAX) {
+    max_indices = at::empty({numBags, featureSize}, indices.options());
+  } else {
+    max_indices = at::empty(bag_size.sizes(), indices.options());
+  }
+
+  // no need ?
   at::native::make_max_indices_out(
       max_indices,
       weight,

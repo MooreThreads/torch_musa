@@ -1,10 +1,29 @@
 diff --git a/torch/nn/functional.py b/torch/nn/functional.py
-index 707fc04f7e7..1677c5a77ca 100644
+index 707fc04..19a815f 100644
 --- a/torch/nn/functional.py
 +++ b/torch/nn/functional.py
-@@ -2545,6 +2545,20 @@ def layer_norm(
-         )
+@@ -1509,6 +1509,18 @@ def glu(input: Tensor, dim: int = -1) -> Tensor:  # noqa: D400,D402
+     return torch._C._nn.glu(input, dim)
+ 
+ 
++def swish_glu(input: Tensor) -> Tensor:  # noqa: D400,D402
++    r"""swish_glu(input, inplace=False) -> Tensor
++
++    Applies swish gate linear unit operator.
++    See :class:`~torch.nn.SwiGLU` for more details.
++    """
++    if has_torch_function_unary(input):
++        return handle_torch_function(swish_glu, (input,), input)
++    result = torch.swish_glu(input)
++    return result
++
++
+ def hardtanh(input: Tensor, min_val: float = -1., max_val: float = 1., inplace: bool = False) -> Tensor:  # noqa: D400,D402
+     r"""
+     hardtanh(input, min_val=-1., max_val=1., inplace=False) -> Tensor
+@@ -2546,6 +2558,22 @@ def layer_norm(
      return torch.layer_norm(input, normalized_shape, weight, bias, eps, torch.backends.cudnn.enabled)
+ 
  
 +def rms_norm(
 +    input: Tensor,
@@ -20,6 +39,30 @@ index 707fc04f7e7..1677c5a77ca 100644
 +            rms_norm, (input, weight), input, normalized_shape, weight=weight, eps=eps
 +        )
 +    return torch.rms_norm(input, normalized_shape, weight, eps)
- 
++
++
  def group_norm(
      input: Tensor, num_groups: int, weight: Optional[Tensor] = None, bias: Optional[Tensor] = None, eps: float = 1e-5
+ ) -> Tensor:
+@@ -2561,6 +2589,21 @@ def group_norm(
+     return torch.group_norm(input, num_groups, weight, bias, eps, torch.backends.cudnn.enabled)
+ 
+ 
++def rope(
++    input: Tensor,
++    freq_cis: Tensor,
++    rotary_interleaved: bool,
++    batch_first: bool
++) -> Tensor:
++    r"""Rotary position embedding  forward""
++    """
++    if has_torch_function_variadic(input, freq_cis):
++        return handle_torch_function(
++            rope, (input, freq_cis), input, rotary_interleaved, batch_first
++        )
++    return torch.rope(input, freq_cis, rotary_interleaved, batch_first)
++
++
+ def local_response_norm(input: Tensor, size: int, alpha: float = 1e-4, beta: float = 0.75, k: float = 1.0) -> Tensor:
+     r"""Apply local response normalization over an input signal.
+ 

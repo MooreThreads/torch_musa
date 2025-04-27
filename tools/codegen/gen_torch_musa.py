@@ -321,6 +321,7 @@ def musa_override_native_function_info(
     return processed_op, FunctionExtraInfo(
         impl_kinds=impl_kinds,
         torch_part_of_structured_group=torch_part_of_structured_group,
+        device_lazy_init=musa_op.get("device_lazy_init", False),
     )
 
 
@@ -373,6 +374,7 @@ def musa_handle_autogen_native_function_info(
     return processed_op, FunctionExtraInfo(
         impl_kinds=impl_kinds,
         torch_part_of_structured_group=False,
+        device_lazy_init=musa_op.get("device_lazy_init", False),
     )
 
 
@@ -677,6 +679,7 @@ def gen_source_files(
 #include <torch_musa/csrc/aten/utils/Utils.h>
 #include <torch_musa/csrc/core/MUSAGuard.h>
 #include <torch_musa/csrc/aten/musa/MUSAContext.h>
+#include <torch_musa/csrc/utils/musa_lazy_init.h>
 #include <torch_musa/csrc/utils/register_wrapper.h>"""
 
     fm = musa_fm

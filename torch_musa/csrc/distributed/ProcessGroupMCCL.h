@@ -30,6 +30,12 @@
 #include <torch/csrc/distributed/c10d/Utils.hpp>
 #include <torch/csrc/distributed/c10d/Work.hpp>
 
+#if defined(MARCH_TYPE) && (MARCH_TYPE >= 220)
+#define MCCL_BF16_SUPPORTED 1
+#else
+#define MCCL_BF16_SUPPORTED 0
+#endif
+
 namespace c10d {
 
 // Environment variable which controls whether we perform a MCCL health check
@@ -51,9 +57,15 @@ static std::vector<std::string> TORCH_MCCL_ASYNC_ERROR_HANDLING = {
 // This variable must be set together with MCCL_ASYNC_ERROR_HANDLING.
 static std::vector<std::string> TORCH_MCCL_DESYNC_DEBUG = {"MCCL_DESYNC_DEBUG"};
 
-// TODO(tyr): not supported!.
+// If set, ProcessGroupMCCL doesn't use recordStream calls to ensure
+// caching allocator safety for tensors used on both user-facing and
+// internal comm streams.
+// This environment variable maybe helpful for avoiding allocator thrashing,
+// cause recordStream prevents the caching allocator from repurposing
+// allocations passed to collectives until those collectives finish from
+// the host's perspective.
 static std::vector<std::string> TORCH_MCCL_AVOID_RECORD_STREAMS = {
-    "MCCL_AVOID_RECORD_STREAMS"};
+    "TORCH_MCCL_AVOID_RECORD_STREAMS"};
 
 enum ErrorHandlingMode { NoHandling = 0, TearDown = 1, CleanUpOnly = 2 };
 constexpr const char* MCCL_BACKEND_NAME = "mccl";
@@ -196,6 +208,11 @@ class TORCH_API ProcessGroupMCCL : public Backend {
     // The future returned by getFuture.
     c10::intrusive_ptr<at::ivalue::Future> future_;
 
+    // By keeping these refs alive until after the collective's
+    // work rejoins the user-facing streams, we achieve caching
+    // allocator safety without any recordStream calls.
+    // It is important to keep these refs especially in the case of
+    // asynchronous communications.
     std::shared_ptr<std::vector<at::Tensor>> stashed_for_allocator_safety_;
 
     friend class ProcessGroupMCCL;
@@ -454,7 +471,8 @@ class TORCH_API ProcessGroupMCCL : public Backend {
       std::vector<at::Tensor>& output,
       Fn fn,
       OpType opType,
-      const char* profilingTitle = nullptr);
+      const char* profilingTitle = nullptr,
+      bool avoidRecordStreams = false);
   template <typename Fn, typename PreProcess, typename PostProcess>
   c10::intrusive_ptr<Work> collective(
       std::vector<at::Tensor>& input,
@@ -463,7 +481,8 @@ class TORCH_API ProcessGroupMCCL : public Backend {
       PreProcess pre,
       PostProcess post,
       OpType opType,
-      const char* profilingTitle = nullptr);
+      const char* profilingTitle = nullptr,
+      bool avoidRecordStreams = false);
 
   // Helper that encapsulates work shared across point-to-point communication
   // primitives. It is the same structure as the helper used for collective
@@ -663,8 +682,7 @@ class TORCH_API ProcessGroupMCCL : public Backend {
   // Whether or not to enable timeout root cause analysis.
   bool desyncDebug_;
 
-  // Since torch-muse is not fully supported, avoidRecordStreams_ always false.
-  // TODO(tyr): support it with latest MCCL in the future.
+  // Whether or not TORCH_MCCL_AVOID_RECORD_STREAMS was set
   bool avoidRecordStreams_ = false;
 
   // Set of communicators that this process group has aborted and their

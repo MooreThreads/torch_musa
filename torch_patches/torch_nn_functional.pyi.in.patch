@@ -1,17 +1,18 @@
 diff --git a/torch/nn/functional.pyi.in b/torch/nn/functional.pyi.in
-index 4955aef0524..75d2a6109c8 100644
+index 4955aef..26a4d10 100644
 --- a/torch/nn/functional.pyi.in
 +++ b/torch/nn/functional.pyi.in
-@@ -292,6 +292,12 @@ def layer_norm(
-     bias: Optional[Tensor] = ...,
-     eps: float = ...,
- ) -> Tensor: ...
-+def rms_norm(
+@@ -586,6 +586,13 @@ def multi_head_attention_forward(
+     average_attn_weights: bool = True,
+     is_causal: bool = False,
+ ) -> Tuple[Tensor, Optional[Tensor]]: ...
++def rope(
 +    input: Tensor,
-+    normalized_shape: Sequence[int],
-+    weight: Optional[Tensor] = ...,
-+    eps: Optional[float] = ...,
++    freq_cis: Tensor,
++    rotary_interleaved: bool,
++    batch_first: bool,
 +) -> Tensor: ...
- def group_norm(
-     input: Tensor,
-     num_groups: int,
++def swish_glu(input: Tensor) -> Tensor: ...
+ 
+ ${imported_hints}
+ 

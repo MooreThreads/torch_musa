@@ -12,38 +12,38 @@ from torch_musa import testing
 
 def elu_forward_inputs():
     return [
-        {"inputs": torch.randn((2,), requires_grad=False)},
-        {"inputs": torch.randn((32,), requires_grad=False)},
-        {"inputs": torch.randn((128,), requires_grad=False)},
-        {"inputs": torch.randn((512,), requires_grad=False)},
-        {"inputs": torch.randn((1024,), requires_grad=False)},
-        {"inputs": torch.randn((16, 1024), requires_grad=False)},
-        {"inputs": torch.randn((16, 0), requires_grad=False)},
-        {"inputs": torch.randn((0, 0), requires_grad=False)},
-        {"inputs": torch.randn((16, 16, 1024), requires_grad=False)},
-        {"inputs": torch.randn((16, 16, 16, 1024), requires_grad=False)},
+        {"inputs": torch.randn((2,), requires_grad=True)},
+        {"inputs": torch.randn((32,), requires_grad=True)},
+        {"inputs": torch.randn((128,), requires_grad=True)},
+        {"inputs": torch.randn((512,), requires_grad=True)},
+        {"inputs": torch.randn((1024,), requires_grad=True)},
+        {"inputs": torch.randn((16, 1024), requires_grad=True)},
+        {"inputs": torch.randn((16, 0), requires_grad=True)},
+        {"inputs": torch.randn((0, 0), requires_grad=True)},
+        {"inputs": torch.randn((16, 16, 1024), requires_grad=True)},
+        {"inputs": torch.randn((16, 16, 16, 1024), requires_grad=True)},
         {
-            "inputs": torch.randn((16, 1, 16, 1024), requires_grad=False).to(
+            "inputs": torch.randn((16, 1, 16, 1024), requires_grad=True).to(
                 memory_format=torch.channels_last
             )
         },
         {
-            "inputs": torch.randn((16, 12, 1, 1), requires_grad=False).to(
+            "inputs": torch.randn((16, 12, 1, 1), requires_grad=True).to(
                 memory_format=torch.channels_last
             )
         },
         {
-            "inputs": torch.randn((16, 0, 1, 1), requires_grad=False).to(
+            "inputs": torch.randn((16, 0, 1, 1), requires_grad=True).to(
                 memory_format=torch.channels_last
             )
         },
         {
-            "inputs": torch.randn((0, 0, 1, 1), requires_grad=False).to(
+            "inputs": torch.randn((0, 0, 1, 1), requires_grad=True).to(
                 memory_format=torch.channels_last
             )
         },
         {
-            "inputs": torch.randn((16, 12, 5, 2), requires_grad=False).to(
+            "inputs": torch.randn((16, 12, 5, 2), requires_grad=True).to(
                 memory_format=torch.channels_last
             )
         },
@@ -76,14 +76,14 @@ def test_elu_fwd(input_data, dtype):
             {
                 "input": input_data["inputs"].to(dtype),
             },
-            train=False,
+            train=True,
         )
     else:
         test.check_result(
             {
                 "input": input_data["inputs"].to(dtype),
             },
-            train=False,
+            train=True,
         )
     # We only care about grad_fn, so we use fp32 for computation on the CPU.
     assert (

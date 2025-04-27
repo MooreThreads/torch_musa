@@ -40,6 +40,8 @@ file(
   PORTING_CPP_CSRCS
   aten/ops/musa/*.cpp
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Activation.cpp
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Resize.cpp
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Sorting.cpp
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TensorModeKernel.cpp
   ${GENERATED_PORTING_DIR}/aten/src/ATen/musa/EmptyTensor.cpp
   ${GENERATED_PORTING_DIR}/torch/csrc/musa/comm.cpp
@@ -54,6 +56,7 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/musa/cub-RadixSortPairs.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/musa/detail/IndexUtils.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/AbsKernel.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationEluKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationHardsigmoidKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationHardswishKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationHardtanhKernel.mu
@@ -74,6 +77,7 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/BinaryBitwiseOpsKernels.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/BinaryShiftOpsKernels.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/CrossKernel.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/CumminmaxKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistributionUniform.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistributionNormal.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistributionBernoulli.mu
@@ -90,11 +94,13 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachReduceOp.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/group_norm_kernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/GridSampler.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Im2Col.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/LegacyThrustHelpers.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Lerp.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Loss.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/MultinomialKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Nonzero.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Normalization.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/NLLLoss2d.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/PointwiseOpsKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Randperm.mu
@@ -104,17 +110,25 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Repeat.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ReplicationPadding.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ScatterGatherKernel.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Sorting.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TensorTransformations.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryFractionKernels.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnarySignKernels.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnarySpecialOpsKernel.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryGeometricAsinKernel.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryGeometricAsinhKernel.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryGeometricAcoshKernel.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryGeometricAtanhKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleBicubic2d.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleBilinear2d.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleTrilinear3d.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleLinear1d.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleNearest1d.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleNearest2d.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleNearest3d.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryOpsKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/WeightNorm.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistanceKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/Activation.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/IntReprQuant.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/MakePerTensorQuantizedTensor.mu
@@ -138,9 +152,7 @@ string(APPEND MUSA_MCC_FLAGS " -mllvm -enable-post-misched")
 # -mtgpu-enable-max-ilp-scheduling-strategy=1")
 string(APPEND MUSA_MCC_FLAGS " -mllvm -mtgpu-load-store-opt")
 
-if(${MUSA_ARCH} EQUAL 22)
-  string(APPEND MUSA_MCC_FLAGS " -mllvm -enable-ldma-index")
-endif()
+string(APPEND MUSA_MCC_FLAGS " -mllvm -enable-ldma-index")
 
 if(NOT ENABLE_COMPILE_FP64)
   string(APPEND MUSA_MCC_FLAGS " -mathx-disable-fp64") # disable fp64
@@ -175,8 +187,7 @@ musa_add_library(
   ${PORTING_CPP_CSRCS}
   ${ATEN_MUSA_CSRCS})
 
-set(MUBLAS_LIB $ENV{MUSA_HOME}/lib/libmublas.so)
-target_link_libraries(${MUSA_KERNELS_LIB} ${MUBLAS_LIB})
+musa_add_mublas_to_target(${MUSA_KERNELS_LIB})
 
 if(NOT MUSA_KERNELS_INSTALL_LIB_DIR)
   set(MUSA_KERNELS_INSTALL_LIB_DIR lib)

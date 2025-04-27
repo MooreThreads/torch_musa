@@ -1,0 +1,82 @@
+diff --git a/torch/csrc/autograd/engine.cpp b/torch/csrc/autograd/engine.cpp
+index 27a88ee..1405014 100644
+--- a/torch/csrc/autograd/engine.cpp
++++ b/torch/csrc/autograd/engine.cpp
+@@ -971,7 +971,7 @@ void Engine::evaluate_function(
+   // ensure they're safe to consume in the context of the present
+   // func's stream (if applicable). So we guard onto that stream
+   // before working with the grads in any capacity.
+-  const auto opt_parent_stream = (*func).stream(c10::DeviceType::CUDA);
++  const auto opt_parent_stream = (*func).stream(c10::DeviceType::PrivateUse1);
+   c10::OptionalStreamGuard parent_stream_guard{opt_parent_stream};
+ 
+   // If exec_info_ is not empty, we have to instrument the execution
+@@ -1081,7 +1081,7 @@ void Engine::evaluate_function(
+       InputBuffer input_buffer(next.function->num_inputs());
+ 
+       // Accumulates into buffer
+-      const auto opt_next_stream = next.function->stream(c10::DeviceType::CUDA);
++      const auto opt_next_stream = next.function->stream(c10::DeviceType::PrivateUse1);
+       input_buffer.add(
+           next.input_nr, std::move(output), opt_parent_stream, opt_next_stream);
+ 
+@@ -1097,7 +1097,7 @@ void Engine::evaluate_function(
+       auto& input_buffer = not_ready_it->second;
+ 
+       // Accumulates into buffer
+-      const auto opt_next_stream = next.function->stream(c10::DeviceType::CUDA);
++      const auto opt_next_stream = next.function->stream(c10::DeviceType::PrivateUse1);
+       input_buffer.add(
+           next.input_nr, std::move(output), opt_parent_stream, opt_next_stream);
+       if (is_ready) {
+@@ -1129,7 +1129,8 @@ auto Engine::compute_dependencies(
+     uint64_t min_topo_nr) -> void {
+   // Computes the number of dependencies for each function which requires grad
+   std::vector<Node*> queue{root};
+-  bool might_use_cuda = at::globalContext().hasCUDA();
++  bool might_use_cuda = true;
++  // at::globalContext().hasCUDA();
+   bool will_use_cuda = false;
+ 
+   // Queue contains all nodes that will start propagating gradients.
+@@ -1142,7 +1143,7 @@ auto Engine::compute_dependencies(
+       continue;
+     }
+     if (might_use_cuda && !will_use_cuda) {
+-      will_use_cuda = fn->stream(c10::DeviceType::CUDA).has_value();
++      will_use_cuda = fn->stream(c10::DeviceType::PrivateUse1).has_value();
+     }
+     for (const auto& edge : fn->next_edges()) {
+       if (auto next_ptr = edge.function.get()) {
+@@ -1248,7 +1249,7 @@ auto Engine::execute(
+ 
+     const auto input_stream = InputMetadata(input).stream();
+     const auto opt_next_stream =
+-        root_edges.at(0).function->stream(c10::DeviceType::CUDA);
++        root_edges.at(0).function->stream(c10::DeviceType::PrivateUse1);
+     input_buffer.add(
+         root_edges.at(0).input_nr,
+         std::move(input),
+@@ -1520,7 +1521,7 @@ void Engine::add_thread_pool_task(const std::weak_ptr<GraphTask>& graph_task) {
+ // Only called if Engine::execute detects at least one node runs on a cuda
+ // stream.
+ void GraphTask::stash_current_streams() {
+-  const auto guard = c10::impl::VirtualGuardImpl{c10::DeviceType::CUDA};
++  const auto guard = c10::impl::VirtualGuardImpl{c10::DeviceType::PrivateUse1};
+   auto num_gpus = guard.deviceCount();
+   caller_current_streams_.resize(num_gpus);
+   if (num_gpus > 0) {
+@@ -1533,10 +1534,11 @@ void GraphTask::stash_current_streams() {
+       // https://github.com/pytorch/pytorch/issues/59750 is fixed.
+       if (true) {
+ #else
+-      if (at::detail::getCUDAHooks().hasPrimaryContext(idx)) {
++      /* if (at::detail::getCUDAHooks().hasPrimaryContext(idx)) { */
++      if (true) {
+ #endif
+         caller_current_streams_[idx] =
+-            guard.getStream({c10::DeviceType::CUDA, idx});
++            guard.getStream({c10::DeviceType::PrivateUse1, idx});
+       } else {
+         caller_current_streams_[idx] = c10::nullopt;
+       }

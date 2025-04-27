@@ -126,12 +126,6 @@ at::Tensor& MaskedScatter(
       ", and the latter is : ",
       source.scalar_type());
   at::assert_no_internal_overlap(self);
-  TORCH_CHECK(
-      self.scalar_type() == source.scalar_type(),
-      "masked_scatter: expected self and source to have same dtypes but got ",
-      self.scalar_type(),
-      " and ",
-      source.scalar_type());
   c10::musa::MUSAGuard device_guard(mask.device());
   auto contiguous_self = self.contiguous();
   auto contiguous_mask = mask.contiguous();

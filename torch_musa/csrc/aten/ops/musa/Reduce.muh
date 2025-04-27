@@ -13,8 +13,8 @@
 #include <iosfwd>
 #include <type_traits>
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
-#include "torch_musa/csrc/aten/musa/MUSAMarcos.muh"
-#include "torch_musa/csrc/core/Allocator.h"
+#include "torch_musa/csrc/aten/musa/MUSAMacros.muh"
+#include "torch_musa/csrc/core/MUSACachingAllocator.h"
 
 #include <ATen/native/musa/jit_utils.h>
 

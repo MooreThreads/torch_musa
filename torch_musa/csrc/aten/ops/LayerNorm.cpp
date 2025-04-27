@@ -103,7 +103,15 @@ namespace musa {
   auto mt_rstd = CreateMUTensor(rstd);
 
   CHECK_MUDNN_STATUS(
-      op.Run(h, mt_output, mt_mean, mt_rstd, mt_input, mt_gamma, mt_beta),
+      op.Run(
+          h,
+          mt_output,
+          mt_mean,
+          mt_rstd,
+          mt_input,
+          mt_gamma,
+          mt_beta,
+          InternalMemAlloc),
       "Run");
   return std::make_tuple(std::move(output), std::move(mean), std::move(rstd));
 }

@@ -7,7 +7,7 @@ index 23e2ddf..7f30f5e 100644
      preferences. For instance, to run a distributed training job on GPU with
      8 trainers (one per GPU) one can:
 -
-+    
++
      1. Use 8 x single GPU instances, place an agent per instance, managing
         1 worker per agent.
      2. Use 4 x double GPU instances, place an agent per instance, managing

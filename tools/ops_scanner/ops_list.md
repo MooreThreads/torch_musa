@@ -1,4 +1,4 @@
-Total amount of ops: 710
+Total amount of ops: 768
 - `__lshift__.Scalar`
 - `__lshift__.Tensor`
 - `__rshift__.Scalar`
@@ -9,9 +9,13 @@ Total amount of ops: 710
 - `_adaptive_avg_pool3d`
 - `_amp_foreach_non_finite_check_and_unscale_`
 - `_amp_update_scale_`
+- `_cdist_backward`
+- `_cdist_forward`
 - `_copy_from`
 - `_ctc_loss_backward`
 - `_ctc_loss`
+- `_cummax_helper`
+- `_cummin_helper`
 - `_embedding_bag`
 - `_empty_affine_quantized`
 - `_empty_per_channel_affine_quantized`
@@ -67,9 +71,17 @@ Total amount of ops: 710
 - `_foreach_sub_.Scalar`
 - `_fused_adam_.tensor_lr`
 - `_fused_adam_`
+- `_fused_cross_entropy_loss_2d_backward`
+- `_fused_cross_entropy_loss_2d_forward`
 - `_fused_rmsnorm_backward`
 - `_fused_rmsnorm_forward`
+- `_fused_rope_backward`
+- `_fused_rope_forward`
+- `_fused_swiglu_backward`
+- `_fused_swiglu_forward`
 - `_index_put_impl_`
+- `_linalg_solve_ex.result`
+- `_linalg_solve_ex`
 - `_local_scalar_dense`
 - `_log_softmax.out`
 - `_log_softmax_backward_data.out`
@@ -77,6 +89,8 @@ Total amount of ops: 710
 - `_log_softmax`
 - `_make_per_channel_quantized_tensor`
 - `_make_per_tensor_quantized_tensor`
+- `_pdist_backward`
+- `_pdist_forward`
 - `_pin_memory`
 - `_prelu_kernel_backward`
 - `_prelu_kernel`
@@ -97,6 +111,20 @@ Total amount of ops: 710
 - `_upsample_bicubic2d_aa_backward.grad_input`
 - `_upsample_bicubic2d_aa_backward`
 - `_upsample_bicubic2d_aa`
+- `_upsample_bilinear2d_aa.out`
+- `_upsample_bilinear2d_aa`
+- `_upsample_nearest_exact1d.out`
+- `_upsample_nearest_exact1d_backward.grad_input`
+- `_upsample_nearest_exact1d_backward`
+- `_upsample_nearest_exact1d`
+- `_upsample_nearest_exact2d.out`
+- `_upsample_nearest_exact2d_backward.grad_input`
+- `_upsample_nearest_exact2d_backward`
+- `_upsample_nearest_exact2d`
+- `_upsample_nearest_exact3d.out`
+- `_upsample_nearest_exact3d_backward.grad_input`
+- `_upsample_nearest_exact3d_backward`
+- `_upsample_nearest_exact3d`
 - `_weight_norm_interface_backward`
 - `_weight_norm_interface`
 - `abs.out`
@@ -105,6 +133,9 @@ Total amount of ops: 710
 - `acos.out`
 - `acos_`
 - `acos`
+- `acosh.out`
+- `acosh_`
+- `acosh`
 - `adaptive_avg_pool2d.out`
 - `adaptive_avg_pool3d.out`
 - `adaptive_avg_pool3d_backward.grad_input`
@@ -147,12 +178,21 @@ Total amount of ops: 710
 - `argmin`
 - `argsort.stable`
 - `as_strided`
+- `asin.out`
+- `asin_`
+- `asin`
+- `asinh.out`
+- `asinh_`
+- `asinh`
 - `atan.out`
 - `atan2.out`
 - `atan2_`
 - `atan2`
 - `atan_`
 - `atan`
+- `atanh.out`
+- `atanh_`
+- `atanh`
 - `aten::_copy_from` (quantized op)
 - `avg_pool2d.out`
 - `avg_pool2d_backward.grad_input`
@@ -163,6 +203,11 @@ Total amount of ops: 710
 - `baddbmm.out`
 - `baddbmm_`
 - `baddbmm`
+- `batch_norm_backward_elemt`
+- `batch_norm_backward_reduce`
+- `batch_norm_elemt`
+- `batch_norm_gather_stats_with_counts`
+- `batch_norm_stats`
 - `bernoulli.out`
 - `bernoulli_.Tensor`
 - `bernoulli_.float`
@@ -215,6 +260,7 @@ Total amount of ops: 710
 - `cos_`
 - `cos`
 - `count_nonzero.dim_IntList`
+- `cross_entropy_loss_2d_choice`
 - `cumprod.out`
 - `cumprod_`
 - `cumprod`
@@ -232,6 +278,8 @@ Total amount of ops: 710
 - `dot`
 - `elu.out`
 - `elu_`
+- `elu_backward.grad_input`
+- `elu_backward`
 - `elu`
 - `embedding_dense_backward`
 - `empty.memory_format`
@@ -323,6 +371,11 @@ Total amount of ops: 710
 - `hardtanh`
 - `histc.out`
 - `histc`
+- `hypot.out`
+- `hypot_`
+- `hypot`
+- `im2col.out`
+- `im2col`
 - `index.Tensor_out`
 - `index.Tensor`
 - `index_add.out`
@@ -342,6 +395,7 @@ Total amount of ops: 710
 - `isin.Tensor_Scalar`
 - `isin.Tensor_Tensor_out`
 - `isin.Tensor_Tensor`
+- `isinf`
 - `isnan`
 - `le.Scalar_out`
 - `le.Scalar`
@@ -431,6 +485,8 @@ Total amount of ops: 710
 - `mean.names_out`
 - `mean.out`
 - `mean`
+- `median.dim_values`
+- `median`
 - `min.dim_min`
 - `min.dim`
 - `min.names_dim_min`
@@ -556,6 +612,8 @@ Total amount of ops: 710
 - `repeat_interleave.Tensor`
 - `replication_pad1d.out`
 - `replication_pad1d`
+- `replication_pad2d.out`
+- `replication_pad2d`
 - `replication_pad3d.out`
 - `replication_pad3d`
 - `resize_`

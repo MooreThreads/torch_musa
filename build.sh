@@ -1,6 +1,13 @@
 #!/bin/bash
 set -e
 
+# Environment variables used when building torch_musa
+#
+#   TORCH_MUSA_ARCH_LIST
+#     specify which MUSA architectures to build for.
+#     ie 'TORCH_MUSA_ARCH_LIST="21;22"'
+#
+
 CUR_DIR=$(
   cd $(dirname $0)
   pwd
@@ -9,7 +16,7 @@ TORCH_MUSA_HOME=$CUR_DIR
 PYTORCH_PATH=${PYTORCH_REPO_PATH:-$(realpath ${TORCH_MUSA_HOME}/../pytorch)}
 TORCH_PATCHES_DIR=${TORCH_MUSA_HOME}/torch_patches/
 KINETO_URL=${KINETO_URL:-https://github.com/MooreThreads/kineto.git}
-KINETO_TAG=v1.2.2
+KINETO_TAG=v1.2.3
 
 BUILD_WHEEL=0
 DEBUG_MODE=0

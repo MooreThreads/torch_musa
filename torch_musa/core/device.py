@@ -5,7 +5,7 @@ This package adds support for Moore Threads GPU device type implementation.
 # pylint: disable=W0622
 
 
-from typing import Any, Tuple, Optional
+from typing import Any, Tuple, Optional, List
 from functools import lru_cache
 import torch_musa._MUSAC
 from ._lazy_init import _lazy_init
@@ -203,3 +203,13 @@ def set_default_dtype(d):
 
     """
     torch_musa._MUSAC._set_default_dtype(d)
+
+
+def get_arch_list() -> List[str]:
+    """Return list MUSA architectures this library was compiled for."""
+    if not is_available():
+        return []
+    arch_flags = torch_musa._MUSAC._musa_getArchFlags()
+    if arch_flags is None:
+        return []
+    return arch_flags.split()

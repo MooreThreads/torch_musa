@@ -305,31 +305,29 @@ void UnaryOut(
 #define DEFINE_ACTIVATE_OP(op_name, mode) \
   DEFINE_ACTIVATE_OP_ARGS(op_name, mode, 0., 0.)
 
-DEFINE_ACTIVATE_OP(Relu, ::musa::dnn::Unary::Mode::RELU)
-DEFINE_ACTIVATE_OP(Silu, ::musa::dnn::Unary::Mode::SILU)
-DEFINE_ACTIVATE_OP(Sqrt, ::musa::dnn::Unary::Mode::SQRT)
-DEFINE_ACTIVATE_OP(Round, ::musa::dnn::Unary::Mode::ROUND)
-DEFINE_ACTIVATE_OP(Rsqrt, ::musa::dnn::Unary::Mode::RSQRT)
-DEFINE_ACTIVATE_OP(HardSwish, ::musa::dnn::Unary::Mode::HARDSWISH)
-DEFINE_ACTIVATE_OP(Tanh, ::musa::dnn::Unary::Mode::TANH)
-DEFINE_ACTIVATE_OP(Tan, ::musa::dnn::Unary::Mode::TAN)
-DEFINE_ACTIVATE_OP(Sigmoid, ::musa::dnn::Unary::Mode::SIGMOID)
-DEFINE_ACTIVATE_OP(Exp, ::musa::dnn::Unary::Mode::EXP)
-DEFINE_ACTIVATE_OP(Sin, ::musa::dnn::Unary::Mode::SIN)
-DEFINE_ACTIVATE_OP(Cos, ::musa::dnn::Unary::Mode::COS)
-DEFINE_ACTIVATE_OP(Abs, ::musa::dnn::Unary::Mode::ABS)
-DEFINE_ACTIVATE_OP(Acos, ::musa::dnn::Unary::Mode::ACOS)
-DEFINE_ACTIVATE_OP(Atan, ::musa::dnn::Unary::Mode::ATAN)
-DEFINE_ACTIVATE_OP(Ceil, ::musa::dnn::Unary::Mode::CEIL)
-DEFINE_ACTIVATE_OP(Log, ::musa::dnn::Unary::Mode::LOG)
-DEFINE_ACTIVATE_OP(Log10, ::musa::dnn::Unary::Mode::LOG10)
-DEFINE_ACTIVATE_OP(Log2, ::musa::dnn::Unary::Mode::LOG2)
-DEFINE_ACTIVATE_OP(Floor, ::musa::dnn::Unary::Mode::FLOOR)
-DEFINE_ACTIVATE_OP_ARGS(
-    HardSigmoid,
-    ::musa::dnn::Unary::Mode::HARDSIGMOID,
-    0.166667,
-    0.5)
+DEFINE_ACTIVATE_OP(Relu, UNARY_MODE::RELU)
+DEFINE_ACTIVATE_OP(Silu, UNARY_MODE::SILU)
+DEFINE_ACTIVATE_OP(Sqrt, UNARY_MODE::SQRT)
+DEFINE_ACTIVATE_OP(Round, UNARY_MODE::ROUND)
+DEFINE_ACTIVATE_OP(Rsqrt, UNARY_MODE::RSQRT)
+DEFINE_ACTIVATE_OP(Mish, UNARY_MODE::MISH)
+DEFINE_ACTIVATE_OP(HardSwish, UNARY_MODE::HARDSWISH)
+DEFINE_ACTIVATE_OP(Tanh, UNARY_MODE::TANH)
+DEFINE_ACTIVATE_OP(Tan, UNARY_MODE::TAN)
+DEFINE_ACTIVATE_OP(Sigmoid, UNARY_MODE::SIGMOID)
+DEFINE_ACTIVATE_OP(Exp, UNARY_MODE::EXP)
+DEFINE_ACTIVATE_OP(Sin, UNARY_MODE::SIN)
+DEFINE_ACTIVATE_OP(Cos, UNARY_MODE::COS)
+DEFINE_ACTIVATE_OP(Abs, UNARY_MODE::ABS)
+DEFINE_ACTIVATE_OP(Acos, UNARY_MODE::ACOS)
+DEFINE_ACTIVATE_OP(Atan, UNARY_MODE::ATAN)
+DEFINE_ACTIVATE_OP(Ceil, UNARY_MODE::CEIL)
+DEFINE_ACTIVATE_OP(Log, UNARY_MODE::LOG)
+DEFINE_ACTIVATE_OP(Log10, UNARY_MODE::LOG10)
+DEFINE_ACTIVATE_OP(Log2, UNARY_MODE::LOG2)
+DEFINE_ACTIVATE_OP(Floor, UNARY_MODE::FLOOR)
+DEFINE_ACTIVATE_OP(Erf, UNARY_MODE::ERF)
+DEFINE_ACTIVATE_OP_ARGS(HardSigmoid, UNARY_MODE::HARDSIGMOID, 0.166667, 0.5)
 
 #define SCALAR_COMPARISON(op_name, mode)                         \
   Tensor& op_name##Out(                                          \
@@ -376,7 +374,7 @@ at::Tensor Elu(
   return Unary(__func__, self, [&](::musa::dnn::Unary& op) {
     auto negcoef = alpha.to<float>() * scale.to<float>();
     op.SetAlpha(negcoef);
-    op.SetMode(::musa::dnn::Unary::Mode::ELU);
+    op.SetMode(UNARY_MODE::ELU);
   });
 }
 at::Tensor& Elu_(
@@ -388,7 +386,7 @@ at::Tensor& Elu_(
   Unary_(__func__, self, [&](::musa::dnn::Unary& op) {
     auto negcoef = alpha.to<float>() * scale.to<float>();
     op.SetAlpha(negcoef);
-    op.SetMode(::musa::dnn::Unary::Mode::ELU);
+    op.SetMode(UNARY_MODE::ELU);
   });
   return self;
 }
@@ -403,7 +401,33 @@ at::Tensor& EluOut(
   UnaryOut(__func__, result, self, [&](::musa::dnn::Unary& op) {
     auto negcoef = alpha.to<float>() * scale.to<float>();
     op.SetAlpha(negcoef);
-    op.SetMode(::musa::dnn::Unary::Mode::ELU);
+    op.SetMode(UNARY_MODE::ELU);
+  });
+  return result;
+}
+
+at::Tensor Softplus(
+    const at::Tensor& self,
+    const c10::Scalar& beta,
+    const c10::Scalar& threshold) {
+  const c10::musa::MUSAGuard device_guard(self.device());
+  return Unary(__func__, self, [&](::musa::dnn::Unary& op) {
+    op.SetAlpha(beta.to<float>());
+    op.SetBeta(threshold.to<float>());
+    op.SetMode(::musa::dnn::Unary::Mode::SOFTPLUS);
+  });
+}
+
+at::Tensor& SoftplusOut(
+    const at::Tensor& self,
+    const c10::Scalar& beta,
+    const c10::Scalar& threshold,
+    at::Tensor& result) {
+  const c10::musa::MUSAGuard device_guard(self.device());
+  UnaryOut(__func__, result, self, [&](::musa::dnn::Unary& op) {
+    op.SetAlpha(beta.to<float>());
+    op.SetBeta(threshold.to<float>());
+    op.SetMode(::musa::dnn::Unary::Mode::SOFTPLUS);
   });
   return result;
 }
@@ -411,8 +435,8 @@ at::Tensor& EluOut(
 Tensor Gelu(const Tensor& self, c10::string_view approximate) {
   auto approximate_type = at::native::get_gelutype_enum(approximate);
   auto mode = approximate_type == at::native::GeluType::None
-      ? ::musa::dnn::Unary::Mode::GELU
-      : ::musa::dnn::Unary::Mode::GELU_TANH;
+      ? UNARY_MODE::GELU
+      : UNARY_MODE::GELU_TANH;
 
   MUSA_TENSOR_TYPE_CHECK(self);
   const c10::musa::MUSAGuard device_guard(self.device());
@@ -424,8 +448,8 @@ Tensor Gelu(const Tensor& self, c10::string_view approximate) {
 Tensor& Gelu_(Tensor& self, c10::string_view approximate) {
   auto approximate_type = at::native::get_gelutype_enum(approximate);
   auto mode = approximate_type == at::native::GeluType::None
-      ? ::musa::dnn::Unary::Mode::GELU
-      : ::musa::dnn::Unary::Mode::GELU_TANH;
+      ? UNARY_MODE::GELU
+      : UNARY_MODE::GELU_TANH;
   MUSA_TENSOR_TYPE_CHECK(self);
   const c10::musa::MUSAGuard device_guard(self.device());
   Unary(__func__, self, [&](::musa::dnn::Unary& op) {
@@ -440,37 +464,11 @@ Tensor& GeluOut(
     Tensor& output) {
   auto approximate_type = at::native::get_gelutype_enum(approximate);
   auto mode = approximate_type == at::native::GeluType::None
-      ? ::musa::dnn::Unary::Mode::GELU
-      : ::musa::dnn::Unary::Mode::GELU_TANH;
+      ? UNARY_MODE::GELU
+      : UNARY_MODE::GELU_TANH;
   const c10::musa::MUSAGuard device_guard(self.device());
   UnaryOut(__func__, output, self, [&](::musa::dnn::Unary& op) {
     CHECK_MUDNN_STATUS(op.SetMode(mode), "SetMode");
-  });
-  return output;
-}
-
-Tensor Reciprocal(const Tensor& self) {
-  const c10::musa::MUSAGuard device_guard(self.device());
-  return Unary(__func__, self, [&](::musa::dnn::Unary& op) {
-    CHECK_MUDNN_STATUS(op.SetAlpha(-1.), "SetAlpha");
-    CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::POW), "SetMode");
-  });
-}
-
-Tensor& Reciprocal_(Tensor& self) {
-  const c10::musa::MUSAGuard device_guard(self.device());
-  Unary_(__func__, self, [&](::musa::dnn::Unary& op) {
-    CHECK_MUDNN_STATUS(op.SetAlpha(-1.), "SetAlpha");
-    CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::POW), "SetMode");
-  });
-  return self;
-}
-
-Tensor& ReciprocalOut(const Tensor& self, Tensor& output) {
-  const c10::musa::MUSAGuard device_guard(self.device());
-  UnaryOut(__func__, output, self, [&](::musa::dnn::Unary& op) {
-    CHECK_MUDNN_STATUS(op.SetAlpha(-1.), "SetAlpha");
-    CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::POW), "SetMode");
   });
   return output;
 }
@@ -505,8 +503,7 @@ void NegCall(
       const double alpha = val.value().to<double>();
       UnaryCall(op_name, out, input, [&](::musa::dnn::Unary& op) {
         CHECK_MUDNN_STATUS(op.SetAlpha(alpha), "SetAlpha");
-        CHECK_MUDNN_STATUS(
-            op.SetMode(::musa::dnn::Unary::Mode::MUL), "SetMode");
+        CHECK_MUDNN_STATUS(op.SetMode(UNARY_MODE::MUL), "SetMode");
       });
       break;
     }
@@ -515,8 +512,7 @@ void NegCall(
       const int64_t alpha = val.value().to<int64_t>();
       UnaryCall(op_name, out, input, [&](::musa::dnn::Unary& op) {
         CHECK_MUDNN_STATUS(op.SetAlpha(alpha), "SetAlpha");
-        CHECK_MUDNN_STATUS(
-            op.SetMode(::musa::dnn::Unary::Mode::MUL), "SetMode");
+        CHECK_MUDNN_STATUS(op.SetMode(UNARY_MODE::MUL), "SetMode");
       });
       break;
     }
@@ -579,7 +575,7 @@ Tensor PowScalar(const Tensor& self, const Scalar& value) {
   const c10::musa::MUSAGuard device_guard(self.device());
   return Unary(__func__, self, [&](::musa::dnn::Unary& op) {
     CHECK_MUDNN_STATUS(op.SetAlpha(value.to<double>()), "SetAlpha");
-    CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::POW), "SetMode");
+    CHECK_MUDNN_STATUS(op.SetMode(UNARY_MODE::POW), "SetMode");
   });
 }
 
@@ -587,7 +583,7 @@ Tensor& PowScalar_(Tensor& self, const Scalar& value) {
   const c10::musa::MUSAGuard device_guard(self.device());
   Unary_("pow_.Scalar", self, [&](::musa::dnn::Unary& op) {
     CHECK_MUDNN_STATUS(op.SetAlpha(value.to<double>()), "SetAlpha");
-    CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::POW), "SetMode");
+    CHECK_MUDNN_STATUS(op.SetMode(UNARY_MODE::POW), "SetMode");
   });
   return self;
 }
@@ -596,7 +592,7 @@ Tensor& PowScalarOut(const Tensor& self, const Scalar& value, Tensor& output) {
   const c10::musa::MUSAGuard device_guard(self.device());
   UnaryOut("pow.Tensor_Scalar_out", output, self, [&](::musa::dnn::Unary& op) {
     CHECK_MUDNN_STATUS(op.SetAlpha(value.to<double>()), "SetAlpha");
-    CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::POW), "SetMode");
+    CHECK_MUDNN_STATUS(op.SetMode(UNARY_MODE::POW), "SetMode");
   });
   return output;
 }
@@ -605,8 +601,7 @@ Tensor LeakyRelu(const Tensor& input, const Scalar& neg_slope) {
   const c10::musa::MUSAGuard device_guard(input.device());
   return Unary(__func__, input, [&](::musa::dnn::Unary& op) {
     CHECK_MUDNN_STATUS(op.SetAlpha(neg_slope.to<double>()), "SetAlpha");
-    CHECK_MUDNN_STATUS(
-        op.SetMode(::musa::dnn::Unary::Mode::LEAKY_RELU), "SetMode");
+    CHECK_MUDNN_STATUS(op.SetMode(UNARY_MODE::LEAKY_RELU), "SetMode");
   });
 }
 
@@ -614,8 +609,7 @@ Tensor& LeakyRelu_(Tensor& input, const Scalar& neg_slope) {
   const c10::musa::MUSAGuard device_guard(input.device());
   Unary_("leaky_relu_", input, [&](::musa::dnn::Unary& op) {
     CHECK_MUDNN_STATUS(op.SetAlpha(neg_slope.to<double>()), "SetAlpha");
-    CHECK_MUDNN_STATUS(
-        op.SetMode(::musa::dnn::Unary::Mode::LEAKY_RELU), "SetMode");
+    CHECK_MUDNN_STATUS(op.SetMode(UNARY_MODE::LEAKY_RELU), "SetMode");
   });
   return input;
 }
@@ -627,8 +621,7 @@ Tensor& LeakyReluOut(
   const c10::musa::MUSAGuard device_guard(input.device());
   UnaryOut("leaky_relu.out", output, input, [&](::musa::dnn::Unary& op) {
     CHECK_MUDNN_STATUS(op.SetAlpha(neg_slope.to<double>()), "SetAlpha");
-    CHECK_MUDNN_STATUS(
-        op.SetMode(::musa::dnn::Unary::Mode::LEAKY_RELU), "SetMode");
+    CHECK_MUDNN_STATUS(op.SetMode(UNARY_MODE::LEAKY_RELU), "SetMode");
   });
   return output;
 }
@@ -703,9 +696,59 @@ at::Tensor PRelu(const at::Tensor& self, const at::Tensor& weight) {
   return at::native::_prelu_kernel_backward(grad_output, self, weight);
 }
 
+#if defined(TORCH_MUSA_ARCH) && TORCH_MUSA_ARCH >= 310
+#define _AT_DISPATCH_INF_TYPES(TYPE, NAME, ...) \
+  AT_DISPATCH_FLOATING_TYPES_AND4(              \
+      kHalf, kBFloat16, kFloat8_e5m2, kFloat8_e4m3fn, TYPE, NAME, __VA_ARGS__)
+#else
+#define _AT_DISPATCH_INF_TYPES(TYPE, NAME, ...) \
+  AT_DISPATCH_FLOATING_TYPES_AND2(kHalf, kBFloat16, TYPE, NAME, __VA_ARGS__)
+#endif
+
 at::Tensor IsNan(const at::Tensor& self) {
   // DeviceGuard omitted
-  return self != self;
+  if C10_UNLIKELY (self.numel() == 0) {
+    return at::empty_like(self, self.options().dtype(at::ScalarType::Bool));
+  }
+
+  return _AT_DISPATCH_INF_TYPES(self.scalar_type(), "isnan", [&]() {
+    at::Tensor result =
+        at::empty_like(self, self.options().dtype(at::ScalarType::Bool));
+    auto in = CreateMUTensor(self);
+    auto out = CreateMUTensor(result);
+    muHandle& h = GetMudnnHandle();
+    ::musa::dnn::Unary op;
+    CHECK_MUDNN_STATUS(op.SetMode(UNARY_MODE::IS_NAN), "SetMode");
+    CHECK_MUDNN_STATUS(op.Run(h, out, in), "Run isnan");
+    return result;
+  });
+}
+
+at::Tensor IsInf(const at::Tensor& self) {
+  // DeviceGuard omitted
+  // Note: Integral tensor values are never infinite
+  if C10_UNLIKELY (self.numel() == 0) {
+    return at::empty_like(self, self.options().dtype(at::ScalarType::Bool));
+  }
+  if (c10::isIntegralType(self.scalar_type(), /*includeBool=*/true)) {
+    return at::zeros_like(self, at::kBool, at::MemoryFormat::Preserve);
+  }
+  // Note: a complex value is infinite when either part is infinite
+  if (self.is_complex()) {
+    return at::isinf(at::real(self)).__ior__(at::isinf(at::imag(self)));
+  }
+
+  return _AT_DISPATCH_INF_TYPES(self.scalar_type(), "isinf", [&]() {
+    at::Tensor result =
+        at::empty_like(self, self.options().dtype(at::ScalarType::Bool));
+    auto in = CreateMUTensor(self);
+    auto out = CreateMUTensor(result);
+    muHandle& h = GetMudnnHandle();
+    ::musa::dnn::Unary op;
+    CHECK_MUDNN_STATUS(op.SetMode(UNARY_MODE::IS_INF), "SetMode");
+    CHECK_MUDNN_STATUS(op.Run(h, out, in), "Run isinf");
+    return result;
+  });
 }
 
 Tensor HardSwishBwd(const Tensor& grad_output, const Tensor& self) {

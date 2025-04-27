@@ -4,7 +4,7 @@
 #include <ATen/core/Tensor.h>
 
 #include "torch_musa/csrc/aten/mudnn/Handle.h"
-#include "torch_musa/csrc/aten/musa/MUSAMarcos.muh"
+#include "torch_musa/csrc/aten/musa/MUSAMacros.muh"
 #include "torch_musa/csrc/aten/musa/MUSAMath.muh"
 #include "torch_musa/csrc/aten/ops/Embedding.h"
 #include "torch_musa/csrc/aten/ops/musa/EmbeddingBagHelper.muh"

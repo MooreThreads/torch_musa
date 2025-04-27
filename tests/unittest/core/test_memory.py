@@ -4,6 +4,7 @@
 # pylint: disable=invalid-name, import-outside-toplevel, unspecified-encoding, too-many-nested-block, unused-argument
 # pylint: disable=too-many-nested-blocks, unrecognized-inline-option
 
+import os
 import pytest
 import torch
 from torch import nn
@@ -14,10 +15,20 @@ from torch_musa import testing
 from torch_musa.testing import get_cycles_per_ms
 
 
+def expandable_segments_enabled():
+    musa_alloc_conf = os.getenv("PYTORCH_MUSA_ALLOC_CONF", None)
+    if musa_alloc_conf:
+        config = musa_alloc_conf.split(":")
+        if config[0] == "expandable_segments" and config[1] == "True":
+            return True
+
+    return False
+
+
 def test_single_op():
     """Test a single operator"""
     torch.musa.empty_cache()
-    torch.musa.reset_peak_stats()
+    torch.musa.reset_peak_memory_stats()
     input_data = torch.randn(1024, 1024).to("musa")
     torch.matmul(input_data, input_data)
 
@@ -34,7 +45,7 @@ def test_single_op():
 def test_multiple_ops():
     """Test multiple ops"""
     torch.musa.empty_cache()
-    torch.musa.reset_peak_stats()
+    torch.musa.reset_peak_memory_stats()
     input_data = torch.randn(1024 * 4, 1024 * 4).to(
         "musa"
     )  # 16 * 1024 * 1024 * 4 = 64MB
@@ -51,15 +62,19 @@ def test_multiple_ops():
     allocated = torch.musa.memory_allocated()
     reserved = torch.musa.memory_reserved()
     assert m_allocated == 192 * 1024 * 1024  # maximally allocated 192MB
-    assert m_reserved == 192 * 1024 * 1024  # maximally reserved 192MB
     assert allocated == 128 * 1024 * 1024  # allocated 128MB
-    assert reserved == 192 * 1024 * 1024  # reserved 192MB
+    if expandable_segments_enabled():
+        assert m_reserved == 200 * 1024 * 1024  # _segment_size will be 20MB in es
+        assert reserved == 200 * 1024 * 1024
+    else:
+        assert m_reserved == 192 * 1024 * 1024  # maximally reserved 192MB
+        assert reserved == 192 * 1024 * 1024  # reserved 192MB
 
 
 def test_single_device_ops():
     """Test memory stats ops when specify single device"""
     torch.musa.empty_cache()
-    torch.musa.reset_peak_stats()
+    torch.musa.reset_peak_memory_stats()
     input_data_small = torch.randn(1024 * 4, 1024 * 4).to(
         "musa:0"
     )  # 16 * 1024 * 1024 * 4 = 64MB
@@ -87,28 +102,30 @@ def test_single_device_ops():
 def test_all_devices_ops():
     """Test memory stats ops when specify all devices"""
     torch.musa.empty_cache()
-    torch.musa.reset_peak_stats()
+    torch.musa.reset_peak_memory_stats()
     tensor_0 = torch.randn(1024 * 4, 1024 * 4).to(
         "musa:0"
     )  # 16 * 1024 * 1024 * 4 = 64MB
     tensor_1 = torch.randn(1024 * 8, 1024 * 8).to(
         "musa:1"
     )  # 64 * 1024 * 1024 * 4 = 256MB
-    summary = torch.musa.memory_summary(all_device=True)
-    assert "reserved" in summary
-    assert "[ALL]" in summary
 
-    stats = torch.musa.memory_stats_all()
-    assert isinstance(stats, dict)
+    m_allocated = torch.musa.max_memory_allocated(0) + torch.musa.max_memory_allocated(
+        1
+    )
+    m_reserved = torch.musa.max_memory_reserved(0) + torch.musa.max_memory_reserved(1)
+    allocated = torch.musa.memory_allocated(0) + torch.musa.memory_allocated(1)
+    reserved = torch.musa.memory_reserved(0) + torch.musa.memory_reserved(1)
 
-    m_allocated = torch.musa.max_memory_allocated(all_device=True)
-    m_reserved = torch.musa.max_memory_reserved(all_device=True)
-    allocated = torch.musa.memory_allocated(all_device=True)
-    reserved = torch.musa.memory_reserved(all_device=True)
-    assert m_allocated == 256 * 1024 * 1024  # maximally allocated 256MB
-    assert m_reserved == 256 * 1024 * 1024  # maximally reserved 256MB
-    assert allocated == (64 + 256) * 1024 * 1024  # allocated 320MB
-    assert reserved == (64 + 256) * 1024 * 1024  # reserved 320MB
+    assert m_allocated == 320 * 1024 * 1024  # maximally allocated 320MB
+    assert allocated == 320 * 1024 * 1024  # allocated 320MB
+
+    if expandable_segments_enabled():
+        assert m_reserved == 340 * 1024 * 1024  # _segment_size will be 20MB in es
+        assert reserved == 340 * 1024 * 1024  # _segment_size will be 20MB in es
+    else:
+        assert m_reserved == 320 * 1024 * 1024  # maximally reserved 320MB
+        assert reserved == 320 * 1024 * 1024  # reserved 320MB
 
 
 def test_caching_pinned_memory():
@@ -298,13 +315,12 @@ def test_matmul_memory_use():
     assert bmm_mem == matmul_mem
 
 
-@pytest.mark.skipif(True, reason="Hang in CI, to be fixed")
 def test_memory_snapshot():
     try:
         from random import randint
 
         torch.musa.memory.empty_cache()
-        torch.musa.memory._record_memory_history(True)
+        torch.musa.memory._record_memory_history("state", stacks="python")
         x = torch.rand(311, 411, device="musa")
 
         # create a bunch of tensors that all will tile into the
@@ -323,11 +339,9 @@ def test_memory_snapshot():
         found_it = False
         for seg in ss["segments"]:
             for b in seg["blocks"]:
-                if "history" in b:
-                    for h in b["history"]:
-                        if h["real_size"] == 311 * 411 * 4:
-                            assert "test_memory" in h["frames"][0]["filename"]
-                            found_it = True
+                if b["requested_size"] == 311 * 411 * 4:
+                    assert "test_memory" in b["frames"][0]["filename"]
+                    found_it = True
         assert found_it
 
         import tempfile
@@ -340,31 +354,32 @@ def test_memory_snapshot():
         del x
         torch.musa.empty_cache()
         ss = torch.musa.memory._snapshot()
-        assert ss["device_traces"][0][-1]["action"] == "segment_free"
+        if expandable_segments_enabled():
+            assert ss["device_traces"][0][-1]["action"] == "segment_unmap"
+        else:
+            assert ss["device_traces"][0][-1]["action"] == "segment_free"
 
     finally:
-        torch.musa.memory._record_memory_history(False)
+        torch.musa.memory._record_memory_history(None)
 
 
 def test_memory_snapshot_with_cpp():
     try:
         torch.musa.memory.empty_cache()
-        torch.musa.memory._record_memory_history(True, _enable_expensive_cpp=True)
+        torch.musa.memory._record_memory_history("state", stacks="all")
         x = torch.rand(311, 411, device="musa")
 
         ss = torch.musa.memory._snapshot()["segments"]
         found_it = False
         for seg in ss:
             for b in seg["blocks"]:
-                if "history" in b:
-                    for h in b["history"]:
-                        if h["real_size"] == 311 * 411 * 4:
-                            assert len(h["cpp_frames"]) > 0
-                            found_it = True
+                if b["requested_size"] == 311 * 411 * 4:
+                    assert "::rand" in str(b["frames"])
+                    found_it = True
         assert found_it
 
     finally:
-        torch.musa.memory._record_memory_history(False)
+        torch.musa.memory._record_memory_history(None)
 
 
 def test_notifies_oom():

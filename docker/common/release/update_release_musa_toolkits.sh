@@ -37,9 +37,13 @@ echo -e "\033[31mWarning: update musa toolkit will uninstall mccl and mudnn! \03
 rm -rf /usr/local/musa*
 musa_toolkit_path=./release_musa_toolkits_${DATE}
 mkdir -p ${musa_toolkit_path}
-wget --no-check-certificate https://oss.mthreads.com/release-rc/cuda_compatible/${TAG}/${ARCH}/musa_toolkits_${TAG}.tar.gz -P ${musa_toolkit_path}
 
-tar -zxvf ${musa_toolkit_path}/musa_toolkits_${TAG}.tar.gz -C ${musa_toolkit_path}
+OSS_PREFIX=https://oss.mthreads.com/release-ci/computeQA/cuda_compatible/CI/release_KUAE_2.0_for_PH1_M3D/2025-04-08
+MUSA_TOOLKITS_URL="${OSS_PREFIX}/musa_toolkits_install_full.tar.gz"
+
+wget --no-check-certificate ${MUSA_TOOLKITS_URL} -P ${musa_toolkit_path}
+
+tar -zxvf ${musa_toolkit_path}/musa_toolkits_install_full.tar.gz -C ${musa_toolkit_path}
 pushd ${musa_toolkit_path}/musa_toolkits_install
 bash ./install.sh 
 popd

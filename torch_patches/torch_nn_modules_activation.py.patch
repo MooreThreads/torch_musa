@@ -1,0 +1,79 @@
+diff --git a/torch/nn/modules/activation.py b/torch/nn/modules/activation.py
+index 7ba235f..87051be 100644
+--- a/torch/nn/modules/activation.py
++++ b/torch/nn/modules/activation.py
+@@ -12,7 +12,7 @@ from .. import functional as F
+ __all__ = ['Threshold', 'ReLU', 'RReLU', 'Hardtanh', 'ReLU6', 'Sigmoid', 'Hardsigmoid', 'Tanh',
+            'SiLU', 'Mish', 'Hardswish', 'ELU', 'CELU', 'SELU', 'GLU', 'GELU', 'Hardshrink', 'LeakyReLU',
+            'LogSigmoid', 'Softplus', 'Softshrink', 'MultiheadAttention', 'PReLU', 'Softsign', 'Tanhshrink',
+-           'Softmin', 'Softmax', 'Softmax2d', 'LogSoftmax']
++           'Softmin', 'Softmax', 'Softmax2d', 'LogSoftmax', 'RoPE', 'SwishGLU']
+ 
+ 
+ class Threshold(Module):
+@@ -1589,3 +1589,65 @@ class LogSoftmax(Module):
+ 
+     def extra_repr(self):
+         return f'dim={self.dim}'
++
++
++class RoPE(Module):
++    r"""Applies Rotary Positional Embedding function:
++
++    Args:
++        freq_cis: the position tensor to fuse with input
++        batch_first: if True the shape of input is [max_seq_len, batch_size, head_num, dim],
++            otherwise is [batch_size, max_seq_len, head_num, dim], Default: ``False``
++        rotary_interleaved: can rotary interleaved. Default: ``False``
++
++    Shape:
++        - Input: the dim of input must be match (max_seq_len, batch_size, head_num, dim)
++        - Output: :math:`(*)`, same shape as the input.
++    Examples::
++
++        >>> m = nn.RoPE(freq_cis)
++        >>> input = torch.randn(2)
++        >>> output = m(input)
++    """
++
++    rotary_interleaved: Optional[bool]
++    batch_first: Optional[bool]
++    freq_cis: Optional[torch.Tensor]
++
++    def __init__(self, freq_cis: Tensor,
++                rotary_interleaved: Optional[bool]=False,
++                batch_first: Optional[bool]=False) -> None:
++        super().__init__()
++        self.register_buffer("freq_cis", freq_cis)
++        self.rotary_interleaved = rotary_interleaved
++        self.batch_first = batch_first
++
++    def forward(self, input: Tensor) -> Tensor:
++        return F.rope(
++            input=input,
++            freq_cis=self.freq_cis,
++            rotary_interleaved=self.rotary_interleaved,
++            batch_first=self.batch_first
++        )
++
++
++class SwishGLU(Module):
++    r"""Applies the Swish Gated Linear Unit (SwishGLU) function, element-wise.
++    The SwishGLU function is also known as the swish_glu function.
++
++    .. math::
++        \text{SwishGLU}(x) = Swish(x[0]) * \(x[1]), \text{where } \Swish(x) \text{ is silu.}
++
++    .. note::
++        See `GLU with Swish <https://arxiv.org/pdf/2002.05202v1>`
++
++    Shape:
++        - Input: must be 2 dim, and the last dimension must be an integer multiple of 2
++    Examples::
++
++        >>> m = nn.SwishGLU()
++        >>> input = torch.randn(2, 4)
++        >>> output = m(input)
++    """
++    def forward(self, input: Tensor) -> Tensor:
++        return F.swish_glu(input)

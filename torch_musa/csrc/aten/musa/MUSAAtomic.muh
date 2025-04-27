@@ -10,6 +10,36 @@ namespace musa {
 typedef unsigned long long ull;
 typedef __half float16_t;
 
+template <typename T>
+struct AtomicAddFPOp;
+
+template <>
+struct AtomicAddFPOp<at::BFloat16> {
+  inline __device__ at::BFloat16 operator()(
+      at::BFloat16* address,
+      at::BFloat16 val) {
+    uint32_t* address_as_ui =
+        (uint32_t*)((char*)address - ((size_t)address & 2));
+    uint32_t old = *address_as_ui;
+    uint32_t assumed;
+    bool uplo = (size_t)address & 2;
+
+    at::BFloat16 bsum;
+
+    do {
+      assumed = old;
+      bsum.x = uplo ? (old >> 16) : (old & 0xffff);
+      bsum = bsum + val;
+      old =
+          uplo ? (old & 0xffff) | (bsum.x << 16) : (old & 0xffff0000) | bsum.x;
+      old = atomicCAS(address_as_ui, assumed, old);
+    } while (assumed != old);
+    bsum.x = uplo ? (old >> 16) : (old & 0xffff);
+
+    return bsum.x;
+  }
+};
+
 #define ATOMIC_INTEGER_IMPL(NAME)                                              \
   template <typename T, size_t n>                                              \
   struct Atomic##NAME##IntegerImpl;                                            \
@@ -118,7 +148,7 @@ static inline __device__ void gpuAtomicAdd(
       reinterpret_cast<__mt_bfloat16*>(address),
       *reinterpret_cast<__mt_bfloat16*>(&val));
 #else
-  __float2bfloat16(0);
+  AtomicAddFPOp<at::BFloat16>()(address, val);
 #endif
 }
 

@@ -70,6 +70,9 @@ inline bool BinaryDivFallThroughCPU(MusaTensorIterator& iter) {
   return BinaryMulFallThroughCPU(iter);
 }
 
+std::pair<ScalarType, ScalarType> BinaryAddSuggestInputTypes(
+    MusaTensorIterator& iter);
+
 std::pair<ScalarType, ScalarType> BinaryTrueDivSuggestInputTypes(
     MusaTensorIterator& iter);
 

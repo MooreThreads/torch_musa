@@ -47,7 +47,8 @@ void SetUpBinaryFloatConfig(TensorIteratorConfig& config) {
   config.promote_integer_inputs_to_float(true);
 }
 
-void AddMeta(
+template <bool AutoPromoteInputs = true>
+void AddSubMeta(
     MusaTensorIterator& iter,
     const Tensor& out,
     const Tensor& lhs,
@@ -69,12 +70,22 @@ void AddMeta(
     return promote_type;
   };
   iter.set_musa_common_dtype_lifter(dtype_lifter);
+  iter.musa_promote_inputs_to_common_dtype(AutoPromoteInputs);
   {
     TensorIteratorConfig config;
     SetUpBinaryConfig(config);
     iter.build(config);
   }
   native::alpha_check(iter.dtype(), alpha);
+}
+
+void AddMeta(
+    MusaTensorIterator& iter,
+    const Tensor& out,
+    const Tensor& lhs,
+    const Tensor& rhs,
+    const Scalar& alpha) {
+  AddSubMeta<false>(iter, out, lhs, rhs, alpha);
 }
 
 void SubMeta(
@@ -84,7 +95,7 @@ void SubMeta(
     const Tensor& rhs,
     const Scalar& alpha) {
   native::sub_check(lhs, rhs);
-  AddMeta(iter, out, lhs, rhs, alpha);
+  AddSubMeta<true>(iter, out, lhs, rhs, alpha);
 }
 
 template <UNARY_MODE mode>
@@ -104,7 +115,20 @@ void AddImpl(
     MusaTensorIterator& iter,
     const Scalar& alpha,
     const std::string& op_name) {
-  if (iter.is_cpu_scalar(1)) {
+  const bool l_is_scalar = iter.is_cpu_scalar(1);
+  const bool r_is_scalar = iter.is_cpu_scalar(2);
+
+  const auto [suggest_ltype, suggest_rtype] = BinaryAddSuggestInputTypes(iter);
+  if (!l_is_scalar && suggest_ltype != iter.dtype(1)) {
+    const auto new_lhs = iter.tensor(1).to(suggest_ltype);
+    iter.replace_input(0, new_lhs);
+  }
+  if (!r_is_scalar && suggest_rtype != iter.dtype(2)) {
+    const auto new_rhs = iter.tensor(2).to(suggest_rtype);
+    iter.replace_input(1, new_rhs);
+  }
+
+  if (l_is_scalar) {
     const auto unary_alpha = iter.input(0).item();
     if (!alpha.equal(1)) {
       const auto& rhs = iter.input(1);
@@ -119,7 +143,7 @@ void AddImpl(
     }
     iter.remove_operand(1);
     UnaryAddOrSub<UNARY_MODE::ADD>(iter, unary_alpha, op_name);
-  } else if (iter.is_cpu_scalar(2)) {
+  } else if (r_is_scalar) {
     const auto unary_alpha = CPUScalarMulScalar(iter.tensor(2), alpha);
     UnaryAddOrSub<UNARY_MODE::ADD>(iter, unary_alpha, op_name);
   } else if (alpha.equal(0)) {

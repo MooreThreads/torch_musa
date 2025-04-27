@@ -1,5 +1,5 @@
-#ifndef THMP_EVENT_INC
-#define THMP_EVENT_INC
+#ifndef TORCH_MUSA_CSRC_CORE_EVENT_H_
+#define TORCH_MUSA_CSRC_CORE_EVENT_H_
 
 #include <torch/csrc/python_headers.h>
 
@@ -16,4 +16,4 @@ inline bool THMPEvent_Check(PyObject* obj) {
   return THMPEventClass && PyObject_IsInstance(obj, THMPEventClass);
 }
 
-#endif // THMP_EVENT_INC
+#endif // TORCH_MUSA_CSRC_CORE_EVENT_H_

@@ -98,7 +98,7 @@ static PyObject* THMPStorageShareMusa(
   if (storage->data()) {
     // NOLINTNEXTLINE(cppcoreguidelines-init-variables)
     size_t base_size;
-    void* base_ptr = c10::musa::MUSACachingAllocator::GetBaseAllocation(
+    void* base_ptr = c10::musa::MUSACachingAllocator::getBaseAllocation(
         storage->mutable_data(), &base_size);
     ptrdiff_t offset_bytes = (char*)storage->data() - (char*)base_ptr;
 
@@ -206,7 +206,7 @@ static PyObject* THMPStorageNewSharedMusa(PyObject* _unused, PyObject* args) {
 
   std::string s_handle = THMPStorageBytesAsHandleString(_handle);
   std::shared_ptr<void> basePtr =
-      c10::musa::MUSACachingAllocator::GetIpcDevPtr(s_handle);
+      c10::musa::MUSACachingAllocator::getIpcDevPtr(s_handle);
 
   // Offset the basePtr to reconstruct the real storage
   // devPtr = basePtr + storage_offset

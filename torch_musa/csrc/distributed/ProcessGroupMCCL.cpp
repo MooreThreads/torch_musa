@@ -19,8 +19,12 @@ const std::map<at::ScalarType, mcclDataType_t> mcclDataType = {
     {at::kHalf, mcclFloat16},
     {at::kDouble, mcclFloat64},
     {at::kBool, mcclUint8},
-#if defined(TORCH_MUSA_ARCH) && TORCH_MUSA_ARCH >= 220
+#if MCCL_BF16_SUPPORTED
     {at::kBFloat16, mcclBfloat16},
+#if defined(TORCH_MUSA_ARCH) && TORCH_MUSA_ARCH >= 310 && ENABLE_FP8_COMM == 1
+    {at::kFloat8_e5m2, mcclFp8E5M2},
+    {at::kFloat8_e4m3fn, mcclFp8E4M3},
+#endif
 #endif
 };
 
@@ -348,7 +352,6 @@ void ProcessGroupMCCL::WorkMCCL::synchronizeStreams() {
     (*mcclEndEvents_)[i].block(currentStream);
   }
   if (avoidRecordStreams_) {
-    TORCH_CHECK(false, "Warning: MCCL_AVOID_RECORD_STREAMS has not supported.");
     stashed_for_allocator_safety_->clear();
   }
 }
@@ -1400,6 +1403,10 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::endCoalescing() {
   work->avoidRecordStreams_ = avoidRecordStreams_;
   work->opTimeout_ = options_->timeout;
   work->store_ = store_;
+  if (avoidRecordStreams_) {
+    work->stashed_for_allocator_safety_ =
+        std::make_shared<std::vector<at::Tensor>>();
+  }
 
   if (coalescing_state_ & CoalColl) {
     workEnqueue(work);
@@ -1415,7 +1422,10 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::collective(
     PreProcess pre,
     PostProcess post,
     OpType opType,
-    const char* profilingTitle) {
+    const char* profilingTitle,
+    bool avoidRecordStreams) {
+  // Environment setting by the user may add onto collective call's option
+  avoidRecordStreams |= avoidRecordStreams_;
   errorIfCapturingNonCapturableMCCL();
 
   // Bump collective counter
@@ -1463,7 +1473,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::collective(
   // Store references to outputs to be used by WorkMCCL::result and operator<<.
   work->outputs_ = std::make_shared<std::vector<at::Tensor>>(outputs);
 
-  if (avoidRecordStreams_) {
+  if (avoidRecordStreams) {
     work->stashed_for_allocator_safety_ =
         std::make_shared<std::vector<at::Tensor>>(inputs);
   }
@@ -1497,12 +1507,13 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::collective(
       // operations where `inputs' and `outputs' are not the same.
       //
       // See [Sync Streams].
-      if (!avoidRecordStreams_) {
-        c10::musa::MUSACachingAllocator::recordStream(
-            inputs[i].storage().data_ptr(), mcclStream);
-      } else {
-        // TODO(tyr): remove after test.
-        TORCH_CHECK(false, "Avoid record streams is not fully supported");
+      if (!avoidRecordStreams) {
+        if (!inputs[i].is_sparse()) {
+          c10::musa::MUSACachingAllocator::recordStream(
+              inputs[i].storage().data_ptr(), mcclStream);
+        } else {
+          TORCH_CHECK(false, "sparse tensor not fully supported");
+        }
       }
       C10D_MCCL_CHECK(
           fn(inputs[i], outputs[i], mcclComm->getMcclComm(), mcclStream),
@@ -1539,7 +1550,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::collective(
 
   // Set appropriate work parameters.
   work->blockingWait_ = blockingWait_;
-  work->avoidRecordStreams_ = avoidRecordStreams_;
+  work->avoidRecordStreams_ = avoidRecordStreams;
   work->opTimeout_ = options_->timeout;
   work->store_ = store_;
 
@@ -1569,10 +1580,11 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::pointToPoint(
     PreProcess pre,
     PostProcess post,
     const char* profilingTitle) {
-  TORCH_WARN_ONCE(
-      !avoidRecordStreams_,
-      "MCCL_AVOID_RECORD_STREAMS=1 has no effect for point-to-point "
-      "collectives.");
+  if (avoidRecordStreams_) {
+    TORCH_WARN_ONCE(
+        "TORCH_MCCL_AVOID_RECORD_STREAMS=1 has no effect for point-to-point ",
+        "collectives.");
+  }
   const auto devices = getDeviceList(tensors);
   std::string key;
   int p2pRank = 0, p2pTargetRank = 0;
@@ -1701,7 +1713,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::collective(
     std::vector<at::Tensor>& outputs,
     Fn fn,
     OpType opType,
-    const char* profilingTitle) {
+    const char* profilingTitle,
+    bool avoidRecordStreams) {
   return collective(
       inputs,
       outputs,
@@ -1710,7 +1723,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::collective(
          c10::intrusive_ptr<ProcessGroupMCCL::WorkMCCL>& work) {},
       [](std::vector<c10::musa::MUSAStream>&) {},
       opType,
-      profilingTitle);
+      profilingTitle,
+      avoidRecordStreams);
 }
 
 template <typename Fn>
@@ -1831,6 +1845,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::broadcast(
       std::vector<int64_t>(), // outSplitSizes
       this->getSize());
 
+  bool avoidRecordStreams = avoidRecordStreams_ || (!opts.asyncOp);
+
   return collective(
       tensors,
       tensors,
@@ -1848,7 +1864,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::broadcast(
             stream.stream());
       },
       OpType::BROADCAST,
-      "mccl:broadcast");
+      "mccl:broadcast",
+      avoidRecordStreams);
 }
 
 // _broadcast_oop adds an out-of-place broadcast in PGMCCL
@@ -2209,8 +2226,11 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::reduce_scatter(
         [&](std::vector<c10::musa::MUSAStream>& mcclStreams,
             c10::intrusive_ptr<ProcessGroupMCCL::WorkMCCL>& work) {
           if (avoidRecordStreams_) {
-            // TODO(tyr): Not supported!
-            TORCH_CHECK(false, "AvoidRecordStreams is not supported");
+            auto& v = work->stashed_for_allocator_safety_;
+            for (const auto i : c10::irange(inputTensors.size())) {
+              v->insert(
+                  v->end(), inputTensors[i].begin(), inputTensors[i].end());
+            }
           }
           // Copy the input tensors to the flattened inputs.
           for (const auto i : c10::irange(inputTensors.size())) {
@@ -2296,6 +2316,16 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::_reduce_scatter_base(
   auto outputs = std::vector<at::Tensor>{outputTensor};
 
   int dev_in_group = 0;
+  // for asyncOp = false, we don't want to record streams because we
+  // know that the NCCL stream will join back to the "current" stream right
+  // after this op. So we might just as well keep the stream ownership of the
+  // input/output tensors unchanged. The benefit would be that the
+  // allocation/free of the tensors would look deterministic to the "current"
+  // stream so that the caching allocator can reuse memory pool for this stream
+  // in a clever way. This setting is added for libraries like FSDP which uses
+  // `reduce_scatter_tensor`.
+  bool avoidRecordStreams = avoidRecordStreams_ || (!opts.asyncOp);
+
   return collective(
       inputs,
       outputs,
@@ -2303,7 +2333,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::_reduce_scatter_base(
           at::Tensor& output,
           mcclComm_t comm,
           c10::musa::MUSAStream& stream) {
-        if (!avoidRecordStreams_) {
+        if (!avoidRecordStreams) {
           c10::musa::MUSACachingAllocator::recordStream(
               output.storage().data_ptr(), stream);
         }
@@ -2323,7 +2353,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::_reduce_scatter_base(
          c10::intrusive_ptr<ProcessGroupMCCL::WorkMCCL>& work) {},
       [](std::vector<c10::musa::MUSAStream>&) {},
       OpType::_REDUCE_SCATTER_BASE,
-      "mccl:_reduce_scatter_base");
+      "mccl:_reduce_scatter_base",
+      avoidRecordStreams);
 }
 
 c10::intrusive_ptr<Work> ProcessGroupMCCL::reduce_scatter_tensor_coalesced(
@@ -2948,6 +2979,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::scatter(
       std::vector<int64_t>(), // outSplitSize
       this->getSize());
 
+  bool avoidRecordStreams = avoidRecordStreams_ || (!opts.asyncOp);
+
   return collective(
       outputTensors,
       inputs,
@@ -2957,7 +2990,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::scatter(
           c10::musa::MUSAStream& stream) {
         const auto root = opts.rootRank;
         if (getRank() == root) {
-          if (!avoidRecordStreams_) {
+          if (!avoidRecordStreams) {
             for (auto input : inputs) {
               c10::musa::MUSACachingAllocator::recordStream(
                   input.storage().data_ptr(), stream);
@@ -2967,7 +3000,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::scatter(
         return scatter_impl(inputs, outputTensors[0], comm, stream, root);
       },
       OpType::SCATTER,
-      "mccl:scatter");
+      "mccl:scatter",
+      avoidRecordStreams);
 }
 
 c10::intrusive_ptr<Work> ProcessGroupMCCL::recvAnysource(
@@ -2979,7 +3013,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::recvAnysource(
 c10::intrusive_ptr<Work> ProcessGroupMCCL::_allgather_base(
     at::Tensor& output_tensor,
     at::Tensor& input_tensor,
-    const AllgatherOptions& /*unused */) {
+    const AllgatherOptions& opts) {
   check_gpu_single_tensor(input_tensor);
   check_gpu_single_tensor(output_tensor);
 
@@ -2997,6 +3031,15 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::_allgather_base(
   auto inputs = std::vector<at::Tensor>{input_tensor};
   auto outputs = std::vector<at::Tensor>{output_tensor};
 
+  // for asyncOp = false, we don't want to record streams because we
+  // know that the MCCL stream will join back to the "current" stream right
+  // after this op. So we might just as well keep the stream ownership of the
+  // input/output tensors unchanged. The benefit would be that the
+  // allocation/free of the tensors would look deterministic to the "current"
+  // stream so that the caching allocator can reuse memory pool for this stream
+  // in a clever way.
+  bool avoidRecordStreams = avoidRecordStreams_ || (!opts.asyncOp);
+
   return collective(
       inputs,
       outputs,
@@ -3004,7 +3047,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::_allgather_base(
           at::Tensor& output,
           mcclComm_t comm,
           c10::musa::MUSAStream& stream) {
-        if (!avoidRecordStreams_) {
+        if (!avoidRecordStreams) {
           c10::musa::MUSACachingAllocator::recordStream(
               output.storage().data_ptr(), stream);
         }
@@ -3017,7 +3060,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::_allgather_base(
             stream.stream());
       },
       OpType::_ALLGATHER_BASE,
-      "mccl:_all_gather_base");
+      "mccl:_all_gather_base",
+      avoidRecordStreams);
 }
 
 #ifdef USE_MCCL_WITH_UCC
@@ -3037,8 +3081,11 @@ c10::intrusive_ptr<Backend> ProcessGroupMCCL::MCCLcreator(
     int rank,
     int size,
     std::chrono::milliseconds op_time_out) {
+  c10::intrusive_ptr<Options> options = Options::create();
+  options->timeout = op_time_out;
+
   return c10::make_intrusive<ProcessGroupMCCL>(
-      store.getUnderlyingStore(), rank, size);
+      store.getUnderlyingStore(), rank, size, options);
 }
 
 } // namespace c10d

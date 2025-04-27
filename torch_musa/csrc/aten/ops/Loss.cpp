@@ -3,6 +3,7 @@
 #include <ATen/NamedTensorUtils.h>
 #include <ATen/TensorUtils.h>
 #include <ATen/WrapDimUtils.h>
+#include <ATen/core/Reduction.h>
 #include <ATen/core/op_registration/adaption.h>
 #include <ATen/native/Resize.h>
 #include <torch/library.h>
@@ -20,6 +21,7 @@
 #include <ATen/ops/zeros_like.h>
 #endif
 
+#include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
@@ -468,6 +470,121 @@ at::Tensor& MseLossBwdGradInput(
   const OptionalDeviceGuard device_guard(device_of(self));
   return at::native::mse_loss_backward_out(
       grad_output, self, target, reduction, grad_input);
+}
+
+int64_t CrossEntropyLoss2dChoice(
+    const Tensor& self,
+    const Tensor& target,
+    const c10::optional<Tensor>& weight,
+    int64_t reduction,
+    int64_t ignore_index,
+    double label_smoothing) {
+  TORCH_CHECK(self.dim() == 2, "CrossEntropyLoss2d now only support 2D input");
+  const auto device_prop = at::musa::getDeviceProperties(self.get_device());
+
+  const bool device_support = (device_prop->major >= 3);
+  const bool is_valid_target = (target.dim() == 1);
+  const bool is_valid_self = at::isFloatingType(self.scalar_type());
+
+  if (device_support && is_valid_target && is_valid_self) {
+    return 1;
+  }
+  return 0;
+}
+
+Tensor FusedCrossEntropyLoss2dFwd(
+    const Tensor& self,
+    const Tensor& target,
+    const c10::optional<Tensor>& weight,
+    int64_t reduction,
+    int64_t ignore_index,
+    double label_smoothing) {
+  TORCH_CHECK(
+      self.size(0) == target.size(0),
+      "FusedCrossEntropyLoss2dFwd input and target's shapes don't match");
+  const auto device_guard = c10::musa::MUSAGuard(self.device());
+
+  at::Tensor wt = weight.value_or(Tensor());
+  at::Tensor output = at::empty({}, self.options());
+
+  muHandle& h = GetMudnnHandle();
+
+  ::musa::dnn::CrossEntropyLoss loss;
+  ::musa::dnn::CrossEntropyLoss::ReductionMode mode;
+  switch (reduction) {
+    case Reduction::Mean:
+      mode = ::musa::dnn::CrossEntropyLoss::ReductionMode::MEAN;
+      break;
+    case Reduction::Sum:
+      mode = ::musa::dnn::CrossEntropyLoss::ReductionMode::SUM;
+      break;
+    default:
+      mode = ::musa::dnn::CrossEntropyLoss::ReductionMode::NONE;
+      break;
+  }
+
+  muTensor in = CreateMUTensor(self.contiguous());
+  muTensor lab = CreateMUTensor(target.contiguous());
+  muTensor w = wt.numel() > 0 ? CreateMUTensor(wt) : muTensor();
+  muTensor out = CreateMUTensor(output);
+  CHECK_MUDNN_STATUS(loss.SetReductionMode(mode), "SetReductionMode");
+  CHECK_MUDNN_STATUS(
+      loss.SetLabelSmoothing(label_smoothing), "SetLabelSmoothing");
+  CHECK_MUDNN_STATUS(loss.SetIgnoreIndex(ignore_index), "SetIgnoreIndex");
+  CHECK_MUDNN_STATUS(loss.Run(h, out, in, lab, w, InternalMemAlloc), "Run");
+
+  return output;
+}
+
+Tensor FusedCrossEntropyLoss2dBwd(
+    const Tensor& grad_output,
+    const Tensor& self,
+    const Tensor& target,
+    const c10::optional<Tensor>& weight,
+    int64_t reduction,
+    int64_t ignore_index,
+    double label_smoothing) {
+  const auto device_guard = c10::musa::MUSAGuard(self.device());
+
+  at::Tensor wt = weight.value_or(Tensor());
+  at::Tensor grad_input = at::empty_like(
+      self, self.options().memory_format(at::MemoryFormat::Contiguous));
+
+  muHandle& h = GetMudnnHandle();
+
+  ::musa::dnn::CrossEntropyLoss loss;
+  ::musa::dnn::CrossEntropyLoss::ReductionMode mode;
+  switch (reduction) {
+    case Reduction::Mean:
+      mode = ::musa::dnn::CrossEntropyLoss::ReductionMode::MEAN;
+      TORCH_CHECK(
+          grad_output.numel() == 1,
+          "CrossEntropyBwd with reduction mean requires grad_output.numel() == 1");
+      break;
+    case Reduction::Sum:
+      mode = ::musa::dnn::CrossEntropyLoss::ReductionMode::SUM;
+      TORCH_CHECK(
+          grad_output.numel() == 1,
+          "CrossEntropyBwd with reduction sum requires grad_output.numel() == 1");
+      break;
+    default:
+      mode = ::musa::dnn::CrossEntropyLoss::ReductionMode::NONE;
+      break;
+  }
+
+  muTensor grad = CreateMUTensor(grad_output.contiguous());
+  muTensor in = CreateMUTensor(self.contiguous());
+  muTensor lab = CreateMUTensor(target.contiguous());
+  muTensor w = wt.numel() > 0 ? CreateMUTensor(wt) : muTensor();
+  muTensor grad_in = CreateMUTensor(grad_input);
+  CHECK_MUDNN_STATUS(loss.SetReductionMode(mode), "SetReductionMode");
+  CHECK_MUDNN_STATUS(
+      loss.SetLabelSmoothing(label_smoothing), "SetLabelSmoothing");
+  CHECK_MUDNN_STATUS(loss.SetIgnoreIndex(ignore_index), "SetIgnoreIndex");
+  CHECK_MUDNN_STATUS(
+      loss.RunBwd(h, grad_in, in, grad, lab, w, InternalMemAlloc), "RunBwd");
+
+  return grad_input;
 }
 
 at::Tensor BinaryCrossEntropy(

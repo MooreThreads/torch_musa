@@ -83,21 +83,28 @@ def test_take(input_data, dtype):
 @pytest.mark.parametrize("dtype", support_dtypes)
 def test_put_(dtype):
     input_args = {
-        "input": torch.randn(2, 3, 4, 5),
-        "dim": 3,
+        "input": torch.randn(2, 3, 4, 5).to(dtype),
         "index": torch.randint(4, (2, 3, 4, 5)),
-        "source": torch.randn(2, 3, 4, 5),
+        "source": torch.randn(2, 3, 4, 5).to(dtype),
     }
-    cpu_input = input_args["input"].to(dtype)
+
+    cpu_input = input_args["input"]
     cpu_index = input_args["index"]
-    cpu_source = input_args["source"].to(dtype)
-    cpu_result = cpu_input.put_(cpu_index, cpu_source)
+    cpu_source = input_args["source"]
 
-    musa_input = input_args["input"].to(dtype).to("musa")
+    musa_input = input_args["input"].to("musa")
     musa_index = input_args["index"].to("musa")
-    musa_source = input_args["source"].to(dtype).to("musa")
-    musa_result = musa_input.put_(musa_index, musa_source)
+    musa_source = input_args["source"].to("musa")
 
-    assert testing.DefaultComparator()(cpu_result, musa_result.cpu())
-    assert cpu_result.shape == musa_result.shape
-    assert cpu_result.dtype == musa_result.dtype
+    cpu_input.put_(cpu_index, cpu_source, accumulate=True)
+    musa_input.put_(musa_index, musa_source, accumulate=True)
+
+    if dtype == torch.float16:
+        abs_diff, rel_diff = 5e-2, 5e-2
+    else:
+        abs_diff, rel_diff = 1e-5, 1e-6
+    cmp = testing.DefaultComparator(abs_diff=abs_diff, rel_diff=rel_diff)
+
+    assert cmp(cpu_input, musa_input.cpu())
+    assert cpu_input.shape == musa_input.shape
+    assert cpu_input.dtype == musa_input.dtype

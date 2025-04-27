@@ -7,7 +7,7 @@ index faf260a..fa00cb4 100644
          else:
              token = self._NULL_SENTINEL
 -
-+        
++
          base64_state: bytes = self._call_store("compare_set", self._key, token, base64_state_str)
  
          state_token_pair = self._decode_state(base64_state)

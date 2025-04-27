@@ -52,15 +52,12 @@ void norm_launch_kernel(TensorIterator& iter, double ord) {
   } else if (iter.input_dtype() == kBFloat16 && iter.dtype(0) == kFloat) {
     // type promotion that does cast and reduction in a single kernel
     return norm_kernel_musa_impl<at::BFloat16, float, float>(iter, ord);
-  }
-// Due to a bug in the mcc of QY1,this operator does not support
-// double precision inputs on QY1.
-#if TORCH_MUSA_ARCH <= 210
-  else if (iter.input_dtype() == kDouble) {
+  } else if (iter.input_dtype() == kDouble && at::musa::getMUSAArch() <= 210) {
+    // Due to a bug in the mcc of QY1,this operator does not support
+    // double precision inputs on QY1.
     TORCH_CHECK(
         false, "norm_launch_kernel does not support input of double type.");
   }
-#endif
   AT_DISPATCH_FLOATING_AND_COMPLEX_TYPES(iter.input_dtype(), "norm_musa", [&] {
     norm_kernel_musa_impl<scalar_t>(iter, ord);
   });

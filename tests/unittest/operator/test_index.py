@@ -94,6 +94,7 @@ def test_index_put(input_data, dtype, ind_dtype):
     [
         # input_shape, value_shape, index_shapes, is_nhwc(optional)
         # not adjacent cases
+        [(16, 16, 16, 16), (1,), ((3, 4), None, (3, 1))],
         [(16, 16, 16, 16), (3, 4, 16, 16), ((3, 4), None, (3, 1))],
         [(16, 16, 16, 16), (1, 4, 1, 16), ((3, 4), None, (3, 1))],
         [(8, 12, 16, 20, 24), (2, 4, 8, 16, 24), (None, (2, 4), None, (4,))],
@@ -125,6 +126,7 @@ def test_index_put(input_data, dtype, ind_dtype):
             (True, False),
         ],
         # (maybe) vectorized cases
+        [(16, 10240), (1,), ((4,),)],
         [(16, 10240), (4, 10240), ((4,),)],
         [(16, 18, 7), (8, 18, 7), ((8,),)],
         [(16, 16, 16, 4, 2), (2, 3, 16, 4, 2), ((3,), (2, 3))],

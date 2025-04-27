@@ -46,25 +46,23 @@ Before installing torch_musa, here are some software packages that need to be in
 
 ### From Python wheels
 After these prerequisites are installed, we can simply install torch_musa from wheels, 
-and we provide multiple wheels in our release page. For example, the wheels of torch_musa v1.3.2 can be found [here](https://github.com/MooreThreads/torch_musa/releases/tag/v1.3.2).
+and we provide multiple wheels in our release page.
+For example, the wheels of torch_musa v1.3.2 can be found [HERE](https://github.com/MooreThreads/torch_musa/releases/tag/v1.3.2).
 
 **NOTE:** We only provide wheels that build upon python3.10, so if one need to utilize
 torch_musa with other python versions, check [From source](#From-source) to build your own wheels.
 
-```bash
-# for python3.10
-pip install torch-2.2.0a0+git8ac9b20-cp310-cp310-linux_x86_64.whl
-pip install torch_musa-1.3.0-cp310-cp310-linux_x86_64.whl
-```
-
 ### From Source
-We highly recommand users building torch_musa from source within dockers we provided, and the dockers can be found [here](https://mcconline.mthreads.com/repo).
+We highly recommand users building torch_musa from source within dockers we provided, and the dockers can be downloaded from [here](https://mcconline.mthreads.com/repo).
 
-And for more details about how to create a torch_musa docker container from provided images, one can check the [Docker-image](#Docker-image) below
+For more details about how to create a torch_musa docker container, one can check the [Docker-image](#Docker-image) below.
 #### Set Important Environment Variables
+We need to set `MUSA_HOME`, `LD_LIBRARY_PATH` and `PYTORCH_REPO_PATH` for building torch_musa:
 ```bash
 export MUSA_HOME=path/to/musa_libraries(including mudnn and musa_toolkits) # defalut value is /usr/local/musa/
+
 export LD_LIBRARY_PATH=$MUSA_HOME/lib:$LD_LIBRARY_PATH
+
 # if PYTORCH_REPO_PATH is not set, PyTorch will be downloaded outside this directory when building with build.sh
 export PYTORCH_REPO_PATH=/path/to/PyTorch
 ```
@@ -81,6 +79,14 @@ bash build.sh --asan   # build in asan mode
 bash build.sh --clean/-c  # clean everything built and build
 bash build.sh --wheel/-w  # generate wheels
 ```
+
+For example, if one has built PyTorch and only needs to build torch_musa with wheel, run:
+```
+bash build.sh -m -w
+```
+
+**NOTE:** Since we don't provide MCCL on MUSA 4.0.1, you should run `export USE_MCCL=0` before installing torch_musa,
+otherwise, an compilation error would be thrown.
 
 ### torchvision and torchaudio
 PyTorch v2.2.0 needs torchvision==0.17.2 and torchaudio==2.2.2, and for torch_musa users we
@@ -99,25 +105,30 @@ cd audio && python setup.py install
 
 ### Docker Image
 
-**NOTE:** If you want to use **torch_musa** in docker container, please install [mt-container-toolkit](https://mcconline.mthreads.com/software/1?id=1) first and use '--env MTHREADS_VISIBLE_DEVICES=all' when starting a container. During its initial startup, Docker performs a self-check. The unit tests and integration test results for **torch_musa** in the develop docker are located in /home/integration_test_output.txt and /home/ut_output.txt. The develop docker has already installed torch and **torch_musa** and the source code is located in /home.
+**NOTE:** If you want to use **torch_musa** in docker container, please install [mt-container-toolkit](https://mcconline.mthreads.com/software/1?id=1)
+first and use `--env MTHREADS_VISIBLE_DEVICES=all` when starting a container.
 
+We provide released docker image and develop docker image, they can be easily found from [HERE](https://mcconline.mthreads.com/repo).
+
+During its initial startup, Docker performs a self-check.
+The unit tests and integration test results for **torch_musa** in the develop docker are located in /home/integration_test_output.txt and /home/ut_output.txt.
+
+The develop docker has already installed torch and **torch_musa** and the source code is located in /home.
 We provide **PyTorch**, **torch_musa**, **kineto**, **torchvision** and **torchaudio** within the docker images.
 
 #### Docker Image for Developer
 ```bash
 # To run the Docker for qy2, simply replace 'qy1' with 'qy2' in the following command.
-# To run the Docker for different python version, simply replace 'py39' 'py310' with 'py38' in the following command.
 
-# For example, start a qy1 docker with Python3.8
-docker run -it --privileged --pull always --network=host --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py38:rc3.1.0-v1.3.0-qy1 /bin/bash
+# For example, start a qy1 docker with Python3.10
+docker run -it --privileged --pull always --network=host --name=torch_musa_dev --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g registry.mthreads.com/mcconline/musa-pytorch-dev-public:rc4.0.1-v2.0.0-qy1-py310 /bin/bash
 ```
 #### Docker Image for User
 ```bash
 # To run the Docker for qy2, simply replace 'qy1' with 'qy2' in the following command.
-# To run the Docker for different python version, simply replace 'py39' 'py310' with 'py38' in the following command.
 
-# For example, start a qy1 docker with Python3.8
-docker run -it --privileged --pull always --network=host --name=torch_musa_release --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g sh-harbor.mthreads.com/mt-ai/musa-pytorch-release-py38:rc3.1.0-v1.3.0-qy1 /bin/bash
+# For example, start a qy1 docker with Python3.10
+docker run -it --privileged --pull always --network=host --name=torch_musa_release --env MTHREADS_VISIBLE_DEVICES=all --shm-size=80g registry.mthreads.com/mcconline/musa-pytorch-dev-public:rc4.0.1-v2.0.0-qy1-py310 /bin/bash
 ```
 
 ## Getting Started
@@ -335,7 +346,3 @@ In torch_musa, we provide the codegen module to implement bindings and registrat
 ## FAQ
 ### How to Update the Underlying Libraries
 Please refer to the [README.md](./docker/common/README.md) inside directory [docker/common](./docker/common).
-### For More Detailed Information
-Please refer to the files in the [docs folder](./docs).
-### How Many Ops Are Supported
-Please refer to the [op_list.md](./tools/ops_scanner/ops_list.md)
