@@ -1,18 +1,20 @@
 #!/bin/bash
-TORCH_MUSA_TAG='v1.3.2'
+TORCH_MUSA_TAG='v2.0.0'
 versions=("310")
 
-SW_TAG=dev4.0.0
-MUDNN_VERSION=dev2.8.0
-MCCL_VERSION=dev1.8.0
-TORCH_MUSA_VERSION=1.3.2
-OSS_PREFIX=https://oss.mthreads.com/release-rc/cuda_compatible
+TORCH_MUSA_VERSION=2.0.0
+KINETO_TAG=v1.2.3
+ALG_TAG=musa-1.12.1
+THRUST_TAG=musa-1.12.1
 
 function prepare_build_context() {
   # preprare files will be used when building docker image
   BUILD_DIR=${1:-$(pwd)/tmp}
   sudo mkdir -p $BUILD_DIR
   sudo git clone -b ${TORCH_MUSA_TAG} https://sh-code.mthreads.com/ai/torch_musa.git $BUILD_DIR/torch_musa
+  sudo git clone -b ${KINETO_TAG} https://github.com/MooreThreads/kineto.git --depth 1 --recursive $BUILD_DIR/kineto
+  sudo git clone -b ${ALG_TAG} https://github.com/MooreThreads/muAlg --depth 1 $BUILD_DIR/muAlg
+  sudo git clone -b ${THRUST_TAG} https://github.com/MooreThreads/muThrust --depth 1 $BUILD_DIR/muThrust
   CUR_ROOT=$(cd "$(dirname "$0")"; pwd)
   sudo cp -r $CUR_ROOT/common $BUILD_DIR/
   integration_data_path=/jfs/torch_musa_integration/data.tar.gz
@@ -44,14 +46,30 @@ elif [ "$GPU" = "MTTS4000" ]; then
 fi
 
 for version in "${versions[@]}"; do
-  if [ "$ARCH" = "qy1" ] || [ "$ARCH" = "qy2" ]; then
-    CC=cc2.2
+  if [ "$ARCH" = "qy1" ]; then
+    OSS_PREFIX=https://oss.mthreads.com/release-rc/cuda_compatible
+    SW_TAG=rc4.0.1
+    CC=Intel+Ubuntu
+    MUDNN_VERSION=rc2.8.1
+    MUSA_TOOLKITS_URL="${OSS_PREFIX}/${SW_TAG}/${CC}/musa_toolkits_${SW_TAG}.tar.gz"
+    MUDNN_URL="${OSS_PREFIX}/${SW_TAG}/${CC}/mudnn_${MUDNN_VERSION}.tar.gz"
+  elif [ "$ARCH" = "qy2" ]; then
+    SW_TAG=rc4.0.0
+    OSS_PREFIX=https://oss.mthreads.com/release-ci/computeQA/cuda_compatible/CI/release_musa_4.0.0/2025-04-13
+    MUDNN_VERSION=rc2.8.0
+    MCCL_VERSION=rc1.8.0
+    MUSA_TOOLKITS_URL="${OSS_PREFIX}/musa_toolkits_install_full.tar.gz"
+    MUDNN_URL="${OSS_PREFIX}/mudnn_${MUDNN_VERSION}.tar.gz"
+    MCCL_URL="${OSS_PREFIX}/mccl_${MCCL_VERSION}.tar.gz"
   else
-    CC=cc3.1
+    SW_TAG=rc4.0.0
+    OSS_PREFIX=https://oss.mthreads.com/release-ci/computeQA/cuda_compatible/CI/release_KUAE_2.0_for_PH1_M3D/2025-04-13
+    MUDNN_VERSION=dev2.8.0
+    MCCL_VERSION=dev1.8.0
+    MUSA_TOOLKITS_URL="${OSS_PREFIX}/musa_toolkits_install_full.tar.gz"
+    MUDNN_URL="${OSS_PREFIX}/mudnn_${MUDNN_VERSION}.PH1.tar.gz"
+    MCCL_URL="${OSS_PREFIX}/mccl_${MCCL_VERSION}.PH1.tar.gz"
   fi
-  MUSA_TOOLKITS_URL="${OSS_PREFIX}/${SW_TAG}/${CC}/musa_toolkits_${SW_TAG}.tar.gz"
-  MUDNN_URL="${OSS_PREFIX}/${SW_TAG}/${CC}/mudnn_${MUDNN_VERSION}.${CC}.tar.gz"
-  MCCL_URL="${OSS_PREFIX}/${SW_TAG}/${CC}/mccl_${MCCL_VERSION}.${CC}.tar.gz"
   TAG="${SW_TAG}-v${TORCH_MUSA_VERSION}-${ARCH}"
   command="bash build.sh -n sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py$version           \
       -b sh-harbor.mthreads.com/mt-ai/musa-pytorch-base-py$version:${SW_TAG}-${TORCH_MUSA_TAG} \

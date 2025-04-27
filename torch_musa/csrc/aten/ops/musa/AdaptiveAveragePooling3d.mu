@@ -333,12 +333,11 @@ void AdaptiveAvgPool3DOutMUSATemplate(
               int nelems = batch_size * channels * output_depth *
                   output_height * output_width;
               dim3 block(1024, 1, 1);
-#if TORCH_MUSA_ARCH > 210
               dim3 grid((nelems + 1024 - 1) / 1024, 1, 1);
-#else
-              musaDeviceProp* prop = at::musa::getCurrentDeviceProperties();
-              dim3 grid(prop->multiProcessorCount, 1, 1);
-#endif
+              if (at::musa::getMUSAArch() <= 210) {
+                musaDeviceProp* prop = at::musa::getCurrentDeviceProperties();
+                grid.x = prop->multiProcessorCount;
+              }
               auto memory_format = output.suggest_memory_format();
               Tensor input_tmp =
                   at::musa::FormatContiguous(input_, memory_format);
@@ -456,12 +455,11 @@ void AdaptiveAvgPool3DBackwardOutTemplate(
               int nelems = batch_size * channels * input_depth * input_height *
                   input_width;
               dim3 block(1024, 1, 1);
-#if TORCH_MUSA_ARCH > 210
               dim3 grid((nelems + 1024 - 1) / 1024, 1, 1);
-#else
-              musaDeviceProp* prop = at::musa::getCurrentDeviceProperties();
-              dim3 grid(prop->multiProcessorCount, 1, 1);
-#endif
+              if (at::musa::getMUSAArch() <= 210) {
+                musaDeviceProp* prop = at::musa::getCurrentDeviceProperties();
+                grid.x = prop->multiProcessorCount;
+              }
               auto memory_format = grad_input.suggest_memory_format();
               Tensor grad_output_tmp =
                   FormatContiguous(grad_output, memory_format);

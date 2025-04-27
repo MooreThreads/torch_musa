@@ -15,14 +15,18 @@
 - func: bitwise_left_shift_.Tensor
 - func: bitwise_left_shift.Tensor_out
 
-- func: softplus
-- func: softplus.out
-
 - func: softplus_backward
 - func: softplus_backward.grad_input
 
 - func: leaky_relu_backward
 - func: leaky_relu_backward.grad_input
+
+- func: hypot
+- func: hypot_
+- func: hypot.out
+
+- func: elu_backward
+- func: elu_backward.grad_input
 
 - func: bitwise_not
 - func: bitwise_not_
@@ -85,6 +89,9 @@
 - func: replication_pad1d
 - func: replication_pad1d.out
 
+- func: replication_pad2d
+- func: replication_pad2d.out
+
 - func: smooth_l1_loss
 - func: smooth_l1_loss.out
 
@@ -116,6 +123,21 @@
 - func: upsample_trilinear3d_backward
 - func: upsample_trilinear3d_backward.grad_input
 
+- func: _upsample_nearest_exact1d
+- func: _upsample_nearest_exact1d.out
+- func: _upsample_nearest_exact1d_backward
+- func: _upsample_nearest_exact1d_backward.grad_input
+
+- func: _upsample_nearest_exact2d
+- func: _upsample_nearest_exact2d.out
+- func: _upsample_nearest_exact2d_backward
+- func: _upsample_nearest_exact2d_backward.grad_input
+
+- func: _upsample_nearest_exact3d
+- func: _upsample_nearest_exact3d.out
+- func: _upsample_nearest_exact3d_backward
+- func: _upsample_nearest_exact3d_backward.grad_input
+
 - func: bitwise_xor.Tensor
 - func: bitwise_xor_.Tensor
 - func: bitwise_xor.Tensor_out
@@ -134,10 +156,6 @@
 - func: scatter_reduce.two
 - func: scatter_reduce_.two
 - func: scatter_reduce.two_out
-
-- func: erf
-- func: erf_
-- func: erf.out
 
 - func: erfinv
 - func: erfinv_
@@ -203,11 +221,24 @@
   dispatch:
     PrivateUse1: argmin_out_musa
 
-- func: mish
-- func: mish_
-- func: mish.out
-  device_check: ExactSame
-  device_guard: True
+- func: asin
+- func: asin_
+- func: asin.out
+
+- func: asinh
+- func: asinh_
+- func: asinh.out
+
+- func: acosh
+- func: acosh_
+- func: acosh.out
+
+- func: atanh
+- func: atanh_
+- func: atanh.out
+
+- func: _upsample_bilinear2d_aa
+- func: _upsample_bilinear2d_aa.out
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 #
@@ -239,6 +270,14 @@
 - func: _fused_rmsnorm_backward
   dispatch:
     PrivateUse1: FusedRMSNormBackward
+
+- func: _fused_swiglu_forward
+  dispatch:
+    PrivateUse1: SwishGlu
+
+- func: _fused_swiglu_backward
+  dispatch:
+    PrivateUse1: SwishGluBackward 
 
 - func: abs
   dispatch:
@@ -274,6 +313,19 @@
   structured: false
   dispatch:
     PrivateUse1: EqScalarOut
+
+- func: erf
+  dispatch:
+    PrivateUse1: Erf
+
+- func: erf_
+  dispatch:
+    PrivateUse1: Erf_
+
+- func: erf.out
+  structured: false
+  dispatch:
+    PrivateUse1: ErfOut
 
 - func: relu
   dispatch:
@@ -456,6 +508,28 @@
   structured: false
   dispatch:
     PrivateUse1: AtanOut
+
+- func: mish
+  dispatch:
+    PrivateUse1: Mish
+
+- func: mish_
+  dispatch:
+    PrivateUse1: Mish_
+
+- func: mish.out
+  structured: false
+  dispatch:
+    PrivateUse1: MishOut
+
+- func: softplus
+  dispatch:
+    PrivateUse1: Softplus
+
+- func: softplus.out
+  structured: false
+  dispatch:
+    PrivateUse1: SoftplusOut
 
 - func: log
   dispatch:
@@ -700,6 +774,10 @@
   dispatch:
     PrivateUse1: IsNan
 
+- func: isinf
+  dispatch:
+    PrivateUse1: IsInf
+
 - func: _amp_foreach_non_finite_check_and_unscale_
   dispatch:
     PrivateUse1: AmpForeachNonFiniteCheckAndUnscale
@@ -715,6 +793,26 @@
 - func: native_batch_norm_backward
   dispatch:
     PrivateUse1: NativeBatchNormBwd
+
+- func: batch_norm_stats
+  dispatch:
+    PrivateUse1: batch_norm_stats_cuda
+
+- func: batch_norm_gather_stats_with_counts
+  dispatch:
+    PrivateUse1: batch_norm_gather_stats_with_counts_cuda
+
+- func: batch_norm_elemt
+  dispatch:
+    PrivateUse1: batch_norm_elemt_cuda
+
+- func: batch_norm_backward_reduce
+  dispatch:
+    PrivateUse1: batch_norm_backward_reduce_cuda
+
+- func: batch_norm_backward_elemt
+  dispatch:
+    PrivateUse1: batch_norm_backward_elemt_cuda
 
 - func: add.Tensor
   dispatch:
@@ -1019,6 +1117,7 @@
     PrivateUse1: ConvolutionBwd
 
 - func: _copy_from
+  device_lazy_init: True
   dispatch:
     PrivateUse1: MUSACopyFrom
 
@@ -1027,24 +1126,28 @@
     PrivateUse1: BernoulliFloat
 
 - func: bernoulli_.Tensor
+  device_lazy_init: True
   device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: bernoulli_
 
 - func: bernoulli.out
+  device_lazy_init: True
   device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: bernoulli_out
 
 - func: normal_
+  device_lazy_init: True
   device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: normal_
 
 - func: uniform_
+  device_lazy_init: True
   device_check: ExactSame
   device_guard: True
   dispatch:
@@ -1581,18 +1684,21 @@
     PrivateUse1: MaxPool3dIndicesBwdOut
 
 - func: random_.from
+  device_lazy_init: True
   device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: random_
 
 - func: random_.to
+  device_lazy_init: True
   device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: random_
 
 - func: random_
+  device_lazy_init: True
   device_check: ExactSame
   device_guard: True
   dispatch:
@@ -1697,6 +1803,14 @@
   structured: false
   dispatch:
     PrivateUse1: CumProdOut
+
+- func: _cummin_helper
+  dispatch:
+    PrivateUse1: CumminHelper
+
+- func: _cummax_helper
+  dispatch:
+    PrivateUse1: CummaxHelper
 
 - func: any
   dispatch:
@@ -1978,6 +2092,7 @@
     PrivateUse1: StftCenter
 
 - func: empty.memory_format
+  device_lazy_init: True
   dispatch:
     PrivateUse1: EmptyMUSA
     QuantizedPrivateUse1: EmptyUnknownQuantized
@@ -2442,3 +2557,67 @@
   device_guard: True
   dispatch:
     PrivateUse1: FusedAdamKernel
+
+- func: _fused_rope_forward
+  dispatch:
+    PrivateUse1: Rope
+
+- func: _fused_rope_backward
+  dispatch:
+    PrivateUse1: RopeBackward
+
+- func: median
+  device_guard: True
+  dispatch:
+    PrivateUse1: median_cuda
+
+- func: median.dim_values
+  device_guard: True
+  dispatch:
+    PrivateUse1: median_out_cuda
+
+- func: _cdist_forward
+  dispatch:
+    PrivateUse1: _cdist_forward
+
+- func: _cdist_backward
+  dispatch:
+    PrivateUse1: _cdist_backward
+
+- func: _pdist_forward
+  dispatch:
+    PrivateUse1: _pdist_forward
+
+- func: _pdist_backward
+  dispatch:
+    PrivateUse1: _pdist_backward
+
+- func: cross_entropy_loss_2d_choice
+  dispatch:
+    PrivateUse1: CrossEntropyLoss2dChoice
+
+- func: _fused_cross_entropy_loss_2d_forward
+  dispatch:
+    PrivateUse1: FusedCrossEntropyLoss2dFwd
+
+- func: _fused_cross_entropy_loss_2d_backward
+  dispatch:
+    PrivateUse1: FusedCrossEntropyLoss2dBwd
+
+- func: _linalg_solve_ex
+  dispatch:
+    PrivateUse1: LinalgSolveEx
+
+- func: _linalg_solve_ex.result
+  structured: false
+  dispatch:
+    PrivateUse1: LinalgSolveExResult
+
+- func: im2col.out
+  dispatch:
+    PrivateUse1: im2col_out_cuda
+
+- func: im2col
+  dispatch:
+    PrivateUse1: im2col_cuda
+

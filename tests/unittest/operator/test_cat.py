@@ -286,6 +286,8 @@ inputdata = [
         "dim": 2,
     },
 ]
+
+
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", inputdata)
 def test_cat_ndhwc(input_data):
@@ -297,3 +299,16 @@ def test_cat_ndhwc(input_data):
     test.check_result()
     test.check_out_ops()
     test.check_grad_fn()
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+# only fp32, int8 dtype will be fine
+@pytest.mark.parametrize("dtype", [torch.float32, torch.int8])
+def test_cat_zero_numel_multi_dim(dtype):
+    tensor_lst = [torch.randn(0, 2048, dtype=dtype) for i in range(6)]
+    tensor_lst_musa = [t.to(torch.musa.current_device()) for t in tensor_lst]
+    out_cpu = torch.cat(tensor_lst, dim=1)
+    out_musa = torch.cat(tensor_lst_musa, dim=1)
+
+    assert out_cpu.shape == out_musa.shape
+    assert out_cpu.dtype == out_musa.dtype

@@ -2,7 +2,7 @@
 #include <c10/core/Stream.h>
 #include <torch/library.h>
 
-#include "torch_musa/csrc/core/Allocator.h"
+#include "torch_musa/csrc/core/MUSACachingAllocator.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 
 namespace at {

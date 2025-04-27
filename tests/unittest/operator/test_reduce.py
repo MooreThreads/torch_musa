@@ -6,7 +6,12 @@ import pytest
 import numpy as np
 import torch
 from torch_musa import testing
-from torch_musa.testing import get_musa_arch, DefaultComparator, AbsDiffComparator
+from torch_musa.testing import (
+    get_musa_arch,
+    DefaultComparator,
+    AbsDiffComparator,
+    BooleanComparator,
+)
 
 input_data = [
     {"input": torch.randn([1, 10]), "dim": 1},
@@ -77,6 +82,15 @@ def test_amax(input_data, dtype):
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_amin(input_data, dtype):
     function(input_data, dtype, torch.amin)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_data)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_aminmax(input_data, dtype):
+    if isinstance(input_data["dim"], list):
+        return
+    function(input_data, dtype, torch.aminmax)
 
 
 input_data = [
@@ -323,6 +337,57 @@ def test_cumulative_int(case, op):
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("case", cumulative_float_cases)
+@pytest.mark.parametrize("op", [torch.cummin, torch.cummax])
+@pytest.mark.skipif(get_musa_arch() < 22, reason="No supported")
+def test_cumulative_minmax_float(case, op):
+    in_type = case["in_dtype"]
+    inp, dim = case["input"], case["dim"]
+    if in_type != torch.float:
+        comp = DefaultComparator(abs_diff=1e-2, rel_diff=1e-2, equal_nan=True)
+    else:
+        comp = DefaultComparator(abs_diff=1e-5)
+    cpu_out = op(inp, dim)
+
+    def do_assert(c_musa, c_cpu):
+        for i in range(2):
+            assert c_musa[i].dtype == c_cpu[i].dtype
+            assert c_musa[i].shape == c_cpu[i].shape
+            assert comp(c_musa[i].cpu(), c_cpu[i])
+
+    musa_in = inp.musa()
+    musa_out = op(musa_in, dim)
+    do_assert(musa_out, cpu_out)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("case", cumulative_int_cases)
+@pytest.mark.parametrize("op", [torch.cummin, torch.cummax])
+def test_cumulative_minmax_int(case, op):
+    in_types = case["in_dtypes"]
+    inp, dim = case["input"], case["dim"]
+    comp = AbsDiffComparator(abs_diff=1e-5)
+    comp_bool = BooleanComparator()
+
+    def do_assert(c_musa, c_cpu):
+        for i in range(2):
+            assert c_musa[i].dtype == c_cpu[i].dtype
+            assert c_musa[i].shape == c_cpu[i].shape
+            if c_cpu[i].dtype == torch.bool:
+                assert comp_bool(c_musa[i].cpu(), c_cpu[i])
+            else:
+                assert comp(c_musa[i].cpu(), c_cpu[i])
+
+    for i_t in in_types:
+        cpu_in = inp.to(i_t)
+        cpu_out = op(cpu_in, dim)  # int64
+
+        musa_in = cpu_in.musa()
+        musa_out = op(musa_in, dim)
+        do_assert(musa_out, cpu_out)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("dtype", [torch.bool])
 def test_any(input_data, dtype):
@@ -531,9 +596,19 @@ any_all_integer_input_data = [
     {"input": torch.randint(-1, 1, [9, 8, 7, 6, 5, 4, 5, 20])},
 ]
 
+any_integer_input_data = [
+    {"input": torch.randint(-1, 1, [1, 10]), "dim": -1},
+    {"input": torch.randint(-1, 1, [1, 10, 5]), "dim": 1},
+    {"input": torch.randint(-1, 1, [1, 10, 5, 5]), "dim": 3},
+    {"input": torch.randint(-1, 1, [1, 10, 5, 5, 10]), "dim": 4},
+    {"input": torch.randint(-1, 1, [9, 8, 7, 6, 5, 4]), "dim": 1},
+    {"input": torch.randint(-1, 1, [9, 8, 7, 6, 5, 4, 16]), "dim": 5},
+    {"input": torch.randint(-1, 1, [9, 8, 7, 6, 5, 4, 5, 20]), "dim": 7},
+]
+
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@pytest.mark.parametrize("input_data", any_all_integer_input_data)
+@pytest.mark.parametrize("input_data", any_integer_input_data)
 @pytest.mark.parametrize("dtype", [torch.int32, torch.int64])
 def test_any_integer(input_data, dtype):
     input_data["input"] = input_data["input"].to(dtype)

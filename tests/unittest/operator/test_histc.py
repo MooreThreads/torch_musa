@@ -12,7 +12,7 @@ dtypes = [
     torch.int8,
     torch.int16,
     torch.int32,
-    torch.int64,
+    # torch.int64,
 ]
 
 

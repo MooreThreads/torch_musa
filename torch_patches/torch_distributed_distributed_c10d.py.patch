@@ -65,7 +65,7 @@ index 27d7919..8566c78 100644
 +    if tensor is None or tensor.numel() == 0:
 +        warnings.warn(f"input tensor is empty ")
 +        return
-+    
++
      opts = BroadcastOptions()
      opts.rootRank = src
      opts.rootTensor = 0

@@ -78,6 +78,36 @@ def test_inverse(input_data, dtype):
     )
 
 
+inverse_origin_input_list = [
+    [
+        [0.5000, 0.0000, 0.0000, 0.0000],
+        [0.0000, 0.5000, 0.0000, 0.0000],
+        [0.0000, 0.0000, 1.0000, 0.0000],
+        [0.0000, 0.0000, 0.0000, 1.0000],
+    ],
+    [
+        [0.5000, 0.0000, 0.0000, 0.0000],
+        [0.0000, 0.5000, 0.0000, 0.0000],
+        [0.0000, 0.0000, 1.0000, 0.0000],
+        [0.0000, 0.0000, 0.0000, 1.0000],
+    ],
+]
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", [torch.tensor(inverse_origin_input_list)])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_inverse_from_nocontiguous(input_data, dtype):
+    m = torch.inverse
+    input_data = input_data.to(dtype)
+    output = m(input_data[..., :3, :3])
+    musa_input = input_data.to("musa")
+    output_musa = m(musa_input[..., :3, :3])
+    assert testing.DefaultComparator(abs_diff=1e-5, rel_diff=1e-4)(
+        output, output_musa.cpu()
+    )
+
+
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize(
     "input_data", [{"A": torch.randn(1, 3, 3), "B": torch.randn(2, 3, 3)}]
@@ -139,4 +169,26 @@ def test_cholesky_inverse(input_data):
     u = torch.linalg.cholesky(inp)  # pylint: disable=C0103
     output = m(u)
     output_musa = m(u.musa())
+    assert testing.DefaultComparator(abs_diff=1e-5)(output, output_musa)
+
+
+@pytest.mark.parametrize(
+    "input_data",
+    [
+        {"A": torch.randn(1, 3, 3), "B": torch.randn(1, 3, 5)},
+        {"A": torch.randn(128, 128, 128), "B": torch.randn(128, 128, 64)},
+        {"A": torch.randn(5, 9, 9), "B": torch.randn(5, 9, 7)},
+        {"A": torch.randn(3, 3), "B": torch.randn(3, 9)},
+    ],
+)
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_linalg_solve(input_data, dtype):
+    input_data["A"] = input_data["A"].to(dtype)
+    input_data["B"] = input_data["B"].to(dtype)
+    m = torch.linalg.solve
+    output = m(input_data["A"].clone(), input_data["B"].clone())
+    output_musa = m(
+        input_data["A"].to("musa").clone(), input_data["B"].to("musa").clone()
+    )
     assert testing.DefaultComparator(abs_diff=1e-5)(output, output_musa)

@@ -13,6 +13,12 @@ pytest --last-failed --junitxml=${TEST_REPORT_DIR}/${GPU_TYPE}-miscs-test-failed
 pytest --last-failed --junitxml=${TEST_REPORT_DIR}/${GPU_TYPE}-profiler-test-failed-results.xml -v tests/unittest/profiler/*.py
 pytest --last-failed --junitxml=${TEST_REPORT_DIR}/${GPU_TYPE}-dynamo-test-failed-results.xml -v tests/unittest/dynamo
 pytest --last-failed --junitxml=${TEST_REPORT_DIR}/${GPU_TYPE}-inductor-test-failed-results.xml -v tests/unittest/inductor
+
+find tests/unittest/standalone -name "*.py" | while read -r case;
+do
+  pytest --last-failed --junitxml=${TEST_REPORT_DIR}/${GPU_TYPE}-standalone-test-failed-results.xml -v ${case}
+done
+
 end_time=$(date +%s.%N)
 runtime=$(( end_time - start_time ))
 echo "Total runtime: $runtime seconds"

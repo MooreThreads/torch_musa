@@ -8,7 +8,7 @@ index eaa5bcf..435b2fe 100644
  
 +def _create_c10d_v2_handler(params: RendezvousParameters) -> RendezvousHandler:
 +    from .c10d_rendezvous_backend import create_backend
-+    
++
 +    params.use_libuv = True
 +    backend, store = create_backend(params)
 +

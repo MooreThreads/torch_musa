@@ -15,8 +15,6 @@ if(NOT DEFINED BUILD_PYTORCH_REPO_PATH)
                       "set to find some modules in PyTorch repo.")
 endif()
 
-set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/modules)
-
 # We should include PyTorch customized cmake modules into our search path.
 list(APPEND CMAKE_MODULE_PATH ${BUILD_PYTORCH_REPO_PATH}/cmake/Modules)
 
@@ -220,24 +218,6 @@ if(USE_TSAN)
   string(APPEND CMAKE_LINKER_FLAGS_DEBUG " -fsanitize=thread")
 endif()
 
-if(DEFINED ENV{MUSA_ARCH})
-  set(MUSA_ARCH $ENV{MUSA_ARCH})
-
-  string(APPEND MUSA_MCC_FLAGS " --cuda-gpu-arch=mp_${MUSA_ARCH}")
-
-  if(${MUSA_ARCH} EQUAL 21)
-    add_definitions(-DTORCH_MUSA_ARCH=210)
-  elseif(${MUSA_ARCH} EQUAL 22)
-    add_definitions(-DTORCH_MUSA_ARCH=220)
-    add_definitions(-DMARCH_TYPE=220)
-  elseif(${MUSA_ARCH} EQUAL 31)
-    add_definitions(-DTORCH_MUSA_ARCH=310)
-    add_definitions(-DMARCH_TYPE=310)
-  else()
-    add_definitions(-DTORCH_MUSA_ARCH=110)
-  endif()
-endif()
-
 # =============================================================
 set(PLUGIN_NAME "musa_python")
 set(MUSA_CSRCS)
@@ -245,56 +225,64 @@ set(MUSA_KERNELS_LIB "musa_kernels")
 
 set(DEPENDENT_LIBRARIES "")
 set(DEPENDENT_INCLUDE_DIRS "")
-find_package(MUDNN)
 
-if(MUDNN_FOUND)
-  list(APPEND DEPENDENT_INCLUDE_DIRS ${MUDNN_INCLUDE_DIRS})
-  list(APPEND DEPENDENT_LIBRARIES ${MUDNN_LIBRARIES})
+# configure MUSA related things
+if(NOT DEFINED ENV{MUSA_HOME})
+  set(MUSA_PATH "/usr/local/musa")
+  set(ENV{MUSA_HOME} "${MUSA_PATH}")
 else()
-  # set default mudnn library path
-  message(
-    WARNING
-      " The environment variable MUSA_HOME may be not specified. Using default MUDNN PATH: /usr/local/musa"
-  )
-  list(APPEND DEPENDENT_INCLUDE_DIRS "/usr/local/musa/include")
-  list(APPEND DEPENDENT_LIBRARIES "/usr/local/musa/lib/libmudnn.so")
-  set(MUDNN_PATH "/usr/local/musa")
-  set(MUDNN_LIBRARIES "/usr/local/musa/lib/libmudnn.so")
+  set(MUSA_PATH $ENV{MUSA_HOME})
 endif()
+list(APPEND CMAKE_MODULE_PATH "${MUSA_PATH}/cmake")
+list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/modules")
 
-if(USE_MCCL)
-  find_package(MCCL)
+find_package(MUSA REQUIRED)
 
-  if(MCCL_FOUND)
+if(MUSA_FOUND)
+  # torch_musa/csrc/extension will also use TORCH_MUSA_ARCH, so parse mcc
+  # compile arch flags here once.
+  torch_musa_get_mcc_arch_list(TORCH_MUSA_ARCH_LIST)
+  message(STATUS "TORCH_MUSA_ARCH_LIST ${TORCH_MUSA_ARCH_LIST}")
+
+  set(MAX_TORCH_MUSA_ARCH_VERSION 0)
+
+  foreach(TORCH_MUSA_ARCH ${TORCH_MUSA_ARCH_LIST})
+    string(APPEND MUSA_MCC_FLAGS " --offload-arch=mp_${TORCH_MUSA_ARCH}")
+
+    string(REGEX MATCH "[0-9]+" ARCH_INT ${TORCH_MUSA_ARCH})
+    math(EXPR ARCH_VERSION_INT "${ARCH_INT} * 10")
+    if(ARCH_VERSION_INT GREATER MAX_TORCH_MUSA_ARCH_VERSION)
+      set(MAX_TORCH_MUSA_ARCH_VERSION ${ARCH_VERSION_INT})
+    endif()
+  endforeach()
+
+  find_package(MUSAToolkit REQUIRED)
+  find_package(MUDNN REQUIRED)
+
+  list(APPEND DEPENDENT_INCLUDE_DIRS ${MUSAToolkit_INCLUDE_DIR}
+       ${MUDNN_INCLUDE_DIRS})
+  list(APPEND DEPENDENT_LIBRARIES ${MUSA_LIBRARIES} ${MUDNN_LIBRARIES})
+
+  if(USE_MCCL)
+    if(NOT DEFINED ENV{MCCL_INCLUDE_DIR})
+      set(ENV{MCCL_INCLUDE_DIR} "${MUSA_PATH}/include")
+    endif()
+    if(NOT DEFINED ENV{MCCL_LIB_DIR})
+      set(ENV{MCCL_LIB_DIR} "${MUSA_PATH}/lib")
+    endif()
+    find_package(MCCL REQUIRED)
+
     list(APPEND DEPENDENT_INCLUDE_DIRS ${MCCL_INCLUDE_DIRS})
     list(APPEND DEPENDENT_LIBRARIES ${MCCL_LIBRARIES})
-  else()
-    message(WARNING " NO MCCL FOUND?")
-    list(APPEND DEPENDENT_INCLUDE_DIRS "/usr/local/musa/include")
-    list(APPEND DEPENDENT_LIBRARIES "/usr/local/musa/lib/libmccl.so")
-    set(MCCL_PATH "/usr/local/musa")
-    set(MCCL_LIBRARIES "/usr/local/musa/lib/libmccl.so")
+    add_definitions(-DUSE_MCCL)
+
+    # For mccl BF16 compilation
+    add_definitions(-DMARCH_TYPE=${MAX_TORCH_MUSA_ARCH_VERSION})
   endif()
 
-  add_definitions(-DUSE_MCCL)
-endif()
-
-find_package(MUSAToolkits)
-
-if(MUSAToolkits_FOUND)
-  list(APPEND DEPENDENT_INCLUDE_DIRS ${MUSAToolkits_INCLUDE_DIRS})
-  list(APPEND DEPENDENT_LIBRARIES ${MUSAToolkits_LIBRARIES})
+  set(MUSA_LINK_LIBRARIES_KEYWORD PUBLIC)
 else()
-  # set default musa_toolkits path
-  message(
-    WARNING
-      " The environment variable MUSA_HOME may be not specified. Using default MUSATOOLKITS PATH: /usr/local/musa"
-  )
-  list(APPEND DEPENDENT_INCLUDE_DIRS "/usr/local/musa/include/")
-  list(APPEND DEPENDENT_LIBRARIES "/usr/local/musa/lib/libmusart.so")
-  set(ENV{MUSA_HOME} "/usr/local/musa")
-  set(MUSATOOLKITS_PATH "/usr/local/musa")
-  set(MUSAToolkits_LIBRARIES "/usr/local/musa/lib/")
+  message(FATAL_ERROR "MUSA not found")
 endif()
 
 include_directories(${PROJECT_SOURCE_DIR})
@@ -321,7 +309,7 @@ else()
 endif()
 
 set(CODEGEN_TARGET "musa_codegen")
-set(GENERATED_MUSA_CSRCS "${CODE_GENERATED_DIR}/ATen/RegisterMUSA.cpp",
+set(GENERATED_MUSA_CSRCS "${CODE_GENERATED_DIR}/ATen/RegisterMUSA.cpp"
                          "${CODE_GENERATED_DIR}/ATen/RegisterQuantizedMUSA.cpp")
 add_custom_command(
   OUTPUT ${GENERATED_MUSA_CSRCS}
@@ -346,10 +334,30 @@ if(USE_PER_OPERATOR_HEADERS)
   target_compile_definitions(${PLUGIN_NAME} PUBLIC AT_PER_OPERATOR_HEADERS)
 endif()
 
+# parse musa toolkit version
+parse_real_musa_version(REAL_MUSA_VERSION)
+if(REAL_MUSA_VERSION)
+  message(STATUS "REAL_MUSA_VERSION = ${REAL_MUSA_VERSION}")
+  target_compile_definitions(${MUSA_KERNELS_LIB}
+                             PUBLIC -DREAL_MUSA_VERSION=${REAL_MUSA_VERSION})
+  target_compile_definitions(${PLUGIN_NAME}
+                             PUBLIC -DREAL_MUSA_VERSION=${REAL_MUSA_VERSION})
+endif()
+
 add_dependencies(${MUSA_KERNELS_LIB} ${CODEGEN_TARGET})
+
+string(REPLACE ";" " " PYTORCH_MUSA_ARCH_readable "${TORCH_MUSA_ARCH_LIST}")
+set_source_files_properties(
+  ${PROJECT_SOURCE_DIR}/torch_musa/csrc/core/Module.cpp
+  PROPERTIES COMPILE_FLAGS
+             "-DMUSA_ARCH_FLAGS=\"${PYTORCH_MUSA_ARCH_readable}\"")
 
 target_link_libraries(${PLUGIN_NAME} PUBLIC ${DEPENDENT_LIBRARIES})
 target_link_libraries(${PLUGIN_NAME} PUBLIC ${MUSA_KERNELS_LIB})
+
+if(LINUX)
+  target_link_libraries(${PLUGIN_NAME} PRIVATE dl)
+endif()
 
 # compile musa_kernel of the extension
 set(EXT_MUSA_KERNEL_LIB "_ext_musa_kernels")

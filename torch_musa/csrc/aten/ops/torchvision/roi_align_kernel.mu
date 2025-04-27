@@ -6,7 +6,7 @@
 #include "torch_musa/csrc/aten/mudnn/Handle.h"
 #include "torch_musa/csrc/aten/musa/MUSAAtomic.muh"
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
-#include "torch_musa/csrc/aten/musa/MUSAMarcos.muh"
+#include "torch_musa/csrc/aten/musa/MUSAMacros.muh"
 #include "torch_musa/csrc/aten/musa/MUSAMath.muh"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 

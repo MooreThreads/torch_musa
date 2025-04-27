@@ -51,10 +51,13 @@ def do_bench(*args, **kwargs):
         try:
             # import from triton.musa_testing in triton_musa-2.1.0
             from triton.musa_testing import do_bench as triton_do_bench
-
-            # from triton.backends.mtgpu.musa_testing import do_bench as triton_do_bench
-        except ImportError as exc:
-            raise NotImplementedError("requires Triton") from exc
+        except ImportError:
+            try:
+                from triton.backends.mtgpu.musa_testing import (
+                    do_bench as triton_do_bench,
+                )
+            except ImportError as exc:
+                raise NotImplementedError("requires Triton") from exc
         # triton PR https://github.com/openai/triton/pull/1513 change the
         # quantile fields name from 'percentiles' to 'quantiles'
         # and change the default value from (0.5, 0.2, 0.8) to None.

@@ -11,7 +11,6 @@ import subprocess
 import distutils.command.clean
 
 from os.path import dirname, join
-from subprocess import PIPE, Popen
 from setuptools import setup, find_packages
 import setuptools.command.install
 
@@ -98,36 +97,6 @@ def get_pytorch_install_path():
     return pytorch_install_root
 
 
-def get_mtgpu_arch():
-    """
-    Get moorethreads gpu arch.
-    """
-    cmd = "musaInfo"
-
-    # Get ID, processing and memory utilization for all GPUs
-    try:
-        with Popen([cmd], stdout=PIPE) as p:
-            stdout, _ = p.communicate()
-    except Exception as exception:
-        raise RuntimeError(f"Unable to run the {cmd} command") from exception
-    output = stdout.decode("UTF-8")
-    major, minor = None, None
-
-    lines = output.split(os.linesep)
-
-    for line in lines:
-        kvs = line.split(":")
-        if len(kvs) != 2:
-            continue
-        if kvs[0].strip().startswith("major"):
-            major = kvs[1].strip()
-        elif kvs[0].strip().startswith("minor"):
-            minor = kvs[1].strip()
-        if major and minor:
-            return major + minor
-    raise RuntimeError(f"Can not find Product Name in the output of '{cmd}'")
-
-
 def build_musa_lib():
     """
     Build musa python lib.
@@ -140,8 +109,6 @@ def build_musa_lib():
     code_generated_path = os.path.join(BASE_DIR, build_dir, code_generated_dir)
     if not os.path.isdir(cuda_compatiable_path):
         port_cuda(pytorch_root, get_pytorch_install_path(), cuda_compatiable_path)
-
-    os.environ["MUSA_ARCH"] = get_mtgpu_arch()
 
     cmake = CMake(build_dir, install_dir_prefix="torch_musa")
     # use reference to os.environ first, because newly added env vars may be accessed in CMake.

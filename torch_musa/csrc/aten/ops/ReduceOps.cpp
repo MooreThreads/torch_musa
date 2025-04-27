@@ -163,21 +163,16 @@ std::tuple<at::Tensor&, at::Tensor&> AMinMaxOut(
     bool keepdim,
     at::Tensor& min,
     at::Tensor& max) {
+  if (C10_UNLIKELY(self.numel() == 0)) {
+    return std::forward_as_tuple(min, max);
+  }
   c10::musa::MUSAGuard device_guard(self.device());
-
-  IntArrayRef dims(dim.value());
-  DimVector dims_vec(dims);
-  maybe_wrap_dims(dims_vec, self.dim());
-  namedinference::propagate_names_for_reduction(min, self, dims_vec, keepdim);
-  namedinference::propagate_names_for_reduction(max, self, dims_vec, keepdim);
-
-  at::Tensor input = self.contiguous();
+  at::Tensor input = FormatContiguous(self, MemoryFormat::Contiguous);
 
   auto in_m = CreateMUTensor(input);
   auto min_m = CreateMUTensor(min);
   auto max_m = CreateMUTensor(max);
 
-  const int dim_m = dims_vec[0];
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Reduce r_min;
   ::musa::dnn::Reduce r_max;
@@ -185,8 +180,16 @@ std::tuple<at::Tensor&, at::Tensor&> AMinMaxOut(
       r_min.SetMode(::musa::dnn::Reduce::Mode::MIN), "SetMinMode");
   CHECK_MUDNN_STATUS(
       r_max.SetMode(::musa::dnn::Reduce::Mode::MAX), "SetMaxMode");
-  CHECK_MUDNN_STATUS(r_min.SetDim({dim_m}), "SetMinDim");
-  CHECK_MUDNN_STATUS(r_max.SetDim({dim_m}), "SetMaxDim");
+  if (dim.has_value()) {
+    IntArrayRef dims(dim.value());
+    DimVector dims_vec(dims);
+    maybe_wrap_dims(dims_vec, self.dim());
+    namedinference::propagate_names_for_reduction(min, self, dims_vec, keepdim);
+    namedinference::propagate_names_for_reduction(max, self, dims_vec, keepdim);
+    const int dim_m = dims_vec[0];
+    CHECK_MUDNN_STATUS(r_min.SetDim({dim_m}), "SetMinDim");
+    CHECK_MUDNN_STATUS(r_max.SetDim({dim_m}), "SetMaxDim");
+  }
   CHECK_MUDNN_STATUS(r_min.Run(h, min_m, in_m, InternalMemAlloc), "RunMin");
   CHECK_MUDNN_STATUS(r_max.Run(h, max_m, in_m, InternalMemAlloc), "RunMax");
 

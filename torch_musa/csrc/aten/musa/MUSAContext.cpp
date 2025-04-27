@@ -7,8 +7,8 @@
 #include <ATen/musa/MUSAConfig.h>
 #include <c10/util/CallOnce.h>
 
-#include "torch_musa/csrc/core/Allocator.h"
 #include "torch_musa/csrc/core/Device.h"
+#include "torch_musa/csrc/core/MUSACachingAllocator.h"
 #include "torch_musa/csrc/core/MUSAException.h"
 
 namespace at {
@@ -66,6 +66,26 @@ bool canDeviceAccessPeer(int device, int peer_device) {
 
 Allocator* getMUSADeviceAllocator() {
   return c10::musa::MUSACachingAllocator::get();
+}
+
+uint32_t getMUSAArch() {
+  // same value as __MUSA_ARCH__ but used on host code
+  const musaDeviceProp* device_prop = getCurrentDeviceProperties();
+  return device_prop->major * 100 + device_prop->minor * 10;
+}
+
+uint32_t getMUSAArch(int device) {
+  const musaDeviceProp* device_prop = getDeviceProperties(device);
+  return device_prop->major * 100 + device_prop->minor * 10;
+}
+
+// start to support real bfloat16 op since QY2
+bool maybeDNNOpSupportBFloat16() {
+  return getMUSAArch() >= 220;
+}
+
+bool maybeDNNOpSupportBFloat16(int device) {
+  return getMUSAArch(device) >= 220;
 }
 
 } // namespace musa

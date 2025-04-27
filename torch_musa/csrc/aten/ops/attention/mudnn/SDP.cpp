@@ -22,9 +22,11 @@
 namespace at {
 namespace musa {
 
-inline bool is_pad_mask(const at::Tensor& mask, const at::Tensor& query) {
-  return mask.dim() == 2 && mask.size(0) == query.size(0) &&
-      mask.size(1) == query.size(2);
+inline bool is_pad_mask(
+    const c10::optional<at::Tensor>& mask,
+    const at::Tensor& query) {
+  return mask.has_value() && mask.value().defined() && (*mask).dim() == 2 &&
+      (*mask).size(0) == query.size(0) && (*mask).size(1) == query.size(2);
 }
 
 inline void check_scale(
@@ -120,10 +122,7 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> MuDNNMathSDPAFwd(
       "SetComputeMode");
   CHECK_MUDNN_STATUS(sdpa.SetEmbedDim(head_dim * head_num), "SetEmbedDim");
   CHECK_MUDNN_STATUS(sdpa.SetHeadsNum(head_num), "SetHeadsNum");
-  if (mask.has_value()) {
-    CHECK_MUDNN_STATUS(
-        sdpa.SetMaskMode(is_pad_mask(mask.value(), query)), "SetMaskMode");
-  }
+  CHECK_MUDNN_STATUS(sdpa.SetMaskMode(is_pad_mask(mask, query)), "SetMaskMode");
 
   // store dropout mask, bool data type
   auto dropout_mask =
@@ -260,10 +259,10 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> MuDNNFlashSDPAFwd(
 
   c10::musa::MUSAGuard device_guard(query.device());
 
-  // Query (Batch x Num_heads x Q_seq_len  x Dim_per_head)
-  // Key   (Batch x Num_heads x KV_seq_len x Dim_per_head)
-  // Value (Batch x Num_heads x KV_seq_len x Dim_per_head)
-  auto head_dim = query.sizes()[3]; // head_dim
+  // Query (Batch x Num_heads x Q_seq_len  x HeadDim_QK)
+  // Key   (Batch x Num_heads x KV_seq_len x HeadDim_QK)
+  // Value (Batch x Num_heads x KV_seq_len x HeadDim_V)
+  auto head_dim = value.sizes()[3]; // head_dim of attention output
   auto q_seq_len = query.size(2); // seq_len
   auto head_num = query.sizes()[1]; // head_num
   auto batch_size = query.sizes()[0]; // batch_size
@@ -291,13 +290,8 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> MuDNNFlashSDPAFwd(
   }
   auto musa_mask = at::musa::CreateMUTensor(contiguous_mask);
 
-  int32_t kv_seq_len; // kv_seq_len
-  if (key.size(3) == head_dim) {
-    kv_seq_len = key.size(2);
-  } else {
-    // key has shape [bs, head_num, head_dim, kv_seq_len]
-    kv_seq_len = key.size(3);
-  }
+  // [bs, head_num, seq_len, head_dim]
+  int32_t kv_seq_len = key.size(2); // kv_seq_len
 
   auto log_sum_exp = at::empty(
       {batch_size, head_num, q_seq_len},
@@ -308,17 +302,11 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> MuDNNFlashSDPAFwd(
   musa::muHandle& h = at::GetMudnnHandle();
   ::musa::dnn::ScaledDotProductAttention sdpa;
 
-  if (is_causal) {
-    CHECK_MUDNN_STATUS(sdpa.SetCausal(true), "SetCausalToTrue");
-  }
-
   // Config Mudnn
+  CHECK_MUDNN_STATUS(sdpa.SetCausal(is_causal), "SetCausal");
   CHECK_MUDNN_STATUS(sdpa.SetEmbedDim(head_dim * head_num), "SetEmbedDim");
   CHECK_MUDNN_STATUS(sdpa.SetHeadsNum(head_num), "SetHeadsNum");
-  if (mask.has_value()) {
-    CHECK_MUDNN_STATUS(
-        sdpa.SetMaskMode(is_pad_mask(mask.value(), query)), "SetMaskMode");
-  }
+  CHECK_MUDNN_STATUS(sdpa.SetMaskMode(is_pad_mask(mask, query)), "SetMaskMode");
 
   // store dropout mask, bool data type
   auto dropout_mask =
@@ -392,17 +380,15 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> MuDNNFlashSDPABwd(
   ::musa::dnn::ScaledDotProductAttention sdpa;
 
   // check the mask
-  auto contiguous_mask = at::empty({0}); // should we keep this tensor in host?
   // FIXME: (lms) temporarily check value defined.
-  if (!is_causal && mask.has_value() && mask.value().defined()) {
-    CHECK_MUDNN_STATUS(
-        sdpa.SetMaskMode(is_pad_mask(mask.value(), query)), "SetMaskMode");
-    contiguous_mask = mask.value().contiguous();
-  }
+  auto contiguous_mask = mask.has_value() && mask.value().defined()
+      ? mask.value().contiguous()
+      : at::empty({0});
+  CHECK_MUDNN_STATUS(sdpa.SetMaskMode(is_pad_mask(mask, query)), "SetMaskMode");
 
   auto musa_mask = at::musa::CreateMUTensor(contiguous_mask);
 
-  auto head_dim = query.sizes()[3]; // head_dim
+  auto head_dim = value.sizes()[3]; // head_dim
   auto q_seq_len = query.sizes()[2]; // seq_len
   auto head_num = query.sizes()[1]; // q_head_num as the real head_num
   auto batch_size = query.sizes()[0]; // batch_size

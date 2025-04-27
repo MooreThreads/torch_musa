@@ -152,9 +152,9 @@ def transform_file(
                 in [
                     "DistributionTemplates.h",
                 ]
-            ):
+            ) and ("THC" not in path):
                 write_handle.write(
-                    '#include "torch_musa/csrc/aten/musa/MUSAMarcos.muh"\n'
+                    '#include "torch_musa/csrc/aten/musa/MUSAMacros.muh"\n'
                 )
             lines = read_handle.readlines()
             old_line = "null"

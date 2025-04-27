@@ -6,7 +6,7 @@
 #include <cstddef>
 
 #include "musa_runtime_api.h"
-#include "torch_musa/csrc/core/Allocator.h"
+#include "torch_musa/csrc/core/MUSACachingAllocator.h"
 namespace torch {
 namespace musa {
 bool MusaIPCCollect();

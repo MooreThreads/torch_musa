@@ -76,3 +76,38 @@ def test_argsort(input_data, dtype, descending, stable):
     else:
         test.check_result()
     test.check_grad_fn()
+
+
+input_datas = [
+    [torch.tensor(1.5), 0],
+    [torch.randn(10), 0],
+    [torch.randn(10)[2:8], -1],
+    [torch.randn(10, 10), 1],
+    [torch.randn(10, 0), 0],
+    [torch.randn(10, 10).t(), 1],
+    [torch.randn(10, 10, 2, 6, 1, 3), 3],
+    [torch.randn(10, 4, 1, 1).to(memory_format=torch.channels_last), 0],
+]
+
+dtypes = [
+    torch.float16,
+    torch.float32,
+]
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(0)
+@pytest.mark.parametrize("input_data", input_datas)
+@pytest.mark.parametrize("dtype", dtypes)
+def test_median(input_data, dtype):
+    input_args = {}
+    input_args["input"] = input_data[0].to(dtype)
+    dim = input_data[1]
+    input_args["dim"] = dim
+    test = testing.OpTest(func=torch.median, input_args=input_args)
+    if dtype == torch.float16:
+        test.check_musafp16_vs_musafp32()
+    elif dtype == torch.bfloat16:
+        test.check_musabf16_vs_musafp16()
+    else:
+        test.check_result()
+    test.check_grad_fn()

@@ -23,7 +23,6 @@ from torch.utils.cpp_extension import (
     _run_ninja_build,
 )
 import torch_musa
-from torch_musa.core._utils import _get_musa_arch
 
 if os.getenv("MAX_JOBS") is None:
     os.environ["MAX_JOBS"] = str(multiprocessing.cpu_count())
@@ -385,18 +384,18 @@ def MUSAExtension(name, sources, *args, **kwargs):
     kwargs["extra_link_args"] = extra_link_args
 
     user_define_macros = kwargs.get("define_macros", [])
-    user_define_macros += [("TORCH_MUSA_ARCH", str(_get_musa_arch() * 10))]
     kwargs["define_macros"] = user_define_macros
+
+    mcc_arch_flags = _get_musa_arch_flags()
 
     if "extra_compile_args" in kwargs:
         mcc_user_extra_compile_args = kwargs["extra_compile_args"].get("mcc", [])
-        mcc_user_extra_compile_args += ["--cuda-gpu-arch=mp_" + str(_get_musa_arch())]
+        mcc_user_extra_compile_args += mcc_arch_flags
         kwargs["extra_compile_args"]["mcc"] = mcc_user_extra_compile_args
     else:
         kwargs["extra_compile_args"] = {}
-        kwargs["extra_compile_args"]["mcc"] = [
-            "--cuda-gpu-arch=mp_" + str(_get_musa_arch())
-        ]
+        kwargs["extra_compile_args"]["mcc"] = mcc_arch_flags
+
     if "cxx" not in kwargs["extra_compile_args"]:
         kwargs["extra_compile_args"]["cxx"] = []
     if _get_cpu_arch() != "arm":
@@ -721,3 +720,52 @@ class BuildExtension(build_ext):
             extension,
             "-D_GLIBCXX_USE_CXX11_ABI=" + str(int(torch._C._GLIBCXX_USE_CXX11_ABI)),
         )
+
+
+def _get_musa_arch_flags():
+    """
+    Determine MUSA arch flags to use.
+
+    For an arch, say "22", the added compile flag will be
+    ``--offload-arch=mp_22``.
+
+    See torch_musa_get_mcc_arch_list in utils.cmake for what
+    archs will be used when building torch_musa.
+    """
+
+    supported_arches = ["10", "21", "22", "31", "32"]
+
+    _arch_list = os.environ.get("TORCH_MUSA_ARCH_LIST", None)
+
+    if not _arch_list:
+        warnings.warn(
+            "TORCH_MUSA_ARCH_LIST is not set, "
+            "all archs for visible cards are included for compilation. \n"
+            "If this is not desired, please set os.environ['TORCH_MUSA_ARCH_LIST']."
+        )
+        arch_list = []
+        for i in range(torch.musa.device_count()):
+            capability = torch.musa.get_device_capability(i)
+            supported_mp = [int(arch) for arch in torch.musa.get_arch_list()]
+            max_supported_mp = max((mp // 10, mp % 10) for mp in supported_mp)
+
+            # Capability of the device may be higher than what's supported by the user's
+            # MCC, causing compilation error. User's MCC is expected to match the one
+            # used to build pytorch, so we use the maximum supported capability of pytorch
+            # to clamp the capability.
+            capability = min(max_supported_mp, capability)
+            arch = f"{capability[0]}{capability[1]}"
+            if arch not in arch_list:
+                arch_list.append(arch)
+        arch_list = sorted(arch_list)
+    else:
+        arch_list = _arch_list.split(";")
+        arch_list = sorted(arch_list)
+
+    flags = []
+    for arch in arch_list:
+        if arch not in supported_arches:
+            raise ValueError(f"Unknown MUSA arch ({arch})")
+        flags.append(f"--offload-arch=mp_{arch}")
+
+    return sorted(set(flags))

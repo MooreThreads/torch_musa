@@ -985,6 +985,102 @@ def test_uint_binary_add_sub(input_data, func, dtype):
     if reverse:
         test(r_cpu, l_cpu, r_musa, l_musa, func)
 
+@pytest.mark.skipif(
+    testing.get_musa_arch() < 22,
+    reason="Only support arch greater equal 22")
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize(
+    "shapes_and_tags",
+    [
+        {
+            "l_shape": [128, 128],
+            "r_shape": [128],
+            "tags": ["functional", "inplace_l", "out"],
+        },
+        {
+            "l_shape": [128, 128],
+            "r_shape": [128, 1],
+            "tags": ["functional", "inplace_l", "out"],
+        },
+        {
+            "l_shape": [1],
+            "r_shape": [128, 128],
+            "tags": ["functional", "inplace_r", "out"],
+        },
+        {
+            "l_shape": [],
+            "r_shape": [128, 128],
+            "tags": ["functional", "inplace_r", "out"],
+        },
+        {
+            "l_shape": [128, 128],
+            "r_shape": [],
+            "tags": ["functional", "inplace_l", "out"],
+        },
+    ],
+)
+@pytest.mark.parametrize(
+    "dtypes",
+    [
+        [torch.float16, torch.float],
+        [torch.bfloat16, torch.float],
+        [torch.float, torch.float16],
+        [torch.float, torch.bfloat16],
+    ],
+)
+@pytest.mark.parametrize("func", [torch.add])
+def test_binary_mixed_types(shapes_and_tags, dtypes, func):
+    l_shape, r_shape = shapes_and_tags["l_shape"], shapes_and_tags["r_shape"]
+    tags = shapes_and_tags["tags"]
+    l_type, r_type = dtypes
+
+    def make_randn(shape, dtype):
+        if len(shape) > 0:
+            return torch.randn(shape, dtype=dtype)
+        return torch.tensor(1, dtype=dtype)
+
+    def to_musa(c):
+        if isinstance(c, torch.Tensor):
+            return c.musa()
+        return c
+
+    l_cpu = make_randn(l_shape, l_type)
+    r_cpu = make_randn(r_shape, r_type)
+
+    l_musa = to_musa(l_cpu)
+    r_musa = to_musa(r_cpu)
+
+    cmp = testing.DefaultComparator(
+        abs_diff=1e-3, rel_diff=1e-3, equal_nan=True
+    )
+
+    if "functional" in tags:
+        res_cpu = func(l_cpu, r_cpu)
+        res_musa = func(l_musa, r_musa)
+        assert cmp(res_cpu.float(), res_musa.float().cpu())
+
+    if "out" in tags:
+        assert "functional" in tags
+        res_musa.zero_()
+        func(l_musa, r_musa, out=res_musa)
+        assert cmp(res_cpu.float(), res_musa.float().cpu())
+
+    if "inplace_l" in tags and l_type == torch.float:
+        assert "inplace_r" not in tags
+        cpu_f = getattr(l_cpu, func.__name__ + "_")
+        musa_f = getattr(l_musa, func.__name__ + "_")
+        cpu_f(r_cpu)
+        musa_f(r_musa)
+        assert cmp(l_cpu.float(), l_musa.float().cpu())
+
+    if "inplace_r" in tags and r_type == torch.float:
+        assert "inplace_l" not in tags
+        cpu_f = getattr(r_cpu, func.__name__ + "_")
+        musa_f = getattr(r_musa, func.__name__ + "_")
+        cpu_f(l_cpu)
+        musa_f(l_musa)
+        assert cmp(r_cpu.float(), r_musa.float().cpu())
+
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 def test_boolean_binary_add():

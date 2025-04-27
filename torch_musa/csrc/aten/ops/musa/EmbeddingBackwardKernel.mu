@@ -12,6 +12,7 @@
 #include <thrust/sort.h>
 #include <thrust/unique.h>
 
+#include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/aten/musa/MUSADtype.muh"
 #include "torch_musa/csrc/aten/musa/MUSAMath.muh"
 #include "torch_musa/csrc/aten/ops/musa/EmbeddingBackwardKernel.muh"
@@ -25,15 +26,6 @@ using at::musa::FastDivmod;
 using at::musa::VecType;
 
 namespace {
-
-#if TORCH_MUSA_ARCH == 110
-constexpr int MAX_BLOCK_NUM = 16;
-#elif TORCH_MUSA_ARCH == 210
-constexpr int MAX_BLOCK_NUM = 32;
-#else
-constexpr int MAX_BLOCK_NUM = 64;
-#endif
-
 constexpr int NROWS_PER_THREAD = 10;
 
 __host__ __device__ __forceinline__ int64_t ceil_div(int64_t x, int64_t y) {
@@ -325,7 +317,12 @@ Tensor EmbeddingBackwardMUSAKernel(
   // Compute the number partial-segments per segment
   int64_t max_segment = std::min<int64_t>(numel, num_weights);
   auto partials_per_segment = at::empty({max_segment}, orig_indices.options());
-  const int max_blocks = MAX_BLOCK_NUM;
+  int max_blocks = 64;
+  if (at::musa::getMUSAArch() == 110) {
+    max_blocks = 16;
+  } else if (at::musa::getMUSAArch() == 210) {
+    max_blocks = 32;
+  }
   uint32_t threads = 1024;
   uint32_t blocks =
       std::min(ceil_div(numel, threads), static_cast<int64_t>(max_blocks));

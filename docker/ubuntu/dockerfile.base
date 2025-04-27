@@ -36,10 +36,8 @@ ENV PATH=/opt/conda/envs/${ENV_NAME}/bin:${PATH}
 COPY ./pytorch /home/pytorch
 COPY ./vision /home/vision
 COPY ./audio /home/audio
-COPY ./common/pip.conf /etc
 
 RUN rm -rf ~/.bashrc && \
-    echo -e "export PIP_CONFIG_FILE=/etc/pip.conf" >> ~/.bashrc && \
     echo -e ". /opt/conda/etc/profile.d/conda.sh" >> ~/.bashrc && \
     echo -e "conda activate ${ENV_NAME}" >> ~/.bashrc && \
     echo -e "export CMAKE_PREFIX_PATH=\${CONDA_PREFIX:-\"\$(dirname \$(which conda))/../\"}""" >> ~/.bashrc

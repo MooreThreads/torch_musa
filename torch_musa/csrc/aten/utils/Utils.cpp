@@ -14,7 +14,7 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/core/Allocator.h"
+#include "torch_musa/csrc/core/MUSACachingAllocator.h"
 
 #include <mudnn.h>
 
@@ -117,7 +117,8 @@ void SetMUTensorDType(ScalarType dtype, muTensor& m_t) {
     case ScalarType::BFloat16:
       m_t.SetType(muTensor::Type::BFLOAT16);
       break;
-#if defined(TORCH_MUSA_ARCH) && TORCH_MUSA_ARCH >= 310
+// musa-4.0.0 or later
+#if defined(REAL_MUSA_VERSION) && REAL_MUSA_VERSION >= 4000
     case ScalarType::Float8_e5m2:
       m_t.SetType(muTensor::Type::FP8_E5M2);
       break;
@@ -144,15 +145,6 @@ void SetMudnnQuantizationInfo(
   CHECK_MUDNN_STATUS(
       self.SetQuantizationInfo(1, &scales_, &zero_points_),
       "SetQuantizationInfo");
-}
-
-void SetMudnnQuantizationInfo(muTensor& self, Tensor& scales) {
-  // TODO(@fan.mo): we currently only support set per-tensor scale
-  if (scales.numel() == 1) {
-    float* scale = static_cast<float*>(scales.data_ptr());
-    CHECK_MUDNN_STATUS(
-        self.SetQuantizationInfo({scale[0]}, {0}), "SetQuantizationInfo");
-  }
 }
 
 muTensor CreateMUTensorByCompressDim(const Tensor& t) {
@@ -204,6 +196,9 @@ muTensor CreateMUTensorByCompressDim(const Tensor& t) {
 }
 
 muTensor CreateMUTensor(const Tensor& t, bool permute_if_not_contiguous) {
+  if (!t.defined()) {
+    return muTensor();
+  }
   muTensor rst;
   SetMUTensorDType(t.scalar_type(), rst);
   SetMUTensorAddr(t.data_ptr(), rst);
@@ -260,6 +255,10 @@ bool IsTranspose(const Tensor& mat, bool strict) {
     return strict ? MatContiguous(t_mat) : t_mat.is_contiguous();
   }
   return false;
+}
+
+bool IsLastDimContiguous(const Tensor& input) {
+  return input.dim() > 0 && input.stride(-1) == 1;
 }
 
 Tensor FormatContiguous(const Tensor& t, at::MemoryFormat memory_format) {

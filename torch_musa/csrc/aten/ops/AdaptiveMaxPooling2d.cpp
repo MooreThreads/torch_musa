@@ -4,6 +4,7 @@
 #include <ATen/ops/adaptive_max_pool2d_backward_native.h>
 #include <ATen/ops/adaptive_max_pool2d_native.h>
 
+#include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
@@ -18,22 +19,16 @@ TORCH_IMPL_FUNC(adaptive_max_pool2d_out_musa)
  IntArrayRef output_size,
  const Tensor& output,
  const Tensor& indices) {
-#if defined(TORCH_MUSA_ARCH) && TORCH_MUSA_ARCH >= 220
-  TORCH_CHECK(
-      input.scalar_type() == at::ScalarType::Float ||
-          input.scalar_type() == at::ScalarType::Half ||
-          input.scalar_type() == at::ScalarType::BFloat16,
-      "Dtype of input tensor of adaptive_max_pool2d_out_musa only support Float, Half and BFloat16, ",
-      "but now it is ",
-      input.scalar_type());
-#else
-  TORCH_CHECK(
-      input.scalar_type() == at::ScalarType::Float ||
-          input.scalar_type() == at::ScalarType::Half,
-      "Dtype of input tensor of adaptive_max_pool2d_out_musa only support Float and Half, ",
-      "but now it is ",
-      input.scalar_type());
-#endif
+  if (at::musa::maybeDNNOpSupportBFloat16()) {
+    TORCH_MUSA_CHECK_FLOATING_TYPES(
+        input.scalar_type(), "adaptive_max_pool2d_out_musa");
+  } else {
+    TORCH_MUSA_CHECK_DTYPES(
+        input.scalar_type(),
+        "adaptive_max_pool2d_out_musa",
+        at::ScalarType::Float,
+        at::ScalarType::Half);
+  }
   TensorArg output_arg{output, "output", 1};
   TensorArg indices_arg{indices, "indices", 2};
   TensorArg input_arg{input, "input", 3};
@@ -62,22 +57,16 @@ TORCH_IMPL_FUNC(adaptive_max_pool2d_backward_out_musa)
  const Tensor& input,
  const Tensor& indices,
  const Tensor& gradInput) {
-#if defined(TORCH_MUSA_ARCH) && TORCH_MUSA_ARCH >= 220
-  TORCH_CHECK(
-      input.scalar_type() == at::ScalarType::Float ||
-          input.scalar_type() == at::ScalarType::Half ||
-          input.scalar_type() == at::ScalarType::BFloat16,
-      "Dtype of input tensor of adaptive_max_pool2d_backward_out_musa only support Float, Half and BFloat16, ",
-      "but now it is ",
-      input.scalar_type());
-#else
-  TORCH_CHECK(
-      input.scalar_type() == at::ScalarType::Float ||
-          input.scalar_type() == at::ScalarType::Half,
-      "Dtype of input tensor of adaptive_max_pool2d_backward_out_musa only support Float and Half, ",
-      "but now it is ",
-      input.scalar_type());
-#endif
+  if (at::musa::maybeDNNOpSupportBFloat16()) {
+    TORCH_MUSA_CHECK_FLOATING_TYPES(
+        input.scalar_type(), "adaptive_max_pool2d_backward_out_musa");
+  } else {
+    TORCH_MUSA_CHECK_DTYPES(
+        input.scalar_type(),
+        "adaptive_max_pool2d_backward_out_musa",
+        at::ScalarType::Float,
+        at::ScalarType::Half);
+  }
 
   TensorArg grad_input_arg{gradInput, "gradInput", 1};
   TensorArg grad_output_arg{gradOutput, "gradOutput", 2};

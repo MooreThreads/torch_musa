@@ -20,5 +20,9 @@ if [ "$NAME" != "MCCL" ]; then
   exit 1
 fi
 
-bash ${torch_musa_dir}/install_mccl.sh --mccl_url "https://oss.mthreads.com/release-rc/cuda_compatible/${TAG}/${ARCH}/mccl_${VERSION}.${ARCH}.tar.gz"
+OSS_PREFIX=https://oss.mthreads.com/release-ci/computeQA/cuda_compatible/CI/release_KUAE_2.0_for_PH1_M3D/2025-04-08
+MCCL_VERSION=dev1.8.0
+MCCL_URL="${OSS_PREFIX}/mccl_${MCCL_VERSION}.tar.gz"
+
+bash ${torch_musa_dir}/install_mccl.sh --mccl_url ${MCCL_URL}
 echo -e "\033[31mmccl update to version ${TAG}-${VERSION}! \033[0m"

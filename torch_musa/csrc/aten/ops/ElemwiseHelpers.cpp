@@ -146,6 +146,32 @@ void TernaryCall(
   CHECK_MUDNN_STATUS(op.Run(h, out, inp0, inp1, inp2), "Run");
 }
 
+std::pair<ScalarType, ScalarType> BinaryAddSuggestInputTypes(
+    MusaTensorIterator& iter) {
+  const auto c_type = iter.common_dtype();
+  if (c_type != ScalarType::Float || iter.is_cpu_scalar(1) ||
+      iter.is_cpu_scalar(2)) {
+    return std::make_pair(c_type, c_type);
+  }
+
+  const auto l_type = iter.dtype(1);
+  const auto r_type = iter.dtype(2);
+
+  auto is_f16 = [](ScalarType t) -> bool {
+    return t == ScalarType::Half || t == ScalarType::BFloat16;
+  };
+
+  if (is_f16(l_type) && r_type == ScalarType::Float) {
+    return std::make_pair(l_type, r_type);
+  }
+
+  if (is_f16(r_type) && l_type == ScalarType::Float) {
+    return std::make_pair(l_type, r_type);
+  }
+
+  return std::make_pair(c_type, c_type);
+}
+
 std::pair<ScalarType, ScalarType> BinaryTrueDivSuggestInputTypes(
     MusaTensorIterator& iter) {
   const auto c_type = iter.common_dtype();

@@ -6,8 +6,8 @@ pipeline {
   }
 
   environment {
-    S3000IMG = 'sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py38:rc3.1.0-v1.3.0-qy1'
-    S4000IMG = 'sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py38:rc3.1.0-v1.3.0-qy2'
+    S3000IMG = 'sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py310:rc3.1.0-v1.3.2-qy1'
+    S4000IMG = 'sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py310:dev4.0.0-v1.3.2-qy2'
     DOCKER_RUN_ARGS = '--network=host ' +
       '--user root ' +
       '--privileged ' +
@@ -34,17 +34,17 @@ pipeline {
                   // add safe directory
                   sh 'git config --global --add safe.directory \"*\"'
                   // lint check
-                  sh '/opt/conda/condabin/conda run -n py38 --no-capture-output /bin/bash tools/lint/pylint.sh'
-                  sh '/opt/conda/condabin/conda run -n py38 --no-capture-output /bin/bash tools/lint/git-clang-format.sh --rev origin/main'
+                  sh '/opt/conda/condabin/conda run -n py310 --no-capture-output /bin/bash tools/lint/pylint.sh'
+                  sh '/opt/conda/condabin/conda run -n py310 --no-capture-output /bin/bash tools/lint/git-clang-format.sh --rev origin/main'
                 }
                 gitlabCommitStatus(name: '02-s3000-env prepare', state: 'running') {
                   // update musa sdk
                   sh 'pip uninstall torch torch_musa -y'
-                  sh '/bin/bash --login docker/common/release/update_release_all.sh'
+                  // sh '/bin/bash --login docker/common/release/update_release_all.sh' // we don't install dev4.0.0 on QY1
                 }
                 gitlabCommitStatus(name: '03-s3000-build torch', state: 'running') {
                   // build
-                  sh '/bin/bash --login -c "KINETO_URL=https://sh-code.mthreads.com/ai/kineto.git conda run -n py38 --no-capture-output /bin/bash build.sh -c"'
+                  sh '/bin/bash --login -c "KINETO_URL=https://sh-code.mthreads.com/ai/kineto.git conda run -n py310 --no-capture-output /bin/bash build.sh -c"'
                 }
                 gitlabCommitStatus(name: '04-s3000-unit tests', state: 'running') {
                   // unit test
@@ -52,7 +52,7 @@ pipeline {
                 }
                 gitlabCommitStatus(name: '05-s3000-integration tests', state: 'running') {
                   // integration test
-                  sh 'pip install transformers datasets'
+                  sh 'pip install transformers==4.49.0 datasets'
                   sh 'GPU_TYPE=S3000 /bin/bash --login scripts/run_integration_test.sh'
                 }
               }
@@ -70,8 +70,8 @@ pipeline {
                   // add safe directory
                   sh 'git config --global --add safe.directory \"*\"'
                   // lint check
-                  sh '/opt/conda/condabin/conda run -n py38 --no-capture-output /bin/bash tools/lint/pylint.sh'
-                  sh '/opt/conda/condabin/conda run -n py38 --no-capture-output /bin/bash tools/lint/git-clang-format.sh --rev origin/main'
+                  sh '/opt/conda/condabin/conda run -n py310 --no-capture-output /bin/bash tools/lint/pylint.sh'
+                  sh '/opt/conda/condabin/conda run -n py310 --no-capture-output /bin/bash tools/lint/git-clang-format.sh --rev origin/main'
                 }
                 gitlabCommitStatus(name: '02-s4000-env prepare', state: 'running') {
                   // update musa sdk
@@ -80,7 +80,7 @@ pipeline {
                 }
                 gitlabCommitStatus(name: '03-s4000-build torch', state: 'running') {
                   // build
-                  sh '/bin/bash --login -c "KINETO_URL=https://sh-code.mthreads.com/ai/kineto.git conda run -n py38 --no-capture-output /bin/bash build.sh -c"'
+                  sh '/bin/bash --login -c "KINETO_URL=https://sh-code.mthreads.com/ai/kineto.git conda run -n py310 --no-capture-output /bin/bash build.sh -c"'
                 }
                 gitlabCommitStatus(name: '04-s4000-unit tests', state: 'running') {
                   // unit test
@@ -88,7 +88,7 @@ pipeline {
                 }
                 gitlabCommitStatus(name: '05-s4000-integration tests', state: 'running') {
                   // integration test
-                  sh 'pip install transformers datasets'
+                  sh 'pip install transformers==4.49.0 datasets'
                   sh 'GPU_TYPE=S4000 /bin/bash --login scripts/run_integration_test.sh'
                 }
               }

@@ -13,8 +13,6 @@
 #include "torch_musa/csrc/aten/musa/MUSAMath.muh"
 #include "torch_musa/csrc/core/MUSAStream.h"
 
-#include <tuple>
-
 namespace at {
 namespace native {
 
@@ -29,8 +27,65 @@ constexpr int NARGS = 3; // output, input, indices
 static constexpr int LAUNCH_BOUND2 = 4;
 static constexpr int LAUNCH_SIZE_ND = 128;
 
+template <typename scalar_t>
+struct vec_traits {
+  static constexpr int64_t vlen = sizeof(scalar_t) <= 4
+      ? (sizeof(scalar_t) <= 2 ? (sizeof(scalar_t) <= 1 ? 16 : 8) : 4)
+      : 2;
+  using vec_dtype = VecType<scalar_t, vlen * sizeof(scalar_t) * 8>;
+};
+
+enum class IndexKernelIOType { VEC_LOAD_STORE, VEC_STORE, ATOMIC, ELEMENTWISE };
+
+template <
+    typename scalar_t,
+    IndexKernelIOType IOType,
+    typename vec_dtype = typename vec_traits<scalar_t>::vec_dtype>
+__device__ __forceinline__ void indexput_io_kernel(
+    char* out_data,
+    char* in_data,
+    int64_t offset) {
+  if constexpr (IOType == IndexKernelIOType::VEC_LOAD_STORE) {
+    vec_dtype value_reg = vec_dtype::load((scalar_t*)in_data, 0);
+    vec_dtype::store((scalar_t*)(out_data + offset), 0, value_reg);
+  } else if constexpr (IOType == IndexKernelIOType::VEC_STORE) {
+    vec_dtype value_reg;
+    scalar_t value = *(scalar_t*)in_data;
+    for (int i = 0; i < value_reg.vlen; i++) {
+      value_reg.val_.elem[i] = value;
+    }
+    vec_dtype::store((scalar_t*)(out_data + offset), 0, value_reg);
+  } else if constexpr (IOType == IndexKernelIOType::ELEMENTWISE) {
+    *(scalar_t*)(out_data + offset) = *(scalar_t*)in_data;
+  } else {
+    at::musa::gpuAtomicAdd((scalar_t*)(out_data + offset), *(scalar_t*)in_data);
+  }
+}
+
+template <
+    typename scalar_t,
+    IndexKernelIOType IOType,
+    typename vec_dtype = typename vec_traits<scalar_t>::vec_dtype>
+__device__ __forceinline__ void index_io_kernel(
+    char* out_data,
+    char* in_data,
+    int64_t offset) {
+  static_assert(
+      IOType == IndexKernelIOType::VEC_LOAD_STORE ||
+      IOType == IndexKernelIOType::ELEMENTWISE);
+
+  if constexpr (IOType == IndexKernelIOType::VEC_LOAD_STORE) {
+    vec_dtype value_reg = vec_dtype::load((scalar_t*)(in_data + offset), 0);
+    vec_dtype::store((scalar_t*)out_data, 0, value_reg);
+  } else {
+    // elementwise case
+    *(scalar_t*)out_data = *(scalar_t*)(in_data + offset);
+  }
+}
+
 struct IndexKernelLaunchInfo {
-  bool can_vector_load{false};
+  bool can_vector_load_store{false};
+  bool can_vector_store{false};
   bool no_divider{false};
   int32_t ndim{0};
 };
@@ -43,9 +98,11 @@ inline void ConfigIndexKernelLaunchInfo(
   const int64_t* out_strides_ptr = iter.strides(0).data();
   const int64_t* in_strides_ptr = iter.strides(1).data();
 
-  info.can_vector_load =
+  info.can_vector_load_store =
       (out_strides_ptr[0] == in_strides_ptr[0] &&
        (out_strides_ptr[0] / element_size) == 1);
+  info.can_vector_store = !info.can_vector_load_store &&
+      (iter.tensor(1).numel() == 1) && (out_strides_ptr[0] / element_size) == 1;
   info.ndim = ndim;
   info.no_divider = (ndim <= 3);
 }
@@ -81,7 +138,7 @@ __global__ void IndexElementwiseKernel(
 }
 
 template <typename vec_func_t, typename ew_func_t>
-__global__ void IndexVectorLoadKernel(
+__global__ void IndexVectorizedKernel(
     int64_t x_max,
     int64_t y_max,
     int64_t z_max,
@@ -131,7 +188,7 @@ void LaunchElementwiseKernel(
 }
 
 template <typename vec_func_t, typename ew_func_t>
-void LaunchVectorLoadKernel(
+void LaunchVectorizedKernel(
     dim3 grid,
     dim3 block,
     int64_t x_max,
@@ -141,23 +198,22 @@ void LaunchVectorLoadKernel(
     const vec_func_t& f1,
     const ew_func_t& f2) {
   auto stream = at::musa::getCurrentMUSAStream();
-  IndexVectorLoadKernel<<<grid, block, 0, stream>>>(
+  IndexVectorizedKernel<<<grid, block, 0, stream>>>(
       x_max, y_max, z_max, vlen, f1, f2);
   C10_MUSA_KERNEL_LAUNCH_CHECK();
 }
 
 template <
-    const int MAX_THREE = 3,
-    const bool VEC_LOAD = false,
-    const bool NO_DIVIDER = false,
-    const int VLEN = 1,
-    typename... NFuncs>
+    typename scalar_t,
+    int MAX_THREE = 3,
+    bool NO_DIVIDER = false,
+    int N_CAL_OFFSET_OPERANDS = 3,
+    bool IS_INDEX_PUT,
+    IndexKernelIOType IOType>
 void GPUIndexKernel(
     TensorIteratorBase& iter,
     IntArrayRef index_size,
-    IntArrayRef index_stride,
-    NFuncs... funcs) {
-  auto device_funcs = std::make_tuple(funcs...);
+    IntArrayRef index_stride) {
   int num_indices = index_size.size();
 
   if (iter.numel() == 0) {
@@ -171,8 +227,16 @@ void GPUIndexKernel(
   for (int i = 0; i < ndim; i++) {
     sizes[i] = sizes_ptr[i];
   }
+
+  // change the order in which strides will be processed
+  // from (output, input, indices) to (indices, output, input),
+  // which let us write kernel easily and gives a performance boost when the
+  // input's offset is not needed, i.e., the input tensor's numel is 1,
+  // and this is the ONLY special case we handle.
+  static_assert(NARGS == 3, "invalid number of operands");
+  int arg_idx_map[3] = {2, 0, 1};
   for (int i = 0; i < NARGS; i++) {
-    const int64_t* strides_ptr = iter.strides(i).data();
+    const int64_t* strides_ptr = iter.strides(arg_idx_map[i]).data();
     for (int j = 0; j < ndim; j++) {
       strides[i * MAX_DIM + j] = strides_ptr[j];
     }
@@ -189,7 +253,10 @@ void GPUIndexKernel(
 
   dim3 block_size = {1, 1, 1};
   block_size.x = 256;
-  int num_thread_x = ceil_div(int(sizes[0]), VLEN);
+  constexpr bool VECTORIZED = (IOType == IndexKernelIOType::VEC_LOAD_STORE) ||
+      (IOType == IndexKernelIOType::VEC_STORE);
+  constexpr int vlen = VECTORIZED ? vec_traits<scalar_t>::vlen : 1;
+  int num_thread_x = ceil_div(int(sizes[0]), vlen);
   if (num_thread_x <= 16) {
     block_size.x = 4;
   } else if (num_thread_x <= 64) {
@@ -201,7 +268,7 @@ void GPUIndexKernel(
   }
   block_size.y = 1024 / block_size.x;
 
-  const uint32_t grid_dim_x = ceil_div(sizes[0], (int64_t)block_size.x * VLEN);
+  const uint32_t grid_dim_x = ceil_div(sizes[0], (int64_t)block_size.x * vlen);
   const uint32_t grid_dim_y = ceil_div(sizes[1], (int64_t)block_size.y);
   uint32_t grid_dim_z = 1;
   for (int i = 2; i < ndim; i++) {
@@ -213,42 +280,52 @@ void GPUIndexKernel(
   char* in_data = (char*)iter.data_ptr(1);
 
   if constexpr (NO_DIVIDER) {
-#define CALCULATE_OFFSETS_WITHOUT_DIVIDER(x_idx, y_idx, z_idx) \
-  int64_t offsets[NARGS] = {0};                                \
-  int64_t idxs[3] = {x_idx, y_idx, z_idx};                     \
-  _Pragma("unroll") for (int i = 0; i < NARGS; i++) {          \
-    _Pragma("unroll") for (int j = 0; j < MAX_THREE; j++) {    \
-      offsets[i] += idxs[j] * strides[i * MAX_DIM + j];        \
-    }                                                          \
-  }                                                            \
-  int64_t offset = 0;                                          \
-  for (int i = 0; i < num_indices; i++) {                      \
-    int64_t index = *(int64_t*)(index_ptrs[i] + offsets[2]);   \
-    if (index < 0) {                                           \
-      index += indexed_size[i];                                \
-    }                                                          \
-    offset += index * indexed_strides[i];                      \
-  }                                                            \
-  char* cur_out_ptr = out_data + offsets[0];                   \
-  char* cur_in_ptr = in_data + offsets[1];
+#define CALCULATE_OFFSETS_WITHOUT_DIVIDER(x_idx, y_idx, z_idx)        \
+  int64_t offsets[NARGS] = {0};                                       \
+  int64_t idxs[3] = {x_idx, y_idx, z_idx};                            \
+  _Pragma("unroll") for (int i = 0; i < N_CAL_OFFSET_OPERANDS; i++) { \
+    _Pragma("unroll") for (int j = 0; j < MAX_THREE; j++) {           \
+      offsets[i] += idxs[j] * strides[i * MAX_DIM + j];               \
+    }                                                                 \
+  }                                                                   \
+  int64_t offset = 0;                                                 \
+  for (int i = 0; i < num_indices; i++) {                             \
+    int64_t index = *(int64_t*)(index_ptrs[i] + offsets[0]);          \
+    if (index < 0) {                                                  \
+      index += indexed_size[i];                                       \
+    }                                                                 \
+    offset += index * indexed_strides[i];                             \
+  }                                                                   \
+  char* cur_out_ptr = out_data + offsets[1];                          \
+  char* cur_in_ptr = in_data + offsets[2];
 
-    if constexpr (VEC_LOAD) {
-      static_assert(
-          sizeof...(NFuncs) == 2, "Invalid number of function argument");
-      LaunchVectorLoadKernel(
+    if constexpr (VECTORIZED) {
+      LaunchVectorizedKernel(
           grid_size,
           block_size,
           sizes[0],
           sizes[1],
           sizes[2],
-          VLEN,
+          vlen,
           [=] __device__(uint32_t x_idx, uint32_t y_idx, uint32_t z_idx) {
             CALCULATE_OFFSETS_WITHOUT_DIVIDER(x_idx, y_idx, z_idx);
-            std::get<1>(device_funcs)(cur_out_ptr, cur_in_ptr, offset);
+            if constexpr (IS_INDEX_PUT) {
+              indexput_io_kernel<scalar_t, IOType>(
+                  cur_out_ptr, cur_in_ptr, offset);
+            } else {
+              index_io_kernel<scalar_t, IOType>(
+                  cur_out_ptr, cur_in_ptr, offset);
+            }
           },
           [=] __device__(uint32_t x_idx, uint32_t y_idx, uint32_t z_idx) {
             CALCULATE_OFFSETS_WITHOUT_DIVIDER(x_idx, y_idx, z_idx);
-            std::get<0>(device_funcs)(cur_out_ptr, cur_in_ptr, offset);
+            if constexpr (IS_INDEX_PUT) {
+              indexput_io_kernel<scalar_t, IndexKernelIOType::ELEMENTWISE>(
+                  cur_out_ptr, cur_in_ptr, offset);
+            } else {
+              index_io_kernel<scalar_t, IndexKernelIOType::ELEMENTWISE>(
+                  cur_out_ptr, cur_in_ptr, offset);
+            }
           });
 
     } else {
@@ -260,7 +337,14 @@ void GPUIndexKernel(
           sizes[2],
           [=] __device__(uint32_t x_idx, uint32_t y_idx, uint32_t z_idx) {
             CALCULATE_OFFSETS_WITHOUT_DIVIDER(x_idx, y_idx, z_idx);
-            std::get<0>(device_funcs)(cur_out_ptr, cur_in_ptr, offset);
+            if constexpr (IS_INDEX_PUT) {
+              // elementwise && atomic
+              indexput_io_kernel<scalar_t, IOType>(
+                  cur_out_ptr, cur_in_ptr, offset);
+            } else {
+              index_io_kernel<scalar_t, IOType>(
+                  cur_out_ptr, cur_in_ptr, offset);
+            }
           });
     }
 
@@ -272,53 +356,63 @@ void GPUIndexKernel(
       z_sizes_fastdv[i] = FastDivmod((uint32_t)sizes[i]);
     }
 
-#define CALCULATE_OFFSETS_WITH_DIVIDER(x_idx, y_idx, z_idx)   \
-  int64_t offsets[NARGS] = {0};                               \
-  int64_t idxs[2] = {x_idx, y_idx};                           \
-  _Pragma("unroll") for (int i = 0; i < NARGS; i++) {         \
-    _Pragma("unroll") for (int j = 0; j < 2; j++) {           \
-      offsets[i] += idxs[j] * strides[i * MAX_DIM + j];       \
-    }                                                         \
-  }                                                           \
-  _Pragma("unroll") for (int dim = 2; dim < MAX_DIM; dim++) { \
-    if (dim == ndim) {                                        \
-      break;                                                  \
-    }                                                         \
-    uint32_t q, index;                                        \
-    z_sizes_fastdv[dim](q, index, z_idx);                     \
-    z_idx = q;                                                \
-    _Pragma("unroll") for (int n = 0; n < NARGS; n++) {       \
-      offsets[n] += index * strides[n * MAX_DIM + dim];       \
-    }                                                         \
-  }                                                           \
-  int64_t offset = 0;                                         \
-  for (int i = 0; i < num_indices; i++) {                     \
-    int64_t index = *(int64_t*)(index_ptrs[i] + offsets[2]);  \
-    if (index < 0) {                                          \
-      index += indexed_size[i];                               \
-    }                                                         \
-    offset += index * indexed_strides[i];                     \
-  }                                                           \
-  char* cur_out_ptr = out_data + offsets[0];                  \
-  char* cur_in_ptr = in_data + offsets[1];
+#define CALCULATE_OFFSETS_WITH_DIVIDER(x_idx, y_idx, z_idx)           \
+  int64_t offsets[NARGS] = {0};                                       \
+  int64_t idxs[2] = {x_idx, y_idx};                                   \
+  _Pragma("unroll") for (int i = 0; i < N_CAL_OFFSET_OPERANDS; i++) { \
+    _Pragma("unroll") for (int j = 0; j < 2; j++) {                   \
+      offsets[i] += idxs[j] * strides[i * MAX_DIM + j];               \
+    }                                                                 \
+  }                                                                   \
+  _Pragma("unroll") for (int dim = 2; dim < MAX_DIM; dim++) {         \
+    if (dim == ndim) {                                                \
+      break;                                                          \
+    }                                                                 \
+    uint32_t q, index;                                                \
+    z_sizes_fastdv[dim](q, index, z_idx);                             \
+    z_idx = q;                                                        \
+    _Pragma("unroll") for (int n = 0; n < NARGS; n++) {               \
+      offsets[n] += index * strides[n * MAX_DIM + dim];               \
+    }                                                                 \
+  }                                                                   \
+  int64_t offset = 0;                                                 \
+  for (int i = 0; i < num_indices; i++) {                             \
+    int64_t index = *(int64_t*)(index_ptrs[i] + offsets[0]);          \
+    if (index < 0) {                                                  \
+      index += indexed_size[i];                                       \
+    }                                                                 \
+    offset += index * indexed_strides[i];                             \
+  }                                                                   \
+  char* cur_out_ptr = out_data + offsets[1];                          \
+  char* cur_in_ptr = in_data + offsets[2];
 
-    if constexpr (VEC_LOAD) {
-      static_assert(
-          sizeof...(NFuncs) == 2, "Invalid number of function argument");
-      LaunchVectorLoadKernel(
+    if constexpr (VECTORIZED) {
+      LaunchVectorizedKernel(
           grid_size,
           block_size,
           sizes[0],
           sizes[1],
           grid_dim_z,
-          VLEN,
+          vlen,
           [=] __device__(uint32_t x_idx, uint32_t y_idx, uint32_t z_idx) {
             CALCULATE_OFFSETS_WITH_DIVIDER(x_idx, y_idx, z_idx);
-            std::get<1>(device_funcs)(cur_out_ptr, cur_in_ptr, offset);
+            if constexpr (IS_INDEX_PUT) {
+              indexput_io_kernel<scalar_t, IOType>(
+                  cur_out_ptr, cur_in_ptr, offset);
+            } else {
+              index_io_kernel<scalar_t, IOType>(
+                  cur_out_ptr, cur_in_ptr, offset);
+            }
           },
           [=] __device__(uint32_t x_idx, uint32_t y_idx, uint32_t z_idx) {
             CALCULATE_OFFSETS_WITH_DIVIDER(x_idx, y_idx, z_idx);
-            std::get<0>(device_funcs)(cur_out_ptr, cur_in_ptr, offset);
+            if constexpr (IS_INDEX_PUT) {
+              indexput_io_kernel<scalar_t, IndexKernelIOType::ELEMENTWISE>(
+                  cur_out_ptr, cur_in_ptr, offset);
+            } else {
+              index_io_kernel<scalar_t, IndexKernelIOType::ELEMENTWISE>(
+                  cur_out_ptr, cur_in_ptr, offset);
+            }
           });
 
     } else {
@@ -330,7 +424,13 @@ void GPUIndexKernel(
           grid_dim_z,
           [=] __device__(uint32_t x_idx, uint32_t y_idx, uint32_t z_idx) {
             CALCULATE_OFFSETS_WITH_DIVIDER(x_idx, y_idx, z_idx);
-            std::get<0>(device_funcs)(cur_out_ptr, cur_in_ptr, offset);
+            if constexpr (IS_INDEX_PUT) {
+              indexput_io_kernel<scalar_t, IOType>(
+                  cur_out_ptr, cur_in_ptr, offset);
+            } else {
+              index_io_kernel<scalar_t, IOType>(
+                  cur_out_ptr, cur_in_ptr, offset);
+            }
           });
     }
 #undef CALCULATE_OFFSETS_WITH_DIVIDER
@@ -342,63 +442,73 @@ void IndexPutKernelImpl(
     TensorIterator& iter,
     IntArrayRef index_size,
     IntArrayRef index_stride) {
-  constexpr int64_t vlen = sizeof(scalar_t) <= 4
-      ? (sizeof(scalar_t) <= 2 ? (sizeof(scalar_t) <= 1 ? 16 : 8) : 4)
-      : 2;
-  using vec_dtype = VecType<scalar_t, vlen * sizeof(scalar_t) * 8>;
   IndexKernelLaunchInfo info;
   ConfigIndexKernelLaunchInfo(iter, info);
 
-#define DISPATCH_VECTOR_KERNEL(max_three, no_divider, vlen)             \
-  GPUIndexKernel<max_three, true, no_divider, vlen>(                    \
-      iter,                                                             \
-      index_size,                                                       \
-      index_stride,                                                     \
-      [] __device__(char* out_data, char* in_data, int64_t offset) {    \
-        *(scalar_t*)(out_data + offset) = *(scalar_t*)in_data;          \
-      },                                                                \
-      [] __device__(char* out_data, char* in_data, int64_t offset) {    \
-        vec_dtype value_reg = vec_dtype::load((scalar_t*)in_data, 0);   \
-        vec_dtype::store((scalar_t*)(out_data + offset), 0, value_reg); \
-      });
+#define DISPATCH_KERNEL(                                    \
+    max_three, no_divider, n_cal_offsets_operands, io_type) \
+  GPUIndexKernel<                                           \
+      scalar_t,                                             \
+      max_three,                                            \
+      no_divider,                                           \
+      n_cal_offsets_operands,                               \
+      true,                                                 \
+      io_type>(iter, index_size, index_stride);
 
-#define DISPATCH_KERNEL(max_three, no_divider)                       \
-  GPUIndexKernel<max_three, false, no_divider, 1>(                   \
-      iter,                                                          \
-      index_size,                                                    \
-      index_stride,                                                  \
-      [] __device__(char* out_data, char* in_data, int64_t offset) { \
-        *(scalar_t*)(out_data + offset) = *(scalar_t*)in_data;       \
-      });
+#define DISPATCH_ELEMENTWISE_KERNEL(max_three, no_divider, calc_two_offsets)   \
+  if (calc_two_offsets) {                                                      \
+    DISPATCH_KERNEL(max_three, no_divider, 2, IndexKernelIOType::ELEMENTWISE); \
+  } else {                                                                     \
+    DISPATCH_KERNEL(max_three, no_divider, 3, IndexKernelIOType::ELEMENTWISE); \
+  }
 
-  if (info.can_vector_load) {
+  if (info.can_vector_load_store) {
     if (info.no_divider) {
       if (info.ndim == 1) {
-        DISPATCH_VECTOR_KERNEL(1, true, vlen);
+        DISPATCH_KERNEL(1, true, 3, IndexKernelIOType::VEC_LOAD_STORE);
       } else if (info.ndim == 2) {
-        DISPATCH_VECTOR_KERNEL(2, true, vlen);
+        DISPATCH_KERNEL(2, true, 3, IndexKernelIOType::VEC_LOAD_STORE);
       } else {
-        DISPATCH_VECTOR_KERNEL(3, true, vlen);
+        DISPATCH_KERNEL(3, true, 3, IndexKernelIOType::VEC_LOAD_STORE);
       }
     } else {
-      DISPATCH_VECTOR_KERNEL(3, false, vlen);
+      DISPATCH_KERNEL(3, false, 3, IndexKernelIOType::VEC_LOAD_STORE);
+    }
+  } else if (info.can_vector_store) {
+    // we can omit the value' offset calcuation in this case
+    if (info.no_divider) {
+      if (info.ndim == 1) {
+        DISPATCH_KERNEL(1, true, 2, IndexKernelIOType::VEC_STORE);
+      } else if (info.ndim == 2) {
+        DISPATCH_KERNEL(2, true, 2, IndexKernelIOType::VEC_STORE);
+      } else {
+        DISPATCH_KERNEL(3, true, 2, IndexKernelIOType::VEC_STORE);
+      }
+    } else {
+      DISPATCH_KERNEL(3, false, 2, IndexKernelIOType::VEC_STORE);
     }
   } else {
+    // 1 represents value tensor index
+    bool calculate_two_offsets = iter.tensor(1).numel() == 1;
     if (info.no_divider) {
-      if (info.ndim == 1) {
-        DISPATCH_KERNEL(1, true);
-      } else if (info.ndim == 2) {
-        DISPATCH_KERNEL(2, true);
-      } else {
-        DISPATCH_KERNEL(3, true);
+      switch (info.ndim) {
+        case 1:
+          DISPATCH_ELEMENTWISE_KERNEL(1, true, calculate_two_offsets);
+          break;
+        case 2:
+          DISPATCH_ELEMENTWISE_KERNEL(2, true, calculate_two_offsets);
+          break;
+        default:
+          DISPATCH_ELEMENTWISE_KERNEL(3, true, calculate_two_offsets);
+          break;
       }
     } else {
-      DISPATCH_KERNEL(3, false);
+      DISPATCH_ELEMENTWISE_KERNEL(3, false, calculate_two_offsets);
     }
   }
 
+#undef DISPATCH_ELEMENTWISE_KERNEL
 #undef DISPATCH_KERNEL
-#undef DISPATCH_VECTOR_KERNEL
 }
 
 template <typename scalar_t>
@@ -408,16 +518,16 @@ void IndexPutAtomicAddKernelImpl(
     IntArrayRef index_stride) {
   IndexKernelLaunchInfo info;
   ConfigIndexKernelLaunchInfo(iter, info);
-  info.can_vector_load = false;
-#define DISPATCH_ATOMIC_KERNEL(max_three, no_divider)                \
-  GPUIndexKernel<max_three, false, no_divider, 1>(                   \
-      iter,                                                          \
-      index_size,                                                    \
-      index_stride,                                                  \
-      [] __device__(char* out_data, char* in_data, int64_t offset) { \
-        at::musa::gpuAtomicAdd(                                      \
-            (scalar_t*)(out_data + offset), *(scalar_t*)in_data);    \
-      });
+  info.can_vector_load_store = false;
+  info.can_vector_store = false;
+#define DISPATCH_ATOMIC_KERNEL(max_three, no_divider) \
+  GPUIndexKernel<                                     \
+      scalar_t,                                       \
+      max_three,                                      \
+      no_divider,                                     \
+      3,                                              \
+      true,                                           \
+      IndexKernelIOType::ATOMIC>(iter, index_size, index_stride)
 
   if (info.no_divider) {
     if (info.ndim == 1) {
@@ -439,65 +549,41 @@ void IndexKernelImpl(
     TensorIteratorBase& iter,
     IntArrayRef index_size,
     IntArrayRef index_stride) {
-  constexpr int64_t vlen = sizeof(scalar_t) <= 4
-      ? (sizeof(scalar_t) <= 2 ? (sizeof(scalar_t) <= 1 ? 16 : 8) : 4)
-      : 2;
-  using vec_dtype = VecType<scalar_t, vlen * sizeof(scalar_t) * 8>;
   IndexKernelLaunchInfo info;
   ConfigIndexKernelLaunchInfo(iter, info);
 
-#define DISPATCH_VECTOR_KERNEL(max_three, no_divider, vlen)          \
-  GPUIndexKernel<max_three, true, no_divider, vlen>(                 \
-      iter,                                                          \
-      index_size,                                                    \
-      index_stride,                                                  \
-      [] __device__(char* out_data, char* in_data, int64_t offset) { \
-        *(scalar_t*)out_data = *(scalar_t*)(in_data + offset);       \
-      },                                                             \
-      [] __device__(char* out_data, char* in_data, int64_t offset) { \
-        vec_dtype value_reg =                                        \
-            vec_dtype::load((scalar_t*)(in_data + offset), 0);       \
-        vec_dtype::store((scalar_t*)out_data, 0, value_reg);         \
-      });
+#define DISPATCH_KERNEL(max_three, no_divider, io_type)               \
+  GPUIndexKernel<scalar_t, max_three, no_divider, 3, false, io_type>( \
+      iter, index_size, index_stride)
 
-#define DISPATCH_KERNEL(max_three, no_divider)                       \
-  GPUIndexKernel<max_three, false, no_divider, 1>(                   \
-      iter,                                                          \
-      index_size,                                                    \
-      index_stride,                                                  \
-      [] __device__(char* out_data, char* in_data, int64_t offset) { \
-        *(scalar_t*)out_data = *(scalar_t*)(in_data + offset);       \
-      });
-
-  if (info.can_vector_load) {
+  if (info.can_vector_load_store) {
     if (info.no_divider) {
       if (info.ndim == 1) {
-        DISPATCH_VECTOR_KERNEL(1, true, vlen);
+        DISPATCH_KERNEL(1, true, IndexKernelIOType::VEC_LOAD_STORE);
       } else if (info.ndim == 2) {
-        DISPATCH_VECTOR_KERNEL(2, true, vlen);
+        DISPATCH_KERNEL(2, true, IndexKernelIOType::VEC_LOAD_STORE);
       } else {
-        DISPATCH_VECTOR_KERNEL(3, true, vlen);
+        DISPATCH_KERNEL(3, true, IndexKernelIOType::VEC_LOAD_STORE);
       }
     } else {
-      DISPATCH_VECTOR_KERNEL(3, false, vlen);
+      DISPATCH_KERNEL(3, false, IndexKernelIOType::VEC_LOAD_STORE);
     }
   } else {
     if (info.no_divider) {
       if (info.ndim == 1) {
-        DISPATCH_KERNEL(1, true);
+        DISPATCH_KERNEL(1, true, IndexKernelIOType::ELEMENTWISE);
       } else if (info.ndim == 2) {
-        DISPATCH_KERNEL(2, true);
+        DISPATCH_KERNEL(2, true, IndexKernelIOType::ELEMENTWISE);
       } else {
-        DISPATCH_KERNEL(3, true);
+        DISPATCH_KERNEL(3, true, IndexKernelIOType::ELEMENTWISE);
       }
     } else {
-      DISPATCH_KERNEL(3, false);
+      DISPATCH_KERNEL(3, false, IndexKernelIOType::ELEMENTWISE);
     }
   }
 }
 
 #undef DISPATCH_KERNEL
-#undef DISPATCH_VECTOR_KERNEL
 
 } // anonymous namespace
 

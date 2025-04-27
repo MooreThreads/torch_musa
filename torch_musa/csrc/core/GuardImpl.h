@@ -8,8 +8,8 @@
 
 #include "musa_runtime_api.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/core/Allocator.h"
 #include "torch_musa/csrc/core/Device.h"
+#include "torch_musa/csrc/core/MUSACachingAllocator.h"
 #include "torch_musa/csrc/core/MUSAException.h"
 #include "torch_musa/csrc/core/MUSAStream.h"
 

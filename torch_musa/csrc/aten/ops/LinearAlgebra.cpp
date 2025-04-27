@@ -2,6 +2,7 @@
 #include <ATen/core/op_registration/adaption.h>
 #include <ATen/native/Resize.h>
 
+#include <ATen/ops/_linalg_solve_ex.h>
 #include <ATen/ops/cholesky_inverse.h>
 #include <ATen/ops/linalg_cholesky_ex.h>
 #include <ATen/ops/linalg_inv_ex_ops.h>
@@ -136,6 +137,7 @@ namespace musa {
 at::Tensor LinalgInverse(const at::Tensor& A) {
   // TODO(@mt-ai): kernel provided by mudnn now only support
   // dtypes of fp32 and fp64
+  // TODO(@mt-ai): kernel internal optimization of non-continuous issues
   TORCH_CHECK(
       A.scalar_type() == at::ScalarType::Float ||
           A.scalar_type() == at::ScalarType::Double,
@@ -143,8 +145,9 @@ at::Tensor LinalgInverse(const at::Tensor& A) {
       A.scalar_type());
   c10::musa::MUSAGuard device_guard(A.device());
 
-  at::Tensor result = at::empty_like(A);
-  at::native::inverse_stub(kMUSA, result, A);
+  at::Tensor A_contiguous = A.contiguous();
+  at::Tensor result = at::empty_like(A_contiguous);
+  at::native::inverse_stub(kMUSA, result, A_contiguous);
   return result;
 }
 
@@ -195,6 +198,63 @@ at::Tensor CholeskyInverse(const at::Tensor& input, bool upper) {
   at::Tensor result = at::empty({0}, input.options());
   result = CholeskyInverseOut(input, upper, result);
   return result;
+}
+
+::std::tuple<at::Tensor&, at::Tensor&, at::Tensor&, at::Tensor&>
+LinalgSolveExResult(
+    const at::Tensor& A,
+    const at::Tensor& B,
+    bool left,
+    bool check_errors,
+    at::Tensor& result,
+    at::Tensor& LU,
+    at::Tensor& pivots,
+    at::Tensor& info) {
+  at::Tensor A_cpu = A.to(kCPU);
+  at::Tensor B_cpu = B.to(kCPU);
+  at::Tensor result_cpu = result.to(kCPU);
+  at::Tensor LU_cpu = LU.to(kCPU);
+  at::Tensor pivots_cpu = pivots.to(kCPU);
+  at::Tensor info_cpu = info.to(kCPU);
+  std::tuple<at::Tensor&, at::Tensor&, at::Tensor&, at::Tensor&> rst =
+      at::_linalg_solve_ex_out(
+          result_cpu,
+          LU_cpu,
+          pivots_cpu,
+          info_cpu,
+          A_cpu,
+          B_cpu,
+          left,
+          check_errors);
+  at::Tensor& rst0 = std::get<0>(rst);
+  at::Tensor& rst1 = std::get<1>(rst);
+  at::Tensor& rst2 = std::get<2>(rst);
+  at::Tensor& rst3 = std::get<3>(rst);
+  rst0 = rst0.to(kMUSA);
+  rst1 = rst1.to(kMUSA);
+  rst2 = rst2.to(kMUSA);
+  rst3 = rst3.to(kMUSA);
+  return rst;
+}
+
+::std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> LinalgSolveEx(
+    const at::Tensor& A,
+    const at::Tensor& B,
+    bool left,
+    bool check_errors) {
+  at::Tensor A_cpu = A.to(kCPU);
+  at::Tensor B_cpu = B.to(kCPU);
+  std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor> rst =
+      at::_linalg_solve_ex(A_cpu, B_cpu, left, check_errors);
+  at::Tensor& rst0 = std::get<0>(rst);
+  at::Tensor& rst1 = std::get<1>(rst);
+  at::Tensor& rst2 = std::get<2>(rst);
+  at::Tensor& rst3 = std::get<3>(rst);
+  rst0 = rst0.to(kMUSA);
+  rst1 = rst1.to(kMUSA);
+  rst2 = rst2.to(kMUSA);
+  rst3 = rst3.to(kMUSA);
+  return rst;
 }
 
 } // namespace musa

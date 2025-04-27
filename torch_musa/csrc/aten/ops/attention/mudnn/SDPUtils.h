@@ -40,16 +40,22 @@ inline bool check_musa_arch(const sdp_params& params, bool is_debug) {
 inline bool check_musa_attention_input(
     const sdp_params& params,
     bool is_debug) {
-  auto head_dim = params.query.size(-1);
-  if (!(head_dim <= 128
-#if defined(TORCH_MUSA_ARCH) && TORCH_MUSA_ARCH == 220
-        || head_dim == 160
-#endif
-        )) {
+  int64_t qk_head_dim = params.query.size(-1);
+  int64_t v_head_dim = params.value.size(-1);
+
+  bool is_head_dim_qk192_v128 = qk_head_dim == 192 && v_head_dim == 128;
+  bool is_head_dim_qkv_160 = qk_head_dim == 160 && v_head_dim == 160;
+
+  if (!((qk_head_dim <= 128 && v_head_dim <= 128) ||
+        (at::musa::getMUSAArch() >= 220 &&
+         (is_head_dim_qk192_v128 || is_head_dim_qkv_160)))) {
     if (is_debug) {
       TORCH_WARN(
-          "FlashAttention in MUSA backend now requires head_dim to be less equal to 128, but got: ",
-          head_dim);
+          "Unsupported qk_head_dim: ",
+          qk_head_dim,
+          " v_head_dim: ",
+          v_head_dim,
+          " for FlashAttention in MUSA backend");
     }
     return false;
   }

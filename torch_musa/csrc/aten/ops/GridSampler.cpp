@@ -5,7 +5,6 @@
 
 #include <torch/library.h>
 
-#include <mudnn_image.h>
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 

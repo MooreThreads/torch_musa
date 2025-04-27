@@ -78,6 +78,7 @@ from .core.device import (
     can_device_access_peer,
     _exchange_device,
     _DeviceGuard,
+    get_arch_list,
 )
 
 from .core.stream import (
@@ -105,7 +106,7 @@ from .core import memory
 from .core.memory import (
     set_per_process_memory_fraction,
     empty_cache,
-    reset_peak_stats,
+    reset_peak_memory_stats,
     memory_stats,
     memory_summary,
     memory_stats_all,
@@ -116,8 +117,8 @@ from .core.memory import (
     max_memory_reserved,
     mem_get_info,
     reset_peak_memory_stats,
-    _record_memory_history,
     _dump_snapshot,
+    _set_allocator_settings,
 )
 
 from .core._lazy_init import _lazy_init, _initialized, _is_in_bad_fork
@@ -127,6 +128,8 @@ from .core.random import *
 torch.random.fork_rng = fork_rng
 
 from .core.mudnn import *
+
+from .musa_graph import *
 
 # A hack to get `torch.backends.mudnn` functions/attributes. This allows users to use cudnn
 # equivalent functions like `torch.backends.mudnn.allow_tf32 = True`

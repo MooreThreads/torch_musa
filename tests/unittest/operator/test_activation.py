@@ -37,8 +37,12 @@ all_basic_funcs = [
     torch.cos,
     torch.sin,
     torch.log,
+    torch.asin,
     torch.acos,
     torch.atan,
+    torch.asinh,
+    torch.acosh,
+    torch.atanh,
     torch.round,
     torch.sgn,
     torch.log10,
@@ -59,8 +63,12 @@ all_inplace_funcs = [
     torch.cos_,
     torch.sin_,
     torch.log_,
+    torch.asin_,
     torch.acos_,
     torch.atan_,
+    torch.asinh_,
+    torch.acosh_,
+    torch.atanh_,
     torch.round_,
     torch.log10_,
     torch.floor_,
@@ -104,6 +112,8 @@ def function(input_data, dtype, func, train=False):
     )
     if dtype == torch.float16 and repr(func) == "Hardswish()":
         abs_diff, rel_diff = (2e-3, 5e-4)
+    if dtype == torch.float and repr(func) == "GELU(approximate='none')":
+        abs_diff = 5e-6
     comparator = testing.DefaultComparator(abs_diff, rel_diff, equal_nan=True)
     test = testing.OpTest(
         func=func,
@@ -375,13 +385,15 @@ def test_hardtanh(input_data, bounds):
     test.check_grad_fn()
 
 
-def generate_nan_tensor(shape):
+def generate_inf_nan_tensor(shape, mode):
+    assert mode in ["nan", "inf"]
     assert isinstance(shape, (list, tuple))
+    value = float("nan") if mode == "nan" else float("inf")
     t = torch.randn(shape)
     if t.dim() == 4 and random.random() < 0.5:
         t = t.to(memory_format=torch.channels_last)
     mask = torch.rand(shape) < 0.5
-    t[mask] = float("nan")
+    t[mask] = value
 
     return t
 
@@ -390,21 +402,44 @@ def generate_nan_tensor(shape):
 @pytest.mark.parametrize(
     "input_data",
     [
-        generate_nan_tensor((10,)),
-        generate_nan_tensor((10, 2)),
-        generate_nan_tensor((10, 2, 2)),
-        generate_nan_tensor((10, 2, 3)),
-        generate_nan_tensor((10, 9, 8, 1)),
-        generate_nan_tensor((10, 9, 8, 7, 2)),
-        generate_nan_tensor((10, 9, 2, 2, 1, 4)),
-        generate_nan_tensor((10, 0, 2, 0, 1, 4)),
-        generate_nan_tensor((10, 9, 2, 2, 1, 4, 2)),
-        generate_nan_tensor((10, 9, 2, 2, 1, 4, 2, 1)),
+        generate_inf_nan_tensor((10,), "nan"),
+        generate_inf_nan_tensor((10, 2), "nan"),
+        generate_inf_nan_tensor((10, 2, 2), "nan"),
+        generate_inf_nan_tensor((10, 2, 3), "nan"),
+        generate_inf_nan_tensor((10, 9, 8, 1), "nan"),
+        generate_inf_nan_tensor((10, 9, 8, 7, 2), "nan"),
+        generate_inf_nan_tensor((10, 9, 2, 2, 1, 4), "nan"),
+        generate_inf_nan_tensor((10, 0, 2, 0, 1, 4), "nan"),
+        generate_inf_nan_tensor((10, 9, 2, 2, 1, 4, 2), "nan"),
+        generate_inf_nan_tensor((10, 9, 2, 2, 1, 4, 2, 1), "nan"),
     ],
 )
 @pytest.mark.parametrize("dtype", float_dtypes)
 def test_isnan(input_data, dtype):
     test = testing.OpTest(func=torch.isnan, input_args={"input": input_data.to(dtype)})
+    test.check_result()
+    test.check_grad_fn()
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize(
+    "input_data",
+    [
+        generate_inf_nan_tensor((10,), "inf"),
+        generate_inf_nan_tensor((10, 2), "inf"),
+        generate_inf_nan_tensor((10, 2, 2), "inf"),
+        generate_inf_nan_tensor((10, 2, 3), "inf"),
+        generate_inf_nan_tensor((10, 9, 8, 1), "inf"),
+        generate_inf_nan_tensor((10, 9, 8, 7, 2), "inf"),
+        generate_inf_nan_tensor((10, 9, 2, 2, 1, 4), "inf"),
+        generate_inf_nan_tensor((10, 0, 2, 0, 1, 4), "inf"),
+        generate_inf_nan_tensor((10, 9, 2, 2, 1, 4, 2), "inf"),
+        generate_inf_nan_tensor((10, 9, 2, 2, 1, 4, 2, 1), "inf"),
+    ],
+)
+@pytest.mark.parametrize("dtype", float_dtypes)
+def test_isinf(input_data, dtype):
+    test = testing.OpTest(func=torch.isinf, input_args={"input": input_data.to(dtype)})
     test.check_result()
     test.check_grad_fn()
 

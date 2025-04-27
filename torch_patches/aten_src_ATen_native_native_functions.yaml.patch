@@ -1,20 +1,12 @@
 diff --git a/aten/src/ATen/native/native_functions.yaml b/aten/src/ATen/native/native_functions.yaml
-index 35a1049e209..b15e4d7f601 100644
+index 35a1049..473ac3c 100644
 --- a/aten/src/ATen/native/native_functions.yaml
 +++ b/aten/src/ATen/native/native_functions.yaml
-@@ -3238,6 +3238,8 @@
-   autogen: native_layer_norm_backward.out
-   tags: core
- 
-+- func: rms_norm(Tensor input, int[] normalized_shape, Tensor? weight=None, float? eps=None) -> Tensor
+@@ -15348,3 +15348,80 @@
+ # This op is ONLY used by pytorch/XLA in functionalization, and should never show up in vanilla eager mode or in any pytorch tracing contexts.
+ - func: _propagate_xla_data(Tensor input, Tensor output) -> ()
+   variants: function
 +
- - func: nan_to_num(Tensor self, float? nan=None, float? posinf=None, float? neginf=None) -> Tensor
-   variants: function, method
-   dispatch:
-@@ -14462,6 +14464,31 @@
-     CUDA, NestedTensorCUDA: _fused_sdp_choice_cuda
-   tags: nondeterministic_seeded
-
 +- func: _scaled_dot_product_attention_math_musa(Tensor query, Tensor key, Tensor value, Tensor? attn_mask=None, float dropout_p=0.0, bool is_causal=False, *, float? scale=None) -> (Tensor output, Tensor attn_weights, Tensor bwd_reserve)
 +  variants: function
 +  dispatch:
@@ -27,6 +19,7 @@ index 35a1049e209..b15e4d7f601 100644
 +    CPU: _scaled_dot_product_attention_math_cpu_musa_backward
 +  tags: nondeterministic_seeded
 +
++- func: rms_norm(Tensor input, int[] normalized_shape, Tensor? weight=None, float? eps=None) -> Tensor
 +
 +- func: _scaled_dot_product_attention_flash_musa(Tensor query, Tensor key, Tensor value, Tensor? attn_mask=None, float dropout_p=0.0, bool is_causal=False, *, float? scale=None) -> (Tensor output, Tensor logsumexp, Tensor dropout_mask)
 +  variants: function
@@ -40,16 +33,22 @@ index 35a1049e209..b15e4d7f601 100644
 +    CPU: _scaled_dot_product_attention_flash_cpu_musa_backward
 +  tags: nondeterministic_seeded
 +
- - func: _scaled_dot_product_attention_math(Tensor query, Tensor key, Tensor value, Tensor? attn_mask=None, float dropout_p=0.0, bool is_causal=False, Tensor? dropout_mask=None, *, float? scale=None) -> (Tensor, Tensor)
-   variants: function
-   tags: nondeterministic_seeded
-@@ -15348,3 +15377,16 @@
- # This op is ONLY used by pytorch/XLA in functionalization, and should never show up in vanilla eager mode or in any pytorch tracing contexts.
- - func: _propagate_xla_data(Tensor input, Tensor output) -> ()
-   variants: function
-+
 +- func: gated_silu(Tensor input) -> Tensor
 +  variants: function
++
++- func: cross_entropy_loss_2d_choice(Tensor self, Tensor target, Tensor? weight=None, int reduction=Mean, int ignore_index=-100, float label_smoothing=0.0) -> int
++  dispatch:
++    CPU: cross_entropy_loss_2d_choice_cpu
++
++- func: _fused_cross_entropy_loss_2d_forward(Tensor self, Tensor target, Tensor? weight=None, int reduction=Mean, int ignore_index=-100, float label_smoothing=0.0) -> Tensor
++  variants: function
++  dispatch:
++    CPU: _fused_cross_entropy_loss_2d_forward_cpu
++
++- func: _fused_cross_entropy_loss_2d_backward(Tensor grad, Tensor self, Tensor target, Tensor? weight=None, int reduction=Mean, int ignore_index=-100, float label_smoothing=0.0) -> Tensor
++  variants: function
++  dispatch:
++    CPU: _fused_cross_entropy_loss_2d_backward_cpu
 +
 +- func: _fused_rmsnorm_forward(Tensor input, int[] normalized_shape, float eps, Tensor? weight=None) -> (Tensor output, Tensor invvar)
 +  variants: function
@@ -60,3 +59,27 @@ index 35a1049e209..b15e4d7f601 100644
 +  variants: function
 +  dispatch:
 +    CPU: _fused_rmsnorm_backward
++
++- func: rope(Tensor input, Tensor freq_cis, bool rotary_interleaved, bool batch_first) -> Tensor
++
++- func: _fused_rope_forward(Tensor input, Tensor freq_cis, bool rotary_interleaved, bool batch_first) -> Tensor
++  variants: function
++  dispatch:
++    CPU: _fused_rope_forward
++
++- func: _fused_rope_backward(Tensor grad, Tensor freq_cis, bool rotary_interleaved, bool batch_first) -> Tensor
++  variants: function
++  dispatch:
++    CPU: _fused_rope_backward
++
++- func: swish_glu(Tensor input) -> Tensor
++
++- func: _fused_swiglu_forward(Tensor input) -> Tensor
++  variants: function
++  dispatch:
++    CPU: _fused_swiglu_forward
++
++- func: _fused_swiglu_backward(Tensor grad, Tensor input) -> Tensor
++  variants: function
++  dispatch:
++    CPU: _fused_swiglu_backward

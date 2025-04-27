@@ -29,6 +29,7 @@ from torch._inductor.triton_heuristics import (
     triton_config_reduction,
     autotune_hints_to_configs,
     disable_pointwise_autotuning,
+    get_interface_for_device,
 )
 from torch._inductor.ir import TileHint, ReductionHint
 
@@ -82,12 +83,17 @@ class MUSACachingAutotuner(CachingAutotuner):
     def _precompile_config(self, cfg: Config, warm_cache_only_with_cc: Optional[int]):
         """Ahead of time compile a given autotuner config."""
         compile_meta = copy.deepcopy(self.triton_meta)
+        device_interface = get_interface_for_device("musa")
         for k, v in cfg.kwargs.items():
             compile_meta["constants"][self.fn.arg_names.index(k)] = v
         compile_meta["num_warps"] = cfg.num_warps
         compile_meta["num_stages"] = cfg.num_stages
         compile_meta["debug"] = config.assert_indirect_indexing
         compile_meta["device_type"] = "musa"
+
+        # triton_musa will get cc from get_architecture_descriptor in triton_musa-2.1.0,
+        # The 'cc' is still added here just for compatibility with 3.0 and later triton
+        compile_meta["cc"] = device_interface.get_compute_capability()
 
         if warm_cache_only_with_cc:
             return (

@@ -4,6 +4,7 @@
 #include <ATen/native/Pool.h>
 #include <torch/library.h>
 
+#include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
@@ -632,22 +633,16 @@ Tensor AvgPool2dBwd(
 }
 
 Tensor AdaptiveAvgPool2dBwd(const Tensor& grad_output, const Tensor& input) {
-#if defined(TORCH_MUSA_ARCH) && TORCH_MUSA_ARCH >= 220
-  TORCH_CHECK(
-      input.scalar_type() == at::ScalarType::Float ||
-          input.scalar_type() == at::ScalarType::Half ||
-          input.scalar_type() == at::ScalarType::BFloat16,
-      "Dtype of input tensor of AdaptiveAvgPool2dBwd only support Float, Half and BFloat16, ",
-      "but now it is ",
-      input.scalar_type());
-#else
-  TORCH_CHECK(
-      input.scalar_type() == at::ScalarType::Float ||
-          input.scalar_type() == at::ScalarType::Half,
-      "Dtype of input tensor of AdaptiveAvgPool2dBwd only support Float and Half, ",
-      "but now it is ",
-      input.scalar_type());
-#endif
+  if (at::musa::maybeDNNOpSupportBFloat16()) {
+    TORCH_MUSA_CHECK_FLOATING_TYPES(
+        input.scalar_type(), "AdaptiveAvgPool2dBwd");
+  } else {
+    TORCH_MUSA_CHECK_DTYPES(
+        input.scalar_type(),
+        "AdaptiveAvgPool2dBwd",
+        at::ScalarType::Float,
+        at::ScalarType::Half);
+  }
   PoolParams params;
   params.mode = ::musa::dnn::Pooling::Mode::ADAPTIVE_AVGPOOL;
 

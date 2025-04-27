@@ -59,11 +59,11 @@ c10::intrusive_ptr<ConvPackedParamsBase<kSpatialDim>> PackedConvWeightMudnn<
 
   TORCH_CHECK(
       weight.scalar_type() == c10::kQInt8,
-      "TORCH_MUSA_ARCH > 210 requires weights in format QInt8, which is ",
+      "requires weights in format QInt8, but got ",
       weight.scalar_type());
   TORCH_CHECK(
       weight.q_zero_point() == 0,
-      "TORCH_MUSA_ARCH > 210 requires weights are quantized in per-tensor and symmetric quantization, ",
+      "requires weights are quantized in per-tensor and symmetric quantization, ",
       "zero_point should be 0, which is ",
       weight.q_zero_point());
 

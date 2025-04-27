@@ -15,7 +15,7 @@ index 5013f25..3ef5af3 100644
 +    // if (tryListen(AF_INET6)) {
 +    //   return std::move(socket_);
 +    // }
-+    
++
 +    // only ipv4 for torch_musa
      C10D_DEBUG("The server socket will attempt to listen on an IPv4 address.");
      if (tryListen(AF_INET)) {
@@ -51,7 +51,7 @@ index 5013f25..3ef5af3 100644
 +    //     "The client socket will attempt to connect to an IPv4 address of ({}, {}).",
 +    //     host_,
 +    //     port_);
-+    
++
 +    // only ipv4 for torch_musa
      if (tryConnect(AF_INET)) {
        return std::move(socket_);

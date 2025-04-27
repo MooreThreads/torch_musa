@@ -29,7 +29,7 @@
 #include <ATen/ops/zeros.h>
 #endif
 
-#include "torch_musa/csrc/aten/musa/MUSAMarcos.muh"
+#include "torch_musa/csrc/aten/musa/MUSAMacros.muh"
 
 
 namespace at::musa {

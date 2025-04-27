@@ -68,3 +68,39 @@ def test_replication_pad1d(input_data, dtype):
     output_cpu = m(input_data)
     output_musa = m(input_data.to("musa"))
     assert pytest.approx(output_cpu, 1e-6) == output_musa.to("cpu")
+
+
+input_data = [
+    torch.arange(32, dtype=torch.float).reshape(1, 2, 4, 4),
+    torch.arange(4000, dtype=torch.float).reshape(2, 10, 10, 20),
+    torch.rand(0, 10, 10, 8),
+]
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_data)
+@pytest.mark.parametrize("dtype", support_dtypes)
+def test_replication_pad2d(input_data, dtype):
+    input_data = input_data.to(dtype)
+    m = nn.ReplicationPad2d(3)
+    output_cpu = m(input_data)
+    output_musa = m(input_data.to("musa"))
+    assert pytest.approx(output_cpu, 1e-6) == output_musa.to("cpu")
+
+
+input_data = [
+    torch.arange(128, dtype=torch.float).reshape(1, 2, 4, 4, 4),
+    torch.arange(32000, dtype=torch.float).reshape(2, 10, 10, 20, 8),
+    torch.rand(0, 10, 10, 8, 16),
+]
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_data)
+@pytest.mark.parametrize("dtype", support_dtypes)
+def test_replication_pad3d(input_data, dtype):
+    input_data = input_data.to(dtype)
+    m = nn.ReplicationPad3d(4)
+    output_cpu = m(input_data)
+    output_musa = m(input_data.to("musa"))
+    assert pytest.approx(output_cpu, 1e-6) == output_musa.to("cpu")

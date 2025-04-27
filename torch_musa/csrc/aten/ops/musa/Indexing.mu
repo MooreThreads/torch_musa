@@ -72,7 +72,7 @@ class ReduceAtomicAdd {
       int64_t index,
       int64_t numel,
       const scalar_t* src_data) const {
-    at::native::fastAtomicAdd(self_data_start, index, numel, *src_data, true);
+    at::musa::gpuAtomicAdd((self_data_start + index), *src_data);
   }
 };
 
@@ -89,14 +89,11 @@ class VectorizedReduceAtomicAdd {
     using vec_dtype = VecType<scalar_t, vlen * sizeof(scalar_t) * iobits>;
 
     vec_dtype src_reg = vec_dtype::load(src_data, src_offset);
+
 #pragma unroll
     for (index_t k = 0; k < vlen; k++) {
-      at::native::fastAtomicAdd<scalar_t, index_t>(
-          self_data,
-          (index_t)self_offset + k,
-          numel,
-          src_reg.val_.elem[k] * alpha,
-          true);
+      at::musa::gpuAtomicAdd(
+          (self_data + self_offset + k), src_reg.val_.elem[k] * alpha);
     }
   }
 };
@@ -1035,6 +1032,10 @@ void IndexReduceFuncMUSAImpl(
                     scalar_t, index_t, uint32_t, -1, -1);
               }
             } else {
+              constexpr int64_t vlen = sizeof(scalar_t) <= 4
+                  ? (sizeof(scalar_t) <= 2 ? (sizeof(scalar_t) <= 1 ? 4 : 2)
+                                           : 2)
+                  : 2;
               // global atomic path
               if (has_regular_dims) {
                 // use 2D thread block to ensure that vectorization cases could
@@ -1064,7 +1065,7 @@ void IndexReduceFuncMUSAImpl(
                 } else {
                   block.x = 128;
                 }
-                block.y = 1024 / block.x;
+                block.y = 512 / block.x;
                 grid.x = ceil_div(
                     xNumel, (int64_t)block.x * (vec_load_eligible ? vlen : 1));
                 grid.y = ceil_div(yNumel, (int64_t)block.y);

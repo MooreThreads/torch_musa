@@ -2,6 +2,7 @@
 #include <ATen/NamedTensorUtils.h>
 #include <ATen/WrapDimUtilsMulti.h>
 #include <ATen/native/ReduceOpsUtils.h>
+#include <ATen/native/musa/ScanKernels.h>
 #include <ATen/ops/max.h>
 #include <torch/library.h>
 #include <sstream>
@@ -169,6 +170,14 @@ void ResizeReduction(
   namedinference::propagate_names_for_reduction(output, self, dims, keepdim);
 }
 
+static c10::MaybeOwned<Tensor> ContiguousOutArg(const Tensor& tensor) {
+  if (tensor.is_contiguous()) {
+    return c10::MaybeOwned<Tensor>::borrowed(tensor);
+  }
+  return c10::MaybeOwned<Tensor>::owned(
+      at::empty(tensor.sizes(), tensor.options()));
+}
+
 } // anonymous namespace
 
 void ReduceCall(
@@ -236,7 +245,11 @@ Tensor Reduction(
       output, self, dims_vec, keepdim);
 
   if (self.numel() == 0) {
-    output.zero_();
+    if (m == ::musa::dnn::Reduce::Mode::AND) {
+      output.fill_(1);
+    } else {
+      output.zero_();
+    }
   } else {
     ReduceCall(output, self, dims_vec, m, p, is_norm);
   }
@@ -565,6 +578,48 @@ GEN_CUMULATIVE_FUNCTION(CumProd, CUM_MODE::MUL)
 
 #undef GEN_CUMULATIVE_FUNCTION
 
+void CummaxHelper(
+    const Tensor& self,
+    Tensor& values,
+    Tensor& indices,
+    int64_t dim) {
+  TensorArg output_arg{values, "output", 1};
+  TensorArg indices_arg{indices, "indices", 2};
+  TensorArg input_arg{self, "input", 3};
+  checkAllSameGPU(__func__, {output_arg, indices_arg, input_arg});
+
+  auto values_ = ContiguousOutArg(values);
+  auto indices_ = ContiguousOutArg(indices);
+  at::native::launch_cummax_cuda_kernel(self, *values_, *indices_, dim);
+  if (!values.is_same(*values_)) {
+    values.copy_(*values_);
+  }
+  if (!indices.is_same(*indices_)) {
+    indices.copy_(*indices_);
+  }
+}
+
+void CumminHelper(
+    const Tensor& self,
+    Tensor& values,
+    Tensor& indices,
+    int64_t dim) {
+  TensorArg output_arg{values, "output", 1};
+  TensorArg indices_arg{indices, "indices", 2};
+  TensorArg input_arg{self, "input", 3};
+  checkAllSameGPU(__func__, {output_arg, indices_arg, input_arg});
+
+  auto values_ = ContiguousOutArg(values);
+  auto indices_ = ContiguousOutArg(indices);
+  at::native::launch_cummin_cuda_kernel(self, *values_, *indices_, dim);
+  if (!values.is_same(*values_)) {
+    values.copy_(*values_);
+  }
+  if (!indices.is_same(*indices_)) {
+    indices.copy_(*indices_);
+  }
+}
+
 Tensor Any(const Tensor& self) {
   Tensor out = Reduction(
       self,
@@ -597,16 +652,15 @@ std::string concatenate(
 }
 
 Tensor AnyDim(const Tensor& self, int64_t dim, bool keepdim) {
-  TORCH_CHECK(
-      self.scalar_type() == ScalarType::Bool || self.item<int>() == 0 ||
-          self.item<int>() == 1,
-      concatenate(
-          "Now only support bool type or 0/1 value, but got ",
-          self.scalar_type(),
-          self));
   IntArrayRef dims(dim);
-  return Reduction(
+  Tensor out = Reduction(
       self, {dim}, keepdim, self.scalar_type(), ::musa::dnn::Reduce::Mode::OR);
+  // Note: Current mudnn version does not support float32 input to bool output
+  // directly, so a type conversion is performed to convert the output to Bool.
+  if (self.scalar_type() != ScalarType::Bool) {
+    out = out.to(ScalarType::Bool);
+  }
+  return out;
 }
 
 Tensor& AnyDimOut(const Tensor& self, int64_t dim, bool keepdim, Tensor& out) {

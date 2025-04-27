@@ -1,5 +1,5 @@
 diff --git a/torch/_dynamo/trace_rules.py b/torch/_dynamo/trace_rules.py
-index e52c985d409..0ccd5af8b81 100644
+index e52c985..640c441 100644
 --- a/torch/_dynamo/trace_rules.py
 +++ b/torch/_dynamo/trace_rules.py
 @@ -1868,6 +1868,7 @@ torch_c_binding_in_graph_functions = {
@@ -10,3 +10,19 @@ index e52c985d409..0ccd5af8b81 100644
          "torch.rnn_relu_cell",
          "torch.rnn_relu",
          "torch.rnn_tanh_cell",
+@@ -1878,6 +1879,7 @@ torch_c_binding_in_graph_functions = {
+         "torch.round",
+         "torch.row_indices_copy",
+         "torch.row_stack",
++        "torch.rope",
+         "torch.rrelu_",
+         "torch.rrelu",
+         "torch.rsqrt_",
+@@ -1939,6 +1941,7 @@ torch_c_binding_in_graph_functions = {
+         "torch.svd",
+         "torch.swapaxes",
+         "torch.swapdims",
++        "torch.swish_glu",
+         "torch.sym_constrain_range_for_size",
+         "torch.sym_constrain_range",
+         "torch.t_copy",

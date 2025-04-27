@@ -1,5 +1,5 @@
-#ifndef TORCH_MUSA_CSRC_CORE_MUSA_STREAM_H_
-#define TORCH_MUSA_CSRC_CORE_MUSA_STREAM_H_
+#ifndef TORCH_MUSA_CSRC_CORE_MUSASTREAM_H_
+#define TORCH_MUSA_CSRC_CORE_MUSASTREAM_H_
 
 #include <c10/core/DeviceGuard.h>
 #include <c10/core/Stream.h>
@@ -194,4 +194,4 @@ struct hash<c10::musa::MUSAStream> {
 
 } // namespace std
 
-#endif // TORCH_MUSA_CSRC_CORE_MUSA_STREAM_H_
+#endif // TORCH_MUSA_CSRC_CORE_MUSASTREAM_H_

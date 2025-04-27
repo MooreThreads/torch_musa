@@ -20,8 +20,12 @@ if [ "$NAME" != "MUDNN" ]; then
   exit 1
 fi
 
-wget --no-check-certificate https://oss.mthreads.com/release-rc/cuda_compatible/${TAG}/${ARCH}/mudnn_${MUDNN_VERSION}.${ARCH}.tar.gz -P ${mudnn_path}
-tar -zxvf ${mudnn_path}/mudnn_${MUDNN_VERSION}.${ARCH}.tar.gz -C ${mudnn_path}
+OSS_PREFIX=https://oss.mthreads.com/release-ci/computeQA/cuda_compatible/CI/release_KUAE_2.0_for_PH1_M3D/2025-04-08
+MUDNN_VERSION=dev2.8.0
+MUDNN_URL="${OSS_PREFIX}/mudnn_${MUDNN_VERSION}.tar.gz"
+
+wget --no-check-certificate ${MUDNN_URL} -P ${mudnn_path}
+tar -zxvf ${mudnn_path}/mudnn_${MUDNN_VERSION}.tar.gz -C ${mudnn_path}
 pushd ${mudnn_path}/mudnn
 bash install_mudnn.sh
 popd

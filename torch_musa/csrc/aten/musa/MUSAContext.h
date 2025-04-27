@@ -70,6 +70,14 @@ inline void lazyInitMUSA() {
   c10::call_once(thm_init, [&] { at::detail::getMUSAHooks().initMUSA(); });
 }
 
+uint32_t getMUSAArch();
+
+uint32_t getMUSAArch(int device);
+
+bool maybeDNNOpSupportBFloat16();
+
+bool maybeDNNOpSupportBFloat16(int device);
+
 } // namespace musa
 } // namespace at
 #endif // TORCH_MUSA_CSRC_ATEN_MUSA_MUSACONTEXT_H_

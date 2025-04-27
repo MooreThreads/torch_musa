@@ -4,7 +4,7 @@
 #include <ATen/core/dispatch/Dispatcher.h>
 #include <torch/library.h>
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
-#include "torch_musa/csrc/aten/musa/MUSAMarcos.muh"
+#include "torch_musa/csrc/aten/musa/MUSAMacros.muh"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 
 #include "musa_helpers.h"
