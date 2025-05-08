@@ -11,6 +11,7 @@ from torch.distributed.device_mesh import (
     _get_device_handle,
 )
 
+
 # If backend is None, both gloo and nccl backend will be created by `init_process_group`,
 # so here we might need to specify the backend explicitly.
 # MCCL was registered as a new backend after _MUSAC was imported, then we could
@@ -53,6 +54,4 @@ def _get_or_create_default_group(self):
 
 
 def _apply_device_mesh_patch():
-    DeviceMesh._get_or_create_default_group = (
-        _get_or_create_default_group
-    )
+    DeviceMesh._get_or_create_default_group = _get_or_create_default_group

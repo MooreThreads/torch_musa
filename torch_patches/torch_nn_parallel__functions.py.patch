@@ -2,12 +2,14 @@ diff --git a/torch/nn/parallel/_functions.py b/torch/nn/parallel/_functions.py
 index d987ed2bc42..1a8b403ebf4 100644
 --- a/torch/nn/parallel/_functions.py
 +++ b/torch/nn/parallel/_functions.py
-@@ -93,6 +93,8 @@ class Scatter(Function):
-         if torch.cuda.is_available() and ctx.input_device == -1:
-             # Perform CPU to GPU copies in a background stream
-             streams = [_get_stream(torch.device("cuda", device)) for device in target_gpus]
+@@ -101,6 +101,10 @@ class Scatter(Function):
+             streams = [
+                 _get_stream(torch.device("cuda", device)) for device in target_gpus
+             ]
 +        if torch.musa.is_available() and ctx.input_device == -1:
-+            streams = [_get_stream(torch.device("musa", device)) for device in target_gpus]
++            streams = [
++                _get_stream(torch.device("musa", device)) for device in target_gpus
++            ]
          outputs = comm.scatter(input, target_gpus, chunk_sizes, ctx.dim, streams)
          # Synchronize with the copy stream
          if streams is not None:

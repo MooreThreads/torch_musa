@@ -1,22 +1,11 @@
 diff --git a/torch/distributed/elastic/rendezvous/c10d_rendezvous_backend.py b/torch/distributed/elastic/rendezvous/c10d_rendezvous_backend.py
-index faf260a..fa00cb4 100644
+index 427a53b..b77ef94 100644
 --- a/torch/distributed/elastic/rendezvous/c10d_rendezvous_backend.py
 +++ b/torch/distributed/elastic/rendezvous/c10d_rendezvous_backend.py
-@@ -94,7 +94,7 @@ class C10dRendezvousBackend(RendezvousBackend):
-             token = token.decode()
-         else:
-             token = self._NULL_SENTINEL
--
-+
-         base64_state: bytes = self._call_store("compare_set", self._key, token, base64_state_str)
- 
-         state_token_pair = self._decode_state(base64_state)
-@@ -153,7 +153,8 @@ def _create_tcp_store(params: RendezvousParameters) -> TCPStore:
-     for is_server in [is_host, False]:
-         try:
-             store = TCPStore(
--                host, port, is_master=is_server, timeout=timedelta(seconds=read_timeout)
-+                host, port, is_master=is_server, timeout=timedelta(seconds=read_timeout),
+@@ -162,6 +162,7 @@ def _create_tcp_store(params: RendezvousParameters) -> TCPStore:
+                 is_master=is_server,
+                 multi_tenant=True,
+                 timeout=timedelta(seconds=read_timeout),
 +                use_libuv=params.use_libuv,
              )
  

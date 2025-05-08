@@ -36,6 +36,12 @@
 #define MCCL_BF16_SUPPORTED 0
 #endif
 
+#if defined(MARCH_TYPE) && (MARCH_TYPE >= 310)
+#define MCCL_FP8_SUPPORTED 1
+#else
+#define MCCL_FP8_SUPPORTED 0
+#endif
+
 namespace c10d {
 
 // Environment variable which controls whether we perform a MCCL health check
@@ -423,6 +429,14 @@ class TORCH_API ProcessGroupMCCL : public Backend {
 
   // Tests if the UCC fallback path is available
   bool isUCCAvailable() const;
+
+  // Helper function for iteratively aborting communicators in the provided map
+  void abortCommsFromMap(
+      const std::unordered_map<std::string, std::vector<std::shared_ptr<MCCLComm>>>&
+          mcclCommsMap,
+      std::optional<std::string> abortReason);
+
+  bool abort(std::optional<std::string> abortReason = std::nullopt);
 
  protected:
   // Helper that broadcasts mccl unique ID to all ranks through the store

@@ -1,8 +1,8 @@
 diff --git a/torch/distributed/elastic/rendezvous/api.py b/torch/distributed/elastic/rendezvous/api.py
-index 58c4421..a2ead58 100644
+index cbfc553..38fdb8a 100644
 --- a/torch/distributed/elastic/rendezvous/api.py
 +++ b/torch/distributed/elastic/rendezvous/api.py
-@@ -147,6 +147,7 @@ class RendezvousParameters:
+@@ -254,6 +254,7 @@ class RendezvousParameters:
          min_nodes: int,
          max_nodes: int,
          local_addr: Optional[str] = None,
@@ -10,7 +10,7 @@ index 58c4421..a2ead58 100644
          **kwargs,
      ):
          if not backend:
-@@ -169,6 +170,7 @@ class RendezvousParameters:
+@@ -276,6 +277,7 @@ class RendezvousParameters:
          self.max_nodes = max_nodes
          self.config = kwargs
          self.local_addr = local_addr
@@ -18,7 +18,7 @@ index 58c4421..a2ead58 100644
  
      def get(self, key: str, default: Any = None) -> Any:
          """Return the value for ``key`` if ``key`` exists, else ``default``."""
-@@ -258,7 +260,7 @@ class RendezvousHandlerRegistry:
+@@ -365,7 +367,7 @@ class RendezvousHandlerRegistry:
          handler = creator(params)
  
          # Do some sanity check.

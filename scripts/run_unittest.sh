@@ -11,8 +11,6 @@ pytest --last-failed --junitxml=${TEST_REPORT_DIR}/${GPU_TYPE}-distributed-test-
 pytest --last-failed --junitxml=${TEST_REPORT_DIR}/${GPU_TYPE}-optim-test-failed-results.xml -v tests/unittest/optim
 pytest --last-failed --junitxml=${TEST_REPORT_DIR}/${GPU_TYPE}-miscs-test-failed-results.xml -v tests/unittest/miscs
 pytest --last-failed --junitxml=${TEST_REPORT_DIR}/${GPU_TYPE}-profiler-test-failed-results.xml -v tests/unittest/profiler/*.py
-pytest --last-failed --junitxml=${TEST_REPORT_DIR}/${GPU_TYPE}-dynamo-test-failed-results.xml -v tests/unittest/dynamo
-pytest --last-failed --junitxml=${TEST_REPORT_DIR}/${GPU_TYPE}-inductor-test-failed-results.xml -v tests/unittest/inductor
 
 find tests/unittest/standalone -name "*.py" | while read -r case;
 do

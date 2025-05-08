@@ -1,26 +1,18 @@
 diff --git a/torch/csrc/distributed/c10d/TCPStoreLibUvBackend.cpp b/torch/csrc/distributed/c10d/TCPStoreLibUvBackend.cpp
-index 0c8e66b..7f005fe 100644
+index 0cac94b..6a1c419 100644
 --- a/torch/csrc/distributed/c10d/TCPStoreLibUvBackend.cpp
 +++ b/torch/csrc/distributed/c10d/TCPStoreLibUvBackend.cpp
-@@ -5,6 +5,7 @@
- #include <unordered_map>
+@@ -7,6 +7,7 @@
  #include <unordered_set>
+ #include <utility>
  #include <vector>
 +#include <c10/util/Logging.h>
  
+ #include <c10/util/thread_name.h>
  #include <fmt/format.h>
- #include <torch/csrc/distributed/c10d/TCPStore.hpp>
-@@ -987,7 +988,6 @@ void LibUVStoreDaemon::init(const TCPStoreOptions& opts) {
-   }
-   tcpServer->setOnConnectCallback(
-       [this](auto status) { this->onConnect(status); });
--
-   port_ = tcpServer->port();
-   TORCH_CHECK(
-       port_ == opts.port || opts.port == 0, // zero means use any port
-@@ -995,6 +995,7 @@ void LibUVStoreDaemon::init(const TCPStoreOptions& opts) {
-       *opts.masterListenFd,
+@@ -1060,6 +1061,7 @@ void LibUVStoreDaemon::init(const TCPStoreOptions& opts) {
        port_,
+       ", expected to be bound to port ",
        opts.port);
 +  LOG(INFO) << "libuv backend is init success!!!!!";
  }

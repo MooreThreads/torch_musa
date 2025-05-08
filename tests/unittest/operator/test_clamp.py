@@ -308,8 +308,6 @@ def test_clamp_tensor_min_max_out(input_data, dtype, func):
 @pytest.mark.parametrize("dtype", [torch.float16, torch.bfloat16])
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 def test_clamp_tensor_different_dtypes(dtype):
-    if testing.get_musa_arch() == 21 and dtype == torch.bfloat16:
-        return
     input_data = {
         "input": torch.randn(3, 8),
         "min": -torch.ones(3, 8).to(dtype),

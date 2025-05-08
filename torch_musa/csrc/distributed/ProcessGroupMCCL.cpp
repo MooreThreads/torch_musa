@@ -2,6 +2,7 @@
 #include <pybind11/cast.h>
 #include <pybind11/chrono.h>
 #include <thread>
+#include <tuple>
 #include "mccl.h"
 
 namespace c10d {
@@ -21,7 +22,7 @@ const std::map<at::ScalarType, mcclDataType_t> mcclDataType = {
     {at::kBool, mcclUint8},
 #if MCCL_BF16_SUPPORTED
     {at::kBFloat16, mcclBfloat16},
-#if defined(TORCH_MUSA_ARCH) && TORCH_MUSA_ARCH >= 310 && ENABLE_FP8_COMM == 1
+#if MCCL_FP8_SUPPORTED
     {at::kFloat8_e5m2, mcclFp8E5M2},
     {at::kFloat8_e4m3fn, mcclFp8E4M3},
 #endif
@@ -80,6 +81,20 @@ std::string getKeyFromDevices(const std::vector<at::Device>& devices) {
     }
   }
   return deviceList;
+}
+
+inline at::DeviceIndex getIndexFromDeviceKey(const std::string& deviceKey) {
+  // initialize the device index to -1, which is an invalid value.
+  int index = -1;
+  try {
+    index = std::stoi(deviceKey);
+  } catch (const std::invalid_argument& e) {
+    LOG(ERROR) << c10::str(
+        "Invalid deviceKey: ", deviceKey, ",", e.what(), ".");
+  } catch (const std::out_of_range& e) {
+    LOG(ERROR) << "Out of range: " << e.what();
+  }
+  return static_cast<at::DeviceIndex>(index);
 }
 
 std::string getKeySendRecv(int myRank, int peer) {
@@ -426,7 +441,8 @@ void ProcessGroupMCCL::WorkMCCL::synchronizeInternal(
 bool ProcessGroupMCCL::WorkMCCL::wait(std::chrono::milliseconds timeout) {
   RECORD_PARAM_COMMS(
       static_cast<int>(this->seq_), // seq
-      0, // process group ptr
+      std::make_tuple(
+          std::string("0"), std::string("wait")), // process group name
       rank_, // rank
       "wait", // colName
       0, // inSize
@@ -434,6 +450,8 @@ bool ProcessGroupMCCL::WorkMCCL::wait(std::chrono::milliseconds timeout) {
       at::kByte, // dType
       std::vector<int64_t>(), // inSplitSizes
       std::vector<int64_t>(), // outSplitSizes
+      0,
+      0,
       static_cast<int>(devices_.size()));
   synchronizeInternal(timeout);
   // Always return true, because abort API is not implemented.
@@ -553,7 +571,7 @@ ProcessGroupMCCL::ProcessGroupMCCL(
 
   RECORD_PARAM_COMMS(
       0, // seq
-      reinterpret_cast<std::intptr_t>(this), // process group ptr
+      std::make_tuple(getBackendName(), std::string()), // process group name
       rank, // rank
       "init", // colName
       0, // inSize
@@ -561,6 +579,8 @@ ProcessGroupMCCL::ProcessGroupMCCL(
       at::kByte, // dType
       std::vector<int64_t>(), // inSplitSizes
       std::vector<int64_t>(), // outSplitSizes
+      0,
+      0,
       size_);
 }
 
@@ -1782,7 +1802,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::allreduce(
   RECORD_PARAM_COMMS_DATA(
       static_cast<int>(
           this->getSequenceNumberForGroup() + 1), // seq + 1 to match collective
-      reinterpret_cast<std::intptr_t>(this), // process group ptr
+      std::make_tuple(getBackendName(), std::string()), // process group name
       tensors, // inputTensors
       tensors, // outputTensors
       rank_, // rank
@@ -1792,6 +1812,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::allreduce(
       tensor.scalar_type(), // dType
       std::vector<int64_t>(), // inSplitSizes
       std::vector<int64_t>(), // outSplitSizes
+      0,
+      0,
       this->getSize());
 
   return allreduce_impl(tensors, opts);
@@ -1806,7 +1828,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::allreduce_coalesced(
   RECORD_PARAM_COMMS_DATA(
       static_cast<int>(
           this->getSequenceNumberForGroup() + 1), // seq + 1 to match collective
-      reinterpret_cast<std::intptr_t>(this), // process group ptr
+      std::make_tuple(getBackendName(), std::string()), // process group name
       tensors, // inputTensors
       tensors, // outputTensors
       rank_, // rank
@@ -1817,6 +1839,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::allreduce_coalesced(
       // I'm not sure what in,outSplitSizes mean here.
       std::vector<int64_t>(), // inSplitSizes
       std::vector<int64_t>(), // outSplitSizes
+      0,
+      0,
       this->getSize());
 
   return allreduce_impl(tensors, opts);
@@ -1833,7 +1857,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::broadcast(
   RECORD_PARAM_COMMS_DATA(
       static_cast<int>(
           this->getSequenceNumberForGroup() + 1), // seq + 1 to match collective
-      reinterpret_cast<std::intptr_t>(this), // process group ptr
+      std::make_tuple(getBackendName(), std::string()), // process group name
       tensors, // inputTensors
       tensors, // outputTensors
       rank_, // rank
@@ -1843,6 +1867,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::broadcast(
       tensor.scalar_type(), // dType
       std::vector<int64_t>(), // inSplitSizes
       std::vector<int64_t>(), // outSplitSizes
+      0,
+      0,
       this->getSize());
 
   bool avoidRecordStreams = avoidRecordStreams_ || (!opts.asyncOp);
@@ -1895,7 +1921,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::_broadcast_oop(
       static_cast<int>(
           this->getSequenceNumberForGroup() +
           1), // seq + 1 to match collective increment.
-      reinterpret_cast<std::intptr_t>(this), // process group ptr
+      std::make_tuple(getBackendName(), std::string()), // process group name
       inputTensors, // inputTensors
       outputTensors, // outputTensors
       rank_, // rank
@@ -1905,6 +1931,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::_broadcast_oop(
       tensor.scalar_type(), // dType
       std::vector<int64_t>(), // inSplitSizes
       std::vector<int64_t>(), // outSplitSizes
+      0,
+      0,
       this->getSize());
 
   return collective(
@@ -1937,7 +1965,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::reduce(
   RECORD_PARAM_COMMS_DATA(
       static_cast<int>(
           this->getSequenceNumberForGroup() + 1), // seq + 1 to match collective
-      reinterpret_cast<std::intptr_t>(this),
+      std::make_tuple(getBackendName(), std::string()), // process group name
       tensors, // inputTensors
       tensors, // outputTensors
       rank_, // rank
@@ -1947,6 +1975,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::reduce(
       tensor.scalar_type(), // dType
       std::vector<int64_t>(), // inSplitSizes
       std::vector<int64_t>(), // outSplitSizes
+      0,
+      0,
       this->getSize());
 
   int dev_in_group = 0;
@@ -2000,7 +2030,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::_reduce_oop(
   RECORD_PARAM_COMMS_DATA(
       static_cast<int>(
           this->getSequenceNumberForGroup() + 1), // seq + 1 to match collective
-      reinterpret_cast<std::intptr_t>(this), // process group ptr
+      std::make_tuple(getBackendName(), std::string()), // process group name
       inputTensors, // inputTensors
       outputTensors, // outputTensors
       rank_, // rank
@@ -2010,6 +2040,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::_reduce_oop(
       tensor.scalar_type(), // dType
       std::vector<int64_t>(), // inSplitSizes
       std::vector<int64_t>(), // outSplitSizes
+      0,
+      0,
       this->getSize());
 
   int dev_in_group{0};
@@ -2057,7 +2089,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::allgather(
         static_cast<int>(
             this->getSequenceNumberForGroup() +
             1), // seq + 1 to match collective
-        reinterpret_cast<std::intptr_t>(this), // process group ptr
+        std::make_tuple(getBackendName(), std::string()), // process group name
         inputTensors, // inputTensors
         outputTensors, // outputTensors
         rank_, // rank
@@ -2068,6 +2100,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::allgather(
         tensor.scalar_type(),
         std::vector<int64_t>(), // inSplitSizes
         std::vector<int64_t>(), // outSplitSize
+        0,
+        0,
         this->getSize());
 
     return collective(
@@ -2188,7 +2222,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::reduce_scatter(
         static_cast<int>(
             this->getSequenceNumberForGroup() +
             1), // seq + 1 to match collective
-        reinterpret_cast<std::intptr_t>(this), // process group ptr
+        std::make_tuple(getBackendName(), std::string()), // process group name
         inputTensors, // inputTensors
         outputTensors, // outputTensors
         rank_, // rank
@@ -2198,6 +2232,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::reduce_scatter(
         tensor.scalar_type(), // dType
         std::vector<int64_t>(), // inSplitSizes
         std::vector<int64_t>(), // outSplitSizes
+        0,
+        0,
         this->getSize());
 
     return collective(
@@ -2299,7 +2335,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::_reduce_scatter_base(
   RECORD_PARAM_COMMS_DATA(
       static_cast<int>(
           this->getSequenceNumberForGroup() + 1), // seq + 1 to match collective
-      reinterpret_cast<std::intptr_t>(this), // process group ptr
+      std::make_tuple(getBackendName(), std::string()), // process group name
       inputTensor, // inputTensor
       outputTensor, // outputTensor
       rank_, // rank
@@ -2310,6 +2346,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::_reduce_scatter_base(
       tensor.scalar_type(), // dtype
       std::vector<int64_t>(), // inSplitSizes
       std::vector<int64_t>(), // outSplitSizes
+      0,
+      0,
       this->getSize());
 
   auto inputs = std::vector<at::Tensor>{inputTensor};
@@ -2392,7 +2430,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::barrier(const BarrierOptions& opts) {
   RECORD_PARAM_COMMS(
       static_cast<int>(
           this->getSequenceNumberForGroup() + 1), // seq + 1 to match collective
-      reinterpret_cast<std::intptr_t>(this), // process group ptr
+      std::make_tuple(getBackendName(), std::string()), // process group name
       rank_, // rank
       "barrier", // colName
       0, // inSize
@@ -2400,6 +2438,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::barrier(const BarrierOptions& opts) {
       at::kByte, // dType
       std::vector<int64_t>(), // inSplitSizes
       std::vector<int64_t>(), // outSplitSizes
+      0,
+      0,
       this->getSize());
 
   std::vector<at::Device> devices;
@@ -2575,7 +2615,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::alltoall_base(
         static_cast<int>(
             this->getSequenceNumberForGroup() +
             1), // seq + 1 to match collective
-        reinterpret_cast<std::intptr_t>(this), // process group ptr
+        std::make_tuple(getBackendName(), std::string()), // process group name
         inputTensor, // inputTensor
         outputTensor, // outputTensor
         rank_, // rank
@@ -2585,6 +2625,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::alltoall_base(
         inputTensor.scalar_type(), // dType
         std::vector<int64_t>(), // inSplitSizes
         std::vector<int64_t>(), // outSplitSizes
+        0,
+        0,
         this->getSize());
 
     return collective(
@@ -2614,7 +2656,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::alltoall_base(
         static_cast<int>(
             this->getSequenceNumberForGroup() +
             1), // seq + 1 to match collective
-        reinterpret_cast<std::intptr_t>(this), // process group ptr
+        std::make_tuple(getBackendName(), std::string()), // process group name
         inputTensor, // inputTensor
         outputTensor, // outputTensor
         rank_, // rank
@@ -2624,6 +2666,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::alltoall_base(
         inputTensor.scalar_type(), // dType
         inputSplitSizes, // inSplitSizes
         outputSplitSizes, // outSplitSizes
+        0,
+        0,
         this->getSize());
 
     return collective(
@@ -2848,7 +2892,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::gather(
   RECORD_PARAM_COMMS_DATA(
       static_cast<int>(
           this->getSequenceNumberForGroup() + 1), // seq + 1 to match collective
-      reinterpret_cast<std::intptr_t>(this), // process group ptr
+      std::make_tuple(getBackendName(), std::string()), // process group name
       inputTensors, // inputTensors
       outputTensors, // outputTensors
       rank_, // rank
@@ -2858,6 +2902,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::gather(
       tensor.scalar_type(), // dType
       std::vector<int64_t>(), // inSplitSizes
       std::vector<int64_t>(), // outSplitSize
+      0,
+      0,
       this->getSize());
 
   return collective(
@@ -2967,7 +3013,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::scatter(
   RECORD_PARAM_COMMS_DATA(
       static_cast<int>(
           this->getSequenceNumberForGroup() + 1), // seq + 1 to match collective
-      reinterpret_cast<std::intptr_t>(this), // process group ptr
+      std::make_tuple(getBackendName(), std::string()), // process group name
       inputTensors, // inputTensors
       outputTensors, // outputTensors
       rank_, // rank
@@ -2977,6 +3023,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::scatter(
       tensor.scalar_type(), // dType
       std::vector<int64_t>(), // inSplitSizes
       std::vector<int64_t>(), // outSplitSize
+      0,
+      0,
       this->getSize());
 
   bool avoidRecordStreams = avoidRecordStreams_ || (!opts.asyncOp);
@@ -3074,6 +3122,41 @@ bool ProcessGroupMCCL::isUCCAvailable() const {
 #else
   return false;
 #endif
+}
+
+void ProcessGroupMCCL::abortCommsFromMap(
+    const std::unordered_map<std::string, std::vector<std::shared_ptr<MCCLComm>>>&
+        mcclCommsMap,
+    std::optional<std::string> abortReason) {
+  // The process may control multiple devices, loop through the communicators
+  // on each device
+  for (auto& it : mcclCommsMap) {
+    auto& devName = it.first;
+    for (auto& mcclComm : it.second) {
+      c10::musa::OptionalMUSAGuard gpuGuard;
+
+      at::DeviceIndex deviceIndex = getIndexFromDeviceKey(devName);
+      if (deviceIndex >= 0) {
+        gpuGuard.set_index(deviceIndex);
+      }
+
+      LOG(INFO) << "ProcessGroupNCCL destroying ncclComm_ on MUSA device: "
+                << devName;
+
+      mcclComm->mcclCommAbort(abortReason);
+
+      LOG(INFO) << "ProcessGroupNCCL destroyed  ncclComm on MUSA device: "
+                << devName;
+    }
+  }
+}
+
+// Abort all communicators on this rank
+bool ProcessGroupMCCL::abort(std::optional<std::string> abortReason) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  abortCommsFromMap(devMCCLCommMap_, abortReason);
+  abortCommsFromMap(mcclIdToCommMap_, abortReason);
+  return true;
 }
 
 c10::intrusive_ptr<Backend> ProcessGroupMCCL::MCCLcreator(

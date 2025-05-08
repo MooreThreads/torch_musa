@@ -15,7 +15,7 @@ static PyObject* PyMusaStorage_resize_(
     PyObject* /* unused */,
     PyObject* self_and_number_arg) {
   HANDLE_TH_ERRORS
-  THPUtils_assert(
+  TORCH_CHECK(
       PyTuple_GET_SIZE(self_and_number_arg) == 2, "tuple of 2 item expected");
   PyObject* self = PyTuple_GET_ITEM(self_and_number_arg, 0);
   PyObject* number_arg = PyTuple_GET_ITEM(self_and_number_arg, 1);
@@ -27,10 +27,10 @@ static PyObject* PyMusaStorage_resize_(
       storage.sym_nbytes() != 0;
   TORCH_CHECK(
       !invalid, "Attempted to call resize_() on an invalid python storage.")
-  THPUtils_assert(
+  TORCH_CHECK(
       THPUtils_checkLong(number_arg),
       "resize_ expects an int, "
-      "but got %s",
+      "but got ",
       THPUtils_typename(number_arg));
   int64_t newsize = THPUtils_unpackLong(number_arg);
   c10::DeviceType device_type = storage.device_type();

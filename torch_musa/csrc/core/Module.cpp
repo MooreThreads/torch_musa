@@ -9,23 +9,24 @@
 #include <torch/csrc/Exceptions.h>
 #include <torch/csrc/Generator.h>
 #include <torch/csrc/THP.h>
-#include <torch/csrc/profiler/python/combined_traceback.h>
+#include <torch/csrc/utils/device_lazy_init.h>
 #include <torch/csrc/utils/invalid_arguments.h>
 #include <torch/csrc/utils/pybind.h>
 #include <torch/csrc/utils/pycfunction_helpers.h>
 #include <torch/csrc/utils/python_numbers.h>
 #include <torch/csrc/utils/python_strings.h>
-#include <cstddef>
+#include <torch/csrc/profiler/python/combined_traceback.h>
 #include <vector>
 
 #include "torch_musa/csrc/amp/autocast_mode.h"
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/aten/musa/MUSAGeneratorImpl.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/core/Device.h"
-#include "torch_musa/csrc/core/Event.h"
 #include "torch_musa/csrc/core/MUSAAllocatorConfig.h"
 #include "torch_musa/csrc/core/MUSACachingAllocator.h"
+#include "torch_musa/csrc/core/Device.h"
+#include "torch_musa/csrc/core/Event.h"
+#include "torch_musa/csrc/core/MUSAFunctions.h"
 #include "torch_musa/csrc/core/PythonTensor.h"
 #include "torch_musa/csrc/core/Sleep.h"
 #include "torch_musa/csrc/core/Stream.h"
@@ -33,16 +34,13 @@
 #include "torch_musa/csrc/core/PythonComm.h"
 #include "torch_musa/csrc/distributed/Register.h"
 #endif
-#include "torch_musa/csrc/aten/musa/MUSAGraphsUtils.muh"
 #include "torch_musa/csrc/aten/utils/Context.h"
+#include "torch_musa/csrc/core/MUSAHooks.h"
 #include "torch_musa/csrc/core/MusaIPCTypes.h"
 #include "torch_musa/csrc/core/Storage.h"
 #include "torch_musa/csrc/core/StorageSharing.h"
 #include "torch_musa/csrc/utils/Logging.h"
-#include "torch_musa/csrc/utils/musa_lazy_init.h"
-
-#include "torch_musa/csrc/aten/ConvUtils.h"
-#include "torch_musa/csrc/core/MemorySnapshot.h"
+#include "torch_musa/csrc/core/memory_snapshot.h"
 
 #include <pthread.h>
 
@@ -51,18 +49,13 @@ bool in_bad_fork = false; // True for children forked after musa init
 // Called in the forked child if musa has already been initialized
 static void forked_child() {
   in_bad_fork = true;
-  torch::utils::set_requires_musa_init(true);
+  torch::utils::set_requires_device_init(at::musa::kMUSA, true);
 }
 
 static void poison_fork() {
   static c10::once_flag flag;
   c10::call_once(flag, [] { pthread_atfork(nullptr, nullptr, forked_child); });
 }
-
-/**
- * @brief Forward declaration of `THCPGraph_init`, which is defined at Graph.cpp
- */
-void THCPGraph_init(PyObject* module);
 
 void AddPyMethodDefs(std::vector<PyMethodDef>& vector, PyMethodDef* methods) {
   if (!vector.empty()) {
@@ -102,33 +95,23 @@ void THPUtils_invalidArguments(
 }
 
 PyObject* PyMusaEmptyCache(PyObject* unused0, PyObject* unused1) {
-  HANDLE_TH_ERRORS
-  c10::musa::MUSACachingAllocator::emptyCache();
-
-  Py_RETURN_NONE;
-  END_HANDLE_TH_ERRORS
-}
-
-PyObject* PyMusaResetPeakMemoryStats(PyObject* /* unused */, PyObject* arg) {
-  HANDLE_TH_ERRORS
-  THPUtils_assert(
-      THPUtils_checkLong(arg), "invalid argument to reset_peak_memory_stats");
-  const int device = (int)THPUtils_unpackLong(arg);
-  c10::musa::MUSACachingAllocator::resetPeakStats(device);
+  HANDLE_TH_ERRORS {
+    pybind11::gil_scoped_release no_gil;
+    c10::musa::MUSACachingAllocator::emptyCache();
+  }
   END_HANDLE_TH_ERRORS
   Py_RETURN_NONE;
 }
 
 PyObject* PyMusaMemoryStats(PyObject* /* unused */, PyObject* arg) {
   HANDLE_TH_ERRORS
-  THPUtils_assert(
-      THPUtils_checkLong(arg), "invalid argument to memory_allocated");
-  const int device = (int)THPUtils_unpackLong(arg);
+  TORCH_CHECK(THPUtils_checkLong(arg), "invalid argument to memory_allocated");
+  const auto device_index = THPUtils_unpackDeviceIndex(arg);
 
-  using c10::musa::MUSACachingAllocator::DeviceStats;
-  using c10::musa::MUSACachingAllocator::Stat;
-  using c10::musa::MUSACachingAllocator::StatArray;
-  using c10::musa::MUSACachingAllocator::StatType;
+  using c10::CachingDeviceAllocator::DeviceStats;
+  using c10::CachingDeviceAllocator::Stat;
+  using c10::CachingDeviceAllocator::StatArray;
+  using c10::CachingDeviceAllocator::StatType;
 
   const auto statToDict = [](const Stat& stat) {
     py::dict dict;
@@ -144,19 +127,22 @@ PyObject* PyMusaMemoryStats(PyObject* /* unused */, PyObject* arg) {
     const std::array<const char*, static_cast<size_t>(StatType::NUM_TYPES)>
         statTypeNames = {"all", "small_pool", "large_pool"};
     py::dict dict;
-    for (const auto i : c10::irange(statTypeNames.size())) {
+    for (size_t i = 0; i < statTypeNames.size(); ++i) {
       dict[statTypeNames[i]] = statToDict(statArray[i]);
     }
     return dict;
   };
 
   const DeviceStats stats =
-      c10::musa::MUSACachingAllocator::getDeviceStats(device);
+      c10::musa::MUSACachingAllocator::getDeviceStats(device_index);
 
   py::dict result;
   result["num_alloc_retries"] = stats.num_alloc_retries;
   result["num_ooms"] = stats.num_ooms;
   result["max_split_size"] = stats.max_split_size;
+  result["num_sync_all_streams"] = stats.num_sync_all_streams;
+  result["num_device_alloc"] = stats.num_device_alloc;
+  result["num_device_free"] = stats.num_device_free;
   result["allocation"] = statArrayToDict(stats.allocation);
   result["segment"] = statArrayToDict(stats.segment);
   result["active"] = statArrayToDict(stats.active);
@@ -173,15 +159,31 @@ PyObject* PyMusaMemoryStats(PyObject* /* unused */, PyObject* arg) {
   END_HANDLE_TH_ERRORS
 }
 
-struct Frame {
-  PyCodeObject* code;
-  int lasti;
-};
+PyObject* PyMusaResetAccumulatedMemoryStats(PyObject* _unused, PyObject* arg) {
+  HANDLE_TH_ERRORS
+  TORCH_CHECK(
+      THPUtils_checkLong(arg),
+      "invalid argument to reset_accumulated_memory_stats");
+  const auto device_index = THPUtils_unpackDeviceIndex(arg);
+  c10::musa::MUSACachingAllocator::resetAccumulatedStats(device_index);
+  END_HANDLE_TH_ERRORS
+  Py_RETURN_NONE;
+}
 
-torch::CapturedTraceback* getFromContext(
+PyObject* PyMusaResetPeakMemoryStats(PyObject* _unused, PyObject* arg) {
+  HANDLE_TH_ERRORS
+  TORCH_CHECK(
+      THPUtils_checkLong(arg), "invalid argument to reset_peak_memory_stats");
+  const auto device_index = THPUtils_unpackDeviceIndex(arg);
+  c10::musa::MUSACachingAllocator::resetPeakStats(device_index);
+  END_HANDLE_TH_ERRORS
+  Py_RETURN_NONE;
+}
+
+using torch::CapturedTraceback;
+CapturedTraceback* getFromContext(
     const std::shared_ptr<c10::GatheredContext>& x) {
-  if (torch::CapturedTraceback* sc =
-          dynamic_cast<torch::CapturedTraceback*>(x.get())) {
+  if (CapturedTraceback* sc = dynamic_cast<CapturedTraceback*>(x.get())) {
     return sc;
   }
   TORCH_CHECK(
@@ -189,7 +191,7 @@ torch::CapturedTraceback* getFromContext(
       "attempting to gather stack context from the wrong StackContext type.");
 }
 
-PyObject* PyMusaMemorySnapshot(PyObject* /* unused */, PyObject* /* unused */) {
+PyObject* PyMusaMemorySnapshot(PyObject* _unused, PyObject* noargs) {
   HANDLE_TH_ERRORS
 
   using c10::musa::MUSACachingAllocator::BlockInfo;
@@ -219,7 +221,7 @@ PyObject* PyMusaMemorySnapshot(PyObject* /* unused */, PyObject* /* unused */) {
   py::str time_us_s = "time_us";
 
   py::list empty_frames;
-  std::vector<torch::CapturedTraceback*> to_gather_frames;
+  std::vector<CapturedTraceback*> to_gather_frames;
   std::vector<py::dict> to_gather_dest;
 
   auto add_frame_key = [&](const py::dict& d,
@@ -241,8 +243,6 @@ PyObject* PyMusaMemorySnapshot(PyObject* /* unused */, PyObject* /* unused */) {
     segmentDict[allocated_size_s] = segmentInfo.allocated_size;
     segmentDict[active_size_s] = segmentInfo.active_size;
     segmentDict[requested_size_s] = segmentInfo.requested_size;
-    // we want the python objects to pickle easily so use an int to
-    // represent the stream rather than a torch.musa.stream object
     segmentDict[stream_s] = int64_t(segmentInfo.stream);
     segmentDict[segment_type_s] = (segmentInfo.is_large ? large_s : small_s);
     segmentDict[segment_pool_id] = segmentInfo.owner_private_pool_id;
@@ -269,7 +269,8 @@ PyObject* PyMusaMemorySnapshot(PyObject* /* unused */, PyObject* /* unused */) {
     return segmentDict;
   };
 
-  const auto& snapshot = c10::musa::MUSACachingAllocator::snapshot();
+  auto snapshot = c10::musa::MUSACachingAllocator::snapshot();
+
   py::list segments;
 
   for (const auto& segmentInfo : snapshot.segments) {
@@ -291,6 +292,7 @@ PyObject* PyMusaMemorySnapshot(PyObject* /* unused */, PyObject* /* unused */) {
   py::str device_free_s = "device_free";
 
   using namespace c10::musa::MUSACachingAllocator;
+
   auto action_to_str = [&](TraceEntry::Action action) {
     switch (action) {
       case TraceEntry::ALLOC:
@@ -336,13 +338,57 @@ PyObject* PyMusaMemorySnapshot(PyObject* /* unused */, PyObject* /* unused */) {
     traces.append(trace);
   }
 
+  py::list external_annotations;
+  for (const auto& ae : snapshot.external_annotations) {
+    py::dict annotation_entry;
+    for (const auto& md : ae.metadata_) {
+      annotation_entry[(py::str)md.first] = md.second;
+    }
+    annotation_entry[device_s] = ae.device_;
+    annotation_entry[time_us_s] = ae.time_.t_;
+    external_annotations.append(annotation_entry);
+  }
+
+  py::dict allocator_settings;
+  py::str last_allocator_settings_s = "PYTORCH_MUSA_ALLOC_CONF";
+  py::str max_split_size_s = "max_split_size";
+  py::str garbage_collection_threshold_s = "garbage_collection_threshold";
+  py::str expandable_segments_s = "expandable_segments";
+  py::str pinned_num_register_threads_s = "pinned_num_register_threads";
+  py::str release_lock_on_malloc_s = "release_lock_on_musamalloc";
+  py::str pinned_use_host_register_s = "pinned_use_musa_host_register";
+  py::str roundup_power2_divisions_s = "roundup_power2_divisions";
+
+  allocator_settings[last_allocator_settings_s] =
+      snapshot.config_metadata.last_allocator_settings;
+  allocator_settings[max_split_size_s] =
+      int64_t(snapshot.config_metadata.max_split_size);
+  allocator_settings[garbage_collection_threshold_s] =
+      snapshot.config_metadata.garbage_collection_threshold;
+  allocator_settings[expandable_segments_s] =
+      snapshot.config_metadata.expandable_segments;
+  allocator_settings[pinned_num_register_threads_s] =
+      int64_t(snapshot.config_metadata.pinned_num_register_threads);
+  allocator_settings[release_lock_on_malloc_s] =
+      snapshot.config_metadata.release_lock_on_malloc;
+  allocator_settings[pinned_use_host_register_s] =
+      snapshot.config_metadata.pinned_use_host_register;
+  unsigned int roundup_key = 1;
+  py::dict roundup_settings;
+  for (const auto& v : snapshot.config_metadata.roundup_power2_divisions) {
+    py::str roundup_key_s = std::to_string(roundup_key);
+    roundup_settings[roundup_key_s] = int64_t(v);
+    roundup_key *= 2;
+  }
+  allocator_settings[roundup_power2_divisions_s] = roundup_settings;
+
   py::dict result;
   result["segments"] = segments;
   result["device_traces"] = traces;
+  result["allocator_settings"] = allocator_settings;
+  result["external_annotations"] = external_annotations;
 
-  // py_symbolize is local, so we patched combined_traceback.h to make it
-  // visible for torch_musa
-  auto frames = torch::py_symbolize(to_gather_frames);
+  auto frames = py_symbolize(to_gather_frames);
   for (auto i : c10::irange(frames.size())) {
     to_gather_dest.at(i)[frames_s] = frames.at(i);
   }
@@ -396,24 +442,14 @@ PyObject* PyMusaSetMemoryFraction(PyObject* _unused, PyObject* args) {
   Py_RETURN_NONE;
 }
 
-PyObject* PyMusaresetPeakMemoryStats(PyObject* _unused, PyObject* arg) {
-  HANDLE_TH_ERRORS
-  THPUtils_assert(
-      THPUtils_checkLong(arg), "invalid argument to reset_peak_memory_stats");
-  const int device = (int)THPUtils_unpackLong(arg);
-  c10::musa::MUSACachingAllocator::resetPeakStats(device);
-  END_HANDLE_TH_ERRORS
-  Py_RETURN_NONE;
-}
-
-PyObject* PyMusasetMusaCachingAllocatorSettings(
+PyObject* PyMusaCachingAllocatorSetAllocatorSettings(
     PyObject* _unused,
     PyObject* env) {
   HANDLE_TH_ERRORS
   c10::musa::MUSACachingAllocator::setAllocatorSettings(
       THPUtils_unpackString(env));
-  Py_RETURN_NONE;
   END_HANDLE_TH_ERRORS
+  Py_RETURN_NONE;
 }
 
 static void RegisterMusaDeviceProperties(PyObject* module) {
@@ -421,11 +457,8 @@ static void RegisterMusaDeviceProperties(PyObject* module) {
   auto m = py::handle(module).cast<py::module>();
 
   // Set musa version
-#if defined(REAL_MUSA_VERSION)
-  m.attr("_musa_version") = py::str(std::to_string(REAL_MUSA_VERSION));
-#else
-  m.attr("_musa_version") = py::str("0"); // invalid path ?
-#endif
+  m.attr("_musa_version") = py::str(std::to_string(MUSA_VERSION));
+
   py::class_<musaDeviceProp>(m, "_MusaDeviceProperties")
       .def_readonly("name", &musaDeviceProp::name)
       .def_readonly("major", &musaDeviceProp::major)
@@ -444,16 +477,18 @@ static void RegisterMusaDeviceProperties(PyObject* module) {
                << ")";
         return stream.str();
       });
+
   m.def(
       "_musa_record_memory_history_legacy",
       static_cast<void (*)(bool, bool, int64_t, bool, bool)>(
           torch::musa::_record_memory_history));
+
   m.def(
       "_musa_record_memory_history",
       static_cast<void (*)(
           std::optional<std::string>,
           std::optional<std::string>,
-          std::string,
+          const std::string&,
           size_t)>(torch::musa::_record_memory_history));
 }
 
@@ -519,11 +554,20 @@ void AddMusaProcessGroupMethods(PyObject* module) {
 }
 #endif
 
+PyObject* PyMusaRegisterDeviceHook(
+    PyObject* /* unused */,
+    PyObject* /* unused */) {
+  HANDLE_TH_ERRORS
+  at::detail::getMUSAHooks();
+  Py_RETURN_NONE;
+  END_HANDLE_TH_ERRORS
+}
+
 PyObject* PyMusaSetDevice(PyObject* /* unused */, PyObject* arg) {
   HANDLE_TH_ERRORS
-  THPUtils_assert(THPUtils_checkLong(arg), "invalid argument to setDevice");
+  TORCH_CHECK(THPUtils_checkLong(arg), "invalid argument to setDevice");
   int64_t device = THPUtils_unpackLong(arg);
-  torch::utils::musa_lazy_init();
+  torch::utils::device_lazy_init(at::musa::kMUSA);
   c10::musa::set_device(device);
   Py_RETURN_NONE;
   END_HANDLE_TH_ERRORS
@@ -531,7 +575,7 @@ PyObject* PyMusaSetDevice(PyObject* /* unused */, PyObject* arg) {
 
 PyObject* PyMusaGetDevice(PyObject* /* unused */, PyObject* /* unused */) {
   HANDLE_TH_ERRORS
-  torch::utils::musa_lazy_init();
+  torch::utils::device_lazy_init(at::musa::kMUSA);
   // NOLINTNEXTLINE(bugprone-signed-char-misuse)
   auto device = static_cast<int>(c10::musa::current_device());
   return THPUtils_packInt32(device);
@@ -551,13 +595,13 @@ PyObject* PyMusaCanDeviceAccessPeer(PyObject* /* unused */, PyObject* args) {
         "(int device, int peer_device);");
     return nullptr;
   }
-  THPUtils_assert(
+  TORCH_CHECK(
       THPUtils_checkLong(arg1), "invalid argument to canDeviceAccessPeer");
-  THPUtils_assert(
+  TORCH_CHECK(
       THPUtils_checkLong(arg2), "invalid argument to canDeviceAccessPeer");
   int64_t device = THPUtils_unpackLong(arg1);
   int64_t peer_device = THPUtils_unpackLong(arg2);
-  torch::utils::musa_lazy_init();
+  torch::utils::device_lazy_init(at::musa::kMUSA);
   auto can_access = at::musa::canDeviceAccessPeer(device, peer_device);
   return PyBool_FromLong(can_access);
   END_HANDLE_TH_ERRORS
@@ -572,11 +616,10 @@ PyObject* PyMusaGetDeviceCount(PyObject* /* unused */, PyObject* /* unused */) {
 
 PyObject* PyMusaExchangeDevice(PyObject* /* unused */, PyObject* arg) {
   HANDLE_TH_ERRORS
-  THPUtils_assert(
-      THPUtils_checkLong(arg), "invalid argument to exchangeDevice");
+  TORCH_CHECK(THPUtils_checkLong(arg), "invalid argument to exchangeDevice");
   int64_t device = THPUtils_unpackLong(arg);
-  torch::utils::musa_lazy_init();
-  auto exchanged_device = at::musa::exchangeDevice(device);
+  torch::utils::device_lazy_init(at::musa::kMUSA);
+  auto exchanged_device = c10::musa::ExchangeDevice(device);
   return THPUtils_packInt32(exchanged_device);
   END_HANDLE_TH_ERRORS
 }
@@ -592,7 +635,7 @@ PyObject* PyMusaGetDefaultStream(
     PyObject* /* unused */,
     PyObject* device_index) {
   HANDLE_TH_ERRORS
-  THPUtils_assert(
+  TORCH_CHECK(
       THPUtils_checkLong(device_index), "invalid argument to getDefaultStream");
   int64_t device = THPUtils_unpackLong(device_index);
   auto stream = at::musa::getDefaultMUSAStream(device);
@@ -615,7 +658,7 @@ PyObject* PyMusaGetCurrentStream(
     PyObject* /* unused */,
     PyObject* device_index) {
   HANDLE_TH_ERRORS
-  THPUtils_assert(
+  TORCH_CHECK(
       THPUtils_checkLong(device_index), "invalid argument to getCurrentStream");
   int64_t device = THPUtils_unpackLong(device_index);
   auto stream = at::musa::getCurrentMUSAStream(device);
@@ -638,7 +681,7 @@ PyObject* PyMusaGetCurrentRawStream(
     PyObject* /* unused */,
     PyObject* device_index) {
   HANDLE_TH_ERRORS
-  THPUtils_assert(
+  TORCH_CHECK(
       THPUtils_checkLong(device_index), "invalid argument to getCurrentStream");
   int64_t device = THPUtils_unpackLong(device_index);
   return PyLong_FromVoidPtr(at::musa::getCurrentMUSAStream(device).stream());
@@ -707,24 +750,10 @@ PyObject* PyMusaGetArchFlags(PyObject* self, PyObject* noargs) {
 
 PyObject* PyMusaSleep(PyObject* /* unused */, PyObject* cycles) {
   HANDLE_TH_ERRORS
-  THPUtils_assert(
+  TORCH_CHECK(
       THPUtils_checkLong(cycles), "torch.musa._sleep(): expected 'int'");
   at::musa::sleep(THPUtils_unpackLong(cycles));
   Py_RETURN_NONE;
-  END_HANDLE_TH_ERRORS
-}
-
-PyObject* THCPModule_isCurrentStreamCapturing_wrap(
-    PyObject* self,
-    PyObject* noargs) {
-  HANDLE_TH_ERRORS
-  // If there's no musa context, at::musa::currentStreamCaptureStatus returns
-  // CaptureStatus::None without initializing a context.
-  if (at::musa::currentStreamCaptureStatus() == at::musa::CaptureStatus::None) {
-    Py_RETURN_FALSE;
-  } else {
-    Py_RETURN_TRUE;
-  }
   END_HANDLE_TH_ERRORS
 }
 
@@ -734,61 +763,22 @@ PyObject* PyMusaMudnnVersion(PyObject* /* unused */, PyObject* /* unused */) {
   END_HANDLE_TH_ERRORS
 }
 
-PyObject* PyMusaSetDefaultDtype(PyObject* _unused, PyObject* type) {
-  HANDLE_TH_ERRORS
-  torch::musa::PySetDefaultDtype(type);
-  Py_RETURN_NONE;
-  END_HANDLE_TH_ERRORS
-}
-
-at::MemoryFormat DetermineBackendMemoryFormat(
-    const at::Tensor& input,
-    const at::Tensor& weight,
-    const at::native::ConvBackend backend) {
-  at::MemoryFormat backend_memory_format = at::MemoryFormat::Contiguous;
-  auto k = weight.ndimension();
-
-  switch (backend) {
-    // Cudnn and Miopen backend are removed
-    case at::native::ConvBackend::Mkldnn:
-    case at::native::ConvBackend::MkldnnTranspose:
-      if (at::native::mkldnn_conv_use_channels_last(input, weight)) {
-        backend_memory_format = (k == 5) ? at::MemoryFormat::ChannelsLast3d
-                                         : at::MemoryFormat::ChannelsLast;
-      }
-      break;
-    case at::native::ConvBackend::Slow2d:
-    case at::native::ConvBackend::SlowDilated2d:
-    case at::native::ConvBackend::SlowTranspose2d:
-      if (at::native::thnn_conv_use_channels_last(input, weight)) {
-        backend_memory_format = at::MemoryFormat::ChannelsLast;
-      }
-      break;
-    case at::native::ConvBackend::Overrideable:
-      if (at::musa::musa_conv_use_channels_last(input, weight)) {
-        backend_memory_format = (k == 5) ? at::MemoryFormat::ChannelsLast3d
-                                         : at::MemoryFormat::ChannelsLast;
-      }
-      break;
-    default:
-      backend_memory_format = at::MemoryFormat::Contiguous;
-  }
-
-  return backend_memory_format;
-}
-
 static PyMethodDef MusaMemoryMethods[] = {
     {"_musa_emptyCache", PyMusaEmptyCache, METH_NOARGS, nullptr},
     {"_musa_memoryStats", PyMusaMemoryStats, METH_O, nullptr},
+    {"_musa_resetAccumulatedMemoryStats",
+     PyMusaResetAccumulatedMemoryStats,
+     METH_O,
+     nullptr},
+    {"_musa_resetPeakMemoryStats", PyMusaResetPeakMemoryStats, METH_O, nullptr},
     {"_musa_memorySnapshot", PyMusaMemorySnapshot, METH_NOARGS, nullptr},
     {"_musa_attach_out_of_memory_observer",
      PyMusaAttachOutOfMemoryObserver,
      METH_O,
      nullptr},
     {"_musa_setMemoryFraction", PyMusaSetMemoryFraction, METH_VARARGS, nullptr},
-    {"_musa_resetPeakMemoryStats", PyMusaresetPeakMemoryStats, METH_O, nullptr},
-    {"_musa_setMusaCachingAllocatorSettings",
-     PyMusasetMusaCachingAllocatorSettings,
+    {"_musa_musaCachingAllocator_set_allocator_settings",
+     PyMusaCachingAllocatorSetAllocatorSettings,
      METH_O,
      nullptr},
     {nullptr}};
@@ -806,6 +796,10 @@ static PyMethodDef MusaStreamMethods[] = {
 
 static PyMethodDef MusaDeviceMethods[] = {
     {"_musa_init", PyMusaInitExtension, METH_NOARGS, nullptr},
+    {"_musa_register_device_hook",
+     PyMusaRegisterDeviceHook,
+     METH_NOARGS,
+     nullptr},
     {"_musa_getDevice", PyMusaGetDevice, METH_NOARGS, nullptr},
     {"_musa_getDeviceCount", PyMusaGetDeviceCount, METH_NOARGS, nullptr},
     {"_musa_setDevice", PyMusaSetDevice, METH_O, nullptr},
@@ -818,15 +812,7 @@ static PyMethodDef MusaDeviceMethods[] = {
     {"_mudnn_version", PyMusaMudnnVersion, METH_NOARGS, nullptr},
     {"_musa_ipc_collect", PyMusaIPCCollect, METH_NOARGS, nullptr},
     {"_musa_isInBadFork", PyMusaIsInBadFork, METH_NOARGS, nullptr},
-    {"_musa_isCurrentStreamCapturing",
-     THCPModule_isCurrentStreamCapturing_wrap,
-     METH_NOARGS,
-     nullptr},
     {"_musa_getArchFlags", PyMusaGetArchFlags, METH_NOARGS, nullptr},
-    {nullptr}};
-
-static PyMethodDef MusaDtypeMethods[] = {
-    {"_set_default_dtype", PyMusaSetDefaultDtype, METH_O, nullptr},
     {nullptr}};
 
 PyObject* module;
@@ -843,7 +829,6 @@ PyObject* InitMusaModule() {
   AddPyMethodDefs(methods, MusaDeviceMethods);
   AddPyMethodDefs(methods, MusaStreamMethods);
   AddPyMethodDefs(methods, MusaMemoryMethods);
-  AddPyMethodDefs(methods, MusaDtypeMethods);
   AddPyMethodDefs(methods, at::autocast::musa::GetAutocastMethods());
   AddPyMethodDefs(methods, at::musa::GetContextMethods());
   AddPyMethodDefs(methods, at::musa::GetStorageMethods());
@@ -854,7 +839,6 @@ PyObject* InitMusaModule() {
 
   THMPStream_init(module);
   THMPEvent_init(module);
-  THCPGraph_init(module);
 
 #ifdef USE_MCCL
   torch::musa::python::InitCommMethods(module);
@@ -862,12 +846,6 @@ PyObject* InitMusaModule() {
 #endif
   // Register MUSA device properties
   RegisterMusaDeviceProperties(module);
-
-  // for methods that may rely on backend's behavior,
-  // we will replace PyTorch's original implementation
-  auto py_module = py::reinterpret_borrow<py::module>(module);
-  py_module.def(
-      "_conv_determine_backend_memory_format", DetermineBackendMemoryFormat);
 
   return module;
 }

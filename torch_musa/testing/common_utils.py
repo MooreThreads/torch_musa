@@ -113,6 +113,7 @@ class ImagePair(TensorLikePair):
         self.mae = mae
 
     def compare(self) -> None:
+        """ImagePair comparison main logic"""
         actual, expected = self.actual, self.expected
 
         self._compare_attributes(actual, expected)

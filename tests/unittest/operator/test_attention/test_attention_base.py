@@ -93,7 +93,7 @@ def sdp_func(query, key, value, attn_mask=None, dropout_p=0.0, is_causal=False):
         # we should make the mask broadcastable to the atten_probs
         attn_mask = attn_mask.view(batch_size, 1, 1, seq_len)
     return F.scaled_dot_product_attention(
-        query, key, value, attn_mask, dropout_p, is_causal
+        query, key, value, attn_mask, dropout_p, is_causal, enable_gqa=True
     )
 
 
@@ -149,7 +149,7 @@ def generate_pad_mask(batch_size: int, seq_len: int):
     return mask
 
 
-def gen_input_data(case, mask_type, dtype=torch.float32):
+def gen_input_data(case, mask_type, dtype=torch.float32, is_causal=False):
     """
     Generating the mocked input data of SDP.
     """
@@ -181,6 +181,10 @@ def gen_input_data(case, mask_type, dtype=torch.float32):
     item["query"] = query
     item["key"] = key
     item["value"] = value
+
+    item["is_causal"] = is_causal
+    if is_causal is True:
+        return item
 
     # generating bool mask.
     if mask_type == 1:

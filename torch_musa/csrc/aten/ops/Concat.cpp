@@ -54,6 +54,7 @@ Tensor& CatOut(const at::ITensorListRef& tensors, int64_t dim, Tensor& out) {
   const auto& materialized = tensors.materialize();
   const OptionalDeviceGuard device_guard(device_of(materialized[0].get()));
   auto ref_type = at::native::result_type(materialized);
+  auto dst_type = out.scalar_type();
   auto memory_format = CatComputeOutputMemoryFormat(materialized);
   TORCH_CHECK(
       out.suggest_memory_format() == memory_format,
@@ -61,13 +62,6 @@ Tensor& CatOut(const at::ITensorListRef& tensors, int64_t dim, Tensor& out) {
       memory_format,
       "but now is ",
       out.suggest_memory_format());
-  TORCH_CHECK(
-      ref_type == out.scalar_type(),
-      "out tensor dtype (",
-      out.scalar_type(),
-      ") should be same as ref tensor (",
-      ref_type,
-      ")");
 
   // Sicne muDNN concat doesn't support uncontiguous tensors,
   // so we store contiguous tensors for muTensors
@@ -90,7 +84,10 @@ Tensor& CatOut(const at::ITensorListRef& tensors, int64_t dim, Tensor& out) {
     mu_tensors.emplace_back(at::musa::CreateMUTensor(tensor));
   }
 
-  at::musa::muTensor out_ = at::musa::CreateMUTensor(out);
+  Tensor compute_out = ref_type == dst_type
+      ? out
+      : at::empty(out.sizes(), rt_tensors[0].options());
+  at::musa::muTensor out_ = at::musa::CreateMUTensor(compute_out);
   at::musa::muHandle& h = at::GetMudnnHandle();
   ::musa::dnn::Concat op;
 
@@ -112,6 +109,10 @@ Tensor& CatOut(const at::ITensorListRef& tensors, int64_t dim, Tensor& out) {
 
   CHECK_MUDNN_STATUS(
       op.Run(h, out_, elements, mu_tensors.data()), "Run Concat");
+
+  if (ref_type != dst_type) {
+    out.copy_(compute_out);
+  }
 
   return out;
 }

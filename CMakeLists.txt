@@ -192,16 +192,22 @@ string(APPEND CMAKE_CXX_FLAGS_DEBUG " -fno-omit-frame-pointer -O0")
 string(APPEND CMAKE_LINKER_FLAGS_DEBUG " -fno-omit-frame-pointer -O0")
 string(APPEND CMAKE_CXX_FLAGS " -fno-math-errno")
 string(APPEND CMAKE_CXX_FLAGS " -fno-trapping-math")
-include(CheckCXXCompilerFlag)
-check_cxx_compiler_flag("-Werror=format" HAS_WERROR_FORMAT)
 
+include(CheckCXXCompilerFlag)
+
+check_cxx_compiler_flag("-Werror=format" HAS_WERROR_FORMAT)
 if(HAS_WERROR_FORMAT)
   string(APPEND CMAKE_CXX_FLAGS " -Werror=format")
 endif()
 
+check_cxx_compiler_flag("-Wno-error=maybe-uninitialized"
+                        HAS_WNO_ERROR_MAYBE_UNINITIALIZED)
+if(HAS_WNO_ERROR_MAYBE_UNINITIALIZED)
+  string(APPEND CMAKE_CXX_FLAGS " -Wno-error=maybe-uninitialized")
+endif()
+
 check_cxx_compiler_flag("-Werror=cast-function-type"
                         HAS_WERROR_CAST_FUNCTION_TYPE)
-
 if(HAS_WERROR_CAST_FUNCTION_TYPE)
   string(APPEND CMAKE_CXX_FLAGS " -Werror=cast-function-type")
 endif()
@@ -334,15 +340,12 @@ if(USE_PER_OPERATOR_HEADERS)
   target_compile_definitions(${PLUGIN_NAME} PUBLIC AT_PER_OPERATOR_HEADERS)
 endif()
 
-# parse musa toolkit version
 parse_real_musa_version(REAL_MUSA_VERSION)
-if(REAL_MUSA_VERSION)
-  message(STATUS "REAL_MUSA_VERSION = ${REAL_MUSA_VERSION}")
-  target_compile_definitions(${MUSA_KERNELS_LIB}
-                             PUBLIC -DREAL_MUSA_VERSION=${REAL_MUSA_VERSION})
-  target_compile_definitions(${PLUGIN_NAME}
-                             PUBLIC -DREAL_MUSA_VERSION=${REAL_MUSA_VERSION})
-endif()
+message(STATUS "REAL_MUSA_VERSION = ${REAL_MUSA_VERSION}")
+target_compile_definitions(${MUSA_KERNELS_LIB}
+                           PUBLIC -DREAL_MUSA_VERSION=${REAL_MUSA_VERSION})
+target_compile_definitions(${PLUGIN_NAME}
+                           PUBLIC -DREAL_MUSA_VERSION=${REAL_MUSA_VERSION})
 
 add_dependencies(${MUSA_KERNELS_LIB} ${CODEGEN_TARGET})
 

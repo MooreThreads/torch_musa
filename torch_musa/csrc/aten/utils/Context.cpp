@@ -40,10 +40,10 @@ void Context::SetAllowTF32(bool allow_tf32) {
 }
 
 PyObject* THPModuleSetAllowTF32(PyObject* /*unused*/, PyObject* arg) {
-  THPUtils_assert(
+  TORCH_CHECK(
       PyBool_Check(arg),
       "set_allow_tf32_cublas expects a bool, "
-      "but got %s",
+      "but got ",
       THPUtils_typename(arg));
   at::musa::GlobalContext().SetAllowTF32(arg == Py_True);
   Py_RETURN_NONE;

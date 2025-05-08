@@ -2,7 +2,6 @@
 
 #include "torch_musa/csrc/aten/musa/MUSAGeneratorImpl.h"
 #include "torch_musa/csrc/aten/musa/UnpackRaw.muh"
-#include "torch_musa/csrc/core/MUSAFunctions.h"
 #include "torch_musa/csrc/core/MUSAGraphsC10Utils.h"
 
 namespace at {
@@ -14,12 +13,7 @@ using CaptureStatus = c10::musa::CaptureStatus;
 // Use this version where you don't want to create a MUSA context if none
 // exists.
 inline CaptureStatus currentStreamCaptureStatus() {
-  // don't create a context if we don't have to
-  if (c10::musa::hasPrimaryContext(c10::musa::current_device())) {
-    return c10::musa::currentStreamCaptureStatusMayInitCtx();
-  } else {
-    return CaptureStatus::None;
-  }
+  return CaptureStatus::None;
 }
 
 inline void assertNotCapturing(std::string attempt) {

@@ -1,22 +1,20 @@
 diff --git a/torch/nn/modules/activation.py b/torch/nn/modules/activation.py
-index 7ba235f..87051be 100644
+index 4889a4485c4..6d66ed4555c 100644
 --- a/torch/nn/modules/activation.py
 +++ b/torch/nn/modules/activation.py
-@@ -12,7 +12,7 @@ from .. import functional as F
- __all__ = ['Threshold', 'ReLU', 'RReLU', 'Hardtanh', 'ReLU6', 'Sigmoid', 'Hardsigmoid', 'Tanh',
-            'SiLU', 'Mish', 'Hardswish', 'ELU', 'CELU', 'SELU', 'GLU', 'GELU', 'Hardshrink', 'LeakyReLU',
-            'LogSigmoid', 'Softplus', 'Softshrink', 'MultiheadAttention', 'PReLU', 'Softsign', 'Tanhshrink',
--           'Softmin', 'Softmax', 'Softmax2d', 'LogSoftmax']
-+           'Softmin', 'Softmax', 'Softmax2d', 'LogSoftmax', 'RoPE', 'SwishGLU']
+@@ -42,6 +42,8 @@ __all__ = [
+     "Softmax",
+     "Softmax2d",
+     "LogSoftmax",
++    "RoPE",
++    "SwishGLU",
+ ]
  
  
- class Threshold(Module):
-@@ -1589,3 +1589,65 @@ class LogSoftmax(Module):
+@@ -94,6 +96,68 @@ class Threshold(Module):
+         return f"threshold={self.threshold}, value={self.value}{inplace_str}"
  
-     def extra_repr(self):
-         return f'dim={self.dim}'
-+
-+
+ 
 +class RoPE(Module):
 +    r"""Applies Rotary Positional Embedding function:
 +
@@ -77,3 +75,8 @@ index 7ba235f..87051be 100644
 +    """
 +    def forward(self, input: Tensor) -> Tensor:
 +        return F.swish_glu(input)
++
++
+ class ReLU(Module):
+     r"""Applies the rectified linear unit function element-wise.
+ 

@@ -1,33 +1,32 @@
+#include "torch_musa/csrc/core/StorageSharing.h"
+
 #include <ATen/MapAllocator.h>
 #include <torch/csrc/THP.h>
 #include <torch/csrc/utils/pycfunction_helpers.h>
 #include <torch/csrc/utils/python_arg_parser.h>
 
-#include "musa_runtime.h"
+#include <musa_runtime.h>
+
 #include "torch_musa/csrc/core/MUSAFunctions.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 #include "torch_musa/csrc/core/MusaIPCTypes.h"
-#include "torch_musa/csrc/core/StorageSharing.h"
 
 static std::string THMPStorageBytesAsHandleString(PyObject* handle) {
-  // NOLINTNEXTLINE(cppcoreguidelines-init-variables)
-  char* buffer;
-  // NOLINTNEXTLINE(cppcoreguidelines-init-variables)
-  Py_ssize_t handle_size;
+  HANDLE_TH_ERRORS
+  char* buffer = nullptr;
+  Py_ssize_t handle_size = 0;
   if (PyBytes_AsStringAndSize(handle, &buffer, &handle_size) == -1) {
-    // NOLINTNEXTLINE(bugprone-string-constructor)
-    return nullptr;
+    TORCH_CHECK(handle_size == MUSA_IPC_HANDLE_SIZE, "incorrect handle size");
   }
-  // NOLINTNEXTLINE(bugprone-string-constructor)
-  THPUtils_assert(handle_size == MUSA_IPC_HANDLE_SIZE, "incorrect handle size");
   return std::string(buffer, handle_size);
+  END_HANDLE_TH_ERRORS_RET("")
 }
 
 static PyObject* THMPStorageReleaseIPCCounter(
     PyObject* _unused,
     PyObject* args) {
   HANDLE_TH_ERRORS
-  THPUtils_assert(PyTuple_GET_SIZE(args) == 2, "tuple of 2 items expected");
+  TORCH_CHECK(PyTuple_GET_SIZE(args) == 2, "tuple of 2 items expected");
   PyObject* _ref_counter = PyTuple_GET_ITEM(args, 0);
   PyObject* _ref_counter_offset = PyTuple_GET_ITEM(args, 1);
   if (!(PyBytes_Check(_ref_counter) &&
@@ -68,7 +67,7 @@ static PyObject* THMPStorageShareMusa(
   HANDLE_TH_ERRORS
   static torch::PythonArgParser parser({"_share_musa_(Storage temp)"});
   torch::ParsedArgs<1> parsed_args;
-  auto r = parser.parse(_self, args, kwargs, parsed_args);
+  auto r = parser.parse(args, kwargs, parsed_args);
   auto self = r.storage(0);
   TORCH_CHECK(
       self.device_type() == at::musa::kMUSA,
@@ -96,19 +95,11 @@ static PyObject* THMPStorageShareMusa(
   THPObjectPtr _event_sync_required(Py_None);
   Py_INCREF(Py_None);
   if (storage->data()) {
-    // NOLINTNEXTLINE(cppcoreguidelines-init-variables)
-    size_t base_size;
-    void* base_ptr = c10::musa::MUSACachingAllocator::getBaseAllocation(
-        storage->mutable_data(), &base_size);
-    ptrdiff_t offset_bytes = (char*)storage->data() - (char*)base_ptr;
-
-    // NOLINTNEXTLINE(cppcoreguidelines-init-variables)
-    musaIpcMemHandle_t handle;
-    std::memset((void*)(&handle), 0, MUSA_IPC_HANDLE_SIZE);
-    C10_MUSA_CHECK(musaIpcGetMemHandle(&handle, base_ptr));
-
-    _handle = PyBytes_FromStringAndSize((char*)&handle, MUSA_IPC_HANDLE_SIZE);
-    _offset_bytes = PyLong_FromSsize_t((Py_ssize_t)offset_bytes);
+    auto shandle =
+        c10::musa::MUSACachingAllocator::shareIpcHandle(storage->mutable_data());
+    _handle = PyBytes_FromStringAndSize(
+        shandle.handle.c_str(), (Py_ssize_t)shandle.handle.size());
+    _offset_bytes = PyLong_FromSsize_t((Py_ssize_t)shandle.offset);
 
     // Put Storage Data behind new ref counting context
     // See Note [MUSA IPC Refcounting implementation explained]
@@ -119,9 +110,8 @@ static PyObject* THMPStorageShareMusa(
         storage->data_ptr().get_context());
     sent_data->set_original_ptr(std::move(old_data_ptr));
     _ref_counter = PyBytes_FromString((sent_data->handle()).c_str());
-    _ref_counter_offset = THPUtils_packInt64(sent_data->offset());
+    _ref_counter_offset = THPUtils_packUInt64(sent_data->offset());
 
-    // NOLINTNEXTLINE(cppcoreguidelines-init-variables)
     musaIpcEventHandle_t ipc_event_handle;
 
     if (sent_data->event_sync_required_) {
@@ -160,7 +150,7 @@ static PyObject* THMPStorageShareMusa(
 
 static PyObject* THMPStorageNewSharedMusa(PyObject* _unused, PyObject* args) {
   HANDLE_TH_ERRORS
-  THPUtils_assert(PyTuple_GET_SIZE(args) == 8, "tuple of 8 items expected");
+  TORCH_CHECK(PyTuple_GET_SIZE(args) == 8, "tuple of 8 items expected");
   PyObject* _device = PyTuple_GET_ITEM(args, 0);
   PyObject* _handle = PyTuple_GET_ITEM(args, 1);
   PyObject* _size_bytes = PyTuple_GET_ITEM(args, 2);
@@ -188,13 +178,17 @@ static PyObject* THMPStorageNewSharedMusa(PyObject* _unused, PyObject* args) {
   ptrdiff_t storage_offset_bytes =
       (ptrdiff_t)THPUtils_unpackLong(_offset_bytes);
 
-  int64_t device = THPUtils_unpackLong(_device);
+  const auto device = c10::checked_convert<c10::DeviceIndex>(
+      THPUtils_unpackLong(_device), "c10::DeviceIndex");
   at::musa::MUSAGuard device_guard(device);
 
   if (PyObject_IsTrue(_event_sync_required)) {
     // Ensure that producer prepared all tensor's data
     std::string s_ipc_event_handle =
         THMPStorageBytesAsHandleString(_event_handle);
+    if (s_ipc_event_handle.empty()) {
+      return nullptr;
+    }
     auto ipc_event_handle = reinterpret_cast<const musaIpcEventHandle_t*>(
         s_ipc_event_handle.c_str());
     // NOLINTNEXTLINE(cppcoreguidelines-init-variables)
@@ -205,12 +199,14 @@ static PyObject* THMPStorageNewSharedMusa(PyObject* _unused, PyObject* args) {
   }
 
   std::string s_handle = THMPStorageBytesAsHandleString(_handle);
+  if (s_handle.empty()) {
+    return nullptr;
+  }
   std::shared_ptr<void> basePtr =
       c10::musa::MUSACachingAllocator::getIpcDevPtr(s_handle);
 
   // Offset the basePtr to reconstruct the real storage
   // devPtr = basePtr + storage_offset
-  // NOLINTNEXTLINE(cppcoreguidelines-init-variables)
   void* devPtr = basePtr.get();
   devPtr = (char*)devPtr + storage_offset_bytes;
 
@@ -220,8 +216,8 @@ static PyObject* THMPStorageNewSharedMusa(PyObject* _unused, PyObject* args) {
 
   struct IpcDeleterContext {
     std::string ref_counter_handle;
-    ptrdiff_t ref_counter_offset;
-    int64_t device;
+    ptrdiff_t ref_counter_offset{};
+    c10::DeviceIndex device{-1};
     torch::musa::MusaIPCReceivedData received_data;
   };
 
@@ -284,7 +280,6 @@ static PyObject* THMPStorageNewSharedMusa(PyObject* _unused, PyObject* args) {
   base->set_resizable(false);
   base->set_received_cuda(true);
 
-  /* return THPStorage_New(std::move(base)); */
   return THPStorage_NewWithStorage(
       THPStorageClass,
       std::move(base),

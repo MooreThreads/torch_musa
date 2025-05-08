@@ -13,7 +13,7 @@ index a7e061770b0..7b2354f0f25 100644
  // TensorIterator is a helper class for element-wise operations, such as
  // arithmetic, comparisons, and trigonometric functions. It handles
  // broadcasting and type conversions of operands.
-@@ -226,6 +230,7 @@ enum class FastSetupType : uint8_t {
+@@ -239,6 +243,7 @@ enum class FastSetupType : uint8_t {
    NONE,
    CONTIGUOUS,
    CHANNELS_LAST,
@@ -21,7 +21,7 @@ index a7e061770b0..7b2354f0f25 100644
    NON_OVERLAPPING_DENSE
  };
  
-@@ -755,6 +760,7 @@ class TORCH_API TensorIteratorConfig final {
+@@ -784,6 +789,7 @@ class TORCH_API TensorIteratorConfig final {
   public:
    friend struct TensorIteratorBase;
    friend struct TensorIterator;

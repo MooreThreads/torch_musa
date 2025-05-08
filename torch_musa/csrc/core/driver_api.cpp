@@ -1,10 +1,10 @@
+#include "torch_musa/csrc/core/driver_api.h"
+
 #include <c10/util/CallOnce.h>
 #include <c10/util/Exception.h>
 #include <dlfcn.h>
 
-#include "torch_musa/csrc/core/driver_api.h"
-namespace c10 {
-namespace musa {
+namespace c10::musa {
 
 namespace {
 
@@ -22,12 +22,12 @@ DriverAPI create_driver_api() {
 
   return r;
 }
-} // namespace
+
+} // anonymous namespace
 
 DriverAPI* DriverAPI::get() {
   static DriverAPI singleton = create_driver_api();
   return &singleton;
 }
 
-} // namespace musa
-} // namespace c10
+} // namespace c10::musa

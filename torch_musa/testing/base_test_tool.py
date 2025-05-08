@@ -20,12 +20,6 @@ import torch_musa
 
 from .common_utils import get_musa_arch
 
-try:
-    import triton
-
-    _HAS_TRITON = True
-except ImportError:
-    _HAS_TRITON = False
 
 MUSA_AVAILABLE = torch_musa.is_available()
 MULTIGPU_AVAILABLE = MUSA_AVAILABLE and torch_musa.device_count() >= 2

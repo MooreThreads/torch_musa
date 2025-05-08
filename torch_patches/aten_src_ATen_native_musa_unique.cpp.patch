@@ -1,34 +1,31 @@
 diff --git a/aten/src/ATen/native/musa_unique.cpp b/aten/src/ATen/native/musa_unique.cpp
 new file mode 100644
-index 0000000..0b936fb
+index 0000000..ee41df0
 --- /dev/null
 +++ b/aten/src/ATen/native/musa_unique.cpp
-@@ -0,0 +1,160 @@
-+#include <chrono>
-+#include <iostream>
-+#define TORCH_ASSERT_ONLY_METHOD_OPERATORS
+@@ -0,0 +1,193 @@
 +#include <ATen/Dispatch.h>
-+#include <ATen/Parallel.h>
-+#include <ATen/core/Tensor.h>
-+#include <ATen/native/cpu/mixed_data_type.h>
-+#include <c10/util/irange.h>
 +
 +#ifndef AT_PER_OPERATOR_HEADERS
 +#include <ATen/Functions.h>
 +#include <ATen/NativeFunctions.h>
 +#else
++#include <ATen/ops/gated_silu_native.h>
 +#include <ATen/ops/cross_entropy_loss_2d_choice_native.h>
 +#include <ATen/ops/_fused_cross_entropy_loss_2d_forward_native.h>
 +#include <ATen/ops/_fused_cross_entropy_loss_2d_backward_native.h>
-+#include <ATen/ops/_fused_rmsnorm_backward_native.h>
 +#include <ATen/ops/_fused_rmsnorm_forward_native.h>
++#include <ATen/ops/_fused_rmsnorm_backward_native.h>
 +#include <ATen/ops/_fused_rope_backward_native.h>
 +#include <ATen/ops/_fused_rope_forward.h>
 +#include <ATen/ops/_fused_rope_forward_native.h>
 +#include <ATen/ops/_fused_swiglu_backward_native.h>
 +#include <ATen/ops/_fused_swiglu_forward.h>
 +#include <ATen/ops/_fused_swiglu_forward_native.h>
-+#include <ATen/ops/gated_silu_native.h>
++#include <ATen/ops/_scaled_dot_product_attention_math_musa_native.h>
++#include <ATen/ops/_scaled_dot_product_attention_math_musa_backward_native.h>
++#include <ATen/ops/_scaled_dot_product_attention_flash_musa_native.h>
++#include <ATen/ops/_scaled_dot_product_attention_flash_musa_backward_native.h>
 +#endif
 +
 +namespace at::native {
@@ -41,17 +38,15 @@ index 0000000..0b936fb
 +
 +} // anonymous namespace
 +
-+// ------- gated silu --------
 +Tensor gated_silu(const Tensor& input) {
 +  NYI("gated_silu");
 +}
 +
-+// ------- rms_norm -------
 +std::tuple<Tensor, Tensor> _fused_rmsnorm_forward(
 +    const Tensor& input,
 +    IntArrayRef normalized_shape,
 +    double eps,
-+    const c10::optional<Tensor>& weight) {
++    const std::optional<Tensor>& weight) {
 +  NYI("_fused_rmsnorm_forward");
 +}
 +
@@ -61,32 +56,58 @@ index 0000000..0b936fb
 +    const Tensor& input,
 +    IntArrayRef normalized_shape,
 +    double eps,
-+    const c10::optional<Tensor>& weight) {
++    const std::optional<Tensor>& weight) {
 +  NYI("_fused_rmsnorm_backward");
 +}
 +
-+// ------- RoPE -------
-+Tensor rope(
-+    const Tensor& input,
-+    const Tensor& freq_cis,
-+    bool rotary_interleaved,
-+    bool batch_first) {
-+  auto backend = input.device().type();
-+  if (backend == DeviceType::PrivateUse1) {
-+    // This is for musa fused Rope
-+    auto result = AT_DISPATCH_FLOATING_TYPES_AND2(
-+        at::ScalarType::Half,
-+        at::ScalarType::BFloat16,
-+        input.scalar_type(),
-+        "rope",
-+        [&] {
-+          auto output = at::_fused_rope_forward(
-+              input, freq_cis, rotary_interleaved, batch_first);
-+          return output;
-+        });
-+    return result;
-+  }
-+  NYI("rope");
++std::tuple<Tensor, Tensor, Tensor>
++_scaled_dot_product_attention_math_cpu_musa(
++    const Tensor& query,
++    const Tensor& key,
++    const Tensor& value,
++    const std::optional<Tensor>& attn_mask,
++    double dropout_p,
++    bool is_causal,
++    std::optional<double> scale) {
++  NYI("_scaled_dot_product_attention_math_musa");
++}
++
++std::tuple<Tensor, Tensor, Tensor>
++_scaled_dot_product_attention_math_cpu_musa_backward(
++    const Tensor& grad_out,
++    const Tensor& query,
++    const Tensor& key,
++    const Tensor& value,
++    const Tensor& output,
++    const Tensor& atten_probs,
++    const Tensor& dropout_mask) {
++  NYI("_scaled_dot_product_attention_math_musa_backward");
++}
++
++std::tuple<Tensor, Tensor, Tensor>
++_scaled_dot_product_attention_flash_cpu_musa(
++    const Tensor& query,
++    const Tensor& key,
++    const Tensor& value,
++    const std::optional<Tensor>& attn_mask,
++    double dropout_p,
++    bool is_causal,
++    std::optional<double> scale) {
++  NYI("_scaled_dot_product_attention_flash_musa");
++}
++
++std::tuple<Tensor, Tensor, Tensor>
++_scaled_dot_product_attention_flash_cpu_musa_backward(
++    const Tensor& grad_out,
++    const Tensor& query,
++    const Tensor& key,
++    const Tensor& value,
++    const Tensor& output,
++    const Tensor& logsumexp,
++    const Tensor& dropout_mask,
++    bool is_causal,
++    const std::optional<Tensor>& attn_mask) {
++  NYI("_scaled_dot_product_attention_flash_musa_backward");
 +}
 +
 +Tensor _fused_rope_forward(
@@ -105,11 +126,31 @@ index 0000000..0b936fb
 +  NYI("_fused_rope_backward");
 +}
 +
-+// --------- SwiGLU ----------
++Tensor rope(const Tensor& input, const Tensor& freq_cls, bool rotary_interleaved, bool batch_first) {
++  if (input.is_privateuseone()) {
++    auto result = AT_DISPATCH_FLOATING_TYPES_AND2(
++        at::ScalarType::Half,
++        at::ScalarType::BFloat16,
++        input.scalar_type(),
++        "rope",[&]{
++            auto output = at::_fused_rope_forward(input, freq_cls, rotary_interleaved, batch_first);
++            return output;
++        });
++    return result;
++  }
++  NYI("rope");
++}
++
++Tensor _fused_swiglu_forward(const Tensor& input) {
++  NYI("_fused_swiglu_forward");
++}
++
++Tensor _fused_swiglu_backward(const Tensor& grad, const Tensor& input) {
++  NYI("_fused_swiglu_backward");
++}
++
 +Tensor swish_glu(const Tensor& input) {
-+  auto backend = input.device().type();
-+  if (backend == DeviceType::PrivateUse1) {
-+    // This is for musa fused swish glu
++  if (input.is_privateuseone()) {
 +    auto result = AT_DISPATCH_FLOATING_TYPES_AND2(
 +        at::ScalarType::Half,
 +        at::ScalarType::BFloat16,
@@ -124,18 +165,10 @@ index 0000000..0b936fb
 +  NYI("swish_glu");
 +}
 +
-+Tensor _fused_swiglu_forward(const Tensor& input) {
-+  NYI("_fused_swiglu_forward");
-+}
-+
-+Tensor _fused_swiglu_backward(const Tensor& grad, const Tensor& input) {
-+  NYI("_fused_swiglu_backward");
-+}
-+
 +int64_t cross_entropy_loss_2d_choice_cpu(
 +    const Tensor& self,
 +    const Tensor& target,
-+    const c10::optional<Tensor>& weight,
++    const std::optional<Tensor>& weight,
 +    int64_t reduction,
 +    int64_t ignore_index,
 +    double label_smoothing) {
@@ -145,7 +178,7 @@ index 0000000..0b936fb
 +Tensor _fused_cross_entropy_loss_2d_forward_cpu(
 +    const Tensor& self,
 +    const Tensor& target,
-+    const c10::optional<Tensor>& weight,
++    const std::optional<Tensor>& weight,
 +    int64_t reduction,
 +    int64_t ignore_index,
 +    double label_smoothing) {
@@ -156,7 +189,7 @@ index 0000000..0b936fb
 +    const Tensor& grad_output,
 +    const Tensor& self,
 +    const Tensor& target,
-+    const c10::optional<Tensor>& weight,
++    const std::optional<Tensor>& weight,
 +    int64_t reduction,
 +    int64_t ignore_index,
 +    double label_smoothing) {

@@ -1,4 +1,4 @@
-Total amount of ops: 768
+Total amount of ops: 769
 - `__lshift__.Scalar`
 - `__lshift__.Tensor`
 - `__rshift__.Scalar`
@@ -11,6 +11,8 @@ Total amount of ops: 768
 - `_amp_update_scale_`
 - `_cdist_backward`
 - `_cdist_forward`
+- `_chunk_cat.out`
+- `_chunk_cat`
 - `_copy_from`
 - `_ctc_loss_backward`
 - `_ctc_loss`
@@ -77,6 +79,7 @@ Total amount of ops: 768
 - `_fused_rmsnorm_forward`
 - `_fused_rope_backward`
 - `_fused_rope_forward`
+- `_fused_sdp_choice`
 - `_fused_swiglu_backward`
 - `_fused_swiglu_forward`
 - `_index_put_impl_`
@@ -91,7 +94,6 @@ Total amount of ops: 768
 - `_make_per_tensor_quantized_tensor`
 - `_pdist_backward`
 - `_pdist_forward`
-- `_pin_memory`
 - `_prelu_kernel_backward`
 - `_prelu_kernel`
 - `_reshape_alias`
@@ -111,8 +113,6 @@ Total amount of ops: 768
 - `_upsample_bicubic2d_aa_backward.grad_input`
 - `_upsample_bicubic2d_aa_backward`
 - `_upsample_bicubic2d_aa`
-- `_upsample_bilinear2d_aa.out`
-- `_upsample_bilinear2d_aa`
 - `_upsample_nearest_exact1d.out`
 - `_upsample_nearest_exact1d_backward.grad_input`
 - `_upsample_nearest_exact1d_backward`
@@ -254,6 +254,7 @@ Total amount of ops: 768
 - `clamp_min`
 - `clamp`
 - `clone`
+- `complex.out`
 - `convolution_backward_overrideable`
 - `convolution_overrideable`
 - `cos.out`
@@ -388,7 +389,6 @@ Total amount of ops: 768
 - `index_select`
 - `int_repr`
 - `inverse`
-- `is_pinned`
 - `isin.Scalar_Tensor_out`
 - `isin.Scalar_Tensor`
 - `isin.Tensor_Scalar_out`
@@ -547,6 +547,7 @@ Total amount of ops: 768
 - `not_equal.Tensor`
 - `not_equal_.Tensor`
 - `one_hot`
+- `polar.out`
 - `pow.Scalar_out`
 - `pow.Scalar`
 - `pow.Tensor_Scalar_out`

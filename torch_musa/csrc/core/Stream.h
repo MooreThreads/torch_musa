@@ -1,5 +1,5 @@
-#ifndef TORCH_MUSA_CSRC_CORE_THPSTREAM_INC
-#define TORCH_MUSA_CSRC_CORE_THPSTREAM_INC
+#ifndef TORCH_MUSA_CSRC_CORE_STREAM_H_
+#define TORCH_MUSA_CSRC_CORE_STREAM_H_
 
 #include <torch/csrc/Stream.h>
 #include <torch/csrc/python_headers.h>
@@ -17,4 +17,4 @@ inline bool THMPStream_Check(PyObject* obj) {
   return THMPStreamClass && PyObject_IsInstance(obj, THMPStreamClass);
 }
 
-#endif // TORCH_MUSA_CSRC_CORE_THPSTREAM_INC
+#endif // TORCH_MUSA_CSRC_CORE_STREAM_H_

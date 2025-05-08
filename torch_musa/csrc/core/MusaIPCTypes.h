@@ -1,14 +1,11 @@
 #ifndef TORCH_MUSA_CSRC_CORE_MUSAIPCTYPES_H_
 #define TORCH_MUSA_CSRC_CORE_MUSAIPCTYPES_H_
-#include <c10/core/Allocator.h>
-#include <c10/util/Logging.h>
-#include <torch/csrc/Export.h>
-#include <cstddef>
 
-#include "musa_runtime_api.h"
+#include <musa_runtime_api.h>
+
 #include "torch_musa/csrc/core/MUSACachingAllocator.h"
-namespace torch {
-namespace musa {
+namespace torch::musa {
+
 bool MusaIPCCollect();
 
 struct MusaIPCReceivedData final {
@@ -23,7 +20,7 @@ struct MusaIPCSentData final {
   uint64_t offset_;
   uint64_t* counter_ptr_; // Reference counter shared memory block
   at::DataPtr original_ptr_; // Original mem allocation
-  musaEvent_t event_; // Sync cuEventDestroy
+  musaEvent_t event_; // Sync muEventDestroy
   bool event_sync_required_;
   at::Device device_;
 
@@ -120,11 +117,9 @@ struct MusaIPCRefCountersFile final {
   at::DataPtr refcounted_shared_mem_;
 };
 
-} // namespace musa
-} // namespace torch
+} // namespace torch::musa
 
-namespace c10 {
-namespace musa {
+namespace c10::musa {
 class MusaIPCCollectCallback : public FreeMemoryCallback {
  public:
   bool Execute() override {
@@ -132,6 +127,6 @@ class MusaIPCCollectCallback : public FreeMemoryCallback {
   }
 };
 
-} // namespace musa
-} // namespace c10
+} // namespace c10::musa
+
 #endif // TORCH_MUSA_CSRC_CORE_MUSAIPCTYPES_H_

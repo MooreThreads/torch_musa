@@ -1,13 +1,13 @@
 diff --git a/c10/macros/Macros.h b/c10/macros/Macros.h
-index 563625b..a735036 100644
+index ab6f2b3..2b48a66 100644
 --- a/c10/macros/Macros.h
 +++ b/c10/macros/Macros.h
-@@ -395,7 +395,7 @@ __host__ __device__
+@@ -422,7 +422,7 @@ __host__ __device__
  }
  #endif // NDEBUG
  // ROCm disable kernel assert by default
 -#if !defined(C10_USE_ROCM_KERNEL_ASSERT) and defined(USE_ROCM)
 +#if 1
  #define CUDA_KERNEL_ASSERT(cond)
+ #define CUDA_KERNEL_ASSERT_MSG(cond, msg)
  #define SYCL_KERNEL_ASSERT(cond)
- #else

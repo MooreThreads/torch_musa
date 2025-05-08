@@ -7,8 +7,8 @@
 #include <ATen/musa/MUSAConfig.h>
 #include <c10/util/CallOnce.h>
 
-#include "torch_musa/csrc/core/Device.h"
 #include "torch_musa/csrc/core/MUSACachingAllocator.h"
+#include "torch_musa/csrc/core/Device.h"
 #include "torch_musa/csrc/core/MUSAException.h"
 
 namespace at {

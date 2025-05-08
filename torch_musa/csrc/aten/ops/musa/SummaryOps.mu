@@ -76,7 +76,7 @@ __global__ void kernelHistogram1D(
     at::acc_type<input_t, /*is_musa=*/true> maxvalue,
     IndexType totalElements,
     Op getOp) {
-  extern __shared__ unsigned char my_smem[];
+  extern __shared__ __align__(alignof(output_t)) unsigned char my_smem[];
   output_t* smem = nullptr;
 
   if (MemoryType == MUSAHistogramMemoryType::SHARED) {

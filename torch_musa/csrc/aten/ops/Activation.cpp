@@ -326,7 +326,6 @@ DEFINE_ACTIVATE_OP(Log, UNARY_MODE::LOG)
 DEFINE_ACTIVATE_OP(Log10, UNARY_MODE::LOG10)
 DEFINE_ACTIVATE_OP(Log2, UNARY_MODE::LOG2)
 DEFINE_ACTIVATE_OP(Floor, UNARY_MODE::FLOOR)
-DEFINE_ACTIVATE_OP(Erf, UNARY_MODE::ERF)
 DEFINE_ACTIVATE_OP_ARGS(HardSigmoid, UNARY_MODE::HARDSIGMOID, 0.166667, 0.5)
 
 #define SCALAR_COMPARISON(op_name, mode)                         \
@@ -707,13 +706,12 @@ at::Tensor PRelu(const at::Tensor& self, const at::Tensor& weight) {
 
 at::Tensor IsNan(const at::Tensor& self) {
   // DeviceGuard omitted
-  if C10_UNLIKELY (self.numel() == 0) {
+  if C10_UNLIKELY(self.numel() == 0) {
     return at::empty_like(self, self.options().dtype(at::ScalarType::Bool));
   }
 
   return _AT_DISPATCH_INF_TYPES(self.scalar_type(), "isnan", [&]() {
-    at::Tensor result =
-        at::empty_like(self, self.options().dtype(at::ScalarType::Bool));
+    at::Tensor result = at::empty_like(self, self.options().dtype(at::ScalarType::Bool));
     auto in = CreateMUTensor(self);
     auto out = CreateMUTensor(result);
     muHandle& h = GetMudnnHandle();
@@ -727,7 +725,7 @@ at::Tensor IsNan(const at::Tensor& self) {
 at::Tensor IsInf(const at::Tensor& self) {
   // DeviceGuard omitted
   // Note: Integral tensor values are never infinite
-  if C10_UNLIKELY (self.numel() == 0) {
+  if C10_UNLIKELY(self.numel() == 0) {
     return at::empty_like(self, self.options().dtype(at::ScalarType::Bool));
   }
   if (c10::isIntegralType(self.scalar_type(), /*includeBool=*/true)) {
@@ -739,8 +737,7 @@ at::Tensor IsInf(const at::Tensor& self) {
   }
 
   return _AT_DISPATCH_INF_TYPES(self.scalar_type(), "isinf", [&]() {
-    at::Tensor result =
-        at::empty_like(self, self.options().dtype(at::ScalarType::Bool));
+    at::Tensor result = at::empty_like(self, self.options().dtype(at::ScalarType::Bool));
     auto in = CreateMUTensor(self);
     auto out = CreateMUTensor(result);
     muHandle& h = GetMudnnHandle();

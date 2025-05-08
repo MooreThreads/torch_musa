@@ -6,7 +6,6 @@
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/utils/musa_lazy_init.h"
 
 namespace at {
 namespace musa {
@@ -15,7 +14,6 @@ Tensor& BernoulliFloat(
     Tensor& self,
     double p,
     c10::optional<at::Generator> generator) {
-  torch::utils::musa_lazy_init();
   c10::musa::MUSAGuard device_guard(self.device());
   if (at::musa::getMUSAArch() >= 210) {
     return at::native::bernoulli_(self, p, generator);

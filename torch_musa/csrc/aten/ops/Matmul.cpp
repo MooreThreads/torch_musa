@@ -107,7 +107,7 @@ void BlasGEMM(
 void MmCall(
     const Tensor& l,
     const Tensor& r,
-    const c10::optional<Tensor>& bias,
+    const std::optional<Tensor>& bias,
     Tensor& out,
     const at::Scalar& alpha = 1,
     const at::Scalar beta = 0) {
@@ -382,17 +382,17 @@ Tensor Bmm(const Tensor& self, const Tensor& mat2) {
 // Known limitations:
 //  - Only works if mat1 is row-major and mat2 is column-major
 //  - Only works if matrices sizes are divisible by 32
-std::tuple<Tensor&, Tensor&> ScaledMatmulOut(
+Tensor& ScaledMatmulOut(
     const Tensor& mat1,
     const Tensor& mat2,
-    const c10::optional<at::Tensor>& bias,
-    c10::optional<c10::ScalarType> out_dtype,
-    const c10::optional<at::Tensor>& scale_a,
-    const c10::optional<at::Tensor>& scale_b,
-    const c10::optional<at::Tensor>& scale_result,
+    const Tensor& scale_a,
+    const Tensor& scale_b,
+    const std::optional<Tensor>& bias,
+    const std::optional<Tensor>& scale_result,
+    std::optional<c10::ScalarType> out_dtype,
     bool use_fast_accum,
-    Tensor& out,
-    Tensor& amax) {
+    Tensor& out) {
+  const c10::musa::MUSAGuard device_guard(mat1.device());
   if (at::musa::getMUSAArch() < 310) {
     TORCH_CHECK(false, "scaled_gemm is only supported for MUSA_ARCH >= 310");
   }
@@ -416,21 +416,19 @@ std::tuple<Tensor&, Tensor&> ScaledMatmulOut(
       mat2.sizes()[1],
       ")");
   TORCH_CHECK(
-      !scale_a ||
-          ((scale_a->numel() == 1 || scale_a->numel() == mat1.size(0)) &&
-           scale_a->scalar_type() == kFloat),
+      (scale_a.numel() == 1 || scale_a.numel() == mat1.size(0)) &&
+          scale_a.scalar_type() == kFloat,
       "scale_a must be float scalar or float tensor of shape ",
       mat1.size(0),
       " but got ",
-      scale_a->numel());
+      scale_a.numel());
   TORCH_CHECK(
-      !scale_b ||
-          ((scale_b->numel() == 1 || scale_b->numel() == mat2.size(1)) &&
-           scale_b->scalar_type() == kFloat),
+      (scale_b.numel() == 1 || scale_b.numel() == mat2.size(1)) &&
+          scale_b.scalar_type() == kFloat,
       "scale_b must be float scalar or float tensor of shape ",
       mat2.size(1),
       " but got ",
-      scale_b->numel());
+      scale_b.numel());
   TORCH_CHECK(
       !scale_result ||
           ((scale_result->numel() == 1 ||
@@ -441,16 +439,15 @@ std::tuple<Tensor&, Tensor&> ScaledMatmulOut(
       " but got ",
       scale_result->numel());
   TORCH_CHECK(
-      !bias || bias->numel() == mat2.sizes()[1],
+      !bias || bias->numel() == mat2.size(1),
       "Bias must be size ",
-      mat2.sizes()[1],
+      mat2.size(1),
       " but got ",
       bias->numel());
   // Check types
   TORCH_CHECK(
       !out_dtype || *out_dtype == out.scalar_type(),
       "out_dtype must match output matrix type");
-  TORCH_CHECK(amax.scalar_type() == kFloat, "amax must be a float scalar");
   TORCH_CHECK(
       c10::isFloat8Type(mat1.scalar_type()),
       "Expected mat1 to be Float8 matrix got ",
@@ -472,24 +469,20 @@ std::tuple<Tensor&, Tensor&> ScaledMatmulOut(
         out.scalar_type());
   }
   Tensor bias_ = bias.value_or(Tensor());
-  Tensor scale_a_ = scale_a.value_or(Tensor());
-  Tensor scale_b_ = scale_b.value_or(Tensor());
   Tensor scale_result_ = scale_result.value_or(Tensor());
   TensorArg targs[]{
       {out, "out", 0},
-      {amax, "amax", 1},
-      {mat1, "mat1", 2},
-      {mat2, "mat2", 3},
-      {bias_, "bias", 4},
-      {scale_a_, "scale_a", 5},
-      {scale_b_, "scale_b", 6},
-      {scale_result_, "scale_result", 7}};
+      {mat1, "mat1", 1},
+      {mat2, "mat2", 2},
+      {bias_, "bias", 3},
+      {scale_a, "scale_a", 4},
+      {scale_b, "scale_b", 5},
+      {scale_result_, "scale_result", 6}};
   checkAllSameGPU(__func__, targs);
 
   IntArrayRef mat1_sizes = mat1.sizes();
   IntArrayRef mat2_sizes = mat2.sizes();
   at::native::resize_output(out, {mat1_sizes[0], mat2_sizes[1]});
-  at::native::resize_output(amax, {});
 
   muHandle& h = GetMudnnHandle();
   Tensor contiguous_l;
@@ -502,10 +495,11 @@ std::tuple<Tensor&, Tensor&> ScaledMatmulOut(
                          : CreateMUTensor(ContiguousRef(mat2, contiguous_r));
   muTensor bmt = CreateMUTensor(bias_);
   muTensor rst = CreateMUTensor(out);
-  muTensor sa = CreateMUTensor(scale_a_);
-  muTensor sb = CreateMUTensor(scale_b_);
+  muTensor sa = CreateMUTensor(scale_a);
+  muTensor sb = CreateMUTensor(scale_b);
   muTensor sr = CreateMUTensor(scale_result_);
 
+  Tensor amax = at::empty({0}, mat1.options().dtype(ScalarType::Float));
   // if we don't need amax, just replace below with:
   // muTensor amax_ = muTensor();
   muTensor amax_ = CreateMUTensor(amax);
@@ -523,32 +517,30 @@ std::tuple<Tensor&, Tensor&> ScaledMatmulOut(
   CHECK_MUDNN_STATUS(
       op.RunLt(h, rst, lmt, rmt, rst, bmt, param, InternalMemAlloc), "RunLt");
 
-  return {out, amax};
+  return out;
 }
 
-std::tuple<Tensor, Tensor> ScaledMatmul(
+Tensor ScaledMatmul(
     const Tensor& mat_a,
     const Tensor& mat_b,
-    const c10::optional<at::Tensor>& bias,
-    c10::optional<c10::ScalarType> out_dtype,
-    const c10::optional<at::Tensor>& scale_a,
-    const c10::optional<at::Tensor>& scale_b,
-    const c10::optional<at::Tensor>& scale_result,
+    const Tensor& scale_a,
+    const Tensor& scale_b,
+    const std::optional<Tensor>& bias,
+    const std::optional<Tensor>& scale_result,
+    std::optional<c10::ScalarType> out_dtype,
     bool use_fast_accum) {
   const auto out_dtype_ = out_dtype.value_or(mat_a.scalar_type());
   Tensor out = at::empty({0}, mat_a.options().dtype(out_dtype_));
-  Tensor amax = at::empty({0}, mat_a.options().dtype(ScalarType::Float));
   return ScaledMatmulOut(
       mat_a,
       mat_b,
-      bias,
-      out_dtype,
       scale_a,
       scale_b,
+      bias,
       scale_result,
+      out_dtype,
       use_fast_accum,
-      out,
-      amax);
+      out);
 }
 
 } // namespace musa

@@ -1,6 +1,6 @@
 """This package adds the memory utilities. These APIs are borrowed from cuda memory."""
 
-# pylint: disable=unused-import, invalid-name, line-too-long, unused-argument, keyword-arg-before-vararg
+# pylint: disable=C0301, W1113, unused-import, invalid-name, too-many-statements, too-many-locals, unused-argument, unspecified-encoding
 import sys
 import collections
 import pickle
@@ -18,7 +18,7 @@ from ._utils import _get_musa_device_index
 def set_per_process_memory_fraction(
     fraction, device: Union[Device, int] = None
 ) -> None:
-    """Set memory fraction for a process.
+    r"""Set memory fraction for a process.
     The fraction is used to limit an caching allocator to allocated memory on a MUSA device.
     The allowed value equals the total visible memory multiplied fraction.
     If trying to allocate more than the allowed value in a process, will raise an out of
@@ -38,7 +38,7 @@ def set_per_process_memory_fraction(
     if not isinstance(fraction, float):
         raise TypeError("Invalid type for fraction argument, must be `float`")
     if fraction < 0 or fraction > 1:
-        raise ValueError(f"Invalid fraction value: {fraction}. " "Allowed range: 0~1")
+        raise ValueError(f"Invalid fraction value: {fraction}. Allowed range: 0~1")
 
     torch_musa._MUSAC._musa_setMemoryFraction(fraction, device)
 
@@ -58,13 +58,12 @@ def empty_cache():
 
 
 def memory_stats(device: Union[Device, int] = None) -> Dict[str, Any]:
-    r"""Return a dictionary of MUSA memory allocator statistics for a given device.
+    """Returns a dictionary of NPU memory allocator statistics for a given device.
 
     The return value of this function is a dictionary of statistics, each of
     which is a non-negative integer.
 
     Core statistics:
-
     - ``"allocated.{all,large_pool,small_pool}.{current,peak,allocated,freed}"``:
       number of allocation requests received by the memory allocator.
     - ``"allocated_bytes.{all,large_pool,small_pool}.{current,peak,allocated,freed}"``:
@@ -85,7 +84,6 @@ def memory_stats(device: Union[Device, int] = None) -> Dict[str, Any]:
     For these core statistics, values are broken down as follows.
 
     Pool type:
-
     - ``all``: combined statistics across all memory pools.
     - ``large_pool``: statistics for the large allocation pool
       (as of October 2019, for size >= 1MB allocations).
@@ -93,7 +91,6 @@ def memory_stats(device: Union[Device, int] = None) -> Dict[str, Any]:
       (as of October 2019, for size < 1MB allocations).
 
     Metric type:
-
     - ``current``: current value of this metric.
     - ``peak``: maximum value of this metric.
     - ``allocated``: historical total increase in this metric.
@@ -101,34 +98,23 @@ def memory_stats(device: Union[Device, int] = None) -> Dict[str, Any]:
 
     In addition to the core statistics, we also provide some simple event
     counters:
-
     - ``"num_alloc_retries"``: number of failed ``musaMalloc`` calls that
       result in a cache flush and retry.
     - ``"num_ooms"``: number of out-of-memory errors thrown.
 
     The caching allocator can be configured via ENV to not split blocks larger than a
-    defined size (see Memory Management section of the Cuda Semantics documentation).
-    This helps avoid memory fragmentation but may have a performance
+    defined size (see Memory Management section of the MUSA Semantics documentation).
+    This helps avoid memory framentation but may have a performance
     penalty. Additional outputs to assist with tuning and evaluating impact:
-
     - ``"max_split_size"``: blocks above this size will not be split.
     - ``"oversize_allocations.{current,peak,allocated,freed}"``:
       number of over-size allocation requests received by the memory allocator.
     - ``"oversize_segments.{current,peak,allocated,freed}"``:
-      number of over-size reserved segments from ``cudaMalloc()``.
-
-    The caching allocator can be configured via ENV to round memory allocations in order
-    to reduce fragmentation. Sometimes the overhead from rounding can be higher than
-    the fragmentation it helps reduce. The following stat can be used to check if
-    rounding adds too much overhead:
-
-    - ``"requested_bytes.{all,large_pool,small_pool}.{current,peak,allocated,freed}"``:
-      memory requested by client code, compare this with allocated_bytes to check if
-      allocation rounding adds too much overhead.
+      number of over-size reserved segments from ``musaMalloc()``.
 
     Args:
         device (torch.device or int, optional): selected device. Returns
-            statistics for the current device, given by :func:`~torch.musa.current_device`,
+            statistics for the current device, given by :func:`~torch_musa.current_device`,
             if :attr:`device` is ``None`` (default).
     """
     result = []
@@ -150,11 +136,102 @@ def memory_stats(device: Union[Device, int] = None) -> Dict[str, Any]:
 
 
 def memory_stats_as_nested_dict(device: Union[Device, int] = None) -> Dict[str, Any]:
-    r"""Return the result of :func:`~torch.musa.memory_stats` as a nested dictionary."""
+    r"""Return the result of :func:`~torch_musa.memory_stats` as a nested dictionary."""
     if not is_initialized():
         return {}
     device = _get_musa_device_index(device, optional=True)
     return torch_musa._MUSAC._musa_memoryStats(device)
+
+
+def reset_accumulated_memory_stats(device: Union[Device, int] = None) -> None:
+    r"""Reset the "accumulated" (historical) stats tracked by the MUSA memory allocator.
+
+    See :func:`~torch.musa.memory_stats` for details. Accumulated stats correspond to
+    the `"allocated"` and `"freed"` keys in each individual stat dict, as well as
+    `"num_alloc_retries"` and `"num_ooms"`.
+
+    Args:
+        device (torch.device or int, optional): selected device. Returns
+            statistic for the current device, given by :func:`~torch.musa.current_device`,
+            if :attr:`device` is ``None`` (default).
+
+    .. note::
+        See :ref:`musa-memory-management` for more details about GPU memory
+        management.
+    """
+    device = _get_musa_device_index(device, optional=True)
+    return torch_musa._MUSAC._musa_resetAccumulatedMemoryStats(device)
+
+
+def reset_peak_memory_stats(device: Union[Device, int] = None) -> None:
+    r"""Resets the "peak" stats tracked by the MUSA memory allocator.
+
+    See :func:`~torch.musa.memory_stats` for details. Peak stats correspond to the
+    `"peak"` key in each individual stat dict.
+
+    Args:
+        device (torch.device or int, optional): selected device. Returns
+            statistic for the current device, given by :func:`~torch.musa.current_device`,
+            if :attr:`device` is ``None`` (default).
+
+    .. note::
+        See :ref:`musa-memory-management` for more details about GPU memory
+        management.
+    """
+    device = _get_musa_device_index(device, optional=True)
+    return torch.musa._MUSAC._musa_resetPeakMemoryStats(device)
+
+
+def reset_max_memory_allocated(device: Union[Device, int] = None) -> None:
+    r"""Reset the starting point in tracking maximum GPU memory occupied by tensors for a given device.
+
+    See :func:`~torch.musa.max_memory_allocated` for details.
+
+    Args:
+        device (torch.device or int, optional): selected device. Returns
+            statistic for the current device, given by :func:`~torch.musa.current_device`,
+            if :attr:`device` is ``None`` (default).
+
+    .. warning::
+        This function now calls :func:`~torch.musa.reset_peak_memory_stats`, which resets
+        /all/ peak memory stats.
+
+    .. note::
+        See :ref:`musa-memory-management` for more details about GPU memory
+        management.
+    """
+    warnings.warn(
+        "torch.musa.reset_max_memory_allocated now calls torch.musa.reset_peak_memory_stats, "
+        "which resets /all/ peak memory stats.",
+        FutureWarning,
+    )
+    return reset_peak_memory_stats(device=device)
+
+
+def reset_max_memory_cached(device: Union[Device, int] = None) -> None:
+    r"""Reset the starting point in tracking maximum GPU memory managed by the caching allocator for a given device.
+
+    See :func:`~torch.musa.max_memory_cached` for details.
+
+    Args:
+        device (torch.device or int, optional): selected device. Returns
+            statistic for the current device, given by :func:`~torch.musa.current_device`,
+            if :attr:`device` is ``None`` (default).
+
+    .. warning::
+        This function now calls :func:`~torch.musa.reset_peak_memory_stats`, which resets
+        /all/ peak memory stats.
+
+    .. note::
+        See :ref:`musa-memory-management` for more details about GPU memory
+        management.
+    """
+    warnings.warn(
+        "torch.musa.reset_max_memory_cached now calls torch.musa.reset_peak_memory_stats, "
+        "which resets /all/ peak memory stats.",
+        FutureWarning,
+    )
+    return reset_peak_memory_stats(device=device)
 
 
 def memory_stats_all():
@@ -167,35 +244,6 @@ def memory_stats_all():
             else:
                 ret_dict[k] += v
     return ret_dict
-
-
-def _record_memory_history(enabled="all", *args, **kwargs):
-    """Enable recording of stack traces associated with memory
-    allocations, so you can tell what allocated any piece of memory in
-
-    Args:
-        enabled (Literal[None, "state", "all"], optional):
-            `None`, disable recording memory history.
-            `"state"`, keep information for currenly allocated memory.
-            `"all"`, additionally keep a history of all alloc/free calls.
-            Defaults to "all".
-        context (Literal[None, "state", "alloc", "all"], optional):
-            `None`, Do not record any tracebacks.
-            `"state"`, Record tracebacks for currently allocated memory.
-            `"alloc"`, additionally keep tracebacks for alloc calls.
-            `"all"`, additionally keep tracebacks for free calls.
-            Defaults to "all".
-        stacks (Literal["python", "all"], optional):
-            `"python"`, include Python, TorchScript, and inductor frames in tracebacks
-            `"all"`, additionally include C++ frames
-            Defaults to "all".
-        max_entries (int, optional): Keep a maximum of `max_entries`
-            alloc/free events in the recorded history recorded.
-    """
-    if isinstance(enabled, bool):
-        return _record_memory_history_legacy(enabled, *args, **kwargs)
-
-    return _record_memory_history_impl(enabled, *args, **kwargs)
 
 
 def _record_memory_history_legacy(
@@ -225,6 +273,13 @@ def _record_memory_history_impl(
     torch_musa._MUSAC._musa_record_memory_history(enabled, context, stacks, max_entries)
 
 
+def _record_memory_history(enabled="all", *args, **kwargs):
+    if isinstance(enabled, bool):
+        _record_memory_history_legacy(enabled, *args, **kwargs)
+    else:
+        _record_memory_history_impl(enabled, *args, **kwargs)
+
+
 def _snapshot(device: Union[Device, int] = None):
     return torch_musa._MUSAC._musa_memorySnapshot()
 
@@ -247,14 +302,14 @@ def _save_segment_usage(filename="output.svg", snapshot=None):
     if snapshot is None:
         snapshot = _snapshot()
 
-    with open(filename, "w", encoding="utf-8") as f:
+    with open(filename, "w") as f:
         f.write(_segments(snapshot))
 
 
 def _save_memory_usage(filename="output.svg", snapshot=None):
     if snapshot is None:
         snapshot = _snapshot()
-    with open(filename, "w", encoding="utf-8") as f:
+    with open(filename, "w") as f:
         f.write(_memory(snapshot))
 
 
@@ -267,23 +322,19 @@ def memory_snapshot():
 
 
 def memory_summary(device: Union[Device, int] = None, abbreviated: bool = False) -> str:
-    r"""Return a human-readable printout of the current memory allocator statistics for a given device.
+    """Returns a human-readable printout of the current memory allocator statistics for a given
+    device.
 
-    This can be useful to display periodically during training, or when
-    handling out-of-memory exceptions.
+    This can be useful to display periodically during training, or when handling out-of-memory
+    exceptions.
 
     Args:
         device (torch.device or int, optional): selected device. Returns
-            printout for the current device, given by :func:`~torch.cuda.current_device`,
+            printout for the current device, given by :func:`~torch_musa.current_device`,
             if :attr:`device` is ``None`` (default).
-        abbreviated (bool, optional): whether to return an abbreviated summary
-            (default: False).
-
-    .. note::
-        See :ref:`cuda-memory-management` for more details about GPU memory
-        management.
+        abbreviated (bool, optional): whether to return an abbreviated summary (default: False).
     """
-    device = _get_device_index(device, optional=True)
+    device = _get_musa_device_index(device, optional=True)
     stats = memory_stats(device=device)
 
     def _format_size(sz, pref_sz):
@@ -360,15 +411,9 @@ def memory_summary(device: Union[Device, int] = None, abbreviated: bool = False)
                 allocated_prefval = allocated
                 freed_prefval = freed
 
-            # pylint: disable=consider-using-f-string
             lines.append(
-                " {:<21} | {} | {} | {} | {} ".format(
-                    submetric_name,
-                    formatter(current, current_prefval),
-                    formatter(peak, peak_prefval),
-                    formatter(allocated, allocated_prefval),
-                    formatter(freed, freed_prefval),
-                ),
+                f" {submetric_name:<21} | {formatter(current, current_prefval)} | {formatter(peak, peak_prefval)} | "
+                f"{formatter(allocated, allocated_prefval)} | {formatter(freed, freed_prefval)} ",
             )
 
     metrics_to_display = [
@@ -386,15 +431,9 @@ def memory_summary(device: Union[Device, int] = None, abbreviated: bool = False)
         allocated = stats[prefix + "allocated"]
         freed = stats[prefix + "freed"]
 
-        # pylint: disable=consider-using-f-string
         lines.append(
-            " {:<21} | {} | {} | {} | {} ".format(
-                metric_name,
-                formatter(current, current),
-                formatter(peak, peak),
-                formatter(allocated, allocated),
-                formatter(freed, freed),
-            ),
+            f" {metric_name:<21} | {formatter(current, current)} | {formatter(peak, peak)} | "
+            f"{formatter(allocated, allocated)} | {formatter(freed, freed)} ",
         )
 
     lines.append("=" * 75)
@@ -405,34 +444,23 @@ def memory_summary(device: Union[Device, int] = None, abbreviated: bool = False)
     return "|" + "|\n|".join(lines).format(**fmt_dict) + "|\n"
 
 
-def memory_allocated(
-    device: Union[Device, int] = None, all_device: bool = False
-) -> int:
+def memory_allocated(device: Union[Device, int] = None) -> int:
     """Returns the current GPU memory occupied by tensors in bytes for a given device.
 
     Args:
         device (torch.device or int, optional): selected device. Returns
             statistic for the current device, given by :func:`~torch_musa.current_device`,
             if :attr:`device` is ``None`` (default).
-        all_device (bool, optional): aggregate all devices' stats if `device` is ``None``
-            and `all_device` is ``True``.
 
     .. note::
         This is likely less than the amount shown in `mthreads-gmi` since some
         unused memory can be held by the caching allocator and some context
         needs to be created on GPU.
     """
-    if device is not None:
-        return memory_stats(device=device).get("allocated_bytes.all.current", 0)
-    if all_device:
-        return memory_stats_all().get("allocated_bytes.all.current", 0)
-    device = torch_musa.current_device()
     return memory_stats(device=device).get("allocated_bytes.all.current", 0)
 
 
-def max_memory_allocated(
-    device: Union[Device, int] = None, all_device: bool = False
-) -> int:
+def max_memory_allocated(device: Union[Device, int] = None) -> int:
     """Returns the maximum GPU memory occupied by tensors in bytes for a given device.
     By default, this returns the peak allocated memory since the beginning of this program.
     :func:`~torch_musa.reset_peak_memory_stats` can be used to reset the starting point in tracking
@@ -443,51 +471,31 @@ def max_memory_allocated(
         device (torch.device or int, optional): selected device. Returns
             statistic for the current device, given by :func:`~torch_musa.current_device`,
             if :attr:`device` is ``None`` (default).
-        all_device (bool, optional): aggregate all devices' stats if `device` is ``None``
-            and `all_device` is ``True``.
     """
-    if device is not None:
-        return memory_stats(device=device).get("allocated_bytes.all.peak", 0)
-
-    if all_device:
-        return memory_stats_all().get("allocated_bytes.all.peak", 0)
-
-    device = torch_musa.current_device()
     return memory_stats(device=device).get("allocated_bytes.all.peak", 0)
 
 
-def memory_reserved(device: Union[Device, int] = None, all_device: bool = False) -> int:
+def memory_reserved(device: Union[Device, int] = None) -> int:
     """Returns the current GPU memory managed by the caching allocator in bytes for a given device.
 
     Args:
         device (torch.device or int, optional): selected device. Returns
             statistic for the current device, given by :func:`~torch_musa.current_device`,
             if :attr:`device` is ``None`` (default).
-        all_device (bool, optional): aggregate all devices' stats if `device` is ``None``
-            and `all_device` is ``True``.
     """
-    if device is not None:
-        return memory_stats(device=device).get("reserved_bytes.all.current", 0)
-
-    if all_device:
-        return memory_stats_all().get("reserved_bytes.all.current", 0)
-
-    device = torch_musa.current_device()
     return memory_stats(device=device).get("reserved_bytes.all.current", 0)
 
 
 def max_memory_reserved(device: Union[Device, int] = None) -> int:
-    """Return the maximum GPU memory managed by the caching allocator in bytes for a given device.
-
-    By default, this returns the peak cached memory since the beginning of this
-    program. :func:`~torch.musa.reset_peak_memory_stats` can be used to reset
-    the starting point in tracking this metric. For example, these two functions
-    can measure the peak cached memory amount of each iteration in a training
-    loop.
+    """Returns the maximum GPU memory managed by the caching allocator in bytes for a given device.
+    By default, this returns the peak cached memory since the beginning of this program.
+    :func:`~torch_musa.reset_peak_memory_stats` can be used to reset the starting point in tracking
+    this metric. For example, these two functions can measure the peak cached memory amount of each
+    iteration in a training loop.
 
     Args:
         device (torch.device or int, optional): selected device. Returns
-            statistic for the current device, given by :func:`~torch.musa.current_device`,
+            statistic for the current device, given by :func:`~torch_musa.current_device`,
             if :attr:`device` is ``None`` (default).
     """
     return memory_stats(device=device).get("reserved_bytes.all.peak", 0)
@@ -508,28 +516,9 @@ def mem_get_info(device: Union[Device, int] = None) -> Tuple[int, int]:
     """
     if device is None:
         device = torch.musa.current_device()
-    device = _get_musa_device_index(device)
+    device = _get_musa_device_index(device, optional=True)
     return torch.musa._MUSAC._musart.musaMemGetInfo(device)
 
 
-def reset_peak_memory_stats(device: Union[Device, int] = None) -> None:
-    r"""Resets the "peak" stats tracked by the MUSA memory allocator.
-
-    See :func:`~torch.musa.memory_stats` for details. Peak stats correspond to the
-    `"peak"` key in each individual stat dict.
-
-    Args:
-        device (torch.device or int, optional): selected device. Returns
-            statistic for the current device, given by :func:`~torch.musa.current_device`,
-            if :attr:`device` is ``None`` (default).
-
-    .. note::
-        See :ref:`musa-memory-management` for more details about GPU memory
-        management.
-    """
-    device = _get_device_index(device, optional=True)
-    return torch.musa._MUSAC._musa_resetPeakMemoryStats(device)
-
-
 def _set_allocator_settings(env: str):
-    return torch.musa._MUSAC._musa_setMusaCachingAllocatorSettings(env)
+    return torch.musa._MUSAC._musa_musaCachingAllocator_set_allocator_settings(env)

@@ -1,3 +1,4 @@
+# pylint: disable=unused-argument
 """This file is about musa init."""
 
 # pylint: disable=C0103, W0621, W0602, W0622, C0411, C0412, C0413, W0236, E0202

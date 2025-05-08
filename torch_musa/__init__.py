@@ -1,16 +1,12 @@
 """Imports the torch musa adaption facilities."""
 
-# pylint: disable=wrong-import-position, W0404, C0103, C2801
+# pylint: disable=wrong-import-position, W0404, C0103, C2801, W0602
 
 import sys
 import warnings
 import importlib
 from typing import Set, Type
 
-import torch
-from torch.distributed.fsdp import (
-    sharded_grad_scaler,
-)  # load sharded_grad_scaler explicitly
 from packaging.version import Version
 
 try:
@@ -18,17 +14,33 @@ try:
 except ImportError:
     pass
 
-TORCH_MIN_VERSION = Version("2.0.0")
+is_loaded = False
+
+
+def _autoload():
+    global is_loaded
+
+    if is_loaded:
+        print("torch_musa already loaded.")
+        return
+
+    print("loading torch_musa into torch.musa...")
+
+
+import torch
+from torch.distributed.fsdp import sharded_grad_scaler
+
+TORCH_MIN_VERSION = Version("2.5.0")
 TORCH_VERSION = Version(torch.__version__).base_version
 if Version(TORCH_VERSION) < TORCH_MIN_VERSION:
     raise RuntimeError(
-        "torch version must not be less than v2.0.0 when using torch_musa,",
+        "torch version must not be less than v2.5.0 when using torch_musa,",
         " but now torch version is " + torch.__version__,
     )
 
-if "2.2.0" not in torch.__version__:
+if "2.5.0" not in torch.__version__:
     warnings.warn(
-        "torch version should be v2.0.0 when using torch_musa, but now torch version is "
+        "torch version should be v2.5.0 when using torch_musa, but now torch version is "
         + torch.__version__,
         UserWarning,
     )
@@ -44,30 +56,12 @@ except ImportError as err:
 
 torch.__setattr__("musa", sys.modules[__name__])
 
-# Hack torch profiler with our torch_musa version
-sys.modules["torch.autograd.profiler"] = importlib.import_module(
-    "torch_musa.autograd.profiler"
-)
-torch.autograd.__setattr__("profiler", sys.modules["torch.autograd.profiler"])
-
-sys.modules["torch.autograd.profiler_util"] = importlib.import_module(
-    "torch_musa.autograd.profiler_util"
-)
-torch.autograd.__setattr__("profiler_util", sys.modules["torch.autograd.profiler_util"])
-
-sys.modules["torch.profiler"] = importlib.import_module("torch_musa.profiler")
-torch.__setattr__("profiler", sys.modules["torch.profiler"])
-
-setattr(torch._C._autograd.DeviceType, "MUSA", 1)
-setattr(torch._C._profiler.ProfilerActivity, "MUSA", 1)
-
 from torch_musa.distributed import _apply_distributed_patch
 
 from .core.device import (
     Device as device,
     DeviceOf as device_of,
     set_device,
-    set_default_dtype,
     current_device,
     is_available,
     device_count,
@@ -78,8 +72,11 @@ from .core.device import (
     can_device_access_peer,
     _exchange_device,
     _DeviceGuard,
+    register_musa_hook,
     get_arch_list,
 )
+
+register_musa_hook()
 
 from .core.stream import (
     set_stream,
@@ -117,11 +114,12 @@ from .core.memory import (
     max_memory_reserved,
     mem_get_info,
     reset_peak_memory_stats,
+    _record_memory_history,
     _dump_snapshot,
     _set_allocator_settings,
 )
 
-from .core._lazy_init import _lazy_init, _initialized, _is_in_bad_fork
+from .core._lazy_init import _lazy_init, _initialized, _is_in_bad_fork, is_initialized
 
 from .core.random import *
 
@@ -129,16 +127,11 @@ torch.random.fork_rng = fork_rng
 
 from .core.mudnn import *
 
-from .musa_graph import *
-
 # A hack to get `torch.backends.mudnn` functions/attributes. This allows users to use cudnn
 # equivalent functions like `torch.backends.mudnn.allow_tf32 = True`
 torch.backends.__setattr__("mudnn", sys.modules["torch_musa.core.mudnn"])
 
 register_deserialization()
-
-# A hack to get `torch.set_default_tensor_type` and `torch.set_default_dtype`
-torch.set_default_dtype = set_default_dtype
 
 
 def _sleep(cycles):
@@ -153,12 +146,15 @@ from .core.storage import set_storage_attributes
 
 from .core.storage import set_storage_attributes
 
+from .profiler import set_profiler_attributes
+
 
 def set_attributes():
     """Set attributes for torch."""
     set_torch_attributes()
     set_module_attributes()
     set_storage_attributes()
+    set_profiler_attributes()
 
 
 set_attributes()
@@ -199,11 +195,6 @@ from .core.reductions import init_reductions
 
 init_reductions()
 
-from . import _dynamo
-
-# for the purpose of lazily import inductor related modules
-from ._inductor import _init_inductor_backend_registration  # internal usage
-
 
 def overwrite_cuda_api():
     torch.cuda._lazy_init = _lazy_init
@@ -216,11 +207,3 @@ from .core.ao import *
 from .core.ao.register_helper import _register_ao_intrinsic_modules
 
 _register_ao_intrinsic_modules()
-
-
-# TODO: more elegant patching
-setattr(
-    torch._C,
-    "_conv_determine_backend_memory_format",
-    torch_musa._MUSAC._conv_determine_backend_memory_format,
-)

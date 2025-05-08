@@ -5,14 +5,15 @@ project(op_subproject LANGUAGES CXX)
 file(
   GLOB
   _CSRCS
+  amp/*.cpp
   aten/ops/*.cpp
   aten/utils/*.cpp
   aten/mudnn/*.cpp
-  core/*.cpp
-  amp/*.cpp
-  utils/*.cpp
   aten/quantized/*.cpp
-  aten/quantized/mudnn/*.cpp)
+  aten/quantized/mudnn/*.cpp
+  core/*.cpp
+  profiler/*.cpp
+  utils/*.cpp)
 
 file(GLOB _MUDNN_ATTENTION_CSRCS aten/ops/attention/mudnn/*.cpp)
 list(
@@ -76,6 +77,7 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/BinaryMiscOpsKernels.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/BinaryBitwiseOpsKernels.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/BinaryShiftOpsKernels.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ComplexKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/CrossKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/CumminmaxKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistributionUniform.mu
@@ -91,7 +93,6 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachPointwiseOp.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachTernaryOp.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachUnaryOp.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachReduceOp.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/group_norm_kernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/GridSampler.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Im2Col.mu
@@ -111,6 +112,7 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ReplicationPadding.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ScatterGatherKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Sorting.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TensorShape.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TensorTransformations.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryFractionKernels.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnarySignKernels.mu
@@ -120,7 +122,6 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryGeometricAcoshKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryGeometricAtanhKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleBicubic2d.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleBilinear2d.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleTrilinear3d.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleLinear1d.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleNearest1d.mu

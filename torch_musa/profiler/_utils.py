@@ -1,100 +1,20 @@
 """Some common utils function definitions."""
 
-# pylint: disable=invalid-name, missing-class-docstring, missing-function-docstring,
+# pylint: disable=invalid-name, missing-class-docstring, missing-function-docstring, C0201, W0640
 
-import functools
-import re
+import operator
 from collections import deque
-from dataclasses import dataclass
 from typing import Dict, List
 
 import torch
 from torch.autograd import _KinetoEvent
 from torch.autograd.profiler import profile
-from torch.profiler import DeviceType
+from torch.profiler import DeviceType, _utils
 
 
-def _traverse(tree, next_fn, children_fn=lambda x: x.children, reverse: bool = False):
-    order = reversed if reverse else lambda x: x
-    remaining = deque(order(tree))
-    while remaining:
-        curr_event = next_fn(remaining)
-        yield curr_event
-        for child_event in order(children_fn(curr_event)):
-            remaining.append(child_event)
-
-
-traverse_dfs = functools.partial(_traverse, next_fn=lambda x: x.pop(), reverse=True)
-traverse_bfs = functools.partial(
-    _traverse, next_fn=lambda x: x.popleft(), reverse=False
-)
-
-
-@dataclass
-class EventMetrics:
-    duration_time_ns: int = 0
-    self_time_ns: int = 0
-    idle_time_ns: int = 0
-    queue_depth: int = 0
-
-    @property
-    def fraction_idle_time(self):
-        if self.duration_time_ns == 0:
-            return 0.0
-        return self.idle_time_ns / self.duration_time_ns
-
-
-@dataclass
-class Interval:
-    start: int
-    end: int
-    queue_depth: int = 0
-
-
-class EventKey:
-
-    def __init__(self, event):
-        self.event = event
-
-    def __hash__(self):
-        return hash(self.event.id)
-
-    def __eq__(self, other):
-        return self.event.id == other.event.id
-
-    def __repr__(self):
-        return f"{self.event.name()}"
-
-    def intervals_overlap(self, intervals: List[Interval]):
-        overlap_time = 0
-        intervals = sorted(intervals, key=lambda x: x.start)
-
-        if intervals:
-            overlap_start = max(self.event.start_time_ns, intervals[0].start)
-            overlap_end = min(self.event.end_time_ns, intervals[0].end)
-
-            if overlap_start < overlap_end:
-                overlap_time += overlap_end - overlap_start
-
-        i, j = 0, 1
-        while j < len(intervals):
-            prev_interval = intervals[i]
-            curr_interval = intervals[j]
-            j += 1
-            if prev_interval.end > curr_interval.start:
-                # Completely subsumed by previous interval
-                if prev_interval.end > curr_interval.end:
-                    j += 1
-                    continue
-                curr_interval.start = prev_interval.end
-                i = j
-
-            overlap_start = max(self.event.start_time_ns, curr_interval.start)
-            overlap_end = min(self.event.end_time_ns, curr_interval.end)
-            if overlap_start < overlap_end:
-                overlap_time += overlap_end - overlap_start
-
-        return overlap_time
+EventKey = _utils.EventKey
+EventMetrics = _utils.EventMetrics
+Interval = _utils.Interval
 
 
 class BasicEvaluation:
@@ -104,7 +24,7 @@ class BasicEvaluation:
         self.metrics: Dict[EventKey, EventMetrics] = {}
         self.compute_self_time()
         self.event_keys = sorted(
-            (e for e in self.metrics), key=lambda x: x.event.start_time_ns
+            (e for e in self.metrics.keys()), key=lambda x: x.event.start_time_ns
         )
         self.events = [e.event for e in self.event_keys]
         self.musa_events: List[_KinetoEvent] = []
@@ -127,7 +47,7 @@ class BasicEvaluation:
                 stack.append(child_event)
             assert (
                 EventKey(curr_event) not in self.metrics
-            ), f"Duplicate id: {curr_event.id}, {curr_event.name()}"
+            ), f"Duplicate id: {curr_event.id}, {curr_event.name}"
             self.metrics[EventKey(curr_event)] = EventMetrics(self_time_ns=self_time)
             self.metrics[EventKey(curr_event)].duration_time_ns = (
                 curr_event.duration_time_ns
@@ -148,28 +68,31 @@ class BasicEvaluation:
 
         def is_musa_kernel(e):
             # TODO: find a better way to identify MUSA Kernel
-            return e.device_type() != DeviceType.CPU and "mem" not in e.name.lower()
+            return (
+                e.device_type() == DeviceType.PrivateUse1
+                and "mem" not in e.name.lower()
+            )
 
         musa_launch_events = sorted(
             (e for e in musa_event_list if is_musa_launch_kernel(e)),
-            key=lambda x: x.start_us(),
+            key=lambda x: x.start_ns(),
         )
         musa_kernel_events = sorted(
             (e for e in musa_event_list if is_musa_kernel(e)),
-            key=lambda x: x.start_us(),
+            key=lambda x: x.start_ns(),
         )
 
         self.musa_events = sorted(
-            musa_launch_events + musa_kernel_events, key=lambda x: x.start_us()
+            musa_launch_events + musa_kernel_events, key=lambda x: x.start_ns()
         )
 
         kernel_mapping: Dict[_KinetoEvent, int] = {}
         last_mapped_kernel = 0
         for musa_launch_event in musa_launch_events:
-            index = index_of_first_match(
+            index = _utils.index_of_first_match(
                 musa_kernel_events,
-                lambda x, e=musa_launch_event: x.linked_correlation_id()
-                == e.linked_correlation_id(),
+                lambda x: x.linked_correlation_id()
+                == musa_launch_event.linked_correlation_id(),
                 start=last_mapped_kernel,
             )
             kernel_mapping[musa_launch_event] = index
@@ -183,9 +106,11 @@ class BasicEvaluation:
         def new_old_event_comparator(event):
             if hasattr(event, "start_us"):
                 return event.start_us() * 1000
+            if hasattr(event, "start_ns"):
+                return event.start_ns()
             if hasattr(event, "start_time_ns"):
                 return event.start_time_ns
-            raise RuntimeError("Unknown Event Type")
+            raise NotImplementedError("Unknown Event Type")
 
         queue_depth_list: List[Interval] = []
         all_events.sort(key=new_old_event_comparator)
@@ -197,20 +122,25 @@ class BasicEvaluation:
                 # Find current spawned musa kernel event
                 if event in kernel_mapping and kernel_mapping[event] is not None:
                     spawned_kernel_index = kernel_mapping[event]
+            if hasattr(event, "start_ns"):
+                start_time = event.start_ns()
+                end_time = event.start_ns() + event.duration_ns()
+                # Find current spawned musa kernel event
+                if event in kernel_mapping and kernel_mapping[event] is not None:
+                    spawned_kernel_index = kernel_mapping[event]
             elif hasattr(event, "start_time_ns"):
                 start_time = event.start_time_ns  # type: ignore[attr-defined]
                 end_time = event.end_time_ns  # type: ignore[attr-defined]
 
             while (
                 current_kernel_index < len(musa_kernel_events)
-                and (musa_kernel_events[current_kernel_index].start_us()) * 1000
-                <= start_time
+                and (musa_kernel_events[current_kernel_index].start_ns()) <= start_time
             ):
                 current_kernel_index += 1
             current_queue_depth = spawned_kernel_index - current_kernel_index + 1
             current_queue_depth = max(current_queue_depth, 0)
 
-            if hasattr(event, "start_us"):
+            if hasattr(event, "start_us") or hasattr(event, "start_ns"):
                 queue_depth_list.append(
                     Interval(start_time, end_time, current_queue_depth)
                 )
@@ -241,7 +171,7 @@ class BasicEvaluation:
                 idle_intervals.append(Interval(idle_start, data_point.start))
                 idle = False
 
-        event_list = [e.event for e in self.metrics]
+        event_list = [e.event for e in self.metrics.keys()]
         for event in event_list:
             self.metrics[EventKey(event)].idle_time_ns = EventKey(
                 event
@@ -272,10 +202,10 @@ class BasicEvaluation:
             for j in range(i + 1, len(qd_values)):
                 # Find next zero and if the max value between them exceeds
                 # the threshold, then we have a falling interval
-                next_minimum_idx = index_of_first_match(
+                next_minimum_idx = _utils.index_of_first_match(
                     qd_values, lambda x: x <= bottom_threashold, start=j
                 )
-                peak_idx = argmax(qd_values, start=j, end=next_minimum_idx)
+                peak_idx = _utils.argmax(qd_values, start=j, end=next_minimum_idx)
 
                 # if is a valid peak, we add to list and continue
                 if peak_idx is not None and qd_values[peak_idx] >= top_threashold:
@@ -290,7 +220,7 @@ class BasicEvaluation:
         # Filter out events that are not in the decrease interval
         event_list = [
             event
-            for event in self.metrics
+            for event in self.metrics.keys()
             if event.intervals_overlap(decrease_interval)
         ]
         if event_list:
@@ -311,7 +241,7 @@ class BasicEvaluation:
                 event
                 for _, event in sorted(
                     zip(heuristic_score_list, event_list),
-                    key=lambda x: x[0],
+                    key=operator.itemgetter(0),
                     reverse=True,
                 )
             ]
@@ -327,40 +257,14 @@ class BasicEvaluation:
 
         output += "\n".join(
             [
-                f"""{'-' * 80}
+                f"""{'-'*80}
 Event:                {event}
-Source code location: {source_code_location(event.event)}
+Source code location: {_utils.source_code_location(event.event)}
 Percentage idle time: {self.metrics[event].fraction_idle_time * 100:.2f}%
-{'-' * 80}"""
+{'-'*80}"""
                 for event in event_list
             ]
         )
         if print_enable:
             print(output)
         return event_list
-
-
-def index_of_first_match(seq, predicate, start=0, end=None):
-    if end is None or end >= len(seq):
-        end = len(seq)
-    for i in range(start, end):
-        if predicate(seq[i]):
-            return i
-    return None
-
-
-def argmax(seq, key=lambda x: x, start=0, end=None):
-    seq = seq[start:end]
-    if len(seq) == 0:
-        return None
-    return seq.index(max(seq, key=key)) + start
-
-
-def source_code_location(event):
-    while event is not None:
-        match = re.search(r"\.py\(.*\)", event.name())
-        if match is None:
-            event = event.parent
-            continue
-        return event.name()
-    return "No source code location found"

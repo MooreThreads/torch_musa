@@ -1,8 +1,8 @@
 diff --git a/torch/csrc/distributed/c10d/socket.cpp b/torch/csrc/distributed/c10d/socket.cpp
-index 5013f25..3ef5af3 100644
+index f155f825284..6ff2263e3c3 100644
 --- a/torch/csrc/distributed/c10d/socket.cpp
 +++ b/torch/csrc/distributed/c10d/socket.cpp
-@@ -477,11 +477,12 @@ SocketListenOp::SocketListenOp(std::uint16_t port, const SocketOptions& opts)
+@@ -531,11 +531,12 @@ SocketListenOp::SocketListenOp(std::uint16_t port, const SocketOptions& opts)
  
  std::unique_ptr<SocketImpl> SocketListenOp::run() {
    if (opts_->prefer_ipv6()) {
@@ -10,17 +10,16 @@ index 5013f25..3ef5af3 100644
 -    if (tryListen(AF_INET6)) {
 -      return std::move(socket_);
 -    }
--
 +    // C10D_DEBUG("The server socket will attempt to listen on an IPv6 address.");
 +    // if (tryListen(AF_INET6)) {
 +    //   return std::move(socket_);
 +    // }
-+
+ 
 +    // only ipv4 for torch_musa
      C10D_DEBUG("The server socket will attempt to listen on an IPv4 address.");
      if (tryListen(AF_INET)) {
        return std::move(socket_);
-@@ -717,20 +718,21 @@ SocketConnectOp::SocketConnectOp(
+@@ -770,20 +771,21 @@ SocketConnectOp::SocketConnectOp(
  
  std::unique_ptr<SocketImpl> SocketConnectOp::run() {
    if (opts_->prefer_ipv6()) {
@@ -28,30 +27,27 @@ index 5013f25..3ef5af3 100644
 -        "The client socket will attempt to connect to an IPv6 address of ({}, {}).",
 -        host_,
 -        port_);
--
--    if (tryConnect(AF_INET6)) {
--      return std::move(socket_);
--    }
--
--    C10D_DEBUG(
--        "The client socket will attempt to connect to an IPv4 address of ({}, {}).",
--        host_,
--        port_);
--
 +    // C10D_DEBUG(
 +    //     "The client socket will attempt to connect to an IPv6 address of ({}, {}).",
 +    //     host_,
 +    //     port_);
-+
+ 
+-    if (tryConnect(AF_INET6)) {
+-      return std::move(socket_);
+-    }
 +    // if (tryConnect(AF_INET6)) {
 +    //   return std::move(socket_);
 +    // }
-+
+ 
+-    C10D_DEBUG(
+-        "The client socket will attempt to connect to an IPv4 address of ({}, {}).",
+-        host_,
+-        port_);
 +    // C10D_DEBUG(
 +    //     "The client socket will attempt to connect to an IPv4 address of ({}, {}).",
 +    //     host_,
 +    //     port_);
-+
+ 
 +    // only ipv4 for torch_musa
      if (tryConnect(AF_INET)) {
        return std::move(socket_);

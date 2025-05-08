@@ -1,54 +1,14 @@
 diff --git a/aten/src/ATen/native/native_functions.yaml b/aten/src/ATen/native/native_functions.yaml
-index 35a1049..473ac3c 100644
+index c7533e4..65dc191 100644
 --- a/aten/src/ATen/native/native_functions.yaml
 +++ b/aten/src/ATen/native/native_functions.yaml
-@@ -15348,3 +15348,80 @@
+@@ -15699,3 +15699,78 @@
  # This op is ONLY used by pytorch/XLA in functionalization, and should never show up in vanilla eager mode or in any pytorch tracing contexts.
  - func: _propagate_xla_data(Tensor input, Tensor output) -> ()
    variants: function
 +
-+- func: _scaled_dot_product_attention_math_musa(Tensor query, Tensor key, Tensor value, Tensor? attn_mask=None, float dropout_p=0.0, bool is_causal=False, *, float? scale=None) -> (Tensor output, Tensor attn_weights, Tensor bwd_reserve)
-+  variants: function
-+  dispatch:
-+    CPU: _scaled_dot_product_attention_math_cpu_musa
-+  tags: nondeterministic_seeded
-+
-+- func: _scaled_dot_product_attention_math_musa_backward(Tensor grad_out, Tensor query, Tensor key, Tensor value, Tensor output, Tensor attn_weights, Tensor bwd_reserve, *, float? scale=None) -> (Tensor grad_query, Tensor grad_key, Tensor grad_value)
-+  variants: function
-+  dispatch:
-+    CPU: _scaled_dot_product_attention_math_cpu_musa_backward
-+  tags: nondeterministic_seeded
-+
-+- func: rms_norm(Tensor input, int[] normalized_shape, Tensor? weight=None, float? eps=None) -> Tensor
-+
-+- func: _scaled_dot_product_attention_flash_musa(Tensor query, Tensor key, Tensor value, Tensor? attn_mask=None, float dropout_p=0.0, bool is_causal=False, *, float? scale=None) -> (Tensor output, Tensor logsumexp, Tensor dropout_mask)
-+  variants: function
-+  dispatch:
-+    CPU: _scaled_dot_product_attention_flash_cpu_musa
-+  tags: nondeterministic_seeded
-+
-+- func: _scaled_dot_product_attention_flash_musa_backward(Tensor grad_out, Tensor query, Tensor key, Tensor value, Tensor output, Tensor logsumexp, Tensor dropout_mask, bool is_causal, Tensor? attn_mask=None, *, float? scale=None) -> (Tensor grad_query, Tensor grad_key, Tensor grad_value)
-+  variants: function
-+  dispatch:
-+    CPU: _scaled_dot_product_attention_flash_cpu_musa_backward
-+  tags: nondeterministic_seeded
-+
 +- func: gated_silu(Tensor input) -> Tensor
 +  variants: function
-+
-+- func: cross_entropy_loss_2d_choice(Tensor self, Tensor target, Tensor? weight=None, int reduction=Mean, int ignore_index=-100, float label_smoothing=0.0) -> int
-+  dispatch:
-+    CPU: cross_entropy_loss_2d_choice_cpu
-+
-+- func: _fused_cross_entropy_loss_2d_forward(Tensor self, Tensor target, Tensor? weight=None, int reduction=Mean, int ignore_index=-100, float label_smoothing=0.0) -> Tensor
-+  variants: function
-+  dispatch:
-+    CPU: _fused_cross_entropy_loss_2d_forward_cpu
-+
-+- func: _fused_cross_entropy_loss_2d_backward(Tensor grad, Tensor self, Tensor target, Tensor? weight=None, int reduction=Mean, int ignore_index=-100, float label_smoothing=0.0) -> Tensor
-+  variants: function
-+  dispatch:
-+    CPU: _fused_cross_entropy_loss_2d_backward_cpu
 +
 +- func: _fused_rmsnorm_forward(Tensor input, int[] normalized_shape, float eps, Tensor? weight=None) -> (Tensor output, Tensor invvar)
 +  variants: function
@@ -59,6 +19,30 @@ index 35a1049..473ac3c 100644
 +  variants: function
 +  dispatch:
 +    CPU: _fused_rmsnorm_backward
++
++- func: _scaled_dot_product_attention_math_musa(Tensor query, Tensor key, Tensor value, Tensor? attn_mask=None, float dropout_p=0.0, bool is_causal=False, *, float? scale=None) -> (Tensor output, Tensor attn_weights, Tensor dropout_mask)
++  variants: function
++  dispatch:
++    CPU: _scaled_dot_product_attention_math_cpu_musa
++  tags: nondeterministic_seeded
++
++- func: _scaled_dot_product_attention_math_musa_backward(Tensor grad_out, Tensor query, Tensor key, Tensor value, Tensor output, Tensor attn_weights, Tensor dropout_mask) -> (Tensor grad_query, Tensor grad_key, Tensor grad_value)
++  variants: function
++  dispatch:
++    CPU: _scaled_dot_product_attention_math_cpu_musa_backward
++  tags: nondeterministic_seeded
++
++- func: _scaled_dot_product_attention_flash_musa(Tensor query, Tensor key, Tensor value, Tensor? attn_mask=None, float dropout_p=0.0, bool is_causal=False, *, float? scale=None) -> (Tensor output, Tensor logsumexp, Tensor dropout_mask)
++  variants: function
++  dispatch:
++    CPU: _scaled_dot_product_attention_flash_cpu_musa
++  tags: nondeterministic_seeded
++
++- func: _scaled_dot_product_attention_flash_musa_backward(Tensor grad_out, Tensor query, Tensor key, Tensor value, Tensor output, Tensor logsumexp, Tensor dropout_mask, bool is_causal, Tensor? attn_mask=None) -> (Tensor grad_query, Tensor grad_key, Tensor grad_value)
++  variants: function
++  dispatch:
++    CPU: _scaled_dot_product_attention_flash_cpu_musa_backward
++  tags: nondeterministic_seeded
 +
 +- func: rope(Tensor input, Tensor freq_cis, bool rotary_interleaved, bool batch_first) -> Tensor
 +
@@ -83,3 +67,17 @@ index 35a1049..473ac3c 100644
 +  variants: function
 +  dispatch:
 +    CPU: _fused_swiglu_backward
++
++- func: cross_entropy_loss_2d_choice(Tensor self, Tensor target, Tensor? weight=None, int reduction=Mean, int ignore_index=-100, float label_smoothing=0.0) -> int
++  dispatch:
++    CPU: cross_entropy_loss_2d_choice_cpu
++
++- func: _fused_cross_entropy_loss_2d_forward(Tensor self, Tensor target, Tensor? weight=None, int reduction=Mean, int ignore_index=-100, float label_smoothing=0.0) -> Tensor
++  variants: function
++  dispatch:
++    CPU: _fused_cross_entropy_loss_2d_forward_cpu
++
++- func: _fused_cross_entropy_loss_2d_backward(Tensor grad, Tensor self, Tensor target, Tensor? weight=None, int reduction=Mean, int ignore_index=-100, float label_smoothing=0.0) -> Tensor
++  variants: function
++  dispatch:
++    CPU: _fused_cross_entropy_loss_2d_backward_cpu

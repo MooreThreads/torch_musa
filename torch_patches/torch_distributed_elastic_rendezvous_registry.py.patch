@@ -1,8 +1,8 @@
 diff --git a/torch/distributed/elastic/rendezvous/registry.py b/torch/distributed/elastic/rendezvous/registry.py
-index eaa5bcf..435b2fe 100644
+index 1a91d0a..3426379 100644
 --- a/torch/distributed/elastic/rendezvous/registry.py
 +++ b/torch/distributed/elastic/rendezvous/registry.py
-@@ -37,11 +37,20 @@ def _create_c10d_handler(params: RendezvousParameters) -> RendezvousHandler:
+@@ -42,11 +42,20 @@ def _create_c10d_handler(params: RendezvousParameters) -> RendezvousHandler:
  
      return create_handler(store, backend, params)
  

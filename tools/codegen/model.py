@@ -93,12 +93,10 @@ class FunctionExtraInfo:
 
     impl_kinds: Dict[DispatchKey, FunctionImplKind]
     torch_part_of_structured_group: bool
-    device_lazy_init: bool
 
     def __post_init__(self) -> None:
         assert isinstance(self.impl_kinds, dict) and len(self.impl_kinds) > 0
         assert isinstance(self.torch_part_of_structured_group, bool)
-        assert isinstance(self.device_lazy_init, bool)
 
     def native_function_namespace(self, dk: DispatchKey) -> str:
         assert is_musa_dispatch_key(dk) and dk in self.impl_kinds

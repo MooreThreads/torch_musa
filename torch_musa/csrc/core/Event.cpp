@@ -1,13 +1,15 @@
+#include "torch_musa/csrc/core/Event.h"
+
+#include <musa_runtime_api.h>
 #include <pybind11/pybind11.h>
+#include <structmember.h>
+
 #include <torch/csrc/THP.h>
 #include <torch/csrc/utils/pybind.h>
 #include <torch/csrc/utils/pycfunction_helpers.h>
 #include <torch/csrc/utils/python_arg_parser.h>
 
-#include <structmember.h>
-#include "musa_runtime_api.h"
 #include "torch_musa/csrc/core/Device.h"
-#include "torch_musa/csrc/core/Event.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 #include "torch_musa/csrc/core/Stream.h"
 
@@ -22,7 +24,6 @@ static PyObject* THMPEvent_pynew(
   unsigned char blocking = 0;
   unsigned char interprocess = 0;
 
-  // NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,modernize-avoid-c-arrays)
   constexpr const char* kwlist[] = {
       "enable_timing", "blocking", "interprocess", nullptr};
   if (!PyArg_ParseTupleAndKeywords(
@@ -86,7 +87,6 @@ static PyObject* THMPEvent_from_ipc_handle(
   }
   THMPEvent* self = (THMPEvent*)ptr.get();
 
-  // NOLINTNEXTLINE(cppcoreguidelines-init-variables)
   musaIpcEventHandle_t handle;
   std::memcpy(&handle, handle_string.c_str(), handle_string.size());
   new (&self->musa_event) at::musa::MUSAEvent(device.index(), &handle);
@@ -96,7 +96,10 @@ static PyObject* THMPEvent_from_ipc_handle(
 }
 
 static void THMPEvent_dealloc(THMPEvent* self) {
-  self->musa_event.~MUSAEvent();
+  {
+    pybind11::gil_scoped_release no_gil{};
+    self->musa_event.~MUSAEvent();
+  }
   Py_TYPE(self)->tp_free((PyObject*)self);
 }
 
@@ -108,7 +111,7 @@ static PyObject* THMPEvent_get_musa_event(THMPEvent* self, void* unused) {
 
 static PyObject* THMPEvent_get_device(THMPEvent* self, void* unused) {
   HANDLE_TH_ERRORS
-  at::optional<at::Device> device = self->musa_event.device();
+  std::optional<at::Device> device = self->musa_event.device();
   if (!device) {
     Py_RETURN_NONE;
   }
@@ -117,18 +120,20 @@ static PyObject* THMPEvent_get_device(THMPEvent* self, void* unused) {
 }
 
 static PyObject* THMPEvent_record(PyObject* _self, PyObject* _stream) {
-  HANDLE_TH_ERRORS
-  auto self = (THMPEvent*)_self;
-  auto stream = (THMPStream*)_stream;
-  self->musa_event.record(stream->musa_stream);
+  HANDLE_TH_ERRORS {
+    auto self = reinterpret_cast<THMPEvent*>(_self);
+    auto stream = reinterpret_cast<THMPStream*>(_stream);
+    pybind11::gil_scoped_release no_gil{};
+    self->musa_event.record(stream->musa_stream);
+  }
   Py_RETURN_NONE;
   END_HANDLE_TH_ERRORS
 }
 
 static PyObject* THMPEvent_wait(PyObject* _self, PyObject* _stream) {
   HANDLE_TH_ERRORS {
-    auto self = (THMPEvent*)_self;
-    auto stream = (THMPStream*)_stream;
+    auto self = reinterpret_cast<THMPEvent*>(_self);
+    auto stream = reinterpret_cast<THMPStream*>(_stream);
     pybind11::gil_scoped_release no_gil{};
     self->musa_event.block(stream->musa_stream);
   }
@@ -138,22 +143,22 @@ static PyObject* THMPEvent_wait(PyObject* _self, PyObject* _stream) {
 
 static PyObject* THMPEvent_query(PyObject* _self, PyObject* noargs) {
   HANDLE_TH_ERRORS
-  auto self = (THMPEvent*)_self;
+  auto self = reinterpret_cast<THMPEvent*>(_self);
   return PyBool_FromLong(self->musa_event.query());
   END_HANDLE_TH_ERRORS
 }
 
 static PyObject* THMPEvent_elapsed_time(PyObject* _self, PyObject* _other) {
   HANDLE_TH_ERRORS
-  auto self = (THMPEvent*)_self;
-  auto other = (THMPEvent*)_other;
+  auto self = reinterpret_cast<THMPEvent*>(_self);
+  auto other = reinterpret_cast<THMPEvent*>(_other);
   return PyFloat_FromDouble(self->musa_event.elapsed_time(other->musa_event));
   END_HANDLE_TH_ERRORS
 }
 
 static PyObject* THMPEvent_synchronize(PyObject* _self, PyObject* noargs) {
   HANDLE_TH_ERRORS {
-    auto self = (THMPEvent*)_self;
+    auto self = reinterpret_cast<THMPEvent*>(_self);
     pybind11::gil_scoped_release no_gil{};
     self->musa_event.synchronize();
   }
@@ -163,23 +168,18 @@ static PyObject* THMPEvent_synchronize(PyObject* _self, PyObject* noargs) {
 
 static PyObject* THMPEvent_ipc_handle(PyObject* _self, PyObject* noargs) {
   HANDLE_TH_ERRORS
-  auto self = (THMPEvent*)_self;
-  // NOLINTNEXTLINE(cppcoreguidelines-init-variables)
+  auto self = reinterpret_cast<THMPEvent*>(_self);
   musaIpcEventHandle_t handle;
   self->musa_event.ipc_handle(&handle);
   return PyBytes_FromStringAndSize((const char*)&handle, sizeof(handle));
   END_HANDLE_TH_ERRORS
 }
 
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,
-// cppcoreguidelines-avoid-non-const-global-variables, modernize-avoid-c-arrays)
 static struct PyGetSetDef THMPEvent_properties[] = {
     {"device", (getter)THMPEvent_get_device, nullptr, nullptr, nullptr},
     {"musa_event", (getter)THMPEvent_get_musa_event, nullptr, nullptr, nullptr},
     {nullptr}};
 
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,
-// cppcoreguidelines-avoid-non-const-global-variables, modernize-avoid-c-arrays)
 static PyMethodDef THMPEvent_methods[] = {
     {(char*)"from_ipc_handle",
      castPyCFunctionWithKeywords(THMPEvent_from_ipc_handle),

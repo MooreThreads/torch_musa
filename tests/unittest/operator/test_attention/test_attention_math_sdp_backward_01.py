@@ -81,8 +81,6 @@ def test_math_sdp_backward(case, dtype, func, mask_type):
     """
     Math SDP backward test.
     """
-    if case[-1] != case[-2]:  # gqa case, math doesn't support now.
-        pytest.skip(reason="Math SDP doesn't support GQA now.")
-    with torch.backends.cuda.sdp_kernel(enable_math=True, enable_flash=False):
+    with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.MATH):
         input_data = gen_input_data(case, mask_type, dtype)
         function(input_data, func, True)

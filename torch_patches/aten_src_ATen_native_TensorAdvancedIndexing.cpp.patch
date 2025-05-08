@@ -2,13 +2,12 @@ diff --git a/aten/src/ATen/native/TensorAdvancedIndexing.cpp b/aten/src/ATen/nat
 index 4ca54863da5..f9ad9e571cd 100644
 --- a/aten/src/ATen/native/TensorAdvancedIndexing.cpp
 +++ b/aten/src/ATen/native/TensorAdvancedIndexing.cpp
-@@ -589,7 +589,8 @@ AdvancedIndex::AdvancedIndex(const Tensor& src, TensorList indices_list)
+@@ -592,7 +592,7 @@ AdvancedIndex::AdvancedIndex(const Tensor& src, TensorList indices_list)
  
-   // For CUDA/MPS tensors, force all index tensors to have the same striding to
-   // simplify the CUDA/MPS kernel.
--  if (indices.size() >= 2 && (this->src.device().type() == kCUDA || this->src.device().type() == kMPS)) {
-+  if (indices.size() >= 2 && (this->src.device().type() == kCUDA || this->src.device().type() == kMPS
-+                              || this->src.device().type() == kPrivateUse1)) {
+   // For CUDA/MPS/XPU tensors, force all index tensors to have the same striding to
+   // simplify the CUDA/MPS/XPU kernel.
+-  if (indices.size() >= 2 && (this->src.device().type() == kCUDA || this->src.device().type() == kMPS || this->src.device().type() == kXPU)) {
++  if (indices.size() >= 2 && (this->src.device().type() == kCUDA || this->src.device().type() == kMPS || this->src.device().type() == kXPU || this->src.device().type() == kPrivateUse1)) {
      if (!all_strides_match(indices)) {
        for (auto & indice : indices) {
          indice = indice.contiguous();

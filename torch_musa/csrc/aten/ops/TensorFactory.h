@@ -73,6 +73,8 @@ Tensor ContiguousRef(
     Tensor& result,
     MemoryFormat memory_format = MemoryFormat::Contiguous);
 
+void resize_bytes_musa(StorageImpl* storage, size_t size_bytes);
+
 } // namespace musa
 } // namespace at
 

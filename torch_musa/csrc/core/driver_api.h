@@ -1,4 +1,6 @@
-#pragma once
+#ifndef TORCH_MUSA_CSRC_CORE_DRIVER_API_H_
+#define TORCH_MUSA_CSRC_CORE_DRIVER_API_H_
+
 #include <musa.h>
 
 #define C10_MUSA_DRIVER_CHECK(EXPR)                                        \
@@ -28,22 +30,24 @@
   _(muMemAddressFree)                  \
   _(muMemSetAccess)                    \
   _(muMemUnmap)                        \
-  _(muMemCreate)
+  _(muMemCreate)                       \
+  _(muMemGetAllocationGranularity)     \
+  _(muMemExportToShareableHandle)      \
+  _(muMemImportFromShareableHandle)
 #else
 #define C10_LIBMUSA_DRIVER_API_4000(_)
 #endif
 
-namespace c10 {
-namespace musa {
+namespace c10::musa {
 
 struct DriverAPI {
 #define CREATE_MEMBER(name) decltype(&name) name##_;
   C10_LIBMUSA_DRIVER_API(CREATE_MEMBER)
   C10_LIBMUSA_DRIVER_API_4000(CREATE_MEMBER)
-
 #undef CREATE_MEMBER
   static DriverAPI* get();
 };
 
-} // namespace musa
-} // namespace c10
+} // namespace c10::musa
+
+#endif // TORCH_MUSA_CSRC_CORE_DRIVER_API_H_

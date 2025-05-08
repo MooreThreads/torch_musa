@@ -16,7 +16,7 @@ TORCH_MUSA_HOME=$CUR_DIR
 PYTORCH_PATH=${PYTORCH_REPO_PATH:-$(realpath ${TORCH_MUSA_HOME}/../pytorch)}
 TORCH_PATCHES_DIR=${TORCH_MUSA_HOME}/torch_patches/
 KINETO_URL=${KINETO_URL:-https://github.com/MooreThreads/kineto.git}
-KINETO_TAG=v1.2.3
+KINETO_TAG=v2.0.0-pt25
 
 BUILD_WHEEL=0
 DEBUG_MODE=0
@@ -27,7 +27,7 @@ USE_KINETO=${USE_KINETO:-1}
 ONLY_PATCH=0
 CLEAN=0
 COMPILE_FP64=1
-PYTORCH_TAG=v2.2.0
+PYTORCH_TAG=v2.5.0
 PYTORCH_BUILD_VERSION="${PYTORCH_TAG:1}"
 PYTORCH_BUILD_NUMBER=0 # This is used for official torch distribution.
 USE_MKL=${USE_MKL:-1}
@@ -202,9 +202,8 @@ apply_torch_patches() {
 
 update_kineto_source() {
   pushd ${PYTORCH_PATH}
-  rm -rf ${PYTORCH_PATH}/third_party/kineto # rm original kineto since the urls don't match
   git submodule update --init --recursive --depth 1
-  rm -rf ${PYTORCH_PATH}/third_party/kineto # rm official kineto
+  rm -rf ${PYTORCH_PATH}/third_party/kineto
   popd
   echo -e "\033[34mUpdating KINETO_URL, might take a while...\033[0m"
   if [ -d /home/kineto ]; then
@@ -248,6 +247,9 @@ update_submodule() {
       echo  -e "\033[34mUpdating KINETO_URL, might take a while...\033[0m"
       git submodule update --init --recursive
       popd
+      if [ -d "/tmp/kineto" ]; then
+        rm -rf /tmp/kineto
+      fi
       mv ${PYTORCH_PATH}/third_party/kineto /tmp
       pushd ${PYTORCH_PATH}
       git submodule update --init --recursive --depth 1
@@ -288,7 +290,8 @@ build_pytorch() {
       USE_MKL=${USE_MKL} \
       USE_MKLDNN=${USE_MKL} \
       USE_MKLDNN_CBLAS=${USE_MKL} \
-      USE_KINETO=${USE_KINETO} python setup.py bdist_wheel
+      USE_KINETO=${USE_KINETO} \
+      BUILD_TEST=0 python setup.py bdist_wheel
     status=$?
     rm -rf torch.egg-info
     pip install dist/*.whl
@@ -301,7 +304,8 @@ build_pytorch() {
       USE_MKL=${USE_MKL} \
       USE_MKLDNN=${USE_MKL} \
       USE_MKLDNN_CBLAS=${USE_MKL} \
-      USE_KINETO=${USE_KINETO} python setup.py install
+      USE_KINETO=${USE_KINETO} \
+      BUILD_TEST=0 python setup.py install
     status=$?
   fi
   popd
@@ -318,7 +322,7 @@ clean_pytorch() {
 clean_torch_musa() {
   echo -e "\033[34mCleaning torch_musa...\033[0m"
   pushd ${TORCH_MUSA_HOME}
-  python setup.py clean
+  TORCH_DEVICE_BACKEND_AUTOLOAD=0 python setup.py clean
   rm -rf $CUR_DIR/build
   popd
 }
@@ -329,6 +333,7 @@ build_torch_musa() {
   pushd ${TORCH_MUSA_HOME}
   if [ $BUILD_WHEEL -eq 1 ]; then
     rm -rf dist build
+    TORCH_DEVICE_BACKEND_AUTOLOAD=0 \
     PYTORCH_REPO_PATH=${PYTORCH_PATH} \
       DEBUG=${DEBUG_MODE} \
       USE_ASAN=${ASAN_MODE} \
@@ -339,6 +344,7 @@ build_torch_musa() {
     rm -rf torch_musa.egg-info
     pip install dist/*.whl
   else
+    TORCH_DEVICE_BACKEND_AUTOLOAD=0 \
     PYTORCH_REPO_PATH=${PYTORCH_PATH} \
       DEBUG=${DEBUG_MODE} \
       USE_ASAN=${ASAN_MODE} \

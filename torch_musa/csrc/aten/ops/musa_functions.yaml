@@ -15,6 +15,7 @@
 - func: bitwise_left_shift_.Tensor
 - func: bitwise_left_shift.Tensor_out
 
+
 - func: softplus_backward
 - func: softplus_backward.grad_input
 
@@ -237,15 +238,15 @@
 - func: atanh_
 - func: atanh.out
 
-- func: _upsample_bilinear2d_aa
-- func: _upsample_bilinear2d_aa.out
-
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 #
 #                         UNSTRUCTURED FUNCTIONS
 #
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 
+- func: _fused_sdp_choice
+  dispatch:
+    PrivateUse1: _fused_sdp_choice_musa
 
 - func: _scaled_dot_product_attention_flash_musa
   dispatch:
@@ -262,7 +263,7 @@
 - func: _scaled_dot_product_attention_math_musa_backward
   dispatch:
     PrivateUse1: MuDNNMathSDPABwd
-    
+
 - func: _fused_rmsnorm_forward
   dispatch:
     PrivateUse1: FusedRMSNormForward
@@ -512,11 +513,9 @@
 - func: mish
   dispatch:
     PrivateUse1: Mish
-
 - func: mish_
   dispatch:
     PrivateUse1: Mish_
-
 - func: mish.out
   structured: false
   dispatch:
@@ -525,7 +524,6 @@
 - func: softplus
   dispatch:
     PrivateUse1: Softplus
-
 - func: softplus.out
   structured: false
   dispatch:
@@ -1108,6 +1106,14 @@
     PrivateUse1: CatOut
     QuantizedPrivateUse1: CatOutQuantizedMusa
 
+- func: _chunk_cat
+  dispatch:
+    PrivateUse1: _chunk_cat_cuda
+
+- func: _chunk_cat.out
+  dispatch:
+    PrivateUse1: _chunk_cat_out_cuda
+
 - func: convolution_overrideable
   dispatch:
     PrivateUse1: Convolution
@@ -1117,7 +1123,6 @@
     PrivateUse1: ConvolutionBwd
 
 - func: _copy_from
-  device_lazy_init: True
   dispatch:
     PrivateUse1: MUSACopyFrom
 
@@ -1126,28 +1131,24 @@
     PrivateUse1: BernoulliFloat
 
 - func: bernoulli_.Tensor
-  device_lazy_init: True
   device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: bernoulli_
 
 - func: bernoulli.out
-  device_lazy_init: True
   device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: bernoulli_out
 
 - func: normal_
-  device_lazy_init: True
   device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: normal_
 
 - func: uniform_
-  device_lazy_init: True
   device_check: ExactSame
   device_guard: True
   dispatch:
@@ -1684,21 +1685,18 @@
     PrivateUse1: MaxPool3dIndicesBwdOut
 
 - func: random_.from
-  device_lazy_init: True
   device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: random_
 
 - func: random_.to
-  device_lazy_init: True
   device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: random_
 
 - func: random_
-  device_lazy_init: True
   device_check: ExactSame
   device_guard: True
   dispatch:
@@ -2092,7 +2090,6 @@
     PrivateUse1: StftCenter
 
 - func: empty.memory_format
-  device_lazy_init: True
   dispatch:
     PrivateUse1: EmptyMUSA
     QuantizedPrivateUse1: EmptyUnknownQuantized
@@ -2452,14 +2449,6 @@
   dispatch:
     PrivateUse1, QuantizedPrivateUse1: unfold
 
-- func: is_pinned
-  dispatch:
-    PrivateUse1: IsPinnedMusa
-
-- func: _pin_memory
-  dispatch:
-    PrivateUse1: PinMemoryMusa
-
 - func: mode
   dispatch:
     PrivateUse1: Mode
@@ -2566,6 +2555,14 @@
   dispatch:
     PrivateUse1: RopeBackward
 
+- func: complex.out
+  dispatch:
+    PrivateUse1: complex_out
+
+- func: polar.out
+  dispatch:
+    PrivateUse1: polar_out
+
 - func: median
   device_guard: True
   dispatch:
@@ -2592,22 +2589,9 @@
   dispatch:
     PrivateUse1: _pdist_backward
 
-- func: cross_entropy_loss_2d_choice
-  dispatch:
-    PrivateUse1: CrossEntropyLoss2dChoice
-
-- func: _fused_cross_entropy_loss_2d_forward
-  dispatch:
-    PrivateUse1: FusedCrossEntropyLoss2dFwd
-
-- func: _fused_cross_entropy_loss_2d_backward
-  dispatch:
-    PrivateUse1: FusedCrossEntropyLoss2dBwd
-
 - func: _linalg_solve_ex
   dispatch:
     PrivateUse1: LinalgSolveEx
-
 - func: _linalg_solve_ex.result
   structured: false
   dispatch:
@@ -2621,3 +2605,14 @@
   dispatch:
     PrivateUse1: im2col_cuda
 
+- func: cross_entropy_loss_2d_choice
+  dispatch:
+    PrivateUse1: CrossEntropyLoss2dChoice
+
+- func: _fused_cross_entropy_loss_2d_forward
+  dispatch:
+    PrivateUse1: FusedCrossEntropyLoss2dFwd
+
+- func: _fused_cross_entropy_loss_2d_backward
+  dispatch:
+    PrivateUse1: FusedCrossEntropyLoss2dBwd

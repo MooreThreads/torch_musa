@@ -167,11 +167,11 @@ def _get_compute_device(
 
 
 def _apply_init_utils_patch():
-    torch.distributed.fsdp._init_utils._get_device_from_device_id = (
-        _get_device_from_device_id
-    )
+    #torch.distributed.fsdp._init_utils._get_device_from_device_id = (
+    #    _get_device_from_device_id
+    #)
     torch.distributed.fsdp._init_utils._materialize_meta_module = (
         _materialize_meta_module
     )
-    torch.distributed.fsdp._init_utils._get_compute_device = _get_compute_device
+    #torch.distributed.fsdp._init_utils._get_compute_device = _get_compute_device
     torch.distributed.fsdp._init_utils._init_device_handle = _init_device_handle

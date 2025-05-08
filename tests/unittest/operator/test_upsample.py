@@ -9,8 +9,6 @@ from torch_musa import testing
 
 all_support_types = [torch.float32]
 scale_factor = [2, 1]
-# TODO(@mt-ai): upsample bilinear with antialias=True would hang
-antialiases = [False]
 
 
 def function(input_data, dtype, func):
@@ -47,22 +45,20 @@ def function_fp16(input_data, dtype, func):
         {"input": torch.randn([4, 16, 32, 32])},
         {"input": torch.randn([4, 16, 32, 32]).to(memory_format=torch.channels_last)},
         {"input": torch.randn([4, 1, 32, 32]).to(memory_format=torch.channels_last)},
-        {"input": torch.randn([4, 16, 2, 2]).to(memory_format=torch.channels_last)},
-        {"input": torch.randn([0, 16, 2, 2]).to(memory_format=torch.channels_last)},
-        {"input": torch.randn([0, 16, 2, 2])},
+        {"input": torch.randn([4, 16, 1, 1]).to(memory_format=torch.channels_last)},
+        {"input": torch.randn([0, 16, 1, 1]).to(memory_format=torch.channels_last)},
+        {"input": torch.randn([0, 16, 1, 1])},
     ],
 )
 @pytest.mark.parametrize("dtype", all_support_types)
 @pytest.mark.parametrize("scale_factor", scale_factor)
 @pytest.mark.parametrize("align_corners", [False, True])
-@pytest.mark.parametrize("antialias", antialiases)
-def test_upsample_bilinear(input_data, dtype, scale_factor, align_corners, antialias):
+def test_upsample_bilinear(input_data, dtype, scale_factor, align_corners):
     bilinear = partial(
         torch.nn.functional.interpolate,
         mode="bilinear",
         scale_factor=scale_factor,
         align_corners=align_corners,
-        antialias=antialias,
     )
     function(input_data, dtype, bilinear)
 
@@ -103,7 +99,7 @@ def test_upsample_nearest2d(input_data, dtype, scale_factor):
     ],
 )
 @pytest.mark.parametrize("scale_factor", scale_factor)
-@pytest.mark.parametrize("mode", ["nearest-exact"])
+@pytest.mark.parametrize("mode", ['nearest-exact'])
 def test_upsample_nearest2d_bwd(input_data, scale_factor, mode):
     model = torch.nn.Upsample(scale_factor=scale_factor, mode=mode)
     model.train(True)
@@ -260,7 +256,7 @@ def test_upsample_nearest3d(input_data, dtype, scale_factor):
     ],
 )
 @pytest.mark.parametrize("scale_factor", scale_factor)
-@pytest.mark.parametrize("mode", ["nearest", "nearest-exact"])
+@pytest.mark.parametrize("mode", ['nearest', 'nearest-exact'])
 def test_upsample_nearest3d_bwd(input_data, scale_factor, mode):
     model = torch.nn.Upsample(scale_factor=scale_factor, mode=mode)
     model.train(True)
@@ -306,11 +302,11 @@ def test_upsample_nearest1d(input_data, dtype, scale_factor):
         torch.randn([2, 1, 1]),
         torch.randn([10, 8, 6]),
         torch.randn([4, 9, 3]),
-        torch.randn([4, 25, 16]),
+        torch.randn([4, 25, 16])
     ],
 )
 @pytest.mark.parametrize("scale_factor", scale_factor)
-@pytest.mark.parametrize("mode", ["nearest-exact"])
+@pytest.mark.parametrize("mode", ['nearest-exact'])
 def test_upsample_nearest1d_bwd(input_data, scale_factor, mode):
     model = torch.nn.Upsample(scale_factor=scale_factor, mode=mode)
     model.train(True)

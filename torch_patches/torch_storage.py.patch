@@ -2,12 +2,12 @@ diff --git a/torch/storage.py b/torch/storage.py
 index f65c080..97059d6 100644
 --- a/torch/storage.py
 +++ b/torch/storage.py
-@@ -470,6 +470,8 @@ def _reset_warn_typed_storage_removal():
-     _warn_typed_storage_removal.__dict__['has_warned'] = False
+@@ -642,6 +642,8 @@ def _reset_warn_typed_storage_removal():
+ 
  
  def _get_device_from_module(module: str):
 +    if torch._C._get_privateuse1_backend_name() in module:
 +        return torch._C._get_privateuse1_backend_name()
-     if module.split(".")[-1] in ["cuda", torch._C._get_privateuse1_backend_name()]:
-         return module.split(".")[-1]
-     else:
+     last_part = module.rsplit(".", 1)[-1]
+     if last_part in ["cuda", torch._C._get_privateuse1_backend_name(), "hpu"]:
+         return last_part

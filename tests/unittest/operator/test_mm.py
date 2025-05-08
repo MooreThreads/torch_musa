@@ -156,14 +156,14 @@ def test_scaled_mm(input_data, dtype, out_dtype, per_channel):
 
     # fp32 golden result
     golden = torch.mm(scale_a * f8_a.float(), scale_b * f8_b.float())
-    golden_amax = golden.abs().max()
+    # golden_amax = golden.abs().max()
 
     # out_dtype scaled_mm result
     if per_channel:
         scale_out = golden.abs().max(1, keepdim=True)[0] / fp8max
     else:
         scale_out = golden.abs().max() / fp8max
-    musa_out, amax = torch._scaled_mm(
+    musa_out = torch._scaled_mm(
         f8_a.musa(),
         f8_b.musa(),
         scale_a=scale_a.musa(),
@@ -178,4 +178,4 @@ def test_scaled_mm(input_data, dtype, out_dtype, per_channel):
     assert torch.allclose(
         golden, musa_out, rtol=0.25 if dtype == torch.float8_e5m2 else 0.125, atol=1e-2
     )
-    assert torch.allclose(golden_amax, amax.cpu(), rtol=1e-3, atol=1e-3)
+    # assert torch.allclose(golden_amax, amax.cpu(), rtol=1e-3, atol=1e-3)

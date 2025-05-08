@@ -84,7 +84,6 @@ def test_flash_sdp(case, dtype, func, mask_type, is_causal):
     """
     Flash SDP test.
     """
-    with torch.backends.cuda.sdp_kernel(enable_math=False, enable_flash=True):
-        input_data = gen_input_data(case, mask_type, dtype)
-        input_data["is_causal"] = is_causal
+    with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.FLASH_ATTENTION):
+        input_data = gen_input_data(case, mask_type, dtype, is_causal)
         function(input_data, func)

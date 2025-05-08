@@ -1,15 +1,16 @@
+#include "torch_musa/csrc/core/Stream.h"
+
 #include <pybind11/pybind11.h>
 #include <structmember.h>
+
+#include <musa_runtime_api.h>
+
 #include <torch/csrc/Device.h>
 #include <torch/csrc/THP.h>
 #include <torch/csrc/utils/pybind.h>
 #include <torch/csrc/utils/python_numbers.h>
 
-#include "musa_runtime_api.h"
-#include "torch_musa/csrc/core/Stream.h"
-
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+C10_DIAGNOSTIC_PUSH_AND_IGNORED_IF_DEFINED("-Wmissing-field-initializers")
 
 PyObject* THMPStreamClass = nullptr;
 
@@ -27,13 +28,12 @@ static PyObject* THMPStream_pynew(
   int64_t device_type = 0;
   uint64_t stream_ptr = 0;
 
-  // NOLINTNEXTLINE(modernize-avoid-c-arrays,cppcoreguidelines-avoid-c-arrays)
-  constexpr char* kwlist[] = {
-      (char*)"priority",
-      (char*)"stream_id",
-      (char*)"device_index",
-      (char*)"device_type",
-      (char*)"stream_ptr",
+  constexpr const char* kwlist[] = {
+      "priority",
+      "stream_id",
+      "device_index",
+      "device_type",
+      "stream_ptr",
       nullptr};
   if (!PyArg_ParseTupleAndKeywords(
           args,
@@ -60,12 +60,13 @@ static PyObject* THMPStream_pynew(
 
   c10::musa::MUSAStream stream = (stream_id || device_index || device_type)
       ? c10::musa::MUSAStream::unpack3(
-            stream_id, device_index, static_cast<c10::DeviceType>(device_type))
+            stream_id,
+            static_cast<c10::DeviceIndex>(device_index),
+            static_cast<c10::DeviceType>(device_type))
       : stream_ptr
       ? c10::musa::getStreamFromExternal(
             reinterpret_cast<musaStream_t>(stream_ptr), current_device)
-      : c10::musa::getStreamFromPool(
-            /* isHighPriority */ priority < 0 ? true : false);
+      : c10::musa::getStreamFromPool(priority);
 
   THMPStream* self = (THMPStream*)ptr.get();
   self->stream_id = static_cast<int64_t>(stream.id());
@@ -80,12 +81,6 @@ static PyObject* THMPStream_pynew(
 static void THMPStream_dealloc(THMPStream* self) {
   self->musa_stream.~MUSAStream();
   Py_TYPE(self)->tp_free((PyObject*)self);
-}
-
-static PyObject* THMPStream_get_device(THMPStream* self, void* unused) {
-  HANDLE_TH_ERRORS
-  return THPDevice_New(self->musa_stream.device());
-  END_HANDLE_TH_ERRORS
 }
 
 static PyObject* THMPStream_get_musa_stream(THMPStream* self, void* unused) {
@@ -104,9 +99,8 @@ static PyObject* THMPStream_priority_range(
     PyObject* _unused,
     PyObject* noargs) {
   HANDLE_TH_ERRORS
-  auto least_greatest_priority = c10::musa::MUSAStream::priority_range();
-  int least_priority = std::get<0>(least_greatest_priority);
-  int greatest_priority = std::get<1>(least_greatest_priority);
+  auto [least_priority, greatest_priority] =
+      c10::musa::MUSAStream::priority_range();
   return Py_BuildValue("(ii)", least_priority, greatest_priority);
   END_HANDLE_TH_ERRORS
 }
@@ -136,14 +130,8 @@ static PyObject* THMPStream_eq(PyObject* _self, PyObject* _other) {
   END_HANDLE_TH_ERRORS
 }
 
-// NOLINTNEXTLINE(modernize-avoid-c-arrays,
-// cppcoreguidelines-avoid-non-const-global-variables,
-// cppcoreguidelines-avoid-c-arrays)
 static struct PyMemberDef THMPStream_members[] = {{nullptr}};
 
-// NOLINTNEXTLINE(modernize-avoid-c-arrays,
-// cppcoreguidelines-avoid-non-const-global-variables,
-// cppcoreguidelines-avoid-c-arrays)
 static struct PyGetSetDef THMPStream_properties[] = {
     {"musa_stream",
      (getter)THMPStream_get_musa_stream,
@@ -153,17 +141,14 @@ static struct PyGetSetDef THMPStream_properties[] = {
     {"priority", (getter)THMPStream_get_priority, nullptr, nullptr, nullptr},
     {nullptr}};
 
-// NOLINTNEXTLINE(modernize-avoid-c-arrays,
-// cppcoreguidelines-avoid-non-const-global-variables,
-// cppcoreguidelines-avoid-c-arrays)
 static PyMethodDef THMPStream_methods[] = {
-    {(char*)"query", THMPStream_query, METH_NOARGS, nullptr},
-    {(char*)"synchronize", THMPStream_synchronize, METH_NOARGS, nullptr},
-    {(char*)"priority_range",
+    {"query", THMPStream_query, METH_NOARGS, nullptr},
+    {"synchronize", THMPStream_synchronize, METH_NOARGS, nullptr},
+    {"priority_range",
      THMPStream_priority_range,
      METH_STATIC | METH_NOARGS,
      nullptr},
-    {(char*)"__eq__", THMPStream_eq, METH_O, nullptr},
+    {"__eq__", THMPStream_eq, METH_O, nullptr},
     {nullptr}};
 
 PyTypeObject THMPStreamType = {
@@ -223,4 +208,5 @@ void THMPStream_init(PyObject* module) {
 
   c10::musa::init_mem_get_func(module);
 }
-#pragma GCC diagnostic pop
+
+C10_DIAGNOSTIC_POP()

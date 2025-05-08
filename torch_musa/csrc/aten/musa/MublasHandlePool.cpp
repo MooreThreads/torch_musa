@@ -55,7 +55,7 @@ using MuBlasPoolType = DeviceThreadHandlePool<
 // TODO(MTAI):END
 
 mublasHandle_t getCurrentMUSABlasHandle() {
-  int device = 0;
+  DeviceIndex device = 0;
   AT_MUSA_CHECK(at::musa::GetDevice(&device));
 
   // Use a leaky singleton for the pool following standard practice around
@@ -90,7 +90,7 @@ mublasHandle_t getCurrentMUSABlasHandle() {
   //   MUBLAS_MATH_MODE_TP32_TENSOR));
   // }
 
-  TORCH_MUSABLAS_CHECK(mublasSetMathMode(handle, MUBLAS_MATH_MODE_DEFAULT));
+  TORCH_MUSABLAS_CHECK(mublasSetMathMode(handle, MUBLAS_DEFAULT_MATH));
   return handle;
 }
 

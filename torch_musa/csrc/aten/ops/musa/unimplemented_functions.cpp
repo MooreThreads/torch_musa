@@ -2,8 +2,6 @@
 
 #include <musa_runtime_api.h>
 
-#include "torch_musa/csrc/aten/ops/musa/unimplemented_functions.h"
-
 namespace c10 {
 namespace musa {
 
@@ -15,21 +13,20 @@ musaThreadExchangeStreamCaptureMode(enum musaStreamCaptureMode* mode) {
   return musaErrorNotSupported;
 }
 
-__host__ musaError_t musaGraphDebugDotPrint(
-    musaGraph_t graph,
-    const char* path,
-    unsigned int flags) {
-  C10_THROW_ERROR(
-      NotImplementedError, "musaGraphDebugDotPrint is not supported now!");
-  return musaErrorNotSupported;
-}
-
 __host__ musaError_t musaStreamGetCaptureInfo(
     musaStream_t stream,
     enum musaStreamCaptureStatus* captureStatus_out,
     unsigned long long* id_out) {
   C10_THROW_ERROR(
       NotImplementedError, "musaStreamGetCaptureInfo is not supported now!");
+  return musaErrorNotSupported;
+}
+
+__host__ musaError_t musaStreamIsCapturing(
+    musaStream_t stream,
+    enum musaStreamCaptureStatus* pCaptureStatus) {
+  C10_THROW_ERROR(
+      NotImplementedError, "musaStreamIsCapturing is not supported now!");
   return musaErrorNotSupported;
 }
 

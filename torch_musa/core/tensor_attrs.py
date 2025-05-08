@@ -10,11 +10,6 @@ import torch
 import torch_musa
 
 
-def _type(self, *args, **kwargs):
-    """Get the data type of a musa tensor"""
-    return torch_musa._MUSAC._type(self, *args, **kwargs)
-
-
 def _musa(self, *args, **kwargs):
     """Returns a copy of this object in MUSA memory"""
     return torch_musa._MUSAC._musa(self, *args, **kwargs)
@@ -49,7 +44,6 @@ def _is_musa(self):
 
 def set_torch_attributes():
     """Set tensor attributes for torch musa."""
-    torch.Tensor.type = _type
     torch.Tensor.is_musa = _is_musa
     torch.Tensor.musa = _musa
     # store original method
