@@ -13,6 +13,59 @@ from torch_musa.testing import (
     BooleanComparator,
 )
 
+
+reduce_dim_configs = [
+    # input_shape, dim
+    [
+        (6,),
+        0,
+    ],
+    [
+        (2, 4, 6, 128),
+        0,
+    ],
+    [
+        (2, 4, 6, 128),
+        -1,
+    ],
+    [
+        (0, 4, 6, 128),
+        0,
+    ],
+    [
+        (2, 0, 6, 128),
+        0,
+    ],
+]
+
+reduce_dims_configs = [
+    # input_shape, dims
+    [
+        (2, 4, 6, 128),
+        (0,1),
+    ],
+    [
+        (2, 4, 6, 128),
+        (-1, 0),
+    ],
+    [
+        (2, 4, 6, 128),
+        (-1, 0),
+    ],
+    [
+        (2, 4, 6, 128),
+        (0, 2),
+    ],
+    [
+        (0, 4, 6, 128),
+        (1, 2),
+    ],
+    [
+        (2, 0, 6, 128),
+        (1, 3),
+    ],
+]
+
 input_data = [
     {"input": torch.randn([1, 10]), "dim": 1},
     {"input": torch.randn([1, 10, 5]), "dim": [0, 1]},
@@ -394,6 +447,85 @@ def test_any(input_data, dtype):
     function(input_data, dtype, torch.any)
 
 
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("config", reduce_dim_configs)
+@pytest.mark.parametrize("dtype", [torch.bool, torch.int8, torch.uint8, torch.float32])
+def test_any_out(config, dtype):
+    input_shape, _ = config[0], config[1]
+    inp = torch.randint(0, 10, input_shape).to(dtype)
+    golden = torch.any(inp)
+
+    out_musa = torch.empty_like(golden, device="musa")
+    result = torch.any(inp.musa(), out=out_musa)
+
+    assert golden.dtype == result.dtype
+    assert golden.shape == result.shape
+    assert result.data_ptr() == out_musa.data_ptr()
+    assert torch.allclose(golden, result.cpu())
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("config", reduce_dim_configs)
+@pytest.mark.parametrize("dtype", [torch.bool, torch.int8, torch.uint8, torch.float32])
+def test_any_dim(config, dtype):
+    input_shape, dim = config[0], config[1]
+    inp = torch.randint(0, 10, input_shape).to(dtype)
+    golden = torch.any(inp, dim=dim)
+    result = torch.any(inp.musa(), dim=dim)
+
+    assert golden.dtype == result.dtype
+    assert golden.shape == result.shape
+    assert torch.allclose(golden, result.cpu())
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("config", reduce_dim_configs)
+@pytest.mark.parametrize("dtype", [torch.bool, torch.int8, torch.uint8, torch.float32])
+def test_any_dim_out(config, dtype):
+    input_shape, dim = config[0], config[1]
+    inp = torch.randint(0, 10, input_shape).to(dtype)
+    golden = torch.any(inp, dim=dim)
+
+    out_musa = torch.empty_like(golden, device="musa")
+    result = torch.any(inp.musa(), dim=dim, out=out_musa)
+
+    assert golden.dtype == result.dtype
+    assert golden.shape == result.shape
+    assert result.data_ptr() == out_musa.data_ptr()
+    assert torch.allclose(golden, result.cpu())
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("config", reduce_dims_configs)
+@pytest.mark.parametrize("dtype", [torch.bool, torch.int8, torch.uint8, torch.float32])
+def test_any_dims(config, dtype):
+    input_shape, dims = config[0], config[1]
+    inp = torch.randint(0, 10, input_shape).to(dtype)
+    golden = torch.any(inp, dim=dims)
+    result = torch.any(inp.musa(), dim=dims)
+
+    assert golden.dtype == result.dtype
+    assert golden.shape == result.shape
+    assert torch.allclose(golden, result.cpu())
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("config", reduce_dims_configs)
+@pytest.mark.parametrize("dtype", [torch.bool, torch.int8, torch.uint8, torch.float32])
+def test_any_dims_out(config, dtype):
+    input_shape, dim = config[0], config[1]
+    inp = torch.randint(0, 10, input_shape).to(dtype)
+    golden = torch.any(inp, dim=dim)
+
+    out_musa = torch.empty_like(golden, device="musa")
+    result = torch.any(inp.musa(), dim=dim, out=out_musa)
+
+    assert golden.dtype == result.dtype
+    assert golden.shape == result.shape
+    assert result.data_ptr() == out_musa.data_ptr()
+    assert torch.allclose(golden, result.cpu())
+
+
 reduce_with_indices_dtype = [
     torch.float32,
     torch.float16,
@@ -447,6 +579,85 @@ def test_min(input_data, dtype):
 @pytest.mark.parametrize("dtype", [torch.bool])
 def test_all(input_data, dtype):
     function(input_data, dtype, torch.all)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("config", reduce_dim_configs)
+@pytest.mark.parametrize("dtype", [torch.bool, torch.int8, torch.uint8, torch.float32])
+def test_all_out(config, dtype):
+    input_shape, _ = config[0], config[1]
+    inp = torch.randint(0, 10, input_shape).to(dtype)
+    golden = torch.all(inp)
+
+    out_musa = torch.empty_like(golden, device="musa")
+    result = torch.all(inp.musa(), out=out_musa)
+
+    assert golden.dtype == result.dtype
+    assert golden.shape == result.shape
+    assert result.data_ptr() == out_musa.data_ptr()
+    assert torch.allclose(golden, result.cpu())
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("config", reduce_dim_configs)
+@pytest.mark.parametrize("dtype", [torch.bool, torch.int8, torch.uint8, torch.float32])
+def test_all_dim(config, dtype):
+    input_shape, dim = config[0], config[1]
+    inp = torch.randint(0, 10, input_shape).to(dtype)
+    golden = torch.all(inp, dim=dim)
+    result = torch.all(inp.musa(), dim=dim)
+
+    assert golden.dtype == result.dtype
+    assert golden.shape == result.shape
+    assert torch.allclose(golden, result.cpu())
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("config", reduce_dims_configs)
+@pytest.mark.parametrize("dtype", [torch.bool, torch.int8, torch.uint8, torch.float32])
+def test_all_dims(config, dtype):
+    input_shape, dims = config[0], config[1]
+    inp = torch.randint(0, 10, input_shape).to(dtype)
+    golden = torch.all(inp, dim=dims)
+    result = torch.all(inp.musa(), dim=dims)
+
+    assert golden.dtype == result.dtype
+    assert golden.shape == result.shape
+    assert torch.allclose(golden, result.cpu())
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("config", reduce_dim_configs)
+@pytest.mark.parametrize("dtype", [torch.bool, torch.int8, torch.uint8, torch.float32])
+def test_all_dim_out(config, dtype):
+    input_shape, dim = config[0], config[1]
+    inp = torch.randint(0, 10, input_shape).to(dtype)
+    golden = torch.all(inp, dim=dim)
+
+    out_musa = torch.empty_like(golden, device="musa")
+    result = torch.all(inp.musa(), dim=dim, out=out_musa)
+
+    assert golden.dtype == result.dtype
+    assert golden.shape == result.shape
+    assert result.data_ptr() == out_musa.data_ptr()
+    assert torch.allclose(golden, result.cpu())
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("config", reduce_dims_configs)
+@pytest.mark.parametrize("dtype", [torch.bool, torch.int8, torch.uint8, torch.float32])
+def test_all_dims_out(config, dtype):
+    input_shape, dim = config[0], config[1]
+    inp = torch.randint(0, 10, input_shape).to(dtype)
+    golden = torch.all(inp, dim=dim)
+
+    out_musa = torch.empty_like(golden, device="musa")
+    result = torch.all(inp.musa(), dim=dim, out=out_musa)
+
+    assert golden.dtype == result.dtype
+    assert golden.shape == result.shape
+    assert result.data_ptr() == out_musa.data_ptr()
+    assert torch.allclose(golden, result.cpu())
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)

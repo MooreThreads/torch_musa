@@ -1,7 +1,7 @@
 #define TORCH_ASSERT_ONLY_METHOD_OPERATORS
 
 #include <ATen/musa/detail/KernelUtils.h>
-#include <ATen/musa/MUSA_PORT_ApplyUtils.muh>
+#include <ATen/musa/MUSAApplyUtils.muh>
 #include <ATen/musa/cub.muh>
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
 

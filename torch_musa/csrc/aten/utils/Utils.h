@@ -201,7 +201,7 @@ inline bool IsAllowedDtype(
   _TORCH_MUSA_CHECK_DTYPES(_st, func_name, cond1 || cond2)
 
 template <typename Args1, typename... ArgsN>
-Device OutDevice(Args1&& first, ArgsN&&... others) {
+inline Device OutDevice(Args1&& first, ArgsN&&... others) {
   auto dev = first.device();
   if (!dev.is_cpu()) {
     return dev;

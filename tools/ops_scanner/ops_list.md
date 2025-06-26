@@ -1,4 +1,4 @@
-Total amount of ops: 768
+Total amount of ops: 773
 - `__lshift__.Scalar`
 - `__lshift__.Tensor`
 - `__rshift__.Scalar`
@@ -161,7 +161,10 @@ Total amount of ops: 768
 - `addmv.out`
 - `addmv_`
 - `addmv`
+- `all.all_out`
 - `all.dim`
+- `all.dims_out`
+- `all.dims`
 - `all.out`
 - `all`
 - `amax.out`
@@ -169,6 +172,8 @@ Total amount of ops: 768
 - `aminmax.out`
 - `any.all_out`
 - `any.dim`
+- `any.dims_out`
+- `any.dims`
 - `any.out`
 - `any`
 - `arange.start_out`

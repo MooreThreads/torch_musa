@@ -6,7 +6,7 @@
 #include <ATen/native/Resize.h>
 #include <torch/library.h>
 #include <ATen/musa/Atomic.muh>
-#include <ATen/musa/MUSA_PORT_ApplyUtils.muh>
+#include <ATen/musa/MUSAApplyUtils.muh>
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
 
 #ifndef AT_PER_OPERATOR_HEADERS

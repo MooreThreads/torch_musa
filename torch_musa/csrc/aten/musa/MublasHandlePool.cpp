@@ -90,7 +90,7 @@ mublasHandle_t getCurrentMUSABlasHandle() {
   //   MUBLAS_MATH_MODE_TP32_TENSOR));
   // }
 
-  TORCH_MUSABLAS_CHECK(mublasSetMathMode(handle, MUBLAS_MATH_MODE_DEFAULT));
+  TORCH_MUSABLAS_CHECK(mublasSetMathMode(handle, MUBLAS_DEFAULT_MATH));
   return handle;
 }
 

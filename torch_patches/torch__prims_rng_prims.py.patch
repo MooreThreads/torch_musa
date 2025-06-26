@@ -14,7 +14,7 @@ index 1a14904..69f43bd 100644
 @@ -165,6 +167,10 @@ def register_run_and_save_rng_state_op():
          autograd_not_implemented(run_and_save_rng_state, deferred_error=True)
      )
- 
+
 +    @run_and_save_rng_state.py_impl(DispatchKey.PrivateUse1)
 +    def impl_musa(op, *args, **kwargs):
 +        return torch.musa.get_rng_state(), op(*args, **kwargs)
@@ -34,7 +34,7 @@ index 1a14904..69f43bd 100644
 @@ -210,6 +216,14 @@ def register_run_with_rng_state_op():
          autograd_not_implemented(run_with_rng_state, deferred_error=True)
      )
- 
+
 +    @run_with_rng_state.py_impl(DispatchKey.PrivateUse1)
 +    def impl_musa(rng_state, op, *args, **kwargs):
 +        current_state = torch.musa.get_rng_state()

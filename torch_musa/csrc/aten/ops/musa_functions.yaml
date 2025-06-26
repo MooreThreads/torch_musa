@@ -1828,6 +1828,14 @@
   dispatch:
     PrivateUse1: AnyDimOut
 
+- func: any.dims
+  dispatch:
+    PrivateUse1: AnyDims
+- func: any.dims_out
+  structured: false
+  dispatch:
+    PrivateUse1: AnyDimsOut
+
 - func: max
   dispatch:
     PrivateUse1: MaxAll
@@ -1873,6 +1881,10 @@
 - func: all
   dispatch:
     PrivateUse1: All
+- func: all.all_out
+  structured: false
+  dispatch:
+    PrivateUse1: AllOut
 
 - func: all.dim
   dispatch:
@@ -1881,6 +1893,14 @@
   structured: false
   dispatch:
     PrivateUse1: AllDimOut
+
+- func: all.dims
+  dispatch:
+    PrivateUse1: AllDims
+- func: all.dims_out
+  structured: false
+  dispatch:
+    PrivateUse1: AllDimsOut
 
 - func: var_mean.correction
   device_check: ExactSame

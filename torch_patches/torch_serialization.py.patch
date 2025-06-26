@@ -1,0 +1,13 @@
+diff --git a/torch/serialization.py b/torch/serialization.py
+index 9d02efd..1c57062 100644
+--- a/torch/serialization.py
++++ b/torch/serialization.py
+@@ -868,7 +868,7 @@ def load(
+     map_location: MAP_LOCATION = None,
+     pickle_module: Any = None,
+     *,
+-    weights_only: bool = False,
++    weights_only: bool = True,
+     mmap: Optional[bool] = None,
+     **pickle_load_args: Any
+ ) -> Any:

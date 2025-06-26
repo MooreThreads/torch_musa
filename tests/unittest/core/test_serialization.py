@@ -42,14 +42,14 @@ def test_module_save_load():
     with tempfile.TemporaryDirectory() as temp_dir:
         model_path = os.path.join(temp_dir, "model.pt")
         torch.save(model, model_path)
-        reloaded_model = torch.load(model_path)
+        reloaded_model = torch.load(model_path, weights_only=False)
         # Ensure model loaded on MUSA
         assert (
             next(reloaded_model.parameters()).device == next(model.parameters()).device
         )
 
         # Ensure model loaded on CPU
-        reloaded_model = torch.load(model_path, map_location="cpu")
+        reloaded_model = torch.load(model_path, map_location="cpu", weights_only=False)
         assert next(reloaded_model.parameters()).device == torch.device("cpu")
 
         # Ensure raise readable error when model loaded to CUDA
@@ -60,4 +60,6 @@ def test_module_save_load():
             r"machine, please use torch.load with map_location=torch.device\('musa'\) or "
             r"map_location=torch.device\('cpu'\) to map your storages to the MUSA or CPU.",
         ):
-            reloaded_model = torch.load(model_path, map_location="cuda")
+            reloaded_model = torch.load(
+                model_path, map_location="cuda", weights_only=False
+            )

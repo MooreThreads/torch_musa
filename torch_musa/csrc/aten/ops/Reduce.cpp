@@ -256,6 +256,68 @@ Tensor Reduction(
   return output;
 }
 
+template <int identity>
+void AnyAllDimImpl(
+    const Tensor& self,
+    c10::OptionalArrayRef<int64_t> dim,
+    Tensor& out,
+    ::musa::dnn::Reduce::Mode m) {
+  c10::musa::MUSAGuard device_guard(self.device());
+  if (self.numel() == 0) {
+    out.fill_(identity);
+    return;
+  }
+  auto compute_dtype = self.element_size() ==
+          sizeof(c10::impl::ScalarTypeToCPPType<ScalarType::Bool>::type)
+      ? ScalarType::Bool
+      : self.scalar_type();
+
+  /** out.scalar_type() is either Bool or Uint8
+   * And due to the constraints of current muDNN, we follow the rules below:
+   *
+   * If out.scalar_type() == Bool
+   *     1. self.element_size() == sizeof(bool), no copy overhead
+   *     2. otherwise, need memory allocation and copy in
+   *
+   * If out.scalar_type() == Uint8
+   *     1. self.scalar_type() == Uint8, no copy overhead
+   *     2. otherwise, need memory allocation and copy in
+   *
+   */
+  bool need_extra_copy = compute_dtype != out.scalar_type();
+  IntArrayRef dims = dim.has_value() ? *dim : IntArrayRef{};
+  DimVector dims_vec(dims);
+  maybe_wrap_dims(dims_vec, self.dim());
+
+  Tensor output = out;
+  if (need_extra_copy) {
+    output = at::empty_like(out, self.options().dtype(compute_dtype));
+  }
+
+  auto self_contig = Contiguous(self);
+  auto out_mt = CreateMUTensor(output);
+  auto in_mt = CreateMUTensor(self_contig);
+  muHandle& h = GetMudnnHandle();
+
+  SetMUTensorDType(compute_dtype, in_mt);
+
+  ::musa::dnn::Reduce r;
+  CHECK_MUDNN_STATUS(r.SetMode(m), "SetMode");
+  // That input is scalar, but dim = [0] is allowed in PyTorch, in which case
+  // we need pass an empty 'dim' paramter to Reduce in muDNN.
+  if (self.dim() == 0 && self.numel() == 1) {
+    CHECK_MUDNN_STATUS(r.SetDim({}), "SetDim");
+  } else {
+    std::vector<int> dim_int(dims_vec.begin(), dims_vec.end());
+    CHECK_MUDNN_STATUS(r.SetDim(dim_int.size(), dim_int.data()), "SetDim");
+  }
+  CHECK_MUDNN_STATUS(r.Run(h, out_mt, in_mt, InternalMemAlloc), "Run");
+
+  if (need_extra_copy) {
+    out.copy_(output);
+  }
+}
+
 Tensor Mean(const Tensor& self, c10::optional<ScalarType> dtype) {
   return Reduction(
       self, IntArrayRef{}, false, dtype, ::musa::dnn::Reduce::Mode::MEAN);
@@ -621,24 +683,16 @@ void CumminHelper(
 }
 
 Tensor Any(const Tensor& self) {
-  Tensor out = Reduction(
-      self,
-      IntArrayRef{},
-      false,
-      self.scalar_type(),
-      ::musa::dnn::Reduce::Mode::OR);
-  if (self.scalar_type() != ScalarType::Bool) {
-    out = out.to(ScalarType::Bool);
-  }
-  return out;
+  auto shape = at::meta::get_reduction_shape(self, IntArrayRef{}, false);
+  auto output_dtype = self.scalar_type() == ScalarType::Byte ? ScalarType::Byte
+                                                             : ScalarType::Bool;
+  Tensor output = at::empty(shape, self.options().dtype(output_dtype));
+  AnyOut(self, output);
+  return output;
 }
 
 Tensor& AnyOut(const Tensor& self, Tensor& out) {
-  IntArrayRef dims = {};
-  ReduceCall(out, self, dims, ::musa::dnn::Reduce::Mode::OR);
-  if (self.scalar_type() != ScalarType::Bool) {
-    out = out.to(ScalarType::Bool);
-  }
+  AnyAllDimImpl<0>(self, IntArrayRef{}, out, ::musa::dnn::Reduce::Mode::OR);
   return out;
 }
 
@@ -653,27 +707,51 @@ std::string concatenate(
 
 Tensor AnyDim(const Tensor& self, int64_t dim, bool keepdim) {
   IntArrayRef dims(dim);
-  Tensor out = Reduction(
-      self, {dim}, keepdim, self.scalar_type(), ::musa::dnn::Reduce::Mode::OR);
-  // Note: Current mudnn version does not support float32 input to bool output
-  // directly, so a type conversion is performed to convert the output to Bool.
-  if (self.scalar_type() != ScalarType::Bool) {
-    out = out.to(ScalarType::Bool);
-  }
-  return out;
+  DimVector dims_vec(dims);
+  maybe_wrap_dims(dims_vec, self.dim());
+  auto shape = at::meta::get_reduction_shape(self, dims_vec, keepdim);
+
+  auto output_dtype = self.scalar_type() == ScalarType::Byte ? ScalarType::Byte
+                                                             : ScalarType::Bool;
+  Tensor output = at::empty(shape, self.options().dtype(output_dtype));
+  AnyDimOut(self, dim, keepdim, output);
+
+  return output;
 }
 
 Tensor& AnyDimOut(const Tensor& self, int64_t dim, bool keepdim, Tensor& out) {
   UNUSED(keepdim);
-  TORCH_CHECK(
-      self.scalar_type() == ScalarType::Bool || self.item<int>() == 0 ||
-          self.item<int>() == 1,
-      concatenate(
-          "Now only support bool type or 0/1 value, but got ",
-          self.scalar_type(),
-          self));
-  IntArrayRef dims(dim);
-  ReduceCall(out, self, dims, ::musa::dnn::Reduce::Mode::OR);
+  c10::OptionalArrayRef<int64_t> dims(dim);
+  AnyAllDimImpl<0>(self, dims, out, ::musa::dnn::Reduce::Mode::OR);
+  return out;
+}
+
+Tensor AnyDims(
+    const Tensor& self,
+    c10::OptionalArrayRef<int64_t> dims,
+    bool keepdim) {
+  c10::IntArrayRef dim_ = dims.value();
+  DimVector dims_vec(dim_);
+  maybe_wrap_dims(dims_vec, self.dim());
+
+  auto shape = at::meta::get_reduction_shape(self, dims_vec, keepdim);
+  auto out_dtype = self.scalar_type() == ScalarType::Byte ? ScalarType::Byte
+                                                          : ScalarType::Bool;
+
+  Tensor out = at::empty(shape, self.options().dtype(out_dtype));
+  AnyDimsOut(self, dims_vec, keepdim, out);
+
+  return out;
+}
+
+Tensor& AnyDimsOut(
+    const Tensor& self,
+    c10::OptionalArrayRef<int64_t> dims,
+    bool keepdim,
+    Tensor& out) {
+  UNUSED(keepdim);
+  c10::OptionalArrayRef<int64_t> dims_(dims);
+  AnyAllDimImpl<0>(self, dims_, out, ::musa::dnn::Reduce::Mode::OR);
   return out;
 }
 
@@ -838,68 +916,69 @@ std::tuple<Tensor&, Tensor&> MaxNamesDimMax(
 }
 
 Tensor All(const Tensor& self) {
-  Tensor output = Reduction(
-      self,
-      IntArrayRef{},
-      false,
-      self.scalar_type(),
-      ::musa::dnn::Reduce::Mode::AND);
-  if (self.scalar_type() != ScalarType::Bool) {
-    output = output.to(ScalarType::Bool);
-  }
+  auto shape = at::meta::get_reduction_shape(self, IntArrayRef{}, false);
+  auto output_dtype = self.scalar_type() == ScalarType::Byte ? ScalarType::Byte
+                                                             : ScalarType::Bool;
+  Tensor output = at::empty(shape, self.options().dtype(output_dtype));
+  AllOut(self, output);
   return output;
 }
 
+Tensor& AllOut(const Tensor& self, Tensor& out) {
+  AnyAllDimImpl<1>(self, IntArrayRef{}, out, ::musa::dnn::Reduce::Mode::AND);
+  return out;
+}
+
 Tensor AllDim(const Tensor& self, int64_t dim, bool keepdim) {
-  TORCH_CHECK(
-      self.scalar_type() == ScalarType::Bool ||
-          self.scalar_type() == ScalarType::Byte || self.item<int>() == 0 ||
-          self.item<int>() == 1,
-      concatenate(
-          "Now only support bool/uint8 type or 0/1 value, but got ",
-          self.scalar_type(),
-          self));
   IntArrayRef dims(dim);
-  if (self.scalar_type() == ScalarType::Byte) {
-    Tensor self_;
-    self_ = self.to(ScalarType::Bool);
-    return Reduction(
-        self_,
-        {dim},
-        keepdim,
-        self.scalar_type(),
-        ::musa::dnn::Reduce::Mode::AND);
-  } else {
-    return Reduction(
-        self,
-        {dim},
-        keepdim,
-        self.scalar_type(),
-        ::musa::dnn::Reduce::Mode::AND);
-  }
+  DimVector dims_vec(dims);
+  maybe_wrap_dims(dims_vec, self.dim());
+  auto shape = at::meta::get_reduction_shape(self, dims_vec, keepdim);
+
+  auto output_dtype = self.scalar_type() == ScalarType::Byte ? ScalarType::Byte
+                                                             : ScalarType::Bool;
+  Tensor output = at::empty(shape, self.options().dtype(output_dtype));
+  AllDimOut(self, dim, keepdim, output);
+
+  return output;
 }
 
 Tensor& AllDimOut(const Tensor& self, int64_t dim, bool keepdim, Tensor& out) {
   UNUSED(keepdim);
-  TORCH_CHECK(
-      self.scalar_type() == ScalarType::Bool ||
-          self.scalar_type() == ScalarType::Byte || self.item<int>() == 0 ||
-          self.item<int>() == 1,
-      concatenate(
-          "Now only support bool/uint8 type or 0/1 value, but got ",
-          self.scalar_type(),
-          self));
-  IntArrayRef dims(dim);
-  if (self.scalar_type() == ScalarType::Byte) {
-    Tensor self_;
-    self_ = self.to(ScalarType::Bool);
-    ReduceCall(out, self_, dims, ::musa::dnn::Reduce::Mode::AND);
-  } else {
-    ReduceCall(out, self, dims, ::musa::dnn::Reduce::Mode::AND);
-  }
+  c10::OptionalArrayRef<int64_t> dims(dim);
+  AnyAllDimImpl<1>(self, dims, out, ::musa::dnn::Reduce::Mode::AND);
+  return out;
+}
+
+Tensor AllDims(
+    const Tensor& self,
+    c10::OptionalArrayRef<int64_t> dims,
+    bool keepdim) {
+  c10::IntArrayRef dim_ = dims.value();
+  DimVector dims_vec(dim_);
+  maybe_wrap_dims(dims_vec, self.dim());
+
+  auto shape = at::meta::get_reduction_shape(self, dims_vec, keepdim);
+  auto out_dtype = self.scalar_type() == ScalarType::Byte ? ScalarType::Byte
+                                                          : ScalarType::Bool;
+
+  Tensor out = at::empty(shape, self.options().dtype(out_dtype));
+  AllDimsOut(self, dims_vec, keepdim, out);
 
   return out;
 }
+
+Tensor& AllDimsOut(
+    const Tensor& self,
+    c10::OptionalArrayRef<int64_t> dims,
+    bool keepdim,
+    Tensor& out) {
+  UNUSED(keepdim);
+  c10::OptionalArrayRef<int64_t> dims_(dims);
+  AnyAllDimImpl<1>(self, dims_, out, ::musa::dnn::Reduce::Mode::AND);
+  return out;
+}
+
 void ArgMinOrMaxOutTemplate(
     const Tensor& self,
     c10::optional<int64_t> dim,
