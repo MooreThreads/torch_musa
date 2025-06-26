@@ -1,7 +1,7 @@
 #ifndef TORCH_MUSA_CSRC_CORE_MUSAGRAPHSC10UTILS_H_
 #define TORCH_MUSA_CSRC_CORE_MUSAGRAPHSC10UTILS_H_
 
-#include <c10/musa/MUSA_PORT_Macros.h>
+#include <c10/musa/MUSAMacros.h>
 #include "torch_musa/csrc/core/MUSAStream.h"
 
 #include <musa_runtime_api.h>
@@ -55,12 +55,9 @@ inline std::ostream& operator<<(std::ostream& os, CaptureStatus status) {
 // Use this version where you're sure a MUSA context exists already.
 inline CaptureStatus currentStreamCaptureStatusMayInitCtx() {
   musaStreamCaptureStatus is_capturing;
-#if defined(REAL_MUSA_VERSION) && (REAL_MUSA_VERSION > 4001)
   C10_MUSA_CHECK(
       musaStreamIsCapturing(c10::musa::getCurrentMUSAStream(), &is_capturing));
   return CaptureStatus(is_capturing);
-#endif
-  return CaptureStatus::None;
 }
 
 } // namespace musa

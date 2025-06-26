@@ -397,11 +397,6 @@ std::tuple<Tensor&, Tensor&> ScaledMatmulOut(
     TORCH_CHECK(false, "scaled_gemm is only supported for MUSA_ARCH >= 310");
   }
 
-  // Check sizes
-  auto dprops = at::musa::getCurrentDeviceProperties();
-  TORCH_CHECK(
-      dprops->major >= 3,
-      "torch._scaled_mm on MUSA is only supported on devices with compute capability >= 3.1)");
   TORCH_CHECK(mat1.dim() == 2, "mat1 must be a matrix");
   TORCH_CHECK(mat2.dim() == 2, "mat2 must be a matrix");
   TORCH_CHECK(
@@ -485,6 +480,7 @@ std::tuple<Tensor&, Tensor&> ScaledMatmulOut(
       {scale_b_, "scale_b", 6},
       {scale_result_, "scale_result", 7}};
   checkAllSameGPU(__func__, targs);
+  const c10::musa::MUSAGuard device_guard(mat1.device());
 
   IntArrayRef mat1_sizes = mat1.sizes();
   IntArrayRef mat2_sizes = mat2.sizes();

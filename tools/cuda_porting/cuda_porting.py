@@ -132,7 +132,7 @@ def port_cuda(
         "C10_CUDA_BUILD_MAIN_LIB": "C10_MUSA_BUILD_MAUN_LIB",
         "C10_CUDA_BUILD_SHARED_LIBS": "C10_MUSA_BUILD_SHARED_LIBS",
         "OptionalCUDAStreamGuard": "OptionalMUSAStreamGuard",
-        "<ATen/CUDAFunctions\.h>": "<ATen/MUSA_PORT_Functions.h>",
+        "<ATen/CUDAFunctions\.h>": "<ATen/MUSAFunctions.h>",
         "<c10/musa/CUDADeviceAssertionHost\.h>": '"torch_musa/csrc/core/MUSADeviceAssertionHost.h"',
         "<c10/musa/CUDAFunctions\.h>": '"torch_musa/csrc/core/MUSAFunctions.h"',
         "<c10/musa/MUSAStream\.h>": '"torch_musa/csrc/core/MUSAStream.h"',

@@ -4,6 +4,8 @@
 #include <torch/csrc/Export.h>
 #include <string>
 
+#include <c10/musa/MUSAMacros.h>
+
 namespace torch::musa {
 
 // C++-only versions of these, for python use

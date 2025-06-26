@@ -1,8 +1,6 @@
 #pragma once
 
-#include <c10/core/Allocator.h>
-#include <c10/core/StorageImpl.h>
-#include <c10/musa/MUSA_PORT_Macros.h>
+#include <c10/musa/MUSAMacros.h>
 #include <c10/util/ApproximateClock.h>
 #include <c10/util/Registry.h>
 

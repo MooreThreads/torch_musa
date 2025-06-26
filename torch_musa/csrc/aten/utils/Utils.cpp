@@ -140,11 +140,13 @@ void SetMudnnQuantizationInfo(
     muTensor& self,
     double scales,
     int64_t zero_points) {
+  TORCH_CHECK(
+      0 == zero_points,
+      "torch_musa only supports symmetric quantization",
+      "which requires zero_point == 0, got: ",
+      zero_points);
   float scales_ = static_cast<float>(scales);
-  unsigned int zero_points_ = static_cast<unsigned int>(zero_points);
-  CHECK_MUDNN_STATUS(
-      self.SetQuantizationInfo(1, &scales_, &zero_points_),
-      "SetQuantizationInfo");
+  CHECK_MUDNN_STATUS(self.SetQuantizationInfo(scales_), "SetQuantizationInfo");
 }
 
 muTensor CreateMUTensorByCompressDim(const Tensor& t) {

@@ -1,6 +1,6 @@
 #pragma once
 
-#include <c10/musa/MUSA_PORT_Macros.h>
+#include <c10/musa/MUSAMacros.h>
 
 #include <memory>
 #include <mutex>

@@ -183,7 +183,7 @@ def transform_file(
     ):
         musa_file_name = (
             file_name.replace(".cu", ".mu")
-            .replace("CUDA", "MUSA_PORT_")
+            .replace("CUDA", "MUSA")
             .replace("cuda", "musa")
         )
         musa_file_path = path.replace(file_name, musa_file_name)

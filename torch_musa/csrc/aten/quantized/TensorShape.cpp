@@ -206,7 +206,6 @@ Tensor CatQuantizedMusaImpl(
       zero_point);
 
   float scale_m = static_cast<float>(scale);
-  unsigned int zero_point_m = static_cast<unsigned int>(zero_point);
   auto dtype = qx0.scalar_type();
 
   // rt_tensors holds contiguous cat candidates
@@ -253,7 +252,7 @@ Tensor CatQuantizedMusaImpl(
       output_shape,
       at::device(at::kPrivateUse1).dtype(dtype),
       scale,
-      zero_point,
+      /*zero_point=*/0,
       qx0.suggest_memory_format());
   at::musa::muTensor out_;
   if (is_nhwc) {
@@ -271,8 +270,7 @@ Tensor CatQuantizedMusaImpl(
   }
 
   CHECK_MUDNN_STATUS(
-      out_.SetQuantizationInfo(1, &scale_m, &zero_point_m),
-      "Set quantization info");
+      out_.SetQuantizationInfo(scale_m), "Set quantization info");
 
   // run mudnn op
   at::musa::muHandle& h = at::GetMudnnHandle();

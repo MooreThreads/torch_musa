@@ -47,7 +47,7 @@ master_doc = "index"
 
 # General information about the project.
 project = "摩尔线程Torch_MUSA开发者手册"
-copyright_str = "5025, MooreThreads"
+copyright_str = "2024, MooreThreads"
 author = ""
 
 # The version info for the project you're documenting, acts as replacement for
@@ -55,7 +55,7 @@ author = ""
 # built documents.
 #
 # The short X.Y version.
-version = "2.0.0"
+version = "1.3.0"
 # The full version, including alpha/beta/rc tags.
 release = version
 curfnpre = "MooreThreads-Torch_MUSA-Developer-Guide-CN-v"
@@ -262,7 +262,7 @@ latex_elements = {
 \\fancyhead{}
 \\fancyhead[LE,RO]{\\textsl{\\rightmark}}
 \\fancyhead[LO,RE]{\\textsl{\\leftmark}}
-\\lfoot{Copyright © 2025 MooreThreads Corporation.}
+\\lfoot{Copyright © 2023 MooreThreads Corporation.}
 \\rfoot{\\thepage}
 \\renewcommand{\\headrulewidth}{0.4pt}
 \\renewcommand{\\footrulewidth}{0.4pt}
@@ -274,7 +274,7 @@ latex_elements = {
 % left head 还可以内嵌图片，图片可以是 pdf，png，jpeg 等
 % \\lhead{\\includegraphics[height=4pt]{cn_tm.pdf}}
 \\lhead{\\large\\textcolor[rgb]{0.9882,0.4039,0.1020}{MooreThreads®}}
-\\lfoot{Copyright © 2025 MooreThreads Corporation.}
+\\lfoot{Copyright © 2023 MooreThreads Corporation.}
 \\rfoot{\\thepage}
 \\renewcommand{\\headrulewidth}{0.4pt}
 \\renewcommand{\\footrulewidth}{0.4pt}
