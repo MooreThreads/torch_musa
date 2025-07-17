@@ -45,6 +45,20 @@ void ReciprocalImpl(MusaTensorIterator& iter, const std::string& op_name) {
   UnaryAlphaCall(iter, alpha, UNARY_MODE::POW, op_name);
 }
 
+void ErfMeta(
+    MusaTensorIterator& iter,
+    const Tensor& out,
+    const Tensor& inp) {
+  InitUnaryIterator(iter, out, inp);
+  TensorIteratorConfig config;
+  SetUpUnaryFloatConfig(config);
+  iter.build(config);
+}
+
+void ErfImpl(MusaTensorIterator& iter, const std::string& op_name) {
+  UnaryCall(iter, UNARY_MODE::ERF, op_name);
+}
+
 #define GEN_IMPL(TPL, FUNC, META, IMPL) \
   TPL void FUNC(                        \
       MusaTensorIterator& iter,         \
@@ -59,6 +73,7 @@ void ReciprocalImpl(MusaTensorIterator& iter, const std::string& op_name) {
   }
 
 GEN_IMPL(, UnaryReciprocal, ReciprocalMeta, ReciprocalImpl)
+GEN_IMPL(, UnaryErf, ErfMeta, ErfImpl)
 
 #undef GEN_IMPL
 
@@ -84,6 +99,7 @@ GEN_IMPL(, UnaryReciprocal, ReciprocalMeta, ReciprocalImpl)
   }
 
 GEN_FUNCTION(Reciprocal, UnaryReciprocal)
+GEN_FUNCTION(Erf, UnaryErf)
 
 #undef GEN_FUNCTION
 

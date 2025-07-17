@@ -1,10 +1,10 @@
 diff --git a/torch/csrc/distributed/c10d/Work.cpp b/torch/csrc/distributed/c10d/Work.cpp
-index 66c35b1..17d4e4d 100644
+index 8beb8f2..25abf1e 100644
 --- a/torch/csrc/distributed/c10d/Work.cpp
 +++ b/torch/csrc/distributed/c10d/Work.cpp
 @@ -11,7 +11,8 @@ Work::Work(
      const char* profilingTitle,
-     const c10::optional<std::vector<at::Tensor>>& inputTensors)
+     const std::optional<std::vector<at::Tensor>>& inputTensors)
      : rank_(rank), opType_(opType) {
 -  if (profilingTitle != nullptr) {
 +  bool enable_mt_timer_cpu_events = (getenv("MT_TIMER_CPU_EVENTS") != nullptr);

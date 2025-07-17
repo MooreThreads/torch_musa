@@ -1,3 +1,49 @@
+def Pipeline(String DockerImg, String DockerRunArgs, String GpuType) {
+    docker.image("${DockerImg}").inside("${DockerRunArgs}") {
+        gitlabCommitStatus(name: "01-${GpuType}-lint check", state: "running") {
+            // add safe directory
+            sh 'git config --global --add safe.directory \"*\"'
+            // lint check
+            sh '/opt/conda/condabin/conda run -n py310 --no-capture-output /bin/bash tools/lint/pylint.sh'
+            sh '/opt/conda/condabin/conda run -n py310 --no-capture-output /bin/bash tools/lint/git-clang-format.sh --rev origin/main'
+        }
+        gitlabCommitStatus(name: "02-${GpuType}-env prepare", state: "running") {
+            // update musa sdk
+            sh 'pip uninstall torch torch_musa -y'
+            // sh '/bin/bash --login docker/common/release/update_release_all.sh'
+            sh 'pip install -r requirements_ci.txt -i https://pypi.tuna.tsinghua.edu.cn/simple'
+            sh 'wget -O /tmp/flamegraph.pl https://oss.mthreads.com/mt-ai-data/integration-test/flamegraph.pl && chmod 755 /tmp/flamegraph.pl'
+        }
+        gitlabCommitStatus(name: "03-${GpuType}-build torch", state: "running") {
+            // build
+            sh '/bin/bash --login -c "KINETO_URL=https://sh-code.mthreads.com/ai/kineto.git conda run -n py310 --no-capture-output /bin/bash build.sh -c"'
+        }
+        parallel (
+            UNITTEST: {
+                gitlabCommitStatus(name: "04-${GpuType}-basic unit tests", state: "running") {
+                    // unit test
+                    sh "export MUSA_VISIBLE_DEVICES=0,1"
+                    sh "GPU_TYPE=${GpuType} FLAMEGRAPH_PL_SCRIPT=/tmp/flamegraph.pl /bin/bash --login scripts/run_unittest.sh"
+                }
+            },
+            FSDP: {
+                gitlabCommitStatus(name: "04-${GpuType}-fsdp unit tests", state: "running") {
+                    // unit test
+                    sh "export MUSA_VISIBLE_DEVICES=2,3"
+                    sh "GPU_TYPE=${GpuType} /bin/bash --login scripts/run_fsdp.sh"
+                }
+            },
+            INTEGRATION: {
+                gitlabCommitStatus(name: "05-${GpuType}-integration tests", state: "running") {
+                    // integration test
+                    sh "export MUSA_VISIBLE_DEVICES=4,5"
+                    sh "MUSA_VISIBLE_DEVICES=4,5 GPU_TYPE=${GpuType} /bin/bash --login scripts/run_integration_test.sh"
+                }
+            }
+        )
+    }
+}
+
 pipeline {
   agent none
 
@@ -6,12 +52,13 @@ pipeline {
   }
 
   environment {
-    S3000IMG = 'sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py310:rc3.1.0-v1.3.2-qy1'
-    S4000IMG = 'sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py310:dev4.0.0-v1.3.2-qy2'
+    S4000IMG = 'sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py310:rc4.0.0-v2.0.0-pt25-qy2'
+    S5000IMG = 'sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py310:rc4.0.0-v2.0.0-pt25-ph1'
     DOCKER_RUN_ARGS = '--network=host ' +
       '--user root ' +
       '--privileged ' +
       '--shm-size 20G ' +
+      '--pid=host ' +
       '-e TARGET_DEVICE=musa ' +
       '-e PYTORCH_REPO_PATH=/home/pytorch ' +
       '-e MTHREADS_VISIBLE_DEVICES=all ' +
@@ -22,75 +69,28 @@ pipeline {
 
   stages {
     stage('Run task in parallel') {
+      failFast true
       parallel {
-        stage('S3000') {
+        stage('S4000') {
           agent {
-            label 's3000'
+            label 'te-s4000'
           }
           steps {
-            script {
-              docker.image("${S3000IMG}").inside("${DOCKER_RUN_ARGS}") {
-                gitlabCommitStatus(name: '01-s3000-lint check', state: 'running') {
-                  // add safe directory
-                  sh 'git config --global --add safe.directory \"*\"'
-                  // lint check
-                  sh '/opt/conda/condabin/conda run -n py310 --no-capture-output /bin/bash tools/lint/pylint.sh'
-                  sh '/opt/conda/condabin/conda run -n py310 --no-capture-output /bin/bash tools/lint/git-clang-format.sh --rev origin/main'
-                }
-                gitlabCommitStatus(name: '02-s3000-env prepare', state: 'running') {
-                  // update musa sdk
-                  sh 'pip uninstall torch torch_musa -y'
-                  // sh '/bin/bash --login docker/common/release/update_release_all.sh' // we don't install dev4.0.0 on QY1
-                }
-                gitlabCommitStatus(name: '03-s3000-build torch', state: 'running') {
-                  // build
-                  sh '/bin/bash --login -c "KINETO_URL=https://sh-code.mthreads.com/ai/kineto.git conda run -n py310 --no-capture-output /bin/bash build.sh -c"'
-                }
-                gitlabCommitStatus(name: '04-s3000-unit tests', state: 'running') {
-                  // unit test
-                  sh 'GPU_TYPE=S3000 /bin/bash --login scripts/run_unittest.sh'
-                }
-                gitlabCommitStatus(name: '05-s3000-integration tests', state: 'running') {
-                  // integration test
-                  sh 'pip install transformers==4.49.0 datasets'
-                  sh 'GPU_TYPE=S3000 /bin/bash --login scripts/run_integration_test.sh'
-                }
+            timeout(time: 200, unit: 'MINUTES') {
+              script {
+                Pipeline("${S4000IMG}", "${DOCKER_RUN_ARGS}", "S4000")
               }
             }
           }
         }
-        stage('S4000') {
+        stage('S5000') {
           agent {
-            label 's4000'
+            label 's5000'
           }
           steps {
-            script {
-              docker.image("${S4000IMG}").inside("${DOCKER_RUN_ARGS}") {
-                gitlabCommitStatus(name: '01-s4000-lint check', state: 'running') {
-                  // add safe directory
-                  sh 'git config --global --add safe.directory \"*\"'
-                  // lint check
-                  sh '/opt/conda/condabin/conda run -n py310 --no-capture-output /bin/bash tools/lint/pylint.sh'
-                  sh '/opt/conda/condabin/conda run -n py310 --no-capture-output /bin/bash tools/lint/git-clang-format.sh --rev origin/main'
-                }
-                gitlabCommitStatus(name: '02-s4000-env prepare', state: 'running') {
-                  // update musa sdk
-                  sh 'pip uninstall torch torch_musa -y'
-                  sh '/bin/bash --login docker/common/release/update_release_all.sh'
-                }
-                gitlabCommitStatus(name: '03-s4000-build torch', state: 'running') {
-                  // build
-                  sh '/bin/bash --login -c "KINETO_URL=https://sh-code.mthreads.com/ai/kineto.git conda run -n py310 --no-capture-output /bin/bash build.sh -c"'
-                }
-                gitlabCommitStatus(name: '04-s4000-unit tests', state: 'running') {
-                  // unit test
-                  sh 'GPU_TYPE=S4000 /bin/bash --login scripts/run_unittest.sh'
-                }
-                gitlabCommitStatus(name: '05-s4000-integration tests', state: 'running') {
-                  // integration test
-                  sh 'pip install transformers==4.49.0 datasets'
-                  sh 'GPU_TYPE=S4000 /bin/bash --login scripts/run_integration_test.sh'
-                }
+            timeout(time: 200, unit: 'MINUTES') {
+              script {
+                Pipeline("${S5000IMG}", "${DOCKER_RUN_ARGS}", "S5000")
               }
             }
           }

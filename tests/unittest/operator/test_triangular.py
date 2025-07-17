@@ -15,6 +15,7 @@ input_data = [
     {"input": torch.rand(5, 0), "diagonal": -1},
     {"input": torch.rand(5, 3, 1), "diagonal": 0},
     {"input": torch.rand(5, 3, 3), "diagonal": 1},
+    {"input": torch.rand(3, 5, 5), "diagonal": -1},
     {"input": torch.rand(3, 4097, 1, 2), "diagonal": 1},
     {"input": torch.rand(50, 4098, 3, 2), "diagonal": 1},
     {
@@ -167,3 +168,43 @@ def test_tril_out(input_data, data_type):
     assert testing.DefaultComparator()(cpu_result, musa_result.cpu())
     assert cpu_result.shape == musa_result.shape
     assert cpu_result.dtype == musa_result.dtype
+
+
+# Supported parameters for torch.tril_indices and torch.triu_indices op
+rect_shapes = [(3, 3), (4, 5), (5, 4)]
+offsets = [-2, 0, 2]
+dtypes = [torch.int32, torch.int64]
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("func_name", ["tril_indices", "triu_indices"])
+@pytest.mark.parametrize("rows,cols", rect_shapes)
+@pytest.mark.parametrize("offset", offsets)
+@pytest.mark.parametrize("dtype", dtypes)
+def test_tri_indices_rectangular(func_name, rows, cols, offset, dtype):
+    func = getattr(torch, func_name)
+    # Rectangular matrix case (row, col)
+    cpu_kwargs = {
+        "row": rows,
+        "col": cols,
+        "offset": offset,
+        "dtype": dtype,
+        "device": "cpu",
+    }
+    cpu_out = func(**cpu_kwargs)
+
+    musa_kwargs = {
+        "row": rows,
+        "col": cols,
+        "offset": offset,
+        "dtype": dtype,
+        "device": "musa",
+    }
+    musa_out = func(**musa_kwargs).cpu()
+
+    test = testing.OpTest(
+        func=func,
+        input_args=musa_kwargs,
+        comparators=testing.DefaultComparator(abs_diff=0),
+    )
+    test.compare_res(cpu_out, musa_out)

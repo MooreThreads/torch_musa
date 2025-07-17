@@ -13,13 +13,31 @@
 namespace at {
 namespace musa {
 
+using PoolingMode = ::musa::dnn::Pooling::Mode;
+
+Tensor& AdaptiveAvgPool3DOutMUSA(
+    const Tensor& input,
+    IntArrayRef output_size,
+    Tensor& output);
+
+Tensor AdaptiveAvgPool3DMUSA(const Tensor& input, IntArrayRef output_size);
+
+Tensor& AdaptiveAvgPool3DBackwardOutMUSA(
+    const Tensor& grad_output,
+    const Tensor& input,
+    Tensor& grad_input);
+
+Tensor AdaptiveAvgPool3DBackwardMUSA(
+    const Tensor& grad_output,
+    const Tensor& input);
+
 struct PoolParams {
   // [T, H, W] for 3d and [H, W] for 2d
   int k[3];
   int d[3];
   int pad[3];
   int dil[3];
-  ::musa::dnn::Pooling::Mode mode;
+  PoolingMode mode;
   c10::optional<int64_t> divisor_override;
 };
 
@@ -148,7 +166,7 @@ void AdaptiveAvgPool2dInternal(
 
 Tensor AdaptiveAvgPool2d(const Tensor& input, IntArrayRef output_size) {
   PoolParams params;
-  params.mode = ::musa::dnn::Pooling::Mode::ADAPTIVE_AVGPOOL;
+  params.mode = PoolingMode::ADAPTIVE_AVGPOOL;
   Tensor output;
   AdaptiveAvgPool2dInternal(input, params, output, output_size);
   return output;
@@ -159,7 +177,7 @@ Tensor& AdaptiveAvgPool2dOut(
     IntArrayRef output_size,
     Tensor& output) {
   PoolParams params;
-  params.mode = ::musa::dnn::Pooling::Mode::ADAPTIVE_AVGPOOL;
+  params.mode = PoolingMode::ADAPTIVE_AVGPOOL;
   AdaptiveAvgPool2dCheck(input, output_size);
   TORCH_CHECK(
       input.dtype() == output.dtype(),
@@ -214,9 +232,8 @@ void AvgPool2dConfigParams(
   p.d[1] = at::native::safe_downcast<int, int64_t>(dW);
   p.dil[0] = 1;
   p.dil[1] = 1;
-  p.mode = count_include_pad
-      ? ::musa::dnn::Pooling::Mode::AVGPOOL_COUNT_PAD
-      : ::musa::dnn::Pooling::Mode::AVGPOOL_COUNT_WITHOUT_PAD;
+  p.mode = count_include_pad ? PoolingMode::AVGPOOL_COUNT_PAD
+                             : PoolingMode::AVGPOOL_COUNT_WITHOUT_PAD;
 }
 
 void AvgPool2dInternal(
@@ -302,7 +319,7 @@ void MaxPool2dConfigParams(
   p.dil[0] = at::native::safe_downcast<int, int64_t>(dil[0]);
   p.dil[1] = dil.size() == 1 ? p.dil[0]
                              : at::native::safe_downcast<int, int64_t>(dil[1]);
-  p.mode = ::musa::dnn::Pooling::Mode::MAXPOOL;
+  p.mode = PoolingMode::MAXPOOL;
 }
 
 void MaxPool2dInternal(
@@ -644,7 +661,7 @@ Tensor AdaptiveAvgPool2dBwd(const Tensor& grad_output, const Tensor& input) {
         at::ScalarType::Half);
   }
   PoolParams params;
-  params.mode = ::musa::dnn::Pooling::Mode::ADAPTIVE_AVGPOOL;
+  params.mode = PoolingMode::ADAPTIVE_AVGPOOL;
 
   Tensor grad_input = at::empty(input.sizes(), input.options());
 
@@ -731,5 +748,119 @@ at::Tensor& MaxPool3dIndicesBwdOut(
       grad_input);
 }
 
+Tensor& AdaptiveAvgPool3dOut(
+    const Tensor& input,
+    IntArrayRef output_size,
+    Tensor& output) {
+  const OptionalDeviceGuard device_guard(device_of(input));
+  return at::musa::AdaptiveAvgPool3DOutMUSA(input, output_size, output);
+}
+
+Tensor AdaptiveAvgPool3d(const Tensor& input, IntArrayRef output_size) {
+  const OptionalDeviceGuard device_guard(device_of(input));
+  return at::musa::AdaptiveAvgPool3DMUSA(input, output_size);
+}
+
+Tensor& AdaptiveAvgPool3dBackwardOut(
+    const Tensor& grad_output,
+    const Tensor& self,
+    Tensor& grad_input) {
+  const OptionalDeviceGuard device_guard(device_of(self));
+  return at::musa::AdaptiveAvgPool3DBackwardOutMUSA(
+      grad_output, self, grad_input);
+}
+
+Tensor AdaptiveAvgPool3dBackward(
+    const Tensor& grad_output,
+    const Tensor& self) {
+  const OptionalDeviceGuard device_guard(device_of(self));
+  return at::musa::AdaptiveAvgPool3DBackwardMUSA(grad_output, self);
+}
+
+TORCH_IMPL_FUNC(adaptive_max_pool2d_out_musa)
+(const Tensor& input,
+ IntArrayRef output_size,
+ const Tensor& output,
+ const Tensor& indices) {
+  if (at::musa::maybeDNNOpSupportBFloat16()) {
+    TORCH_MUSA_CHECK_FLOATING_TYPES(
+        input.scalar_type(), "adaptive_max_pool2d_out_musa");
+  } else {
+    TORCH_MUSA_CHECK_DTYPES(
+        input.scalar_type(),
+        "adaptive_max_pool2d_out_musa",
+        at::ScalarType::Float,
+        at::ScalarType::Half);
+  }
+  TensorArg output_arg{output, "output", 1};
+  TensorArg indices_arg{indices, "indices", 2};
+  TensorArg input_arg{input, "input", 3};
+
+  checkAllSameGPU(__func__, {output_arg, indices_arg, input_arg});
+  if (input.numel() == 0) {
+    return;
+  }
+
+  c10::musa::MUSAGuard device_guard(input.device());
+  at::MemoryFormat output_memory_format = output.suggest_memory_format();
+  Tensor input_tmp = input.suggest_memory_format() == output_memory_format
+      ? input
+      : FormatContiguous(input, output_memory_format);
+  auto input_mu = CreateMUTensor(input_tmp);
+  auto output_mu = CreateMUTensor(output);
+  auto indices_mu = CreateMUTensor(indices);
+  muHandle& h = GetMudnnHandle();
+  ::musa::dnn::Pooling pool;
+  CHECK_MUDNN_STATUS(pool.SetMode(PoolingMode::ADAPTIVE_MAXPOOL), "SetMode");
+  CHECK_MUDNN_STATUS(pool.Run(h, output_mu, input_mu, indices_mu), "Run");
+}
+
+TORCH_IMPL_FUNC(adaptive_max_pool2d_backward_out_musa)
+(const Tensor& gradOutput,
+ const Tensor& input,
+ const Tensor& indices,
+ const Tensor& gradInput) {
+  if (at::musa::maybeDNNOpSupportBFloat16()) {
+    TORCH_MUSA_CHECK_FLOATING_TYPES(
+        input.scalar_type(), "adaptive_max_pool2d_backward_out_musa");
+  } else {
+    TORCH_MUSA_CHECK_DTYPES(
+        input.scalar_type(),
+        "adaptive_max_pool2d_backward_out_musa",
+        at::ScalarType::Float,
+        at::ScalarType::Half);
+  }
+
+  TensorArg grad_input_arg{gradInput, "gradInput", 1};
+  TensorArg grad_output_arg{gradOutput, "gradOutput", 2};
+  TensorArg input_arg{input, "input", 3};
+  TensorArg indices_arg{indices, "indices", 4};
+
+  checkAllSameGPU(
+      __func__, {grad_input_arg, grad_output_arg, input_arg, indices_arg});
+
+  if (gradOutput.numel() == 0) {
+    return;
+  }
+
+  c10::musa::MUSAGuard device_guard(input.device());
+  Tensor grad_output_tmp = Contiguous(gradOutput);
+  Tensor indices_tmp = Contiguous(indices);
+  Tensor grad_input_tmp = Contiguous(gradInput);
+  auto grad_output_mu = CreateMUTensor(grad_output_tmp);
+  auto grad_input_mu = CreateMUTensor(grad_input_tmp);
+  auto indices_mu = CreateMUTensor(indices_tmp);
+  muHandle& h = GetMudnnHandle();
+  ::musa::dnn::Pooling pool;
+  CHECK_MUDNN_STATUS(pool.SetMode(PoolingMode::ADAPTIVE_MAXPOOL), "SetMode");
+  CHECK_MUDNN_STATUS(
+      pool.RunBwd(h, grad_input_mu, grad_output_mu, indices_mu), "Run");
+
+  if (!gradInput.is_contiguous() ||
+      gradInput.is_contiguous(MemoryFormat::ChannelsLast)) {
+    // (N, 1, H, W) and (N, C, 1, 1) cases also taken into consideration
+    gradInput.copy_(grad_input_tmp);
+  }
+}
 } // namespace musa
 } // namespace at

@@ -1,0 +1,6 @@
+tqdm
+libcst==1.1.0
+pytest==8.2.2
+cloudpickle==3.1.1
+transformers==4.49.0
+datasets==3.6.0

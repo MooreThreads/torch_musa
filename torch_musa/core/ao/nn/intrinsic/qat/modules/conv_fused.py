@@ -1,6 +1,6 @@
 """intrinsic qat fused modules"""
 
-# pylint: disable=W0622,E1121,W0246
+# pylint: disable=W0622,E1121,W0246,W0221
 
 from torch import nn
 import torch.ao.nn.intrinsic as nni

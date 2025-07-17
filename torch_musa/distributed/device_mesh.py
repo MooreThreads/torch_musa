@@ -1,5 +1,4 @@
 # pylint: disable=missing-module-docstring, line-too-long
-from typing import List, Optional
 import torch
 from torch.distributed.device_mesh import (
     DeviceMesh,
@@ -10,6 +9,7 @@ from torch.distributed.device_mesh import (
     get_world_size,
     _get_device_handle,
 )
+
 
 # If backend is None, both gloo and nccl backend will be created by `init_process_group`,
 # so here we might need to specify the backend explicitly.
@@ -43,16 +43,8 @@ def _get_or_create_default_group(self):
             )
         device_handle.set_device(get_rank() % num_devices_per_host)
 
-    # calculate the coordinates of the current global rank on the mesh
-    rank_coords = (self.mesh == get_rank()).nonzero()
-    assert rank_coords.size(0) in (0, 1)
-    self._coordinate_on_dim: Optional[List[int]] = (
-        rank_coords[0].tolist() if rank_coords.size(0) > 0 else None
-    )
     return _get_default_group()
 
 
 def _apply_device_mesh_patch():
-    DeviceMesh._get_or_create_default_group = (
-        _get_or_create_default_group
-    )
+    DeviceMesh._get_or_create_default_group = _get_or_create_default_group

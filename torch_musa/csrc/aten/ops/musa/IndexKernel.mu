@@ -873,9 +873,73 @@ static void IndexCopyKernel(
       });
 }
 
+template <typename scalar_t>
+void index_fill_kernel_impl(
+    TensorIterator& iter,
+    const int64_t dim,
+    const int64_t self_dim_size,
+    const int64_t self_dim_stride,
+    const scalar_t fill_val) {
+  if (0 == iter.numel()) {
+    return;
+  }
+
+  if (!iter.can_use_32bit_indexing()) {
+    for (auto& sub_iter : iter.with_32bit_indexing()) {
+      index_fill_kernel_impl(
+          sub_iter, dim, self_dim_size, self_dim_stride, fill_val);
+    }
+    return;
+  }
+
+  char* const __restrict__ self_ptr = reinterpret_cast<char*>(iter.data_ptr(0));
+  char* const __restrict__ idx_ptr = reinterpret_cast<char*>(iter.data_ptr(1));
+
+  const auto offset_calc = make_offset_calculator<2>(iter);
+
+  const auto loop = [=] __device__(int i) {
+    const auto offsets = offset_calc.get(i);
+
+    auto* __restrict__ self_data =
+        reinterpret_cast<scalar_t*>(self_ptr + offsets[0]);
+    auto idx = *reinterpret_cast<int64_t*>(idx_ptr + offsets[1]);
+    CUDA_KERNEL_ASSERT(
+        idx >= -self_dim_size && idx < self_dim_size && "index out of bounds");
+    if (idx < 0) {
+      idx += self_dim_size;
+    }
+
+    self_data[idx * self_dim_stride] = fill_val;
+  };
+  LaunchKernel<LAUNCH_SIZE_ND, LAUNCH_BOUND2>(iter.numel(), loop);
+}
+
+static void IndexFillKernel(
+    TensorIterator& iter,
+    const int64_t dim,
+    const int64_t self_dim_size,
+    const int64_t self_dim_stride,
+    const Scalar& source) {
+  AT_DISPATCH_ALL_TYPES_AND_COMPLEX_AND4(
+      at::ScalarType::Half,
+      at::ScalarType::Bool,
+      at::ScalarType::BFloat16,
+      kComplexHalf,
+      iter.dtype(),
+      "index_fill_musa",
+      [&] {
+        using dtype = OpaqueType<sizeof(scalar_t)>;
+        const auto fill_val = source.to<scalar_t>();
+        const auto fill_val_opaque = *reinterpret_cast<const dtype*>(&fill_val);
+        index_fill_kernel_impl<dtype>(
+            iter, dim, self_dim_size, self_dim_stride, fill_val_opaque);
+      });
+}
+
 REGISTER_MUSA_DISPATCH(index_copy_stub, &IndexCopyKernel);
 REGISTER_MUSA_DISPATCH(index_put_stub, &IndexPutKernel);
 REGISTER_MUSA_DISPATCH(index_stub, &IndexKernel);
+REGISTER_MUSA_DISPATCH(index_fill_stub, &IndexFillKernel);
 REGISTER_MUSA_DISPATCH(put_stub, &PutKernel);
 REGISTER_MUSA_DISPATCH(take_stub, &TakeKernel);
 REGISTER_MUSA_DISPATCH(flip_stub, &FlipKernel);

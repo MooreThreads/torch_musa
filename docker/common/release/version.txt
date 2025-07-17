@@ -1,6 +1,0 @@
-MUSA:dev4.0.0
-MCCL:dev1.8.0
-MUDNN:dev2.8.0
-TRITON:rc1.0.0
-MUALG:musa-1.12.1
-MUTHRUST:musa-1.12.1

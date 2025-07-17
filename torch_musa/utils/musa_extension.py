@@ -6,23 +6,36 @@ import os
 import shlex
 import subprocess
 import sys
+import sysconfig
 import warnings
 import platform
 from os.path import dirname, realpath, join
 from typing import List, Optional, Tuple
-
 import setuptools
-import torch
-import torch._appdirs
 from setuptools.command.build_ext import build_ext
+
+import torch
+from torch.utils.file_baton import FileBaton
+from torch.utils.hipify.hipify_python import GeneratedFileCleaner
 from torch.torch_version import TorchVersion
 from torch.utils.cpp_extension import (
     is_ninja_available,
     get_compiler_abi_compatibility_and_version,
     verify_ninja_availability,
     _run_ninja_build,
+    _get_exec_path,
+    _import_module_from_library,
+    get_default_build_root,
+    _check_and_build_extension_h_precompiler_headers,
+    remove_extension_h_precompiler_headers,
+    JIT_EXTENSION_VERSIONER,
+    _get_pybind11_abi_build_flags,
+    _get_glibcxx_abi_build_flags,
+    SHARED_FLAG,
+    TORCH_LIB_PATH,
 )
 import torch_musa
+
 
 if os.getenv("MAX_JOBS") is None:
     os.environ["MAX_JOBS"] = str(multiprocessing.cpu_count())
@@ -276,6 +289,9 @@ RERUN_CMAKE = False
 install_requires = ["packaging"]
 MUSA_HOME = _find_musa_home()
 MUDNN_HOME = os.environ.get("MUDNN_HOME") or os.environ.get("MUDNN_PATH")
+_HERE = os.path.abspath(__file__)
+_TORCH_MUSA_PATH = os.path.dirname(os.path.dirname(_HERE))
+TORCH_MUSA_LIB_PATH = os.path.join(_TORCH_MUSA_PATH, "lib")
 
 
 def include_paths(musa: bool = False) -> List[str]:
@@ -769,3 +785,473 @@ def _get_musa_arch_flags():
         flags.append(f"--offload-arch=mp_{arch}")
 
     return sorted(set(flags))
+
+
+# aoti runtime dependent
+
+
+def _get_build_directory(name: str, verbose: bool) -> str:
+    root_extensions_directory = os.environ.get("TORCH_EXTENSIONS_DIR")
+    if root_extensions_directory is None:
+        root_extensions_directory = get_default_build_root()
+        mu_str = (
+            "cpu"
+            if torch.version.musa is None
+            else f'mu{torch.version.musa.replace(".", "")}'
+        )  # type: ignore[attr-defined]
+        python_version = f"py{sys.version_info.major}{sys.version_info.minor}"
+        build_folder = f"{python_version}_{mu_str}"
+
+        root_extensions_directory = os.path.join(
+            root_extensions_directory, build_folder
+        )
+
+    if verbose:
+        print(
+            f"Using {root_extensions_directory} as PyTorch extensions root...",
+            file=sys.stderr,
+        )
+
+    build_directory = os.path.join(root_extensions_directory, name)
+    if not os.path.exists(build_directory):
+        if verbose:
+            print(f"Creating extension directory {build_directory}...", file=sys.stderr)
+        # This is like mkdir -p, i.e. will also create parent directories.
+        os.makedirs(build_directory, exist_ok=True)
+
+    return build_directory
+
+
+def _prepare_ldflags(extra_ldflags, with_musa, verbose, is_standalone):
+    extra_ldflags.append(f"-L{TORCH_LIB_PATH}")
+    extra_ldflags.append("-lc10")
+    extra_ldflags.append("-ltorch_cpu")
+    if with_musa:
+        extra_ldflags.append(f"-L{TORCH_MUSA_LIB_PATH}")
+    extra_ldflags.append("-ltorch")
+    if not is_standalone:
+        extra_ldflags.append("-ltorch_python")
+        extra_ldflags.append("-lmusa_python")
+        extra_ldflags.append(
+            "-lmusa_kernels"
+        )  # TODO: aotinductor cpp impl compiled to musa_kernels.so
+
+    if is_standalone and "TBB" in torch.__config__.parallel_info():
+        extra_ldflags.append("-ltbb")
+
+    if is_standalone:
+        extra_ldflags.append(f"-Wl,-rpath,{TORCH_LIB_PATH}")
+
+    if with_musa:
+        if verbose:
+            print("Detected MUSA files, patching ldflags", file=sys.stderr)
+        extra_lib_dir = "lib64"
+        if not os.path.exists(_join_musa_home(extra_lib_dir)) and os.path.exists(
+            _join_musa_home("lib")
+        ):
+            # 64-bit MUSA may be installed in "lib"
+            # Note that it's also possible both don't exist (see _find_musa_home)
+            # in that case we stay with "lib64"
+            extra_lib_dir = "lib"
+        extra_ldflags.append(f"-L{_join_musa_home(extra_lib_dir)}")
+        extra_ldflags.append("-lmusart")
+        if MUDNN_HOME is not None:
+            extra_ldflags.append(f'-L{os.path.join(MUDNN_HOME, "lib64")}')
+    return extra_ldflags
+
+
+def _write_ninja_file_to_build_library(
+    path,
+    name,
+    sources,
+    extra_cflags,
+    extra_musa_cflags,
+    extra_ldflags,
+    extra_include_paths,
+    with_musa,
+    is_standalone,
+) -> None:
+    extra_cflags = [flag.strip() for flag in extra_cflags]
+    extra_musa_cflags = [flag.strip() for flag in extra_musa_cflags]
+    extra_ldflags = [flag.strip() for flag in extra_ldflags]
+    extra_include_paths = [flag.strip() for flag in extra_include_paths]
+
+    # Turn into absolute paths so we can emit them into the ninja build
+    # file wherever it is.
+    user_includes = [os.path.abspath(file) for file in extra_include_paths]
+
+    # include_paths() gives us the location of torch/extension.h
+    system_includes = include_paths(with_musa)
+    # sysconfig.get_path('include') gives us the location of Python.h
+    python_include_path = sysconfig.get_path("include", scheme="posix_prefix")
+    if python_include_path is not None:
+        system_includes.append(python_include_path)
+
+    common_cflags = []
+    if not is_standalone:
+        common_cflags.append(f"-DTORCH_EXTENSION_NAME={name}")
+        common_cflags.append("-DTORCH_API_INCLUDE_EXTENSION_H")
+
+    common_cflags += [f"{x}" for x in _get_pybind11_abi_build_flags()]
+
+    common_cflags += [f"-I{include}" for include in user_includes]
+    common_cflags += [f"-isystem {include}" for include in system_includes]
+
+    common_cflags += [f"{x}" for x in _get_glibcxx_abi_build_flags()]
+
+    cflags = common_cflags + ["-fPIC", "-std=c++17"] + extra_cflags
+
+    if with_musa:
+        musa_flags = common_cflags + COMMON_MCC_FLAGS  # TODO: 添加musa_flag
+        musa_flags += ["--compiler-options", "'-fPIC'"]
+        musa_flags += extra_musa_cflags
+        if not any(flag.startswith("-std=") for flag in musa_flags):
+            musa_flags.append("-std=c++17")
+        cc_env = os.getenv("CC")
+        if cc_env is not None:
+            musa_flags = ["-ccbin", cc_env] + musa_flags
+    else:
+        musa_flags = None
+
+    def object_file_path(source_file: str) -> str:
+        # '/path/to/file.cpp' -> 'file'
+        file_name = os.path.splitext(os.path.basename(source_file))[0]
+        if _is_musa_file(source_file) and with_musa:
+            # Use a different object filename in case a C++ and CUDA file have
+            # the same filename but different extension (.cpp vs. .cu).
+            target = f"{file_name}.musa.o"
+        else:
+            target = f"{file_name}.o"
+        return target
+
+    objects = [object_file_path(src) for src in sources]
+    ldflags = ([] if is_standalone else [SHARED_FLAG]) + extra_ldflags
+
+    ext = ".so"
+    library_target = f"{name}{ext}"
+
+    _write_ninja_file(
+        path=path,
+        cflags=cflags,
+        post_cflags=None,
+        musa_cflags=musa_flags,
+        musa_post_cflags=None,
+        musa_dlink_post_cflags=None,
+        sources=sources,
+        objects=objects,
+        ldflags=ldflags,
+        library_target=library_target,
+        with_musa=with_musa,
+        force_mcc=None,
+    )
+
+
+def _write_ninja_file_and_build_library(
+    name,
+    sources: List[str],
+    extra_cflags,
+    extra_musa_cflags,
+    extra_ldflags,
+    extra_include_paths,
+    build_directory: str,
+    verbose: bool,
+    with_musa: Optional[bool],
+    is_standalone: bool = False,
+) -> None:
+    verify_ninja_availability()
+
+    compiler = get_cxx_compiler()
+
+    get_compiler_abi_compatibility_and_version(compiler)
+    if with_musa is None:
+        with_musa = any(map(_is_musa_file, sources))
+    extra_ldflags = _prepare_ldflags(
+        extra_ldflags or [], with_musa, verbose, is_standalone
+    )
+    build_file_path = os.path.join(build_directory, "build.ninja")
+    if verbose:
+        print(f"Emitting ninja build file {build_file_path}...", file=sys.stderr)
+    # NOTE: Emitting a new ninja build file does not cause re-compilation if
+    # the sources did not change, so it's ok to re-emit (and it's fast).
+    _write_ninja_file_to_build_library(
+        path=build_file_path,
+        name=name,
+        sources=sources,
+        extra_cflags=extra_cflags or [],
+        extra_musa_cflags=extra_musa_cflags or [],
+        extra_ldflags=extra_ldflags or [],
+        extra_include_paths=extra_include_paths or [],
+        with_musa=with_musa,
+        is_standalone=is_standalone,
+    )
+
+    if verbose:
+        print(f"Building extension module {name}...", file=sys.stderr)
+    _run_ninja_build(
+        build_directory, verbose, error_prefix=f"Error building extension '{name}'"
+    )
+
+
+def load_inline(
+    name,
+    cpp_sources,
+    musa_sources=None,
+    functions=None,
+    extra_cflags=None,
+    extra_musa_cflags=None,
+    extra_ldflags=None,
+    extra_include_paths=None,
+    build_directory=None,
+    verbose=False,
+    with_musa=None,
+    is_python_module=True,
+    with_pytorch_error_handling=True,
+    keep_intermediates=True,
+    use_pch=False,
+):
+    r'''
+    Load a PyTorch C++ extension just-in-time (JIT) from string sources.
+
+    This function behaves exactly like :func:`load`, but takes its sources as
+    strings rather than filenames. These strings are stored to files in the
+    build directory, after which the behavior of :func:`load_inline` is
+    identical to :func:`load`.
+
+    See `the
+    tests <https://github.com/pytorch/pytorch/blob/master/test/test_cpp_extensions_jit.py>`_
+    for good examples of using this function.
+
+    Sources may omit two required parts of a typical non-inline C++ extension:
+    the necessary header includes, as well as the (pybind11) binding code. More
+    precisely, strings passed to ``cpp_sources`` are first concatenated into a
+    single ``.cpp`` file. This file is then prepended with ``#include
+    <torch/extension.h>``.
+
+    Furthermore, if the ``functions`` argument is supplied, bindings will be
+    automatically generated for each function specified. ``functions`` can
+    either be a list of function names, or a dictionary mapping from function
+    names to docstrings. If a list is given, the name of each function is used
+    as its docstring.
+
+    The sources in ``musa_sources`` are concatenated into a separate ``.mu``
+    file and  prepended with ``torch/types.h``, ``musa.h`` and
+    ``musa_runtime.h`` includes. The ``.cpp`` and ``.mu`` files are compiled
+    separately, but ultimately linked into a single library. Note that no
+    bindings are generated for functions in ``cuda_sources`` per  se. To bind
+    to a MUSA kernel, you must create a C++ function that calls it, and either
+    declare or define this C++ function in one of the ``cpp_sources`` (and
+    include its name in ``functions``).
+
+    See :func:`load` for a description of arguments omitted below.
+
+    Args:
+        name(str): compiled name.
+        cpp_sources(str or List[str]): A string, or list of strings, containing C++ source code.
+        musa_sources(str or List[str]): A string, or list of strings, containing MUSA source code.
+        functions(list): A list of function names for which to generate function
+            bindings. If a dictionary is given, it should map function names to
+            docstrings (which are otherwise just the function names).
+        with_musa(bool): Determines whether MUSA headers and libraries are added to
+            the build. If set to ``None`` (default), this value is
+            automatically determined based on whether ``musa_sources`` is
+            provided. Set it to ``True`` to force MUSA headers
+            and libraries to be included.
+        with_pytorch_error_handling(bool): Determines whether pytorch error and
+            warning macros are handled by pytorch instead of pybind. To do
+            this, each function ``foo`` is called via an intermediary ``_safe_foo``
+            function. This redirection might cause issues in obscure cases
+            of cpp. This flag should be set to ``False`` when this redirect
+            causes issues.
+        extra_cflags(List[str]): extra cflags.
+        extra_musa_cflags(List[str]): extra musa flags.
+        extra_ldflags(List[str]): extra ld flags.
+        extra_include_paths(List[str]): extra include paths
+        build_directory(List[str]): build dirs.
+        verbose(bool): verbose or not.
+        is_python_module(bool): is python module or not.
+        keep_intermediates(bool): whether keep intermideate files.
+        use_pch(bool): if use precompile header.
+
+    Example:
+        >>> # xdoctest: +REQUIRES(env:TORCH_DOCTEST_CPP_EXT)
+        >>> from torch.utils.cpp_extension import load_inline
+        >>> source = """
+        at::Tensor sin_add(at::Tensor x, at::Tensor y) {
+          return x.sin() + y.sin();
+        }
+        """
+        >>> module = load_inline(name='inline_extension',
+        ...                      cpp_sources=[source],
+        ...                      functions=['sin_add'])
+
+    .. note::
+        By default, the Ninja backend uses #CPUS + 2 workers to build the
+        extension. This may use up too many resources on some systems. One
+        can control the number of workers by setting the `MAX_JOBS` environment
+        variable to a non-negative number.
+    '''
+    build_directory = build_directory or _get_build_directory(name, verbose)
+
+    if isinstance(cpp_sources, str):
+        cpp_sources = [cpp_sources]
+    musa_sources = musa_sources or []
+    if isinstance(musa_sources, str):
+        musa_sources = [musa_sources]
+
+    cpp_sources.insert(0, "#include <torch/extension.h>")
+
+    if use_pch is True:
+        # Using PreCompile Header('torch/extension.h') to reduce compile time.
+        _check_and_build_extension_h_precompiler_headers(
+            extra_cflags, extra_include_paths
+        )
+    else:
+        remove_extension_h_precompiler_headers()
+
+    # If `functions` is supplied, we create the pybind11 bindings for the user.
+    # Here, `functions` is (or becomes, after some processing) a map from
+    # function names to function docstrings.
+    if functions is not None:
+        module_def = []
+        module_def.append("PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {")
+        if isinstance(functions, str):
+            functions = [functions]
+        if isinstance(functions, list):
+            # Make the function docstring the same as the function name.
+            functions = {f: f for f in functions}
+        elif not isinstance(functions, dict):
+            raise ValueError(
+                f"Expected 'functions' to be a list or dict, but was {type(functions)}"
+            )
+        for function_name, docstring in functions.items():
+            if with_pytorch_error_handling:
+                module_def.append(
+                    (
+                        f"m.def("
+                        f'"{function_name}", torch::wrap_pybind_function({function_name}), '
+                        f'"{docstring}"'
+                        f");"
+                    )
+                )
+            else:
+                module_def.append(
+                    f'm.def("{function_name}", {function_name}, "{docstring}");'
+                )
+        module_def.append("}")
+        cpp_sources += module_def
+
+    cpp_source_path = os.path.join(build_directory, "main.cpp")
+    _maybe_write(cpp_source_path, "\n".join(cpp_sources))
+
+    sources = [cpp_source_path]
+
+    if musa_sources:
+        musa_sources.insert(0, "#include <torch/types.h>")
+        musa_sources.insert(1, "#include <musa.h>")
+        musa_sources.insert(2, "#include <musa_runtime.h>")
+
+        musa_source_path = os.path.join(build_directory, "musa.mu")
+        _maybe_write(musa_source_path, "\n".join(musa_sources))
+
+        sources.append(musa_source_path)
+
+    return _jit_compile(
+        name,
+        sources,
+        extra_cflags,
+        extra_musa_cflags,
+        extra_ldflags,
+        extra_include_paths,
+        build_directory,
+        verbose,
+        with_musa,
+        is_python_module,
+        is_standalone=False,
+        keep_intermediates=keep_intermediates,
+    )
+
+
+def _jit_compile(
+    name,
+    sources,
+    extra_cflags,
+    extra_musa_cflags,
+    extra_ldflags,
+    extra_include_paths,
+    build_directory: str,
+    verbose: bool,
+    with_musa: Optional[bool],
+    is_python_module,
+    is_standalone,
+    keep_intermediates=True,
+) -> None:
+    if is_python_module and is_standalone:
+        raise ValueError(
+            "`is_python_module` and `is_standalone` are mutually exclusive."
+        )
+
+    if with_musa is None:
+        with_musa = any(map(_is_musa_file, sources))
+    with_mudnn = any("mudnn" in f for f in extra_ldflags or [])
+    old_version = JIT_EXTENSION_VERSIONER.get_version(name)
+    version = JIT_EXTENSION_VERSIONER.bump_version_if_changed(
+        name,
+        sources,
+        build_arguments=[
+            extra_cflags,
+            extra_musa_cflags,
+            extra_ldflags,
+            extra_include_paths,
+        ],
+        build_directory=build_directory,
+        with_cuda=with_musa,  # TODO: 这里需要更新为musa吗？
+        is_python_module=is_python_module,
+        is_standalone=is_standalone,
+    )
+    if version > 0:
+        if version != old_version and verbose:
+            print(
+                f"The input conditions for extension module {name} have changed. "
+                + f"Bumping to version {version} and re-building as {name}_v{version}...",
+                file=sys.stderr,
+            )
+        name = f"{name}_v{version}"
+
+    baton = FileBaton(os.path.join(build_directory, "lock"))
+    if baton.try_acquire():
+        try:
+            if version != old_version:
+                with GeneratedFileCleaner(
+                    keep_intermediates=keep_intermediates
+                ) as clean_ctx:
+
+                    _write_ninja_file_and_build_library(
+                        name=name,
+                        sources=sources,
+                        extra_cflags=extra_cflags or [],
+                        extra_musa_cflags=extra_musa_cflags or [],
+                        extra_ldflags=extra_ldflags or [],
+                        extra_include_paths=extra_include_paths or [],
+                        build_directory=build_directory,
+                        verbose=verbose,
+                        with_musa=with_musa,
+                        is_standalone=is_standalone,
+                    )
+            elif verbose:
+                print(
+                    "No modifications detected for re-loaded extension "
+                    f"module {name}, skipping build step...",
+                    file=sys.stderr,
+                )
+        finally:
+            baton.release()
+    else:
+        baton.wait()
+
+    if verbose:
+        print(f"Loading extension module {name}...", file=sys.stderr)
+
+    if is_standalone:
+        return _get_exec_path(name, build_directory)
+
+    return _import_module_from_library(name, build_directory, is_python_module)

@@ -149,3 +149,32 @@ def test_binary_cross_entropy():
     output_musa.backward()
     assert pytest.approx(output_cpu.detach(), 1e-6) == output_musa.detach().to("cpu")
     assert pytest.approx(input_data.grad, 1e-6) == musa_data.grad.to("cpu")
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("dtype", [torch.float16, torch.float])
+@pytest.mark.parametrize("reduction", ["none", "mean", "sum"])
+def test_huber_loss(dtype, reduction):
+    size = (16, 10)
+    input_data = torch.randn(size, dtype=dtype, requires_grad=True)
+    target_data = torch.randn(size, dtype=dtype)
+
+    musa_data = torch.tensor(
+        input_data.detach().numpy(), requires_grad=True, device="musa"
+    )
+    musa_target = torch.tensor(target_data.detach().numpy(), device="musa")
+
+    loss_cpu = torch.nn.functional.huber_loss(input_data, target_data, reduction=reduction)
+    if reduction == "none":
+        loss_cpu.backward(torch.ones_like(loss_cpu))
+    else:
+        loss_cpu.backward()
+
+    loss_musa = torch.nn.functional.huber_loss(musa_data, musa_target, reduction=reduction)
+    if reduction == "none":
+        loss_musa.backward(torch.ones_like(loss_musa))
+    else:
+        loss_musa.backward()
+
+    assert pytest.approx(loss_cpu.detach().cpu(), rel=1e-3) == loss_musa.detach().cpu()
+    assert pytest.approx(input_data.grad.cpu(), rel=1e-3) == musa_data.grad.cpu()

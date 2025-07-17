@@ -1,79 +1,133 @@
-"""Utility functions for inductor"""
+"""Utilities for inductor"""
 
-# pylint: disable=import-outside-toplevel
+__all__ = ["_apply_util_patches"]
+
+# pylint: disable=C0103,C0415,C0116,W0221
 import functools
-import inspect
-import time
-
+from functools import cached_property
+from typing_extensions import (
+    Self,
+    Callable,
+    Any,
+)
 import torch
-from torch._inductor.utils import synchronize
+from torch._inductor.runtime.benchmarking import (
+    maybe_time,
+    count,
+    Benchmarker,
+)
+from torch.utils._triton import has_triton_package
+
+
+def is_gpu(device: str):
+    assert isinstance(device, str) or device is None, device
+    return device in ["cuda", "xpu", torch._C._get_privateuse1_backend_name()]
 
 
 @functools.lru_cache(None)
-def triton_is_available():
-    if not torch.musa.is_available():
+def has_triton() -> bool:
+    from torch._dynamo.device_interface import get_interface_for_device
+
+    def cuda_extra_check(device_interface):
+        return device_interface.Worker.get_device_properties().major >= 7
+
+    def _return_true(_):
+        return True
+
+    triton_supported_devices = {
+        "cuda": cuda_extra_check,
+        "xpu": _return_true,
+        torch._C._get_privateuse1_backend_name(): _return_true,
+    }
+
+    def is_device_compatible_with_triton():
+        for device, extra_check in triton_supported_devices.items():
+            device_interface = get_interface_for_device(device)
+            if device_interface.is_available() and extra_check(device_interface):
+                return True
         return False
-    try:
-        import triton
 
-        return triton is not None
-    except ImportError:
-        return False
+    return is_device_compatible_with_triton() and has_triton_package()
 
 
-def timed(model, example_inputs, times=1):
-    """time the model's ntimes"""
-    synchronize("musa")
-    torch.manual_seed(1337)
-    torch.musa.manual_seed(1337)
-    start_time = time.perf_counter()
-    for _ in range(times):
-        result = model(*example_inputs)
-        synchronize("musa")
-    end_time = time.perf_counter()
-    # GC the result after timing
-    assert result is not None
-    return end_time - start_time
+class TritonBenchmarker(Benchmarker):
+    """TritonBenchmarker
 
+    once do_bench interface aligned with triton upstream, remove this class
+    """
 
-def print_performance(func, args=(), times=10, repeat=10, baseline=1.0):
-    timings = torch.tensor([timed(func, args, times) for _ in range(repeat)])
-    took = torch.median(timings) / times
-    print(f"{took/baseline:.6f}")
-    return took
-
-
-def do_bench(*args, **kwargs):
-    """benchmark the generated triton kernel"""
-
-    @functools.lru_cache(None)
-    def load_triton():
+    @cached_property
+    @maybe_time
+    @count
+    def triton_do_bench(self: Self) -> Callable[..., Any]:
+        """Lazily import Triton's `do_bench`."""
         try:
-            # import from triton.musa_testing in triton_musa-2.1.0
-            from triton.musa_testing import do_bench as triton_do_bench
-        except ImportError:
-            try:
-                from triton.backends.mtgpu.musa_testing import (
-                    do_bench as triton_do_bench,
-                )
-            except ImportError as exc:
-                raise NotImplementedError("requires Triton") from exc
-        # triton PR https://github.com/openai/triton/pull/1513 change the
-        # quantile fields name from 'percentiles' to 'quantiles'
-        # and change the default value from (0.5, 0.2, 0.8) to None.
-        # This may break inductor since a caller expects a tuple may get a item.
-        #
-        # Add a wrapper to maintain the same behavior for inductor.
-        # Maybe we should have own implementation of this function?
-        return triton_do_bench, (
-            "quantiles"
-            if inspect.signature(triton_do_bench).parameters.get("quantiles")
-            is not None
-            else "percentiles"
-        )
+            # pylint: disable=import-outside-toplevel
+            from triton.backends.mtgpu.musa_testing import do_bench
+        except ImportError as e:
+            raise NotImplementedError("requires Triton") from e
+        return do_bench
 
-    triton_do_bench, quantile_field_name = load_triton()
+    @maybe_time
+    @count
+    def benchmark_gpu(self: Self, _callable: Callable[[], Any], **kwargs: Any) -> float:
+        """Benchmark the GPU callable, `_callable`, and return the runtime, in milliseconds.
 
-    if quantile_field_name not in kwargs:
-        kwargs[quantile_field_name] = (0.5, 0.2, 0.8)
-    return triton_do_bench(*args, **kwargs)[0]
+        Arguments:
+        - _callable: The GPU callable to benchmark.
+
+        Keyword Arguments:
+        - quantiles: Optionally, a tuple of floats denoting the requested quantiles.
+        - return_mode: Optionally, the requested return mode. Currently, Triton's
+        `do_bench` supports min, max, mean, and median return modes.
+        - **kwargs: Additional kwargs passed to Triton's `do_bench`.
+
+        Returns:
+        - The runtime of `callable`, in milliseconds. If `kwargs["quantiles"]` is specified,
+        this is the first requested quantile. Else, if `kwargs["return_mode"]` is specified,
+        this is the requested return mode. Otherwise, this is the median.
+        """
+        if "quantiles" in kwargs:
+            return self.triton_do_bench(_callable, **kwargs)[0]
+        if "return_mode" in kwargs:
+            return self.triton_do_bench(_callable, **kwargs)
+        return self.triton_do_bench(_callable, **kwargs, return_mode="median")
+
+
+# A utility function for easier AOTInductor testing
+def aot_inductor_launcher(so_path: str, device: str):
+    if device == "musa":
+        return f"""
+            #include <torch_musa/csrc/inductor/aoti_model_container_runner_musa.h>
+
+            torch::inductor::AOTIModelContainerRunnerMusa runner("{so_path}");
+
+            std::vector<at::Tensor> run(std::vector<at::Tensor>& input_tensors) {{
+                return runner.run(input_tensors);
+            }}
+
+            std::vector<const char*> get_call_spec() {{
+                return runner.get_call_spec();
+            }}
+        """
+    if device == "cpu":
+        return f"""
+            #include <torch/csrc/inductor/aoti_model_container_runner.h>
+
+            torch::inductor::AOTIModelContainerRunnerCpu runner("{so_path}");
+
+            std::vector<at::Tensor> run(std::vector<at::Tensor>& input_tensors) {{
+                return runner.run(input_tensors);
+            }}
+
+            std::vector<const char*> get_call_spec() {{
+                return runner.get_call_spec();
+            }}
+        """
+    raise RuntimeError(f"Unsupported device: {device}")
+
+
+def _apply_util_patches():
+    torch._inductor.utils.is_gpu = is_gpu
+    torch._inductor.runtime.benchmarking.benchmarker = TritonBenchmarker()
+    torch.utils._triton.has_triton = has_triton

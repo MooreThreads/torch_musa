@@ -60,6 +60,16 @@ extern void multi_tensor_lamb_musa(
 extern void FusedAdamKernel(FUSED_ADAM_PARAMS);
 extern void FusedAdamKernel(FUSED_ADAM_TENSOR_LR_PARAMS);
 
+at::Tensor online_softmax(at::Tensor logits, at::Tensor targets, int rank);
+
+at::Tensor cross_entropy_loss(
+    at::Tensor logits,
+    at::Tensor targets,
+    at::Tensor gathered_max_sum_y,
+    int rank,
+    int world_size,
+    const std::string& reduction);
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   // ported from apex
   m.def(
@@ -78,4 +88,12 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
       "fused_adam",
       py::overload_cast<FUSED_ADAM_TENSOR_LR_PARAMS>(&FusedAdamKernel),
       "Apply update for FusedAdam optimizer");
+
+  // fused cross_entropy_loss_parallel binding
+  m.def(
+      "online_softmax",
+      &online_softmax,
+      "Computes partial max, expsum and valid logits using online softmax");
+  m.def(
+      "cross_entropy_loss", &cross_entropy_loss, "Computes cross entropy loss");
 }

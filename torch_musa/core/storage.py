@@ -55,15 +55,15 @@ def _share_musa(self, *args, **kwargs):
     return _MUSAC._share_musa_(self, *args, **kwargs)
 
 
-def _is_shared(self):
-    if self.device.type == "musa":
-        return True
-    return self.is_shared()
-
-
 @classmethod
 def _release_ipc_counter_musa(cls, *args, device=None, **kwargs):
     return _MUSAC._release_ipc_counter_musa(*args, **kwargs)
+
+
+def _is_shared(self):
+    if self.is_musa:
+        return True
+    return self.is_shared_old()
 
 
 def set_storage_attributes():
@@ -78,6 +78,7 @@ def set_storage_attributes():
     torch.UntypedStorage.is_musa = _is_musa
     torch.UntypedStorage.is_cuda = _is_musa
 
+    torch.UntypedStorage.is_shared_old = torch.UntypedStorage.is_shared
     torch.UntypedStorage.is_shared = _is_shared
 
     torch.UntypedStorage._release_ipc_counter_musa = _release_ipc_counter_musa

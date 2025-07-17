@@ -326,7 +326,6 @@ DEFINE_ACTIVATE_OP(Log, UNARY_MODE::LOG)
 DEFINE_ACTIVATE_OP(Log10, UNARY_MODE::LOG10)
 DEFINE_ACTIVATE_OP(Log2, UNARY_MODE::LOG2)
 DEFINE_ACTIVATE_OP(Floor, UNARY_MODE::FLOOR)
-DEFINE_ACTIVATE_OP(Erf, UNARY_MODE::ERF)
 DEFINE_ACTIVATE_OP_ARGS(HardSigmoid, UNARY_MODE::HARDSIGMOID, 0.166667, 0.5)
 
 #define SCALAR_COMPARISON(op_name, mode)                         \
@@ -452,7 +451,7 @@ Tensor& Gelu_(Tensor& self, c10::string_view approximate) {
       : UNARY_MODE::GELU_TANH;
   MUSA_TENSOR_TYPE_CHECK(self);
   const c10::musa::MUSAGuard device_guard(self.device());
-  Unary(__func__, self, [&](::musa::dnn::Unary& op) {
+  Unary_(__func__, self, [&](::musa::dnn::Unary& op) {
     CHECK_MUDNN_STATUS(op.SetMode(mode), "SetMode");
   });
   return self;

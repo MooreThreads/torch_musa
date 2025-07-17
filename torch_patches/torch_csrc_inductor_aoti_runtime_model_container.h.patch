@@ -1,0 +1,122 @@
+diff --git a/torch/csrc/inductor/aoti_runtime/model_container.h b/torch/csrc/inductor/aoti_runtime/model_container.h
+index 8227338..ee8d43a 100644
+--- a/torch/csrc/inductor/aoti_runtime/model_container.h
++++ b/torch/csrc/inductor/aoti_runtime/model_container.h
+@@ -19,7 +19,7 @@ class AOTInductorModelContainer {
+   AOTInductorModelContainer(
+       size_t num_models,
+       const std::string& device_str,
+-      const std::optional<std::string>& cubin_dir = std::nullopt)
++      const std::optional<std::string>& mubin_dir = std::nullopt)
+       : use_secondary_(false), constant_folded_(false) {
+     constants_map_ = std::make_shared<ConstantMap>();
+     constants_array_ = std::make_shared<std::vector<ConstantHandle>>();
+@@ -28,7 +28,7 @@ class AOTInductorModelContainer {
+     available_models_.reserve(num_models);
+     for (size_t i = 0; i < num_models; ++i) {
+       models_.push_back(AOTInductorModel::Create(
+-          constants_map_, constants_array_, device_str, cubin_dir));
++          constants_map_, constants_array_, device_str, mubin_dir));
+       available_models_.push_back(models_.back().get());
+     }
+ 
+@@ -54,11 +54,9 @@ class AOTInductorModelContainer {
+     }
+ 
+     model->load_constants();
+-#ifdef USE_CUDA
+     constant_blob_ = model->release_constant_blob();
+     constants_internal_offset_.resize(model->num_constants());
+-    model->compute_cuda_constant_blob(blob_size_, constants_internal_offset_);
+-#endif
++    model->compute_musa_constant_blob(blob_size_, constants_internal_offset_);
+ 
+     for (auto& model : models_) {
+       model->update_constants_map(constants_map_);
+@@ -267,7 +265,6 @@ class AOTInductorModelContainer {
+         continue;
+       }
+ 
+-#ifdef USE_CUDA
+       AtenTensorHandle tensor;
+       if (_is_tensor_constant(constant_name) && use_inactive) {
+         tensor = original_constants_map->find(constant_name)->second.get();
+@@ -285,11 +282,11 @@ class AOTInductorModelContainer {
+       aoti_torch_get_data_ptr(tensor, &user_constant_ptr);
+       aoti_torch_get_storage_size(tensor, &constant_size);
+ 
+-      AOTI_RUNTIME_DEVICE_CHECK(cudaMemcpy(
++      AOTI_RUNTIME_DEVICE_CHECK(musaMemcpy(
+           internal_constants_ptr,
+           user_constant_ptr,
+           constant_size,
+-          cudaMemcpyDefault));
++          musaMemcpyDefault));
+ 
+       // Generate Tensor from container handled blob.
+       // We extract stride and offset from provided Tensor since we do not
+@@ -308,12 +305,9 @@ class AOTInductorModelContainer {
+           stride,
+           offset,
+           models_[0]->constant_dtype(idx),
+-          aoti_torch_device_type_cuda(),
++          aoti_torch_device_type_musa(),
+           device_idx,
+           &tensor_handle));
+-#else // USE_CUDA
+-      AtenTensorHandle tensor_handle = it->second;
+-#endif // USE_CUDA
+ 
+       // Now place the tensor to constants_map. Note at this point the ownership
+       // of the tensor_handle will be taken over.
+@@ -388,16 +382,14 @@ class AOTInductorModelContainer {
+   const char* in_spec_;
+   const char* out_spec_;
+ 
+-#ifdef USE_CUDA
+-  // Holds the blob storage for constants' at::Tensor for CUDA.
+-  CUDAPtr constant_blob_;
+-  CUDAPtr constant_blob_secondary_;
++  // Holds the blob storage for constants' at::Tensor for MUSA.
++  MUSAPtr constant_blob_;
++  MUSAPtr constant_blob_secondary_;
+ 
+-  // Let's place this within USE_CUDA at the moment before we fully support
++  // Let's place this within USE_MUSA at the moment before we fully support
+   // update for CPU cases.
+   size_t blob_size_;
+   std::vector<size_t> constants_internal_offset_;
+-#endif // USE_CUDA
+ 
+   // Determine which constants is being used for the model.
+   // If true,
+@@ -409,7 +401,7 @@ class AOTInductorModelContainer {
+   bool constant_folded_;
+ 
+   // Holds the mapping of constants to at::Tensor.
+-  // The underlying data of at::Tensor is in either constant_blob_ (for CUDA).
++  // The underlying data of at::Tensor is in either constant_blob_ (for MUSA).
+   // or _binary_constants_bin_start (for CPU).
+   std::shared_ptr<ConstantMap> constants_map_;
+   std::shared_ptr<ConstantMap> constants_map_secondary_;
+@@ -452,19 +444,17 @@ class AOTInductorModelContainer {
+   // make sure no one is executing the model.
+   std::shared_mutex model_exec_mutex_;
+ 
+-#ifdef USE_CUDA
+   void* get_constant_blob_ptr(bool get_inactive) {
+     if ((get_inactive && use_secondary_) ||
+         (!get_inactive && !use_secondary_)) {
+       return constant_blob_.get();
+     } else {
+       if (!constant_blob_secondary_) {
+-        constant_blob_secondary_ = RAII_cudaMalloc(blob_size_);
++        constant_blob_secondary_ = RAII_musaMalloc(blob_size_);
+       }
+       return constant_blob_secondary_.get();
+     }
+   }
+-#endif // USE_CUDA
+ 
+   std::shared_ptr<ConstantMap> get_constants_map(bool get_inactive) {
+     if ((get_inactive && use_secondary_) ||

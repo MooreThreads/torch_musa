@@ -1,12 +1,26 @@
-#include "torch_musa/csrc/distributed/ProcessGroupMCCL.h"
 #include <pybind11/cast.h>
 #include <pybind11/chrono.h>
+#include <iostream>
 #include <thread>
+#include <tuple>
+
 #include "mccl.h"
+#include "torch_musa/csrc/aten/musa/MUSAGraph.h"
+#include "torch_musa/csrc/core/MUSAGraphsC10Utils.h"
+#include "torch_musa/csrc/distributed/ProcessGroupMCCL.h"
 
 namespace c10d {
 
 constexpr const char* const kMCCLAbortedCommStoreKey = "MCCLABORTEDCOMM";
+const int64_t ProcessGroupMCCL::kWatchdogThreadSleepMillis = 10000;
+const int64_t ProcessGroupMCCL::kWorkCleanupThreadSleepMillis = 1000;
+const int64_t ProcessGroupMCCL::kHeartBeatThreadSleepMillis = 1000;
+constexpr int64_t kWaitForAbortCommStoreKey = 1000;
+constexpr int64_t kSynchronizeBusyWaitMillis = 10;
+thread_local uint64_t ProcessGroupMCCL::mcclActiveGroupCounter_ = 0;
+
+static std::unordered_map<std::shared_ptr<MCCLComm>, int> mcclCommDevIdxMap;
+static std::mutex mcclCommDevIdxMapMutex;
 
 namespace { // DDP Helper functions
 
@@ -21,7 +35,7 @@ const std::map<at::ScalarType, mcclDataType_t> mcclDataType = {
     {at::kBool, mcclUint8},
 #if MCCL_BF16_SUPPORTED
     {at::kBFloat16, mcclBfloat16},
-#if defined(TORCH_MUSA_ARCH) && TORCH_MUSA_ARCH >= 310 && ENABLE_FP8_COMM == 1
+#if MCCL_FP8_SUPPORTED
     {at::kFloat8_e5m2, mcclFp8E5M2},
     {at::kFloat8_e4m3fn, mcclFp8E4M3},
 #endif
@@ -55,7 +69,7 @@ mcclRedOp_t getMcclReduceOp(
   try {
     if (input.scalar_type() == at::kBool) {
       // SUM of kBool is the same as "OR" or "MAX" of Boolean.
-      // TODO(yueran-tang): Bool Max is nccl style reduceOp, and we need to
+      // TODO(yueran-tang): Bool Max is mccl style reduceOp, and we need to
       // check it on mccl.
       if (reduce_op == ReduceOp::SUM) {
         return mcclMax;
@@ -80,6 +94,20 @@ std::string getKeyFromDevices(const std::vector<at::Device>& devices) {
     }
   }
   return deviceList;
+}
+
+inline at::DeviceIndex getIndexFromDeviceKey(const std::string& deviceKey) {
+  // initialize the device index to -1, which is an invalid value.
+  int index = -1;
+  try {
+    index = std::stoi(deviceKey);
+  } catch (const std::invalid_argument& e) {
+    LOG(ERROR) << c10::str(
+        "Invalid deviceKey: ", deviceKey, ",", e.what(), ".");
+  } catch (const std::out_of_range& e) {
+    LOG(ERROR) << "Out of range: " << e.what();
+  }
+  return static_cast<at::DeviceIndex>(index);
 }
 
 std::string getKeySendRecv(int myRank, int peer) {
@@ -151,16 +179,48 @@ std::string getExceptionMsgFromExceptionPtr(
 
 inline void errorIfCapturingNonCapturableMCCL() {
   // Always success. MCCL has no old version capturable problems.
-  // It's just a placeholder for NCCL -> MCCL Porting.
+  // It's just a placeholder for MCCL -> MCCL Porting.
+}
+
+std::unordered_map<std::string, std::unordered_map<std::string, std::string>>
+getMCCLCommDumpMap() {
+  std::unordered_map<
+      std::string /* mcclUniqueID */,
+      std::unordered_map<std::string, std::string> /* dump from this comm */>
+      mcclDumpMap;
+  // dumpMCCLTrace is only called from the default PG (local_id_=0), but we
+  // want to dump from all comms so we need to iterate over mcclCommDevIdxMap,
+  // which is static
+  std::vector<std::shared_ptr<MCCLComm>> allMCCLComms;
+  // within the critical section, we don't want to dump while holding the lock
+  // as dump might hang
+  mcclCommDevIdxMapMutex.lock();
+  for (auto& [mcclComm, _] : mcclCommDevIdxMap) {
+    allMCCLComms.push_back(mcclComm);
+  }
+  mcclCommDevIdxMapMutex.unlock();
+  for (auto& mcclComm : allMCCLComms) {
+    std::string mcclUniqueIDStr = buildMcclUniqueIdStr(mcclComm->getMcclId());
+    mcclDumpMap[mcclUniqueIDStr] = mcclComm->mcclCommDump();
+  }
+  return mcclDumpMap;
+}
+
+inline int computeDeltaMS(
+    std::chrono::time_point<std::chrono::steady_clock> start,
+    std::chrono::time_point<std::chrono::steady_clock> end) {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(end - start)
+      .count();
+}
+
+std::string logPrefix() {
+  // TODO(jihong.zhong): move to ProcessGroupMCCL class
+  return "ProcessGroupMCCL LOG";
 }
 
 } // namespace
 
-const int64_t ProcessGroupMCCL::kWatchdogThreadSleepMillis = 10000;
-const int64_t ProcessGroupMCCL::kWorkCleanupThreadSleepMillis = 1000;
-constexpr int64_t kWaitForAbortCommStoreKey = 1000;
-constexpr int64_t kSynchronizeBusyWaitMillis = 10;
-thread_local uint64_t ProcessGroupMCCL::mcclActiveGroupCounter_ = 0;
+std::atomic<bool> ProcessGroupMCCL::shouldDump_(false);
 
 std::ostream& operator<<(
     std::ostream& output,
@@ -426,7 +486,8 @@ void ProcessGroupMCCL::WorkMCCL::synchronizeInternal(
 bool ProcessGroupMCCL::WorkMCCL::wait(std::chrono::milliseconds timeout) {
   RECORD_PARAM_COMMS(
       static_cast<int>(this->seq_), // seq
-      0, // process group ptr
+      std::make_tuple(
+          std::string("0"), std::string("wait")), // process group name
       rank_, // rank
       "wait", // colName
       0, // inSize
@@ -434,6 +495,8 @@ bool ProcessGroupMCCL::WorkMCCL::wait(std::chrono::milliseconds timeout) {
       at::kByte, // dType
       std::vector<int64_t>(), // inSplitSizes
       std::vector<int64_t>(), // outSplitSizes
+      0,
+      0,
       static_cast<int>(devices_.size()));
   synchronizeInternal(timeout);
   // Always return true, because abort API is not implemented.
@@ -494,7 +557,8 @@ ProcessGroupMCCL::ProcessGroupMCCL(
       mcclCommCounter_(0),
       traceKeyStart_(getTraceStartKey("MCCL", rank)),
       traceKeyEnd_(getTraceEndKey("MCCL", rank)),
-      terminateProcessGroup_(false) {
+      terminateProcessGroup_(false),
+      terminateHeartbeatMonitorThread_(false) {
   TORCH_CHECK(
       c10::musa::device_count() != 0,
       "ProcessGroupMCCL is only supported with GPUs, no GPUs found!");
@@ -505,6 +569,11 @@ ProcessGroupMCCL::ProcessGroupMCCL(
       (dist_debug_level_ >= DebugLevel::Detail);
 
   avoidRecordStreams_ = getCvarBool(TORCH_MCCL_AVOID_RECORD_STREAMS, false);
+  coordCheckIntervalMilSec_ = getCvarInt(TORCH_MCCL_COORD_CHECK_MILSEC, 1000);
+  mcclHeartBeatMonitor_ = getCvarBool(TORCH_MCCL_HEARBEAT_MONITOR, false);
+  waitTimeoutDumpInMilSec_ =
+      getCvarInt(TORCH_MCCL_WAIT_TIMEOUT_DUMP_MILSEC, 60 * 1000 /*60 Sec*/);
+  heartbeat_ = 1ULL;
 
   if (blockingWait_) {
     if (asyncErrorHandling_ != NoHandling || desyncDebug_) {
@@ -553,7 +622,7 @@ ProcessGroupMCCL::ProcessGroupMCCL(
 
   RECORD_PARAM_COMMS(
       0, // seq
-      reinterpret_cast<std::intptr_t>(this), // process group ptr
+      std::make_tuple(getBackendName(), std::string()), // process group name
       rank, // rank
       "init", // colName
       0, // inSize
@@ -561,6 +630,8 @@ ProcessGroupMCCL::ProcessGroupMCCL(
       at::kByte, // dType
       std::vector<int64_t>(), // inSplitSizes
       std::vector<int64_t>(), // outSplitSizes
+      0,
+      0,
       size_);
 }
 
@@ -622,6 +693,265 @@ void ProcessGroupMCCL::runHealthCheck() {
       rank_);
 }
 
+std::string ProcessGroupMCCL::dumpMCCLTrace(
+    bool includeCollectives,
+    bool includeStackTraces,
+    bool onlyActive) {
+  auto mcclDumpMap = getMCCLCommDumpMap();
+  return MCCLTraceBuffer::get()->dump(
+      mcclDumpMap, includeCollectives, includeStackTraces, onlyActive);
+}
+
+bool ProcessGroupMCCL::dumpDebuggingInfo() {
+  // Serialize all calls to this function to avoid corrupting data, but allow
+  // multiple calls in one runtime. User is responsible for preserving the
+  // output file from an earlier call before a later call overwrites it.
+  static std::mutex writeDebugInfoMutex;
+  std::lock_guard<std::mutex> lock(writeDebugInfoMutex);
+  LOG(ERROR) << "ProcessGroupMCCL preparing to dump debug info.";
+  if (mcclTraceBufferSize_ > 0) {
+    // We dump mccl trace into local disk by default and users can register
+    // their customized writer by inheriting `DebugInfoWriter` via
+    // `registerDebugInfoWriter`.
+    auto mcclTrace = dumpMCCLTrace(true, true, false);
+    DebugInfoWriter& writer = DebugInfoWriter::getWriter(rank_);
+    LOG(INFO) << "ProcessGroupMCCL dumping mccl trace to "
+              << writer.getWriterTarget();
+    writer.write(mcclTrace);
+    return true;
+  }
+  return false;
+}
+
+std::string ProcessGroupMCCL::getMCCLWatchdogTimeoutErrorMsg(
+    const std::string& extraMsg) {
+  return c10::str(
+      logPrefix(),
+      "Received a dump signal due to a collective timeout from ",
+      extraMsg,
+      " and we will try our best to dump the debug info. ",
+      "Last enqueued MCCL work: ",
+      pgStatus_->lastEnqueuedSeq,
+      ", last completed MCCL work: ",
+      pgStatus_->lastCompletedSeq,
+      ".",
+      "This is most likely caused by incorrect usages of collectives, e.g., wrong ",
+      "sizes used across ranks, the order of collectives is not same for all ranks ",
+      "or the scheduled collective, for some reason, didn't run. Additionally, ",
+      "this can be caused by GIL deadlock or other reasons such as network errors or ",
+      "bugs in the communications library (e.g. MCCL), etc. ");
+}
+
+void ProcessGroupMCCL::heartbeatMonitor() {
+  // c10::setThreadName("pt_mccl_heartbt");
+
+  uint64_t heartBeatCounter = 0ULL;
+  std::string errorMsg;
+  std::string exitReason;
+  bool checkDumpSignal = (dumpOnTimeoutOrEx_ && local_id_ == 0);
+  int monitorPollInterval =
+      kHeartBeatThreadSleepMillis * 5; // the poll interval is 10s
+
+  auto lastTimePollStore = std::chrono::steady_clock::now();
+  auto lastTimeHeartBeatCheck = std::chrono::steady_clock::now();
+  std::optional<DumpPipe> dumpPipe = std::nullopt;
+  if (local_id_ == 0) {
+    // DumpPipe is one per-trainer process, and its convenient to name them
+    // after 'global' ranks in the system, So we assume processgroup (uid)==0 is
+    // the global PG and has globally unique rank ids across trainers.
+    dumpPipe.emplace(rank_);
+  }
+  while (true) {
+    // This won't have any lock since this lock is only used here.
+    // Please be aware that mutex `monitorMutex_` should not be used
+    // somewhere else to avoid the deadlock.
+    std::unique_lock<std::mutex> lock(monitorMutex_);
+    if (monitorWakeUpCV_.wait_for(
+            lock, std::chrono::milliseconds(monitorPollInterval), [&] {
+              return terminateHeartbeatMonitorThread_.load();
+            })) {
+      // For the normal complete or user interception, monitorWakeUpCV_
+      // will get notified, we early return and exit heartbeatMonitor.
+      return;
+    }
+    auto currentTime = std::chrono::steady_clock::now();
+    // We put extra functionality in the thread for the default PG (aka,
+    // local_id_=0) because the signal is same across different PGs. We only
+    // need to run once per process to avoid duplicate things performed in too
+    // many separate threads. For example, we check a global flag on the
+    // TCPStore periodically to see if any PG on any rank observed a timeout and
+    // signaled peers to dump debugging info, and we avoid hammering the
+    // TCPStore from all PGs on the same rank.
+    if (checkDumpSignal) {
+      // There are two scenarios where monitor thread will dump on timeout:
+      // 1. The current rank is the first to observe a timeout in watchdog.
+      // (shouldDump_ was set to true by the watchdog thread).
+      // 2. Other ranks detected the timeout and signal the current rank to
+      // dump. In addtion, monitor threads will dump if watchdog threads has no
+      // heartbeat or dumpPipe is not empty.
+
+      if (shouldDump_.load()) {
+        errorMsg = getMCCLWatchdogTimeoutErrorMsg("this local rank");
+        exitReason = "collective timeout or exception";
+        break;
+      }
+      // We poll store to see if some ranks have flagged a timeout when
+      // we haven't polled for `heartbeat_timeout` seconds and there haven't
+      // any work added or removed for `watchdog_timeout` seconds.
+      if (computeDeltaMS(lastWorkListUpdateTime_, currentTime) >=
+              kWatchdogThreadSleepMillis &&
+          computeDeltaMS(lastTimePollStore, currentTime) >=
+              coordCheckIntervalMilSec_) {
+        lastTimePollStore = currentTime;
+        // Wrap globalStore_->check() in a try-catch block to avoid crashing if
+        // the store is not available.
+        bool checkExceptionDump = false;
+        try {
+          checkExceptionDump = store_->check({std::string(EXCEPTION_DUMP)});
+        } catch (const std::exception& e) {
+          LOG(WARNING)
+              << logPrefix()
+              << "Failed to check the \"should dump\" flag on TCPStore, "
+              << "(maybe TCPStore server has shut down too early), with error: "
+              << e.what();
+          // We give up for now assuming TCPStore has been torn down.
+          return;
+        }
+
+        if (checkExceptionDump) {
+          int timeOutRank = -1;
+          if (!shouldDump_.load()) {
+            LOG(ERROR)
+                << logPrefix()
+                << "Observed flight recorder dump signal from another rank via TCPStore.";
+          }
+          shouldDump_.store(true);
+          try {
+            auto vec = store_->get(std::string(EXCEPTION_DUMP));
+            TORCH_CHECK_WITH(
+                DistBackendError,
+                vec.size() == sizeof(int),
+                "Invalid size for the timeout rank ID");
+            std::memcpy(&timeOutRank, vec.data(), vec.size());
+          } catch (const std::exception& e) {
+            LOG(ERROR) << logPrefix()
+                       << "Failed to get timeout rank ID from TCPStore."
+                       << e.what();
+          }
+          errorMsg =
+              getMCCLWatchdogTimeoutErrorMsg(c10::str(" rank ", timeOutRank));
+          exitReason = "collective timeout or exception";
+          break;
+        }
+      }
+    }
+
+    if (computeDeltaMS(lastTimeHeartBeatCheck, currentTime) >=
+        heartbeatTimeoutInSec_ * 1000) {
+      // Check the heart beat of watchdog thread.
+      lastTimeHeartBeatCheck = currentTime;
+      auto heartbeat = heartbeat_.load();
+      if (heartbeat != heartBeatCounter) {
+        heartBeatCounter = heartbeat;
+      } else {
+        shouldDump_.store(true);
+        // Watchdog heartbeat timeout.
+        errorMsg = c10::str(
+            "heartbeatMonitor", /*logPrefix(),*/
+            "ProcessGroupMCCL's watchdog got stuck for ",
+            heartbeatTimeoutInSec_,
+            " seconds without making progress in monitoring enqueued collectives. ",
+            "This typically indicates a MCCL/CUDA API (e.g., CudaEventDestroy) hang blocking the watchdog, ",
+            "and could be triggered by another thread holding the GIL inside a ",
+            "CUDA api (for example, CudaEventDestroy), or other deadlock-prone behaviors.",
+            "If you suspect the watchdog is not actually stuck and a longer timeout would help, ",
+            "you can either increase the timeout (TORCH_MCCL_HEARTBEAT_TIMEOUT_SEC) to a larger value "
+            "or disable the heartbeat monitor (TORCH_MCCL_ENABLE_MONITORING=0)."
+            "If either of aforementioned helps, feel free to file an issue to PyTorch about the short timeout "
+            "or false positive abort; otherwise, please attempt to debug the hang. ");
+        exitReason = "ProcessGroupMCCL watchdog hang";
+        break;
+      }
+    }
+
+    // process a request to dump the trace. only PG uid 0 will respond to dump
+    // requests, but this is fine since all PG's feed into the same flight
+    // recorder and dump. After dump, the training should continue.
+    if (dumpPipe.has_value() && dumpPipe->shouldDump()) {
+      // best effort dump, not waiting for the dump here
+      std::future<bool> fut = std::async(
+          std::launch::async, [this]() { return this->dumpDebuggingInfo(); });
+    }
+  }
+
+  if (checkDumpSignal && shouldDump_.load()) {
+    // Store debug info to storage if no other thread does it. (By default to
+    // local disk)
+    std::future<bool> asyncDebugDump = std::async(
+        std::launch::async, [this]() { return this->dumpDebuggingInfo(); });
+
+    // wait for the dump until timeout - log data
+    waitForFutureOrTimeout(
+        asyncDebugDump,
+        std::chrono::milliseconds(waitTimeoutDumpInMilSec_),
+        "Flight recorder dump in heartbeatMonitor",
+        false,
+        true);
+  }
+}
+
+void ProcessGroupMCCL::waitForFutureOrTimeout(
+    std::future<bool>& fut,
+    const std::chrono::milliseconds& timeOutMilSec,
+    const std::string& futDescription,
+    bool throwException,
+    bool log) {
+  std::string errorMsg;
+
+  //   data.strings["flight_recorder_version"] = c10d::version_val_str;
+  // }
+
+  TORCH_CHECK(fut.valid(), "Expected a valid future");
+  std::future_status status = fut.wait_for(timeOutMilSec);
+  if (status == std::future_status::ready) {
+    // Calling .get() will re-raise any exception from the future, and we don't
+    // care about the retval
+    try {
+      bool result = fut.get();
+      if (result) {
+        LOG(INFO) << logPrefix()
+                  << "future is successfully executed for: " << futDescription;
+      }
+    } catch (const std::exception& e) {
+      errorMsg = c10::str(
+          logPrefix(),
+          "Exception thrown when waiting for future ",
+          futDescription,
+          ": ",
+          e.what());
+      LOG(ERROR) << errorMsg;
+    } catch (...) {
+      errorMsg = c10::str(
+          logPrefix(),
+          "Unknown exception thrown when waiting for future ",
+          futDescription);
+      LOG(ERROR) << errorMsg;
+    }
+  } else {
+    errorMsg = c10::str(
+        logPrefix(),
+        "Future for ",
+        futDescription,
+        " timed out after ",
+        timeOutMilSec.count(),
+        " ms");
+    LOG(ERROR) << errorMsg;
+  }
+  if (throwException && !errorMsg.empty()) {
+    C10_THROW_ERROR(DistBackendError, errorMsg);
+  }
+}
+
 void ProcessGroupMCCL::setSequenceNumberForGroup() {}
 
 uint64_t ProcessGroupMCCL::getSequenceNumberForGroup() {
@@ -630,10 +960,16 @@ uint64_t ProcessGroupMCCL::getSequenceNumberForGroup() {
 
 ProcessGroupMCCL::~ProcessGroupMCCL() {
   terminateProcessGroup_.store(true);
+  // We need to wait for abort to finish before we can safely shut down
+  // heartbeat monitoring thread.
+  terminateHeartbeatMonitorThread_.store(true);
 
   watchdogCV_.notify_one();
   mcclCommWatchdogThread_.join();
 
+  if (mcclHeartBeatMonitor_ && mcclHeartbeatMonitorThread_.joinable()) {
+    mcclHeartbeatMonitorThread_.join();
+  }
   if (asyncErrorHandling_ != NoHandling) {
     workMetaListCV_.notify_one();
     workCleanupThread_.join();
@@ -661,6 +997,19 @@ void ProcessGroupMCCL::abortTimedOutCollectives(
     work.checkAndSetException();
     // Aborting MCCL Communicators due to errors is already handled above.
     if (work.exception()) {
+      auto vec = std::vector<uint8_t>(
+          reinterpret_cast<uint8_t*>(const_cast<int*>(&rank_)),
+          reinterpret_cast<uint8_t*>(const_cast<int*>(&rank_)) + sizeof(rank_));
+      store_->set(std::string(EXCEPTION_DUMP), vec);
+
+      if (!shouldDump_.load()) {
+        LOG(ERROR)
+            << logPrefix()
+            << "Broadcasting flight-recorder dump signal to other processes via TCPStore.";
+      }
+      // signal the monitor thread on PG0 to start dumping
+      shouldDump_.store(true);
+
       continue;
     }
 
@@ -696,6 +1045,11 @@ void ProcessGroupMCCL::abortTimedOutCollectives(
 
 void ProcessGroupMCCL::mcclCommWatchdog() {
   try {
+    if (mcclHeartBeatMonitor_) {
+      mcclHeartbeatMonitorThread_ =
+          std::thread(&ProcessGroupMCCL::heartbeatMonitor, this);
+    }
+
     LOG(INFO) << "[Rank " << rank_ << "] MCCL watchdog thread started!";
     mcclCommWatchdogInternal();
     LOG(INFO) << "[Rank " << rank_
@@ -711,6 +1065,7 @@ void ProcessGroupMCCL::mcclCommWatchdog() {
 }
 
 void ProcessGroupMCCL::mcclCommWatchdogInternal() {
+  lastWorkListUpdateTime_ = std::chrono::steady_clock::now();
   while (!terminateProcessGroup_.load()) {
     std::unordered_set<std::string> abortedCommIds;
     std::unordered_set<std::string> allCommIds;
@@ -718,6 +1073,7 @@ void ProcessGroupMCCL::mcclCommWatchdogInternal() {
     {
       // Loop through the cache of communicators for MCCL errors.
       std::lock_guard<std::mutex> lock(mutex_);
+      heartbeat_++;
       for (auto& it : devMCCLCommMap_) {
         auto& mcclComms = it.second;
 
@@ -892,6 +1248,8 @@ void ProcessGroupMCCL::workCleanupLoop() {
           }
           doneWorks.push_back(std::move(*it));
           it = workMetaList_.erase(it);
+          lastWorkListUpdateTime_ = std::chrono::steady_clock::now();
+          at::musa::MUSAGraph::dec_pending_event_queries();
         } else {
           // Increment the iterator if the current WorkMCCL object is not
           // completed.
@@ -1179,7 +1537,7 @@ void check_gpu_single_tensor(const at::Tensor& tensor) {
 
 // Checks that all `tensors' have the same type and shape and reside on distinct
 // GPUs.
-// TODO: test_c10d_nccl.py should consider adding tests for the error conditions
+// TODO: test_c10d_mccl.py should consider adding tests for the error conditions
 // here, ie, that deliberately pass invalid tensors and check the right
 // exception is thrown.
 void check_gpu_tensors_different_devices(
@@ -1226,7 +1584,7 @@ void check_gpu_tensors_different_devices(
 
 // Checks that all `tensors' have the same type and shape and reside on the same
 // GPU.
-// TODO: test_c10d_nccl.py should consider adding tests for the error conditions
+// TODO: test_c10d_mccl.py should consider adding tests for the error conditions
 // here, ie, that deliberately pass invalid tensors and check the right
 // exception is thrown. The "Expected list of tensors on the same device"
 // condition may be a challenge because the test would need to pass tensors on
@@ -1359,6 +1717,7 @@ void ProcessGroupMCCL::workEnqueue(
     // needs to be destructed in user thread. Otherwise will
     // get deadlock. Here we enqueue work without outputs_.
     workMetaList_.emplace_back(*work);
+    lastWorkListUpdateTime_ = std::chrono::steady_clock::now();
   }
 }
 
@@ -1378,7 +1737,7 @@ void ProcessGroupMCCL::startCoalescing() {
 c10::intrusive_ptr<Work> ProcessGroupMCCL::endCoalescing() {
   /* TODO(tyr)
    here skiped
-   "if !nccl_use_nonblocking() or coalescedComms_.size() == 0"
+   "if !mccl_use_nonblocking() or coalescedComms_.size() == 0"
    as torch-musa only support non_blocking mode yet.
   */
   groupEnd();
@@ -1408,7 +1767,13 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::endCoalescing() {
         std::make_shared<std::vector<at::Tensor>>();
   }
 
-  if (coalescing_state_ & CoalColl) {
+  c10::musa::CaptureStatus capture_status =
+      c10::musa::currentStreamCaptureStatusMayInitCtx();
+
+  if ((coalescing_state_ & CoalColl) &&
+      capture_status == c10::musa::CaptureStatus::None) {
+    // Notify graphs before we check the capture status preemptively
+    at::musa::MUSAGraph::inc_pending_event_queries();
     workEnqueue(work);
   }
   return work;
@@ -1426,6 +1791,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::collective(
     bool avoidRecordStreams) {
   // Environment setting by the user may add onto collective call's option
   avoidRecordStreams |= avoidRecordStreams_;
+  c10::musa::CaptureStatus capture_status =
+      c10::musa::currentStreamCaptureStatusMayInitCtx();
   errorIfCapturingNonCapturableMCCL();
 
   // Bump collective counter
@@ -1554,7 +1921,10 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::collective(
   work->opTimeout_ = options_->timeout;
   work->store_ = store_;
 
-  if (!coalescing_state_ || asyncErrorHandling_ != NoHandling) {
+  if ((!coalescing_state_ || asyncErrorHandling_ != NoHandling) &&
+      capture_status == c10::musa::CaptureStatus::None) {
+    // Notify graphs before we check the capture status preemptively
+    at::musa::MUSAGraph::inc_pending_event_queries();
     workEnqueue(work);
   }
 
@@ -1704,6 +2074,16 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::pointToPoint(
     });
   }
 
+  // Enqueue P2P op so that it can be cancelled by NCCL watchdog
+  c10::musa::CaptureStatus capture_status =
+      c10::musa::currentStreamCaptureStatusMayInitCtx();
+
+  if (!coalescing_state_ && capture_status == c10::musa::CaptureStatus::None) {
+    // Notify graphs before we check the capture status preemptively
+    at::musa::MUSAGraph::inc_pending_event_queries();
+    workEnqueue(work);
+  }
+
   return work;
 }
 
@@ -1782,7 +2162,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::allreduce(
   RECORD_PARAM_COMMS_DATA(
       static_cast<int>(
           this->getSequenceNumberForGroup() + 1), // seq + 1 to match collective
-      reinterpret_cast<std::intptr_t>(this), // process group ptr
+      std::make_tuple(getBackendName(), std::string()), // process group name
       tensors, // inputTensors
       tensors, // outputTensors
       rank_, // rank
@@ -1792,6 +2172,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::allreduce(
       tensor.scalar_type(), // dType
       std::vector<int64_t>(), // inSplitSizes
       std::vector<int64_t>(), // outSplitSizes
+      0,
+      0,
       this->getSize());
 
   return allreduce_impl(tensors, opts);
@@ -1806,7 +2188,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::allreduce_coalesced(
   RECORD_PARAM_COMMS_DATA(
       static_cast<int>(
           this->getSequenceNumberForGroup() + 1), // seq + 1 to match collective
-      reinterpret_cast<std::intptr_t>(this), // process group ptr
+      std::make_tuple(getBackendName(), std::string()), // process group name
       tensors, // inputTensors
       tensors, // outputTensors
       rank_, // rank
@@ -1817,6 +2199,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::allreduce_coalesced(
       // I'm not sure what in,outSplitSizes mean here.
       std::vector<int64_t>(), // inSplitSizes
       std::vector<int64_t>(), // outSplitSizes
+      0,
+      0,
       this->getSize());
 
   return allreduce_impl(tensors, opts);
@@ -1833,7 +2217,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::broadcast(
   RECORD_PARAM_COMMS_DATA(
       static_cast<int>(
           this->getSequenceNumberForGroup() + 1), // seq + 1 to match collective
-      reinterpret_cast<std::intptr_t>(this), // process group ptr
+      std::make_tuple(getBackendName(), std::string()), // process group name
       tensors, // inputTensors
       tensors, // outputTensors
       rank_, // rank
@@ -1843,6 +2227,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::broadcast(
       tensor.scalar_type(), // dType
       std::vector<int64_t>(), // inSplitSizes
       std::vector<int64_t>(), // outSplitSizes
+      0,
+      0,
       this->getSize());
 
   bool avoidRecordStreams = avoidRecordStreams_ || (!opts.asyncOp);
@@ -1895,7 +2281,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::_broadcast_oop(
       static_cast<int>(
           this->getSequenceNumberForGroup() +
           1), // seq + 1 to match collective increment.
-      reinterpret_cast<std::intptr_t>(this), // process group ptr
+      std::make_tuple(getBackendName(), std::string()), // process group name
       inputTensors, // inputTensors
       outputTensors, // outputTensors
       rank_, // rank
@@ -1905,6 +2291,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::_broadcast_oop(
       tensor.scalar_type(), // dType
       std::vector<int64_t>(), // inSplitSizes
       std::vector<int64_t>(), // outSplitSizes
+      0,
+      0,
       this->getSize());
 
   return collective(
@@ -1937,7 +2325,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::reduce(
   RECORD_PARAM_COMMS_DATA(
       static_cast<int>(
           this->getSequenceNumberForGroup() + 1), // seq + 1 to match collective
-      reinterpret_cast<std::intptr_t>(this),
+      std::make_tuple(getBackendName(), std::string()), // process group name
       tensors, // inputTensors
       tensors, // outputTensors
       rank_, // rank
@@ -1947,6 +2335,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::reduce(
       tensor.scalar_type(), // dType
       std::vector<int64_t>(), // inSplitSizes
       std::vector<int64_t>(), // outSplitSizes
+      0,
+      0,
       this->getSize());
 
   int dev_in_group = 0;
@@ -2000,7 +2390,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::_reduce_oop(
   RECORD_PARAM_COMMS_DATA(
       static_cast<int>(
           this->getSequenceNumberForGroup() + 1), // seq + 1 to match collective
-      reinterpret_cast<std::intptr_t>(this), // process group ptr
+      std::make_tuple(getBackendName(), std::string()), // process group name
       inputTensors, // inputTensors
       outputTensors, // outputTensors
       rank_, // rank
@@ -2010,6 +2400,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::_reduce_oop(
       tensor.scalar_type(), // dType
       std::vector<int64_t>(), // inSplitSizes
       std::vector<int64_t>(), // outSplitSizes
+      0,
+      0,
       this->getSize());
 
   int dev_in_group{0};
@@ -2057,7 +2449,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::allgather(
         static_cast<int>(
             this->getSequenceNumberForGroup() +
             1), // seq + 1 to match collective
-        reinterpret_cast<std::intptr_t>(this), // process group ptr
+        std::make_tuple(getBackendName(), std::string()), // process group name
         inputTensors, // inputTensors
         outputTensors, // outputTensors
         rank_, // rank
@@ -2068,6 +2460,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::allgather(
         tensor.scalar_type(),
         std::vector<int64_t>(), // inSplitSizes
         std::vector<int64_t>(), // outSplitSize
+        0,
+        0,
         this->getSize());
 
     return collective(
@@ -2188,7 +2582,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::reduce_scatter(
         static_cast<int>(
             this->getSequenceNumberForGroup() +
             1), // seq + 1 to match collective
-        reinterpret_cast<std::intptr_t>(this), // process group ptr
+        std::make_tuple(getBackendName(), std::string()), // process group name
         inputTensors, // inputTensors
         outputTensors, // outputTensors
         rank_, // rank
@@ -2198,6 +2592,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::reduce_scatter(
         tensor.scalar_type(), // dType
         std::vector<int64_t>(), // inSplitSizes
         std::vector<int64_t>(), // outSplitSizes
+        0,
+        0,
         this->getSize());
 
     return collective(
@@ -2299,7 +2695,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::_reduce_scatter_base(
   RECORD_PARAM_COMMS_DATA(
       static_cast<int>(
           this->getSequenceNumberForGroup() + 1), // seq + 1 to match collective
-      reinterpret_cast<std::intptr_t>(this), // process group ptr
+      std::make_tuple(getBackendName(), std::string()), // process group name
       inputTensor, // inputTensor
       outputTensor, // outputTensor
       rank_, // rank
@@ -2310,6 +2706,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::_reduce_scatter_base(
       tensor.scalar_type(), // dtype
       std::vector<int64_t>(), // inSplitSizes
       std::vector<int64_t>(), // outSplitSizes
+      0,
+      0,
       this->getSize());
 
   auto inputs = std::vector<at::Tensor>{inputTensor};
@@ -2317,7 +2715,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::_reduce_scatter_base(
 
   int dev_in_group = 0;
   // for asyncOp = false, we don't want to record streams because we
-  // know that the NCCL stream will join back to the "current" stream right
+  // know that the MCCL stream will join back to the "current" stream right
   // after this op. So we might just as well keep the stream ownership of the
   // input/output tensors unchanged. The benefit would be that the
   // allocation/free of the tensors would look deterministic to the "current"
@@ -2392,7 +2790,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::barrier(const BarrierOptions& opts) {
   RECORD_PARAM_COMMS(
       static_cast<int>(
           this->getSequenceNumberForGroup() + 1), // seq + 1 to match collective
-      reinterpret_cast<std::intptr_t>(this), // process group ptr
+      std::make_tuple(getBackendName(), std::string()), // process group name
       rank_, // rank
       "barrier", // colName
       0, // inSize
@@ -2400,6 +2798,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::barrier(const BarrierOptions& opts) {
       at::kByte, // dType
       std::vector<int64_t>(), // inSplitSizes
       std::vector<int64_t>(), // outSplitSizes
+      0,
+      0,
       this->getSize());
 
   std::vector<at::Device> devices;
@@ -2575,7 +2975,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::alltoall_base(
         static_cast<int>(
             this->getSequenceNumberForGroup() +
             1), // seq + 1 to match collective
-        reinterpret_cast<std::intptr_t>(this), // process group ptr
+        std::make_tuple(getBackendName(), std::string()), // process group name
         inputTensor, // inputTensor
         outputTensor, // outputTensor
         rank_, // rank
@@ -2585,6 +2985,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::alltoall_base(
         inputTensor.scalar_type(), // dType
         std::vector<int64_t>(), // inSplitSizes
         std::vector<int64_t>(), // outSplitSizes
+        0,
+        0,
         this->getSize());
 
     return collective(
@@ -2614,7 +3016,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::alltoall_base(
         static_cast<int>(
             this->getSequenceNumberForGroup() +
             1), // seq + 1 to match collective
-        reinterpret_cast<std::intptr_t>(this), // process group ptr
+        std::make_tuple(getBackendName(), std::string()), // process group name
         inputTensor, // inputTensor
         outputTensor, // outputTensor
         rank_, // rank
@@ -2624,6 +3026,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::alltoall_base(
         inputTensor.scalar_type(), // dType
         inputSplitSizes, // inSplitSizes
         outputSplitSizes, // outSplitSizes
+        0,
+        0,
         this->getSize());
 
     return collective(
@@ -2765,7 +3169,7 @@ void ProcessGroupMCCL::groupEnd() {
 }
 
 // gather impl is assembled by send & recv,
-// mainly same as gather in torch/csrc/cuda/nccl.cpp
+// mainly same as gather in torch/csrc/cuda/mccl.cpp
 mcclResult_t gather_impl(
     const at::Tensor& inputs,
     std::vector<at::Tensor>& outputs,
@@ -2848,7 +3252,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::gather(
   RECORD_PARAM_COMMS_DATA(
       static_cast<int>(
           this->getSequenceNumberForGroup() + 1), // seq + 1 to match collective
-      reinterpret_cast<std::intptr_t>(this), // process group ptr
+      std::make_tuple(getBackendName(), std::string()), // process group name
       inputTensors, // inputTensors
       outputTensors, // outputTensors
       rank_, // rank
@@ -2858,6 +3262,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::gather(
       tensor.scalar_type(), // dType
       std::vector<int64_t>(), // inSplitSizes
       std::vector<int64_t>(), // outSplitSize
+      0,
+      0,
       this->getSize());
 
   return collective(
@@ -2967,7 +3373,7 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::scatter(
   RECORD_PARAM_COMMS_DATA(
       static_cast<int>(
           this->getSequenceNumberForGroup() + 1), // seq + 1 to match collective
-      reinterpret_cast<std::intptr_t>(this), // process group ptr
+      std::make_tuple(getBackendName(), std::string()), // process group name
       inputTensors, // inputTensors
       outputTensors, // outputTensors
       rank_, // rank
@@ -2977,6 +3383,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::scatter(
       tensor.scalar_type(), // dType
       std::vector<int64_t>(), // inSplitSizes
       std::vector<int64_t>(), // outSplitSize
+      0,
+      0,
       this->getSize());
 
   bool avoidRecordStreams = avoidRecordStreams_ || (!opts.asyncOp);
@@ -3076,16 +3484,51 @@ bool ProcessGroupMCCL::isUCCAvailable() const {
 #endif
 }
 
+void ProcessGroupMCCL::abortCommsFromMap(
+    const std::unordered_map<
+        std::string,
+        std::vector<std::shared_ptr<MCCLComm>>>& mcclCommsMap,
+    std::optional<std::string> abortReason) {
+  // The process may control multiple devices, loop through the communicators
+  // on each device
+  for (auto& it : mcclCommsMap) {
+    auto& devName = it.first;
+    for (auto& mcclComm : it.second) {
+      c10::musa::OptionalMUSAGuard gpuGuard;
+
+      at::DeviceIndex deviceIndex = getIndexFromDeviceKey(devName);
+      if (deviceIndex >= 0) {
+        gpuGuard.set_index(deviceIndex);
+      }
+
+      LOG(INFO) << "ProcessGroupMCCL destroying mcclComm_ on MUSA device: "
+                << devName;
+
+      mcclComm->mcclCommAbort(abortReason);
+
+      LOG(INFO) << "ProcessGroupMCCL destroyed  mcclComm on MUSA device: "
+                << devName;
+    }
+  }
+}
+
+// Abort all communicators on this rank
+bool ProcessGroupMCCL::abort(std::optional<std::string> abortReason) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  abortCommsFromMap(devMCCLCommMap_, abortReason);
+  abortCommsFromMap(mcclIdToCommMap_, abortReason);
+  return true;
+}
+
 c10::intrusive_ptr<Backend> ProcessGroupMCCL::MCCLcreator(
-    c10d::PrefixStore& store,
+    const c10::intrusive_ptr<::c10d::Store>& store,
     int rank,
     int size,
     std::chrono::milliseconds op_time_out) {
   c10::intrusive_ptr<Options> options = Options::create();
   options->timeout = op_time_out;
 
-  return c10::make_intrusive<ProcessGroupMCCL>(
-      store.getUnderlyingStore(), rank, size, options);
+  return c10::make_intrusive<ProcessGroupMCCL>(store, rank, size, options);
 }
 
 } // namespace c10d

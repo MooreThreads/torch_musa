@@ -1,0 +1,14 @@
+diff --git a/aten/src/ATen/native/AdaptiveAveragePooling.cpp b/aten/src/ATen/native/AdaptiveAveragePooling.cpp
+index 8b11829..2be22d5 100644
+--- a/aten/src/ATen/native/AdaptiveAveragePooling.cpp
++++ b/aten/src/ATen/native/AdaptiveAveragePooling.cpp
+@@ -117,7 +117,8 @@ namespace {
+       return at::mkldnn_adaptive_avg_pool2d(input, C10_AS_INTARRAYREF_SLOW(output_size));
+     }
+ 
+-    if (!input.is_quantized() && output_size[0] == 1 && output_size[1] == 1) {
++    if (!input.is_quantized() && output_size[0] == 1 && output_size[1] == 1
++        && !input.is_privateuseone()) {
+       // in this case, adaptive pooling is just computing mean over hw
+       // dimensions, which can be done more efficiently
+       #if defined(C10_MOBILE) && defined(USE_XNNPACK)

@@ -1,26 +1,45 @@
-#ifndef TORCH_MUSA_CSRC_CORE_MUSA_HOOKS_H_
-#define TORCH_MUSA_CSRC_CORE_MUSA_HOOKS_H_
-#include "torch_musa/csrc/core/Device.h"
+#ifndef TORCH_MUSA_CSRC_CORE_MUSAHOOKS_H_
+#define TORCH_MUSA_CSRC_CORE_MUSAHOOKS_H_
+
 #include "torch_musa/csrc/core/MUSAHooksInterface.h"
 
-namespace at {
-namespace musa {
-namespace detail {
+namespace at::musa::detail {
 
-struct MUSAHooks : public MUSAHooksInterface {
+struct MUSAHooks : MUSAHooksInterface {
   MUSAHooks(MUSAHooksArgs) {}
+
+  ~MUSAHooks() override = default;
+
   void initMUSA() const override;
+
+  bool hasPrimaryContext(DeviceIndex device_index) const override;
+
+  int getNumGPUs() const override;
+
+  void setCurrentDevice(DeviceIndex device) const override;
+
+  DeviceIndex current_device() const override;
+
+  DeviceIndex exchangeDevice(DeviceIndex device) const override;
+
+  DeviceIndex maybeExchangeDevice(DeviceIndex device) const override;
+
+  bool isPinnedPtr(const void* data) const override;
+
+  Allocator* getPinnedMemoryAllocator() const override;
+
   const Generator& getDefaultMUSAGenerator(
       DeviceIndex device_index) const override;
+
   Device getDeviceFromPtr(void* data) const override;
+
+  void resizeMUSABytes(const Storage& storage, size_t newsize) const override;
+
   bool hasMUSA() const override;
-  int64_t current_device() const override;
-  int getNumGPUs() const override;
-  void deviceSynchronize(int64_t device_index) const override;
+
+  void deviceSynchronize(DeviceIndex device_index) const override;
 };
 
-} // namespace detail
-} // namespace musa
-} // namespace at
+} // namespace at::musa::detail
 
-#endif // TORCH_MUSA_CSRC_CORE_MUSA_HOOKS_H_
+#endif // TORCH_MUSA_CSRC_CORE_MUSAHOOKS_H_

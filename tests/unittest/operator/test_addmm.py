@@ -267,3 +267,52 @@ def test_addmm_out(out_input_data, dtype):
             abs_diff=5e-2, rel_diff=5e-3, equal_nan=True
         )
     assert comparator(cpu_res, musa_res)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize(
+    "config",
+    [
+        # input_shape, mat1_shape, mat2_shape, beta, alpha, trans_l, trans_r
+        [(128, 64), (128, 256), (256, 64), 1.2, 1.7, False, False],
+        [(128, 64), (256, 128), (256, 64), 1.2, 1.7, True, False],
+        [(64,), (128, 256), (64, 256), 1.6, 2.0, False, True],
+        [(64,), (128, 256), (256, 64), 1.6, 2.0, False, False],
+    ],
+)
+@pytest.mark.parametrize("dtype", out_data_type)
+@pytest.mark.parametrize("use_gelu", [True, False])
+@pytest.mark.parametrize("test_out", [True, False])
+def test_addmm_activation(config, dtype, use_gelu, test_out):
+    input_ = torch.randn(config[0], dtype=dtype)
+    mat1 = torch.randn(config[1], dtype=dtype)
+    mat2 = torch.randn(config[2], dtype=dtype)
+    beta, alpha = config[3], config[4]
+    trans_l, trans_r = config[-2:]
+
+    if trans_l:
+        mat1 = mat1.transpose(-2, -1)
+    if trans_r:
+        mat2 = mat2.transpose(-2, -1)
+
+    input_data = {
+        "input": input_,
+        "mat1": mat1,
+        "mat2": mat2,
+        "beta": beta,
+        "alpha": alpha,
+        "use_gelu": use_gelu,
+    }
+
+    if test_out:
+        out = torch.empty(mat1.shape[0], mat2.shape[1], dtype=dtype)
+        input_data["out"] = out
+
+    if dtype == torch.bfloat16:
+        comparator = testing.DefaultComparator(abs_diff=2e-2, rel_diff=2e-2)
+    else:
+        comparator = testing.DefaultComparator(abs_diff=5e-3, rel_diff=5e-3)
+    test = testing.OpTest(
+        func=torch._addmm_activation, input_args=input_data, comparators=comparator
+    )
+    test.check_result(test_out=test_out)

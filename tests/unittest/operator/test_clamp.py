@@ -232,11 +232,45 @@ def test_clamp_min(input_data, _min, dtype, func):
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_datas)
+@pytest.mark.parametrize("dtype", all_dtypes)
+@pytest.mark.parametrize("func", [torch.clamp_min])
+def test_clamp_min_tensor(input_data, dtype, func):
+    input_args = {"input": input_data["input"], "min": input_data["min"]}
+    function(input_args, dtype, func)
+    input_args.pop("input")
+    test = testing.InplaceOpChek(
+        func_name=func.__name__ + "_",
+        self_tensor=input_data["input"].to(dtype).clone(),
+        input_args=input_args,
+    )
+    test.check_address()
+    test.check_res()
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_datas)
 @pytest.mark.parametrize("_max", max_value)
 @pytest.mark.parametrize("dtype", all_dtypes)
 @pytest.mark.parametrize("func", [torch.clamp_max])
 def test_clamp_max(input_data, _max, dtype, func):
     input_args = {"input": input_data["input"], "max": _max}
+    function(input_args, dtype, func)
+    input_args.pop("input")
+    test = testing.InplaceOpChek(
+        func_name=func.__name__ + "_",
+        self_tensor=input_data["input"].to(dtype).clone(),
+        input_args=input_args,
+    )
+    test.check_address()
+    test.check_res()
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_datas)
+@pytest.mark.parametrize("dtype", all_dtypes)
+@pytest.mark.parametrize("func", [torch.clamp_max])
+def test_clamp_max_tensor(input_data, dtype, func):
+    input_args = {"input": input_data["input"], "max": input_data["max"]}
     function(input_args, dtype, func)
     input_args.pop("input")
     test = testing.InplaceOpChek(

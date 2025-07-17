@@ -29,6 +29,7 @@ index_add_coverage_test_config = [
     [[8193,], [8193,], 0, 2.0],
     [(2, 2, 2, 16), (2, 2, 2, 8193), 3, 2.0, ((1, 0, 2, 3), (1, 0, 2, 3))],
     [(2, 3, 4, 2, 8193), (3, 2, 4, 2, 8193), 4, 2.0, ((0, 1, 2, 3, 4), (1, 0, 2, 3, 4))],
+    [(2, 3, 4, 2, 8193), (3, 2, 4, 2, 8193), 3, 2.0, ((0, 1, 2, 3, 4), (1, 0, 2, 3, 4))],
 ]
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -39,7 +40,7 @@ def test_index_add_coverage(config, dtype):
     add_dim = config[2]
 
     _input = torch.ones(config[0]).to(dtype)
-    _source = torch.ones(config[1]).to(dtype)
+    _source = torch.randint(0, 4, config[1]).to(dtype)
     if len(config) > 4:
         _input = _input.permute(config[4][0])
         _source = _source.permute(config[4][1])

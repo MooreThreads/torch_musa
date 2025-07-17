@@ -34,6 +34,16 @@ else:
         return prev_device
 
 
+if hasattr(torch_musa._MUSAC, "_musa_maybeExchangeDevice"):
+    _maybe_exchange_device = torch_musa._MUSAC._musa_maybeExchangeDevice
+else:
+
+    def _maybe_exchange_device(device: int) -> int:
+        if device < 0:
+            return -1
+        raise NotImplementedError
+
+
 class Device(object):
     """Context-manager that changes the selected device.
 
@@ -173,36 +183,8 @@ class _DeviceGuard:
         return False
 
 
-def set_default_dtype(d):
-    r"""
-    Hack of torch.set_default_dtype method, see pytorch official doc
-    for more details
-
-    Example:
-        >>> # initial default for floating point is torch.float32
-        >>> # Python floats are interpreted as float32
-        >>> torch.tensor([1.2, 3]).dtype
-        torch.float32
-        >>> # initial default for floating point is torch.complex64
-        >>> # Complex Python numbers are interpreted as complex64
-        >>> torch.tensor([1.2, 3j]).dtype
-        torch.complex64
-
-        >>> torch.set_default_dtype(torch.float64)
-
-        >>> # Python floats are now interpreted as float64
-        >>> torch.tensor([1.2, 3]).dtype    # a new floating point tensor
-        torch.float64
-        >>> # Complex Python numbers are now interpreted as complex128
-        >>> torch.tensor([1.2, 3j]).dtype   # a new complex tensor
-        torch.complex128
-
-    Args:
-        d (:class:`torch.dtype`): the floating point dtype to make the default.
-                                  Either torch.float32 or torch.float64.
-
-    """
-    torch_musa._MUSAC._set_default_dtype(d)
+def register_musa_hook():
+    torch_musa._MUSAC._musa_register_device_hook()
 
 
 def get_arch_list() -> List[str]:
@@ -213,3 +195,13 @@ def get_arch_list() -> List[str]:
     if arch_flags is None:
         return []
     return arch_flags.split()
+
+
+def is_bf16_supported():
+    r"""Return a bool indicating if the current MUSA device supports dtype bfloat16."""
+    if not is_available():
+        return False
+    device = torch_musa.current_device()
+    major, min = torch_musa.get_device_capability(device)
+
+    return major * 10 + min >= 22

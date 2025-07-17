@@ -3,6 +3,8 @@
 
 #include <c10/core/ScalarType.h>
 #include <c10/util/CallOnce.h>
+#include <torch/csrc/tensor/python_tensor.h>
+
 #include <mudnn.h>
 
 #include "torch_musa/csrc/aten/utils/Utils.h"

@@ -13,7 +13,3 @@ cmake_format==0.6.13
 pre-commit==3.5.0
 black==23.12.1
 packaging
-pytest==8.2.2
-# torch_musa.utils required
-tqdm==4.66.2
-libcst==1.1.0

@@ -243,6 +243,7 @@ Tensor& AddcMulOut(
       output.device());
   TernarycommonDtypeCall(
       self, input1, input2, alpha_scalar, output, TERNARY_MODE::ADDCMUL);
+
   return output;
 }
 
@@ -289,6 +290,24 @@ Tensor& AddcDivOut(
   return output;
 }
 
+at::Tensor& AddcMul_(
+    at::Tensor& self,
+    const at::Tensor& tensor1,
+    const at::Tensor& tensor2,
+    const at::Scalar& value) {
+  // TODO(@mt-ai,mt-compute): Since we don't know the self is created from empty
+  // or computed from other operations, and muDNN doesn't supoprt inplace
+  // ternary, we create an output then copy it to self
+  at::Tensor output = at::empty_like(
+      self, self.options().memory_format(at::MemoryFormat::Contiguous));
+
+  AddcMulOut(self, tensor1, tensor2, value, output);
+
+  self.copy_(output);
+
+  return self;
+}
+
 at::Tensor& AddcDiv_(
     at::Tensor& self,
     const at::Tensor& tensor1,
@@ -304,6 +323,19 @@ at::Tensor& AddcDiv_(
 
   self.copy_(output);
   return self;
+}
+
+at::Tensor AddcMul(
+    const at::Tensor& self,
+    const at::Tensor& tensor1,
+    const at::Tensor& tensor2,
+    const at::Scalar& value) {
+  at::TensorIterator iter;
+  iter.build_ternary_op(at::Tensor(), self, tensor1, tensor2);
+  at::Tensor output = iter.output();
+  AddcMulOut(self, tensor1, tensor2, value, output);
+
+  return output;
 }
 
 at::Tensor AddcDiv(

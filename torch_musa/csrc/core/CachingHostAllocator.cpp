@@ -393,13 +393,18 @@ void CachingHostAllocator_emptyCache() {
 }
 
 struct MUSAHostAllocatorWrapper final : public at::Allocator {
-  at::DataPtr allocate(size_t size) const override {
+  at::DataPtr allocate(size_t size) override {
     auto ptr_and_ctx = getMUSAHostAllocator().allocate(size);
     return {
         ptr_and_ctx.first,
         ptr_and_ctx.second,
         &MUSAHostAllocatorDeleter,
         at::DeviceType::CPU};
+  }
+
+  void copy_data(void* dest, const void* src, std::size_t count) const final {
+    C10_MUSA_CHECK(
+        musaMemcpy(dest, src, count, musaMemcpyKind::musaMemcpyDeviceToDevice));
   }
 };
 

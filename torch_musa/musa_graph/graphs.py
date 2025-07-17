@@ -1,4 +1,4 @@
-# pylint: disable=useless-parent-delegation,W0246,abstract-method,invalid-name,missing-param-doc,missing-type-doc,missing-class-docstring,rguments-diffe,no-value-for-parameter,no-value-for-parameter,arguments-differ
+# pylint: disable=useless-parent-delegation,W0246,abstract-method,invalid-name,missing-param-doc,missing-type-doc,missing-class-docstring,rguments-diffe,no-value-for-parameter,no-value-for-parameter,arguments-differ,unused-argument
 
 """ grapsh api"""
 import gc

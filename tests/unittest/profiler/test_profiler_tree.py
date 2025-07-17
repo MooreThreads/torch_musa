@@ -11,14 +11,14 @@ import expecttest
 import torch
 from torch._C._profiler import _ExtraFields_PyCall, _ExtraFields_PyCCall
 from torch.testing._internal.common_utils import (
-    TestCase,
-    run_tests,
-    IS_WINDOWS,
-    TEST_WITH_CROSSREF,
     IS_ARM64,
+    IS_WINDOWS,
+    run_tests,
+    skipIfTorchDynamo,
+    TEST_WITH_CROSSREF,
+    TestCase,
 )
 from torch.utils._pytree import tree_map
-import torch_musa
 
 # These functions can vary from based on platform and build (e.g. with MUSA)
 # and generally distract from rather than adding to the test.
@@ -34,7 +34,9 @@ PRUNE_FUNCTIONS = {
     "<built-in method __exit__ of torch._C.DisableTorchFunctionSubclass "
     "object at 0xXXXXXXXXXXXX>": PRUNE_ALL,
     "musaStreamIsCapturing": PRUNE_ALL,
-    "musaOccupancyMaxActiveBlocksPerMultiprocessorWithFlags": PRUNE_ALL,
+    # These show up only on MUSA, prune them so the MUSA and CPU expected results can be the same
+    "musaGetDeviceCount": PRUNE_ALL,
+    "musaGetDeviceProperties_v2": PRUNE_ALL,
 }
 
 # ROCTracer is currently not producing events that profiler can extract. We
@@ -62,8 +64,6 @@ class TorchDispatchTensor(torch.Tensor):
         t = torch.Tensor._make_subclass(cls, elem, elem.requires_grad)
         t.elem = elem
         return t
-
-    __torch_function__ = torch._C._disabled_torch_function_impl
 
     @classmethod
     def __torch_dispatch__(cls, func, types, args=(), kwargs=None):
@@ -134,6 +134,10 @@ class ProfilerTree:
         flat_nodes = flatten(profiler.kineto_results.experimental_event_tree())
 
         # Profiler inserts a `musaDeviceSynchronize` at the end of profiling.
+        # and may also insert 'Context Sync' MUSA synchronization event.
+        if flat_nodes and flat_nodes[-2][1] == "musaDeviceSynchronize":
+            flat_nodes = flat_nodes[:-2]
+
         if flat_nodes and flat_nodes[-1][1] == "musaDeviceSynchronize":
             flat_nodes = flat_nodes[:-1]
 
@@ -178,8 +182,7 @@ class ProfilerTree:
             "void at::native::reduce_kernel",
             "void at::native::vectorized_elementwise_kernel",
             "void at::native::unrolled_elementwise_kernel",
-            r"void [a-zA-Z0-9]+_kernel",
-            # Nvidia kernels.
+            r"void [a-zA-Z0-9]+_kernel",  # Nvidia kernels.
         ):
             name = re.sub(
                 rf"{kernel_pattern}<.+>\(.+\)$",
@@ -254,7 +257,9 @@ class TestProfilerTree(TestCase):
                 else:
                     raise
 
+    # TODO: Add logic for MUSA version of test
     @ProfilerTree.test
+    @unittest.skipIf(torch.musa.is_available(), "Test not working for MUSA")
     def test_profiler_experimental_tree(self):
         t1, t2 = torch.ones(1, requires_grad=True), torch.ones(1, requires_grad=True)
         with torch.profiler.profile() as p:
@@ -307,7 +312,9 @@ class TestProfilerTree(TestCase):
                   detach""",
         )
 
+    # TODO: Add logic for MUSA version of test
     @ProfilerTree.test
+    @unittest.skipIf(torch.musa.is_available(), "Test not working for MUSA")
     def test_profiler_experimental_tree_with_record_function(self):
         with torch.profiler.profile() as p:
             with torch.autograd.profiler.record_function("Top level Annotation"):
@@ -355,7 +362,9 @@ class TestProfilerTree(TestCase):
                       aten::copy_""",
         )
 
+    # TODO: Add logic for MUSA version of test
     @ProfilerTree.test
+    @unittest.skipIf(torch.musa.is_available(), "Test not working for MUSA")
     def test_profiler_experimental_tree_with_memory(self):
         t1, t2 = torch.ones(1, requires_grad=True), torch.ones(1, requires_grad=True)
         with torch.profiler.profile(profile_memory=True) as p:
@@ -427,6 +436,7 @@ class TestProfilerTree(TestCase):
             [memory]""",
         )
 
+    @unittest.skip("https://github.com/pytorch/pytorch/issues/83606")
     @unittest.skipIf(
         TEST_WITH_CROSSREF, "crossref intercepts calls and changes the callsite."
     )
@@ -443,22 +453,8 @@ class TestProfilerTree(TestCase):
             ProfilerTree.format(p.profiler, 12),
             """\
             test_profiler_tree.py(...): test_profiler_experimental_tree_with_memory_and_stack
-              torch_musa/profiler/profiler.py(...): __enter__
-                torch_musa/profiler/profiler.py(...): start
-                  torch_musa/profiler/profiler.py(...): _transit_action
-                    torch_musa/profiler/profiler.py(...): start_trace
-                      torch_musa/autograd/profiler.py(...): _start_trace
-                      torch_musa/profiler/profiler.py(...): add_metadata_json
-                        <built-in method _add_metadata_json of PyCapsule object at 0xXXXXXXXXXXXX>
-                      torch_musa/profiler/profiler.py(...): add_metadata_json
-                        <built-in method _add_metadata_json of PyCapsule object at 0xXXXXXXXXXXXX>
-                      <built-in method kineto_available of PyCapsule object at 0xXXXXXXXXXXXX>
-                      torch_musa/profiler/profiler.py(...): _get_distributed_info
-                        torch/distributed/__init__.py(...): is_available
-                          <built-in function hasattr>
-                        torch/distributed/distributed_c10d.py(...): is_initialized
-                          torch/distributed/distributed_c10d.py(...): WORLD
-                            torch/distributed/distributed_c10d.py(...): default_pg
+              torch/profiler/profiler.py(...): __enter__
+                ...
               <built-in method add of type object at 0xXXXXXXXXXXXX>
                 aten::add
                   [memory]
@@ -483,8 +479,19 @@ class TestProfilerTree(TestCase):
                   <built-in function len>
                   torch/autograd/__init__.py(...): _tensor_or_tensors_to_tuple
                   torch/autograd/__init__.py(...): _make_grads
+                    typing.py(...): inner
+                      typing.py(...): __hash__
+                        <built-in function hash>
+                    typing.py(...): cast
+                    <built-in function isinstance>
+                    <built-in function isinstance>
+                    <built-in function isinstance>
+                    <built-in function isinstance>
+                    <built-in function isinstance>
                     <built-in function isinstance>
                     <built-in method numel of Tensor object at 0xXXXXXXXXXXXX>
+                    <built-in function isinstance>
+                    <built-in function isinstance>
                     <built-in method ones_like of type object at 0xXXXXXXXXXXXX>
                       aten::ones_like
                         aten::empty_like
@@ -492,67 +499,63 @@ class TestProfilerTree(TestCase):
                             [memory]
                         aten::fill_
                     <built-in method append of list object at 0xXXXXXXXXXXXX>
-                  <built-in method run_backward of torch._C._EngineBase object at 0xXXXXXXXXXXXX>
-                    autograd::engine::evaluate_function: PowBackward0
-                      PowBackward0
-                        aten::pow
-                          aten::result_type
-                          aten::to
-                          [memory]
-                          aten::copy_
-                        aten::mul
-                          [memory]
-                          aten::mul
+                  torch/autograd/graph.py(...): _engine_run_backward
+                    logging/__init__.py(...): getEffectiveLevel
+                    <built-in method run_backward of torch._C._EngineBase object at 0xXXXXXXXXXXXX>
+                      autograd::engine::evaluate_function: PowBackward0
+                        PowBackward0
+                          aten::pow
+                            aten::result_type
                             aten::to
-                              aten::_to_copy
-                                aten::empty_strided
-                                  [memory]
-                                aten::copy_
                             [memory]
+                            aten::copy_
+                          aten::mul
+                            [memory]
+                            aten::mul
+                              aten::to
+                                aten::_to_copy
+                                  aten::empty_strided
+                                    [memory]
+                                  aten::copy_
+                              [memory]
+                              [memory]
+                            [memory]
+                          aten::mul
                             [memory]
                           [memory]
-                        aten::mul
                           [memory]
                         [memory]
-                        [memory]
-                      [memory]
-                    autograd::engine::evaluate_function: SubBackward0
-                      SubBackward0
-                        aten::neg
-                          [memory]
-                      [memory]
-                    autograd::engine::evaluate_function: AddBackward0
-                      AddBackward0
-                    autograd::engine::evaluate_function: torch::autograd::AccumulateGrad
-                      torch::autograd::AccumulateGrad
-                        aten::new_empty_strided
-                          aten::empty_strided
+                      autograd::engine::evaluate_function: SubBackward0
+                        SubBackward0
+                          aten::neg
                             [memory]
-                        aten::copy_
-                    autograd::engine::evaluate_function: torch::autograd::AccumulateGrad
-                      torch::autograd::AccumulateGrad
-                        aten::detach
-                          detach
+                        [memory]
+                      autograd::engine::evaluate_function: AddBackward0
+                        AddBackward0
+                      autograd::engine::evaluate_function: torch::autograd::AccumulateGrad
+                        torch::autograd::AccumulateGrad
+                          aten::new_empty_strided
+                            aten::empty_strided
+                              [memory]
+                          aten::copy_
+                      autograd::engine::evaluate_function: torch::autograd::AccumulateGrad
+                        torch::autograd::AccumulateGrad
+                          aten::detach
+                            detach
                 [memory]
-              torch_musa/profiler/profiler.py(...): __exit__
-                torch_musa/profiler/profiler.py(...): stop
-                  torch_musa/profiler/profiler.py(...): _transit_action
-                    <built-in method get of dict object at 0xXXXXXXXXXXXX>
-                      enum.py(...): __hash__
-                        <built-in function hash>
-                    torch_musa/profiler/profiler.py(...): stop_trace
-                      torch_musa/autograd/profiler.py(...): __exit__
-                        <built-in method _is_prepare_profiler_succeed of PyCapsule object at 0xXXXXXXXXXXXX>
-                        <built-in method _disable_profiler of PyCapsule object at 0xXXXXXXXXXXXX>""",
+              torch/profiler/profiler.py(...): __exit__
+                torch/profiler/profiler.py(...): stop
+                  ...""",
         )
 
+    @skipIfTorchDynamo("too slow")
     @unittest.skipIf(
         TEST_WITH_CROSSREF, "crossref intercepts calls and changes the callsite."
     )
     @ProfilerTree.test
     def test_profiler_experimental_tree_with_stack_and_modules(self):
         class MyModule(torch.nn.Module):
-            def __init__(self):
+            def __init__(self) -> None:
                 super().__init__()
                 self.layers = [
                     torch.nn.ReLU(),
@@ -574,125 +577,133 @@ class TestProfilerTree(TestCase):
         self.assertTreesMatch(
             ProfilerTree.format(p.profiler, 12),
             """\
-            test_profiler_tree.py(...): test_profiler_experimental_tree_with_stack_and_modules
-              torch_musa/profiler/profiler.py(...): __enter__
-                torch_musa/profiler/profiler.py(...): start
-                  torch_musa/profiler/profiler.py(...): _transit_action
-                    torch_musa/profiler/profiler.py(...): start_trace
-                      torch_musa/autograd/profiler.py(...): _start_trace
-                      torch_musa/profiler/profiler.py(...): add_metadata_json
-                        <built-in method _add_metadata_json of PyCapsule object at 0xXXXXXXXXXXXX>
-                      <built-in method kineto_available of PyCapsule object at 0xXXXXXXXXXXXX>
-                      torch_musa/profiler/profiler.py(...): _get_distributed_info
-                        torch/distributed/__init__.py(...): is_available
-                          <built-in function hasattr>
-                        torch/distributed/distributed_c10d.py(...): is_initialized
-                          torch/distributed/distributed_c10d.py(...): WORLD
-                            torch/distributed/distributed_c10d.py(...): default_pg
-              <built-in method ones of type object at 0xXXXXXXXXXXXX>
-                aten::ones
-                  aten::empty
-                  aten::fill_
-              nn.Module: MyModule_0
-                torch/nn/modules/module.py(...): _call_impl
-                  <built-in method _get_tracing_state of PyCapsule object at 0xXXXXXXXXXXXX>
-                  test_profiler_tree.py(...): forward
-                    nn.Module: ReLU_0
-                      torch/nn/modules/module.py(...): _call_impl
-                        <built-in method _get_tracing_state of PyCapsule object at 0xXXXXXXXXXXXX>
-                        torch/nn/modules/activation.py(...): forward
-                          torch/nn/functional.py(...): relu
-                            <built-in function _has_torch_function_unary>
-                            <built-in method relu of type object at 0xXXXXXXXXXXXX>
-                              aten::relu
-                                aten::clamp_min
-                    nn.Module: Linear_0
-                      torch/nn/modules/module.py(...): _call_impl
-                        <built-in method _get_tracing_state of PyCapsule object at 0xXXXXXXXXXXXX>
-                        torch/nn/modules/linear.py(...): forward
-                          torch/nn/modules/module.py(...): __getattr__
-                          torch/nn/modules/module.py(...): __getattr__
-                          <built-in function linear>
-                            aten::linear
-                              aten::reshape
-                                aten::view
-                              aten::t
-                                aten::transpose
-                                  aten::as_strided
-                              aten::addmm
-                                aten::expand
-                                  aten::as_strided
-                                aten::copy_
-                                aten::resolve_conj
-                                aten::resolve_conj
-                                aten::resolve_conj
-                              aten::view
-                    nn.Module: ReLU_1
-                      torch/nn/modules/module.py(...): _call_impl
-                        <built-in method _get_tracing_state of PyCapsule object at 0xXXXXXXXXXXXX>
-                        torch/nn/modules/activation.py(...): forward
-                          torch/nn/functional.py(...): relu
-                            <built-in function _has_torch_function_unary>
-                            <built-in method relu of type object at 0xXXXXXXXXXXXX>
-                              aten::relu
-                                aten::clamp_min
-              <built-in method ones of type object at 0xXXXXXXXXXXXX>
-                aten::ones
-                  aten::empty
-                  aten::fill_
-              nn.Module: MyModule_0
-                torch/nn/modules/module.py(...): _call_impl
-                  <built-in method _get_tracing_state of PyCapsule object at 0xXXXXXXXXXXXX>
-                  test_profiler_tree.py(...): forward
-                    nn.Module: ReLU_0
-                      torch/nn/modules/module.py(...): _call_impl
-                        <built-in method _get_tracing_state of PyCapsule object at 0xXXXXXXXXXXXX>
-                        torch/nn/modules/activation.py(...): forward
-                          torch/nn/functional.py(...): relu
-                            <built-in function _has_torch_function_unary>
-                            <built-in method relu of type object at 0xXXXXXXXXXXXX>
-                              aten::relu
-                                aten::clamp_min
-                    nn.Module: Linear_0
-                      torch/nn/modules/module.py(...): _call_impl
-                        <built-in method _get_tracing_state of PyCapsule object at 0xXXXXXXXXXXXX>
-                        torch/nn/modules/linear.py(...): forward
-                          torch/nn/modules/module.py(...): __getattr__
-                          torch/nn/modules/module.py(...): __getattr__
-                          <built-in function linear>
-                            aten::linear
-                              aten::reshape
-                                aten::view
-                              aten::t
-                                aten::transpose
-                                  aten::as_strided
-                              aten::addmm
-                                aten::expand
-                                  aten::as_strided
-                                aten::copy_
-                                aten::resolve_conj
-                                aten::resolve_conj
-                                aten::resolve_conj
-                              aten::view
-                    nn.Module: ReLU_1
-                      torch/nn/modules/module.py(...): _call_impl
-                        <built-in method _get_tracing_state of PyCapsule object at 0xXXXXXXXXXXXX>
-                        torch/nn/modules/activation.py(...): forward
-                          torch/nn/functional.py(...): relu
-                            <built-in function _has_torch_function_unary>
-                            <built-in method relu of type object at 0xXXXXXXXXXXXX>
-                              aten::relu
-                                aten::clamp_min
-              torch_musa/profiler/profiler.py(...): __exit__
-                torch_musa/profiler/profiler.py(...): stop
-                  torch_musa/profiler/profiler.py(...): _transit_action
-                    <built-in method get of dict object at 0xXXXXXXXXXXXX>
-                      enum.py(...): __hash__
-                        <built-in function hash>
-                    torch_musa/profiler/profiler.py(...): stop_trace
-                      torch_musa/autograd/profiler.py(...): __exit__
-                        <built-in method _is_prepare_profiler_succeed of PyCapsule object at 0xXXXXXXXXXXXX>
-                        <built-in method _disable_profiler of PyCapsule object at 0xXXXXXXXXXXXX>""",
+                        ...
+            aten::ones
+              aten::empty
+              aten::fill_
+            torch/nn/modules/module.py(...): _call_impl
+              <built-in method _get_tracing_state of PyCapsule object at 0xXXXXXXXXXXXX>
+              test_profiler_tree.py(...): forward
+                nn.Module: ReLU_0
+                  torch/nn/modules/module.py(...): _call_impl
+                    <built-in method _get_tracing_state of PyCapsule object at 0xXXXXXXXXXXXX>
+                    torch/nn/modules/activation.py(...): forward
+                      torch/nn/functional.py(...): relu
+                        <built-in function _has_torch_function_unary>
+                        <built-in method relu of type object at 0xXXXXXXXXXXXX>
+                          aten::relu
+                            aten::clamp_min
+                nn.Module: Linear_0
+                  torch/nn/modules/module.py(...): _call_impl
+                    <built-in method _get_tracing_state of PyCapsule object at 0xXXXXXXXXXXXX>
+                    torch/nn/modules/linear.py(...): forward
+                      torch/nn/modules/module.py(...): __getattr__
+                      torch/nn/modules/module.py(...): __getattr__
+                      <built-in function linear>
+                        aten::linear
+                          aten::reshape
+                            aten::view
+                          aten::t
+                            aten::transpose
+                              aten::as_strided
+                          aten::addmm
+                            aten::expand
+                              aten::as_strided
+                            aten::copy_
+                            aten::resolve_conj
+                            aten::resolve_conj
+                            aten::resolve_conj
+                          aten::view
+                nn.Module: ReLU_1
+                  torch/nn/modules/module.py(...): _call_impl
+                    <built-in method _get_tracing_state of PyCapsule object at 0xXXXXXXXXXXXX>
+                    torch/nn/modules/activation.py(...): forward
+                      torch/nn/functional.py(...): relu
+                        <built-in function _has_torch_function_unary>
+                        <built-in method relu of type object at 0xXXXXXXXXXXXX>
+                          aten::relu
+                            aten::clamp_min
+            aten::ones
+              aten::empty
+              aten::fill_
+            torch/nn/modules/module.py(...): _call_impl
+              <built-in method _get_tracing_state of PyCapsule object at 0xXXXXXXXXXXXX>
+              test_profiler_tree.py(...): forward
+                nn.Module: ReLU_0
+                  torch/nn/modules/module.py(...): _call_impl
+                    <built-in method _get_tracing_state of PyCapsule object at 0xXXXXXXXXXXXX>
+                    torch/nn/modules/activation.py(...): forward
+                      torch/nn/functional.py(...): relu
+                        <built-in function _has_torch_function_unary>
+                        <built-in method relu of type object at 0xXXXXXXXXXXXX>
+                          aten::relu
+                            aten::clamp_min
+                nn.Module: Linear_0
+                  torch/nn/modules/module.py(...): _call_impl
+                    <built-in method _get_tracing_state of PyCapsule object at 0xXXXXXXXXXXXX>
+                    torch/nn/modules/linear.py(...): forward
+                      torch/nn/modules/module.py(...): __getattr__
+                      torch/nn/modules/module.py(...): __getattr__
+                      <built-in function linear>
+                        aten::linear
+                          aten::reshape
+                            aten::view
+                          aten::t
+                            aten::transpose
+                              aten::as_strided
+                          aten::addmm
+                            aten::expand
+                              aten::as_strided
+                            aten::copy_
+                            aten::resolve_conj
+                            aten::resolve_conj
+                            aten::resolve_conj
+                          aten::view
+                nn.Module: ReLU_1
+                  torch/nn/modules/module.py(...): _call_impl
+                    <built-in method _get_tracing_state of PyCapsule object at 0xXXXXXXXXXXXX>
+                    torch/nn/modules/activation.py(...): forward
+                      torch/nn/functional.py(...): relu
+                        <built-in function _has_torch_function_unary>
+                        <built-in method relu of type object at 0xXXXXXXXXXXXX>
+                          aten::relu
+                            aten::clamp_min
+            enum.py(...): __hash__
+              <built-in function hash>
+            torch_musa/core/_lazy_init.py(...): is_initialized
+            <built-in function hasattr>
+            torch_musa/core/_lazy_init.py(...): is_initialized
+            <built-in function _musa_isInBadFork>
+            <built-in function hasattr>
+            <built-in function _musa_init>
+            torch_musa/core/_lazy_init.py(...): get_calls
+            <built-in method append of list object at 0xXXXXXXXXXXXX>
+            torch_musa/core/random.py(...): cb
+              torch_musa/core/device.py(...): device_count
+                <built-in function _musa_getDeviceCount>
+              <built-in method manual_seed of torch._C.Generator object at 0xXXXXXXXXXXXX>
+              <built-in method manual_seed of torch._C.Generator object at 0xXXXXXXXXXXXX>
+              <built-in method manual_seed of torch._C.Generator object at 0xXXXXXXXXXXXX>
+              <built-in method manual_seed of torch._C.Generator object at 0xXXXXXXXXXXXX>
+              <built-in method manual_seed of torch._C.Generator object at 0xXXXXXXXXXXXX>
+              <built-in method manual_seed of torch._C.Generator object at 0xXXXXXXXXXXXX>
+              <built-in method manual_seed of torch._C.Generator object at 0xXXXXXXXXXXXX>
+              <built-in method manual_seed of torch._C.Generator object at 0xXXXXXXXXXXXX>
+            <built-in function delattr>
+            <built-in method __exit__ of _thread.lock object at 0xXXXXXXXXXXXX>
+            torch_musa/core/_utils.py(...): _get_musa_device_index
+              torch_musa/core/device.py(...): is_available
+                <built-in function _musa_getDeviceCount>
+              torch_musa/core/device.py(...): current_device
+                torch_musa/core/_lazy_init.py(...): _lazy_init
+                  torch_musa/core/_lazy_init.py(...): is_initialized
+                    <built-in function _musa_isInBadFork>
+                <built-in function _musa_getDevice>
+                  torch_musa/core/_lazy_init.py(...): _lazy_init
+                    torch_musa/core/_lazy_init.py(...): is_initialized
+                      <built-in function _musa_isInBadFork>
+            <built-in function _musa_exchangeDevice>""",
+            allow_failure=True,
         )
 
     @unittest.skipIf(
@@ -713,46 +724,57 @@ class TestProfilerTree(TestCase):
         self.assertTreesMatch(
             ProfilerTree.format(p.profiler, 12),
             """\
-            test_profiler_tree.py(...): test_profiler_experimental_tree_with_stack_and_torch_function
-              torch_musa/profiler/profiler.py(...): __enter__
-                torch_musa/profiler/profiler.py(...): start
-                  torch_musa/profiler/profiler.py(...): _transit_action
-                    torch_musa/profiler/profiler.py(...): start_trace
-                      torch_musa/autograd/profiler.py(...): _start_trace
-                      torch_musa/profiler/profiler.py(...): add_metadata_json
-                        <built-in method _add_metadata_json of PyCapsule object at 0xXXXXXXXXXXXX>
-                      <built-in method kineto_available of PyCapsule object at 0xXXXXXXXXXXXX>
-                      torch_musa/profiler/profiler.py(...): _get_distributed_info
-                        torch/distributed/__init__.py(...): is_available
-                          <built-in function hasattr>
-                        torch/distributed/distributed_c10d.py(...): is_initialized
-                          torch/distributed/distributed_c10d.py(...): WORLD
-                            torch/distributed/distributed_c10d.py(...): default_pg
-              <built-in method add of type object at 0xXXXXXXXXXXXX>
-                test_profiler_tree.py(...): __torch_function__
-                  torch/_tensor.py(...): __torch_function__
-                    <built-in function all>
-                      torch/_tensor.py(...): <genexpr>
-                        <built-in function issubclass>
-                      torch/_tensor.py(...): <genexpr>
-                    <built-in method add of type object at 0xXXXXXXXXXXXX>
-                      aten::add
-                    torch/_tensor.py(...): _convert
-                      <built-in function isinstance>
-                      <built-in function isinstance>
-                      <built-in method as_subclass of Tensor object at 0xXXXXXXXXXXXX>
-                        aten::alias
-                      <built-in function isinstance>
-              torch_musa/profiler/profiler.py(...): __exit__
-                torch_musa/profiler/profiler.py(...): stop
-                  torch_musa/profiler/profiler.py(...): _transit_action
-                    <built-in method get of dict object at 0xXXXXXXXXXXXX>
-                      enum.py(...): __hash__
-                        <built-in function hash>
-                    torch_musa/profiler/profiler.py(...): stop_trace
-                      torch_musa/autograd/profiler.py(...): __exit__
-                        <built-in method _is_prepare_profiler_succeed of PyCapsule object at 0xXXXXXXXXXXXX>
-                        <built-in method _disable_profiler of PyCapsule object at 0xXXXXXXXXXXXX>""",
+                          ...
+            test_profiler_tree.py(...): __torch_function__
+              torch/_tensor.py(...): __torch_function__
+                <built-in function all>
+                  torch/_tensor.py(...): <genexpr>
+                    <built-in function issubclass>
+                  torch/_tensor.py(...): <genexpr>
+                <built-in method add of type object at 0xXXXXXXXXXXXX>
+                  aten::add
+                torch/_tensor.py(...): _convert
+                  <built-in function isinstance>
+                  <built-in function isinstance>
+                  <built-in method as_subclass of Tensor object at 0xXXXXXXXXXXXX>
+                    aten::alias
+                  <built-in function isinstance>
+            enum.py(...): __hash__
+              <built-in function hash>
+            torch_musa/core/_lazy_init.py(...): is_initialized
+            <built-in function hasattr>
+            torch_musa/core/_lazy_init.py(...): is_initialized
+            <built-in function _musa_isInBadFork>
+            <built-in function hasattr>
+            <built-in function _musa_init>
+            torch_musa/core/_lazy_init.py(...): get_calls
+            <built-in method append of list object at 0xXXXXXXXXXXXX>
+            torch_musa/core/random.py(...): cb
+              torch_musa/core/device.py(...): device_count
+                <built-in function _musa_getDeviceCount>
+              <built-in method manual_seed of torch._C.Generator object at 0xXXXXXXXXXXXX>
+              <built-in method manual_seed of torch._C.Generator object at 0xXXXXXXXXXXXX>
+              <built-in method manual_seed of torch._C.Generator object at 0xXXXXXXXXXXXX>
+              <built-in method manual_seed of torch._C.Generator object at 0xXXXXXXXXXXXX>
+              <built-in method manual_seed of torch._C.Generator object at 0xXXXXXXXXXXXX>
+              <built-in method manual_seed of torch._C.Generator object at 0xXXXXXXXXXXXX>
+              <built-in method manual_seed of torch._C.Generator object at 0xXXXXXXXXXXXX>
+              <built-in method manual_seed of torch._C.Generator object at 0xXXXXXXXXXXXX>
+            <built-in function delattr>
+            <built-in method __exit__ of _thread.lock object at 0xXXXXXXXXXXXX>
+            torch_musa/core/_utils.py(...): _get_musa_device_index
+              torch_musa/core/device.py(...): is_available
+                <built-in function _musa_getDeviceCount>
+              torch_musa/core/device.py(...): current_device
+                torch_musa/core/_lazy_init.py(...): _lazy_init
+                  torch_musa/core/_lazy_init.py(...): is_initialized
+                    <built-in function _musa_isInBadFork>
+                <built-in function _musa_getDevice>
+                  torch_musa/core/_lazy_init.py(...): _lazy_init
+                    torch_musa/core/_lazy_init.py(...): is_initialized
+                      <built-in function _musa_isInBadFork>
+            <built-in function _musa_exchangeDevice>""",
+            allow_failure=True,
         )
 
     @unittest.skipIf(
@@ -763,6 +785,10 @@ class TestProfilerTree(TestCase):
         x = TorchDispatchTensor(torch.ones((1,)))
         y = torch.ones((1,))
 
+        # warmup round
+        with torch.profiler.profile(with_stack=True):
+            x + y
+
         with torch.profiler.profile(with_stack=True) as p:
             x + y
 
@@ -770,21 +796,13 @@ class TestProfilerTree(TestCase):
             ProfilerTree.format(p.profiler, 12),
             """\
             test_profiler_tree.py(...): test_profiler_experimental_tree_with_stack_and_torch_dispatch
-              torch_musa/profiler/profiler.py(...): __enter__
-                torch_musa/profiler/profiler.py(...): start
-                  torch_musa/profiler/profiler.py(...): _transit_action
-                    torch_musa/profiler/profiler.py(...): start_trace
-                      torch_musa/autograd/profiler.py(...): _start_trace
-                      torch_musa/profiler/profiler.py(...): add_metadata_json
-                        <built-in method _add_metadata_json of PyCapsule object at 0xXXXXXXXXXXXX>
-                      <built-in method kineto_available of PyCapsule object at 0xXXXXXXXXXXXX>
-                      torch_musa/profiler/profiler.py(...): _get_distributed_info
-                        torch/distributed/__init__.py(...): is_available
-                          <built-in function hasattr>
-                        torch/distributed/distributed_c10d.py(...): is_initialized
-                          torch/distributed/distributed_c10d.py(...): WORLD
-                            torch/distributed/distributed_c10d.py(...): default_pg
+              torch/profiler/profiler.py(...): __enter__
+                ...
               aten::add
+                torch/_library/simple_registry.py(...): find_torch_dispatch_rule
+                  torch/_library/simple_registry.py(...): find
+                  torch/_library/simple_registry.py(...): find
+                    <built-in method get of dict object at 0xXXXXXXXXXXXX>
                 test_profiler_tree.py(...): __torch_dispatch__
                   torch/utils/_pytree.py(...): tree_map
                     ...
@@ -795,16 +813,9 @@ class TestProfilerTree(TestCase):
                       aten::add
                   torch/utils/_pytree.py(...): tree_map
                     ...
-              torch_musa/profiler/profiler.py(...): __exit__
-                torch_musa/profiler/profiler.py(...): stop
-                  torch_musa/profiler/profiler.py(...): _transit_action
-                    <built-in method get of dict object at 0xXXXXXXXXXXXX>
-                      enum.py(...): __hash__
-                        <built-in function hash>
-                    torch_musa/profiler/profiler.py(...): stop_trace
-                      torch_musa/autograd/profiler.py(...): __exit__
-                        <built-in method _is_prepare_profiler_succeed of PyCapsule object at 0xXXXXXXXXXXXX>
-                        <built-in method _disable_profiler of PyCapsule object at 0xXXXXXXXXXXXX>""",
+              torch/profiler/profiler.py(...): __exit__
+                torch/profiler/profiler.py(...): stop
+                  ...""",
         )
 
     @unittest.skip("https://github.com/pytorch/pytorch/issues/83606")
@@ -968,7 +979,8 @@ class TestProfilerTree(TestCase):
     )
     @unittest.skipIf(not torch.musa.is_available(), "MUSA is required")
     @ProfilerTree.test
-    def test_profiler_experimental_tree_musa_detailed(self):
+    def test_profiler_experimental_tree_cuda_detailed(self):
+
         model = torch.nn.modules.Linear(1, 1, device="musa")
         model.train()
         opt = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
@@ -1026,8 +1038,19 @@ class TestProfilerTree(TestCase):
                     <built-in function len>
                     torch/autograd/__init__.py(...): _tensor_or_tensors_to_tuple
                     torch/autograd/__init__.py(...): _make_grads
+                      typing.py(...): inner
+                        typing.py(...): __hash__
+                          <built-in function hash>
+                      typing.py(...): cast
+                      <built-in function isinstance>
+                      <built-in function isinstance>
+                      <built-in function isinstance>
+                      <built-in function isinstance>
+                      <built-in function isinstance>
                       <built-in function isinstance>
                       <built-in method numel of Tensor object at 0xXXXXXXXXXXXX>
+                      <built-in function isinstance>
+                      <built-in function isinstance>
                       <built-in method ones_like of type object at 0xXXXXXXXXXXXX>
                         aten::ones_like
                           aten::empty_like

@@ -281,6 +281,21 @@ def stream(stream: Optional["torch_musa.Stream"]) -> StreamContext:
     return StreamContext(stream)
 
 
+def _set_stream_by_id(stream_id, device_index, device_type):
+    r"""set stream specified by the stream id, device index and
+        device type
+
+    Args: stream_id (int): stream id in stream pool
+          device_index (int): device index in topo
+          device_type (int): enum device type
+    """
+    torch_musa._MUSAC._musa_setStream(
+        stream_id=stream_id,
+        device_index=device_index,
+        device_type=device_type,
+    )
+
+
 def set_stream(stream: Stream):
     r"""Sets the current stream.This is a wrapper API to set the stream.
         Usage of this function is discouraged in favor of the ``stream``

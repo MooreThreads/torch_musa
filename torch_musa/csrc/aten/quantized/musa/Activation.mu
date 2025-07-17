@@ -21,10 +21,15 @@ const int PARALLEL_NUM = 4;
       static_cast<dtype*>(out.data_ptr()),                    \
       static_cast<dtype*>(self.data_ptr()),                   \ 
       scale,                                                  \
+      inv_scale,                                              \
       zero_point,                                             \
       qmin,                                                   \
       qmax,                                                   \
       numel);
+
+#define KERNEl_CALL(name, idx, val) \
+  out[idx] = name(                  \
+      static_cast<int64_t>(val), scale, inv_scale, zero_point, qmin, qmax);
 
 namespace at {
 namespace musa {
@@ -39,6 +44,7 @@ enum class ActMode {
 __device__ int64_t SigmoidKernel(
     int64_t input,
     const double scale,
+    const double inv_scale,
     const int64_t zero_point,
     const int64_t qmin,
     const int64_t qmax) {
@@ -46,7 +52,7 @@ __device__ int64_t SigmoidKernel(
   value = 1.f / (1.f + expf(-value));
   int64_t qvalue = std::max<int64_t>(
       std::min<int64_t>(
-          static_cast<int64_t>(std::nearbyint(value / scale) + zero_point),
+          static_cast<int64_t>(__float2int_rn(value * inv_scale) + zero_point),
           qmax),
       qmin);
   return qvalue;
@@ -55,6 +61,7 @@ __device__ int64_t SigmoidKernel(
 __device__ int64_t GeLUKernel(
     int64_t input,
     const double scale,
+    const double inv_scale,
     const int64_t zero_point,
     const int64_t qmin,
     const int64_t qmax) {
@@ -62,7 +69,7 @@ __device__ int64_t GeLUKernel(
   value = value * 0.5 * (1.f + erff(value / 1.4142135));
   int64_t qvalue = std::max<int64_t>(
       std::min<int64_t>(
-          static_cast<int64_t>(std::nearbyint(value / scale) + zero_point),
+          static_cast<int64_t>(__float2int_rn(value * inv_scale) + zero_point),
           qmax),
       qmin);
   return qvalue;
@@ -71,6 +78,7 @@ __device__ int64_t GeLUKernel(
 __device__ int64_t ReLUKernel(
     int64_t input,
     const double scale,
+    const double inv_scale,
     const int64_t zero_point,
     const int64_t qmin,
     const int64_t qmax) {
@@ -78,7 +86,7 @@ __device__ int64_t ReLUKernel(
       std::max<float>(static_cast<float>(input - zero_point) * scale, 0.f);
   int64_t qvalue = std::max<int64_t>(
       std::min<int64_t>(
-          static_cast<int64_t>(std::nearbyint(value / scale) + zero_point),
+          static_cast<int64_t>(__float2int_rn(value * inv_scale) + zero_point),
           qmax),
       qmin);
   return qvalue;
@@ -89,46 +97,40 @@ __global__ void ActQuantizedKernel(
     DType* out,
     const DType* in,
     const double scale,
+    const double inv_scale,
     const int64_t zero_point,
     const int64_t qmin,
     const int64_t qmax,
     const int64_t total_num) {
-  int64_t idx = (threadIdx.x + blockIdx.x * blockDim.x) * PARALLEL_NUM;
+  const int64_t tid = blockIdx.x * blockDim.x + threadIdx.x;
+  const int64_t idx = tid * PARALLEL_NUM;
+  using VecType = typename std::
+      conditional<std::is_same<DType, int8_t>::value, char4, uchar4>::type;
+  const VecType in_val = reinterpret_cast<const VecType*>(in)[tid];
+
   if (idx < total_num) {
     switch (mode) {
       case ActMode::RELU:
-#pragma unroll
-        for (int tid = 0; tid < PARALLEL_NUM; ++tid) {
-          out[idx + tid] = ReLUKernel(
-              static_cast<int64_t>(in[idx + tid]),
-              scale,
-              zero_point,
-              qmin,
-              qmax);
-        }
+        KERNEl_CALL(ReLUKernel, idx, in_val.x);
+        KERNEl_CALL(ReLUKernel, idx + 1, in_val.y);
+        KERNEl_CALL(ReLUKernel, idx + 2, in_val.z);
+        KERNEl_CALL(ReLUKernel, idx + 3, in_val.w);
         break;
+
       case ActMode::GELU:
-#pragma unroll
-        for (int tid = 0; tid < PARALLEL_NUM; ++tid) {
-          out[idx + tid] = GeLUKernel(
-              static_cast<int64_t>(in[idx + tid]),
-              scale,
-              zero_point,
-              qmin,
-              qmax);
-        }
+        KERNEl_CALL(GeLUKernel, idx, in_val.x);
+        KERNEl_CALL(GeLUKernel, idx + 1, in_val.y);
+        KERNEl_CALL(GeLUKernel, idx + 2, in_val.z);
+        KERNEl_CALL(GeLUKernel, idx + 3, in_val.w);
         break;
+
       case ActMode::SIGMOID:
-#pragma unroll
-        for (int tid = 0; tid < PARALLEL_NUM; ++tid) {
-          out[idx + tid] = SigmoidKernel(
-              static_cast<int64_t>(in[idx + tid]),
-              scale,
-              zero_point,
-              qmin,
-              qmax);
-        }
+        KERNEl_CALL(SigmoidKernel, idx, in_val.x);
+        KERNEl_CALL(SigmoidKernel, idx + 1, in_val.y);
+        KERNEl_CALL(SigmoidKernel, idx + 2, in_val.z);
+        KERNEl_CALL(SigmoidKernel, idx + 3, in_val.w);
         break;
+
       default:
         break;
     }
@@ -145,6 +147,8 @@ void ActQuantizedImpl(
   int64_t numel = self.numel();
   uint32_t block_x = numel > 512 ? 1024 : 512;
   uint32_t grid_x = (numel / PARALLEL_NUM + block_x) / block_x;
+
+  double inv_scale = 1.0f / scale;
 
   dim3 block_size{block_x, 1, 1};
   dim3 grid_size{grid_x, 1, 1};

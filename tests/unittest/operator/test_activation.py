@@ -34,21 +34,27 @@ all_basic_funcs = [
     torch.reciprocal,
     torch.sigmoid,
     torch.exp,
+    torch.exp2,
     torch.cos,
     torch.sin,
     torch.log,
     torch.asin,
     torch.acos,
+    torch.cosh,
     torch.atan,
     torch.asinh,
     torch.acosh,
     torch.atanh,
     torch.round,
     torch.sgn,
+    torch.log1p,
     torch.log10,
     torch.log2,
     torch.floor,
     torch.logical_not,
+    torch.sinc,
+    torch.sinh,
+    torch.trunc,
 ]
 
 all_inplace_funcs = [
@@ -60,18 +66,24 @@ all_inplace_funcs = [
     torch.reciprocal_,
     torch.sigmoid_,
     torch.exp_,
+    torch.exp2_,
     torch.cos_,
     torch.sin_,
     torch.log_,
     torch.asin_,
     torch.acos_,
+    torch.cosh_,
     torch.atan_,
     torch.asinh_,
     torch.acosh_,
     torch.atanh_,
     torch.round_,
     torch.log10_,
+    torch.log1p_,
     torch.floor_,
+    torch.sinc_,
+    torch.sinh_,
+    torch.trunc_,
 ]
 
 
@@ -83,13 +95,14 @@ all_nn_funcs = [
     torch.nn.LeakyReLU(),
     torch.nn.Hardswish(),
     torch.nn.Hardsigmoid(),
+    torch.nn.Softshrink(),
 ]
 
 ACT_TEST_TOLERANCE = {
     # abs_diff, rel_diff
     torch.float32: (1e-6, 1e-6),
     torch.float16: (5e-4, 5e-4),
-    torch.bfloat16: (5e-2, 5e-3),
+    torch.bfloat16: (2e-2, 5e-3),
 }
 
 
@@ -137,6 +150,25 @@ def function(input_data, dtype, func, train=False):
 @pytest.mark.parametrize("dtype", float_dtypes)
 @pytest.mark.parametrize("func", all_basic_funcs + all_inplace_funcs)
 def test_all_basic_funcs(input_data, dtype, func):
+    if func in [
+        torch.sqrt,
+        torch.rsqrt,
+        torch.sqrt_,
+        torch.rsqrt_,
+        torch.log,
+        torch.log_,
+        torch.log2,
+        torch.log2_,
+        torch.log10,
+        torch.log10_,
+        torch.log1p,
+        torch.log1p_,
+    ]:
+        input_data = copy.deepcopy(input_data)
+        input_data["input"] = input_data["input"].clone().uniform_(0, 20)
+    elif func in [torch.acos, torch.acos_]:
+        input_data = copy.deepcopy(input_data)
+        input_data["input"] = input_data["input"].clone().uniform_(-1, 1)
     function(input_data, dtype, func)
 
 
@@ -145,6 +177,25 @@ def test_all_basic_funcs(input_data, dtype, func):
 @pytest.mark.parametrize("dtype", float_dtypes)
 @pytest.mark.parametrize("func", all_basic_funcs)
 def test_all_basic_funcs_out(input_data, dtype, func):
+    if func in [
+        torch.sqrt,
+        torch.rsqrt,
+        torch.sqrt_,
+        torch.rsqrt_,
+        torch.log,
+        torch.log_,
+        torch.log2,
+        torch.log2_,
+        torch.log10,
+        torch.log10_,
+        torch.log1p,
+        torch.log1p_,
+    ]:
+        input_data = copy.deepcopy(input_data)
+        input_data["input"] = input_data["input"].clone().uniform_(0, 20)
+    elif func in [torch.acos, torch.acos_]:
+        input_data = copy.deepcopy(input_data)
+        input_data["input"] = input_data["input"].clone().uniform_(-1, 1)
     out = torch.tensor(np.array([]))
     input_args = {"input": input_data["input"], "out": out}
     function(input_args, dtype, func)
@@ -258,6 +309,9 @@ def test_threshold_backward_and_forward(input_data, dtype, threshold, value, tra
 @pytest.mark.parametrize("dtype", float_dtypes)
 @pytest.mark.parametrize("func", all_nn_funcs)
 def test_nn_funcs(input_data, dtype, func):
+    if func == torch.nn.SiLU:
+        input_data = copy.deepcopy(input_data)
+        input_data["input"] = input_data["input"].clone().uniform_(-1, 1)
     function(input_data, dtype, func)
 
 
@@ -747,3 +801,59 @@ def test_unary_fmod_float(shape, io_types, alpha):
             musa_o = musa_o.to(o_t)
             torch.fmod(musa_i, alpha, out=musa_o)
             do_assert(cpu_o, musa_o)
+
+
+# ============================== Test round.decimals begin ============================== #
+
+
+@pytest.mark.parametrize("input_data", input_datas)
+@pytest.mark.parametrize("dtype", [torch.float32])
+@pytest.mark.parametrize("decimals", [0, 1, 2, -1])
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_round_with_decimals(input_data, dtype, decimals):
+    tensor = input_data["input"].to(dtype)
+    out_cpu = torch.round(tensor, decimals=decimals)
+    out_musa = torch.round(tensor.musa(), decimals=decimals).cpu()
+    abs_diff, rel_diff = ACT_TEST_TOLERANCE[dtype]
+    comparator = testing.DefaultComparator(abs_diff, rel_diff, equal_nan=True)
+    assert comparator(
+        out_cpu, out_musa
+    ), f"round(decimals={decimals}) mismatch on dtype={dtype}"
+
+
+# ============================== Test round.decimals end ============================== #
+
+# ============================== Test hardshrink begin ============================== #
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_datas)
+@pytest.mark.parametrize("dtype", float_dtypes)
+@pytest.mark.parametrize("lambd", [0.0, 0.5, 1.5])
+def test_hardshrink_forward_backward(input_data, dtype, lambd):
+    func = torch.nn.Hardshrink(lambd=lambd)
+
+    inp = copy.deepcopy(input_data["input"]).to(dtype).requires_grad_(True)
+
+    out_cpu = func(inp.cpu())
+
+    inp_m = inp.clone().detach().to("musa").requires_grad_(True)
+    out_musa = func(inp_m).cpu()
+
+    abs_diff, rel_diff = ACT_TEST_TOLERANCE[dtype]
+    comparator = testing.DefaultComparator(abs_diff, rel_diff, equal_nan=True)
+    assert comparator(
+        out_cpu, out_musa
+    ), f"Hardshrink forward mismatch (λ={lambd}) on dtype={dtype}"
+
+    out_cpu.sum().backward()
+    out_musa.sum().backward()
+
+    grad_cpu = inp.grad
+    grad_musa = inp_m.grad.cpu()
+    assert comparator(
+        grad_cpu, grad_musa
+    ), f"Hardshrink backward mismatch (λ={lambd}) on dtype={dtype}"
+
+
+# ============================== Test hardshrink begin ============================== #

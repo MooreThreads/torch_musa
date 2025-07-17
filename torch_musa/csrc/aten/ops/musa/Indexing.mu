@@ -5,6 +5,7 @@
 #include <ATen/native/ReductionType.h>
 #include <ATen/native/quantized/AffineQuantizerBase.h>
 #include <ATen/native/quantized/IndexKernel.h>
+#include <ATen/musa/Atomic.muh>
 #include <ATen/musa/detail/IndexUtils.muh>
 #include <ATen/native/musa/KernelUtils.muh>
 #include <ATen/native/musa/Loops.muh>
@@ -26,6 +27,108 @@ using at::native::ReductionType;
 namespace {
 constexpr int MAX_DIMS = 25;
 using musa::detail::VariantTensorInfo;
+
+#define DEFINE_REDUCE_FUNCTOR(OP_NAME, OP) \
+  class Reduce##OP_NAME {                  \
+   public:                                 \
+    template <typename scalar_t>           \
+    constexpr __device__ void operator()(  \
+        scalar_t* self_data,               \
+        int64_t index,                     \
+        int64_t numel,                     \
+        const scalar_t* src_data) const {  \
+      (void)numel;                         \
+      scalar_t a = *(self_data + index);   \
+      scalar_t b = *src_data;              \
+      (self_data + index)[0] = OP;         \
+    }                                      \
+  };
+
+#define DEFINE_VECTORIZED_REDUCE_FUNCTOR(OP_NAME, OP)                        \
+  class VectorizedReduce##OP_NAME {                                          \
+   public:                                                                   \
+    template <                                                               \
+        typename scalar_t,                                                   \
+        typename index_t,                                                    \
+        int vlen = 4,                                                        \
+        int iobits = 8>                                                      \
+    constexpr __device__ __forceinline__ void operator()(                    \
+        scalar_t* self_data,                                                 \
+        index_t self_offset,                                                 \
+        const scalar_t* src_data,                                            \
+        index_t src_offset,                                                  \
+        const scalar_t& alpha) const {                                       \
+      using vec_dtype = VecType<scalar_t, vlen * sizeof(scalar_t) * iobits>; \
+      vec_dtype self_reg = vec_dtype::load(self_data, self_offset);          \
+      vec_dtype src_reg = vec_dtype::load(src_data, src_offset);             \
+      scalar_t a, b;                                                         \
+      for (int k = 0; k < vlen; k++) {                                       \
+        a = self_reg.val_.elem[k];                                           \
+        b = src_reg.val_.elem[k] * alpha;                                    \
+        self_reg.val_.elem[k] = OP;                                          \
+      }                                                                      \
+      vec_dtype::store(self_data, self_offset, self_reg);                    \
+    }                                                                        \
+  };
+
+#define DEFINE_REDUCE_ATOMIC_FUNCTOR(OP_NAME, OP) \
+  class ReduceAtomic##OP_NAME {                   \
+   public:                                        \
+    template <typename scalar_t>                  \
+    constexpr __device__ void operator()(         \
+        scalar_t* self_data_start,                \
+        int64_t index,                            \
+        int64_t numel,                            \
+        const scalar_t* src_data) const {         \
+      OP(self_data_start + index, *src_data);     \
+    }                                             \
+  };
+
+#define DEFINE_VECTORIZED_REDUCE_ATOMIC_FUNCTOR(OP_NAME, OP)                 \
+  class VectorizedReduceAtomic##OP_NAME {                                    \
+   public:                                                                   \
+    template <                                                               \
+        typename scalar_t,                                                   \
+        typename index_t,                                                    \
+        int vlen = 4,                                                        \
+        int iobits = 8>                                                      \
+    constexpr __device__ void operator()(                                    \
+        scalar_t* self_data,                                                 \
+        index_t self_offset,                                                 \
+        const scalar_t* src_data,                                            \
+        index_t src_offset,                                                  \
+        index_t numel,                                                       \
+        const scalar_t& alpha) const {                                       \
+      using vec_dtype = VecType<scalar_t, vlen * sizeof(scalar_t) * iobits>; \
+      vec_dtype src_reg = vec_dtype::load(src_data, src_offset);             \
+      for (index_t k = 0; k < vlen; k++) {                                   \
+        OP(self_data + self_offset + k, src_reg.val_.elem[k] * alpha);       \
+      }                                                                      \
+    }                                                                        \
+  };
+
+DEFINE_REDUCE_FUNCTOR(Multiply, ((a) * (b)))
+DEFINE_REDUCE_FUNCTOR(Miniumum, ((a < b) ? (a) : (b)))
+DEFINE_REDUCE_FUNCTOR(Maximum, ((a > b) ? (a) : (b)))
+DEFINE_VECTORIZED_REDUCE_FUNCTOR(Multiply, ((a) * (b)))
+DEFINE_VECTORIZED_REDUCE_FUNCTOR(Miniumum, ((a < b) ? (a) : (b)))
+DEFINE_VECTORIZED_REDUCE_FUNCTOR(Maximum, ((a > b) ? (a) : (b)))
+DEFINE_REDUCE_ATOMIC_FUNCTOR(Multiply, gpuAtomicMul)
+DEFINE_REDUCE_ATOMIC_FUNCTOR(Miniumum, gpuAtomicMin)
+DEFINE_REDUCE_ATOMIC_FUNCTOR(Maximum, gpuAtomicMax)
+DEFINE_VECTORIZED_REDUCE_ATOMIC_FUNCTOR(Multiply, gpuAtomicMul)
+DEFINE_VECTORIZED_REDUCE_ATOMIC_FUNCTOR(Miniumum, gpuAtomicMin)
+DEFINE_VECTORIZED_REDUCE_ATOMIC_FUNCTOR(Maximum, gpuAtomicMax)
+
+#define INST_REDUCE_FUNCTOR(OP_NAME, VAR_SUFFIX)            \
+  static Reduce##OP_NAME reduce_##VAR_SUFFIX;               \
+  static VectorizedReduce##OP_NAME vec_reduce_##VAR_SUFFIX; \
+  static ReduceAtomic##OP_NAME reduce_atomic_##VAR_SUFFIX;  \
+  static VectorizedReduceAtomic##OP_NAME vec_reduce_atomic_##VAR_SUFFIX;
+
+INST_REDUCE_FUNCTOR(Multiply, multiply)
+INST_REDUCE_FUNCTOR(Miniumum, minimum)
+INST_REDUCE_FUNCTOR(Maximum, maximum)
 
 class ReduceAdd {
  public:
@@ -560,7 +663,7 @@ __global__ void IndexFuncsGridScanIndices1DKernel(
     IndexType indexOffset = 0, srcOffset = 0, dstOffset = 0;
     IndexType q, r;
     IndexType dividend_idx = linearIndex;
-    for (int i = 0; i < src.dims; i++) {
+    for (int i = src.dims - 1; i >= 0; i--) {
       DivmodHelper<IndexType> divmod = DivmodHelper<IndexType>(src.sizes[i]);
       divmod(q, r, dividend_idx);
       srcOffset += r * src.strides[i];
@@ -568,7 +671,7 @@ __global__ void IndexFuncsGridScanIndices1DKernel(
       dividend_idx = q;
     }
     dividend_idx = linearIndex;
-    for (int i = 0; i < dst.dims; i++) {
+    for (int i = dst.dims - 1; i >= 0; i--) {
       DivmodHelper<IndexType> divmod = DivmodHelper<IndexType>(dst.sizes[i]);
       divmod(q, r, dividend_idx);
       dstOffset += r * dst.strides[i];
@@ -653,7 +756,37 @@ void IndexReduceFuncMUSAImpl(
     }
   } else {
     // Preprocessing logic reserved for index_reduce
-    TORCH_CHECK(false, "index_reduce is not supported");
+    globalContext().alertNotDeterministic("index_reduce_musa");
+    if (!include_self) {
+      AT_DISPATCH_ALL_TYPES_AND2(
+          at::ScalarType::Half,
+          at::ScalarType::BFloat16,
+          self.scalar_type(),
+          "index_reduce_func_musa_exclude_input_init",
+          [&] {
+            scalar_t init_val;
+            switch (reduce) {
+              case ReductionType::PROD:
+                init_val = static_cast<scalar_t>(1.0f);
+                break;
+              case ReductionType::MIN:
+                init_val = std::numeric_limits<scalar_t>::has_infinity
+                    ? std::numeric_limits<scalar_t>::infinity()
+                    : std::numeric_limits<scalar_t>::max();
+                break;
+              case ReductionType::MAX:
+                init_val = std::numeric_limits<scalar_t>::has_infinity
+                    ? -std::numeric_limits<scalar_t>::infinity()
+                    : std::numeric_limits<scalar_t>::lowest();
+                break;
+              default:
+                init_val = static_cast<scalar_t>(0.0f);
+                break;
+            }
+            // index_fill_ requires index to be a LongTensor
+            self_.index_fill_(dim, index.to(at::ScalarType::Long), init_val);
+          });
+    }
   }
   const int64_t sliceSize = GetSliceSize(self_, dim, index, source_);
   const int64_t sourceNumel = source.numel();
@@ -845,309 +978,320 @@ void IndexReduceFuncMUSAImpl(
   if (musa::detail::canUse32BitIndexMath(result) &&
       musa::detail::canUse32BitIndexMath(source) &&
       musa::detail::canUse32BitIndexMath(index)) {
-    AT_DISPATCH_ALL_TYPES_AND3(
-        at::ScalarType::Bool,
-        at::ScalarType::Half,
-        at::ScalarType::BFloat16,
-        result.scalar_type(),
-        "index_add",
-        [&] {
-          musa::detail::VariantTensorInfo<scalar_t, uint32_t> varSelfInfo =
-              musa::detail::getTensorInfo<scalar_t, uint32_t>(self_);
+// index_add and index_reduce share the same core implementation
+#define DISPATCH_NTYPES_IMPL(_, ...)                                           \
+  _(__VA_ARGS__, result.scalar_type(), "index_add", [&] {                      \
+    musa::detail::VariantTensorInfo<scalar_t, uint32_t> varSelfInfo =          \
+        musa::detail::getTensorInfo<scalar_t, uint32_t>(self_);                \
+                                                                               \
+    int originSelfAddDim = varSelfInfo.collapseDims(dim);                      \
+    const auto alpha_value = alpha.to<scalar_t>();                             \
+                                                                               \
+    AT_DISPATCH_INDEX_TYPES(index.scalar_type(), "index_add_musa_", [&] {      \
+      musa::detail::VariantTensorInfo<scalar_t, uint32_t> varSourceInfo =      \
+          musa::detail::getTensorInfo<scalar_t, uint32_t>(source_);            \
+      int originSourceAddDim = varSourceInfo.collapseDims(dim);                \
+                                                                               \
+      musa::detail::VariantTensorInfo<index_t, uint32_t> varIndexInfo =        \
+          musa::detail::getTensorInfo<index_t, uint32_t>(index);               \
+      varIndexInfo.collapseDims();                                             \
+                                                                               \
+      /* all other dimensions match except dim-th dimension after              \
+       * dimension collapseing */                                              \
+      const bool has_regular_dims =                                            \
+          (originSelfAddDim == originSourceAddDim &&                           \
+           IsNonSliceDimsSameAfterCollapse(                                    \
+               varSelfInfo, varSourceInfo, originSelfAddDim));                 \
+      varSelfInfo.Fill();                                                      \
+      varSourceInfo.Fill();                                                    \
+      /* Put the indexed dimension to the end */                               \
+      varSelfInfo.Swap(originSelfAddDim, varSelfInfo.dims - 1);                \
+      varSourceInfo.Swap(originSourceAddDim, varSourceInfo.dims - 1);          \
+                                                                               \
+      int contig_dim = -1;                                                     \
+      bool vec_load_eligible = false;                                          \
+      if (has_regular_dims) {                                                  \
+        for (int i = 0; i < varSelfInfo.dims - 1; i++) {                       \
+          if (varSelfInfo.strides[i] == 1 && varSourceInfo.strides[i] == 1) {  \
+            contig_dim = i;                                                    \
+            break;                                                             \
+          }                                                                    \
+        }                                                                      \
+        vec_load_eligible = contig_dim != -1;                                  \
+        if (vec_load_eligible) {                                               \
+          varSelfInfo.Swap(contig_dim, 0);                                     \
+          varSourceInfo.Swap(contig_dim, 0);                                   \
+        }                                                                      \
+      }                                                                        \
+                                                                               \
+      constexpr int64_t vlen = sizeof(scalar_t) <= 4                           \
+          ? (sizeof(scalar_t) <= 2 ? (sizeof(scalar_t) <= 1 ? 16 : 8) : 4)     \
+          : 2;                                                                 \
+                                                                               \
+      const bool run_non_atomic =                                              \
+          (device_major_version >= 3 && numIndices <= 16) ||                   \
+          (device_major_version < 3 && numIndices <= 1024 &&                   \
+           sliceSize >= mp_count * /*maxThreadsPerBlock*/ 1024);               \
+      const bool run_global_atomic =                                           \
+          !run_non_atomic && (device_major_version >= 3 || numIndices > 8192); \
+      if (run_non_atomic) {                                                    \
+        if (has_regular_dims && varSourceInfo.dims > 1) {                      \
+          int sliceDim = varSourceInfo.dims - 1;                               \
+          dim3 block = {1, 1, 1};                                              \
+          dim3 grid = {1, 1, 1};                                               \
+          int64_t xNumel = varSourceInfo.sizes[0];                             \
+          int64_t yNumel =                                                     \
+              varSourceInfo.dims <= 2 ? 1 : varSourceInfo.sizes[1];            \
+          int64_t zNumel = sliceSize / (xNumel * yNumel);                      \
+                                                                               \
+          block.x = 128;                                                       \
+          block.y = std::min((int64_t)(1024 / block.x), yNumel);               \
+          grid.x = ceil_div(                                                   \
+              xNumel, (int64_t)block.x * (vec_load_eligible ? vlen : 1));      \
+          grid.y = ceil_div(yNumel, (int64_t)block.y);                         \
+          grid.z = ceil_div(zNumel, (int64_t)block.z);                         \
+                                                                               \
+          if (vec_load_eligible) {                                             \
+            if (varSourceInfo.dims == 2) {                                     \
+              LAUNCH_THREAD_SCAN_INDICES_VEC_3D_KERNEL(                        \
+                  scalar_t, index_t, uint32_t, 1, true, vlen);                 \
+            } else if (varSourceInfo.dims == 3) {                              \
+              LAUNCH_THREAD_SCAN_INDICES_VEC_3D_KERNEL(                        \
+                  scalar_t, index_t, uint32_t, 2, true, vlen);                 \
+            } else if (varSourceInfo.dims == 4) {                              \
+              LAUNCH_THREAD_SCAN_INDICES_VEC_3D_KERNEL(                        \
+                  scalar_t, index_t, uint32_t, 3, true, vlen);                 \
+            } else {                                                           \
+              LAUNCH_THREAD_SCAN_INDICES_VEC_3D_KERNEL(                        \
+                  scalar_t, index_t, uint32_t, -1, false, vlen);               \
+            }                                                                  \
+          } else {                                                             \
+            if (varSourceInfo.dims == 2) {                                     \
+              LAUNCH_THREAD_SCAN_INDICES_3D_KERNEL(                            \
+                  scalar_t, index_t, uint32_t, 1, true);                       \
+            } else if (varSourceInfo.dims == 3) {                              \
+              LAUNCH_THREAD_SCAN_INDICES_3D_KERNEL(                            \
+                  scalar_t, index_t, uint32_t, 2, true);                       \
+            } else if (varSourceInfo.dims == 4) {                              \
+              LAUNCH_THREAD_SCAN_INDICES_3D_KERNEL(                            \
+                  scalar_t, index_t, uint32_t, 3, true);                       \
+            } else {                                                           \
+              LAUNCH_THREAD_SCAN_INDICES_3D_KERNEL(                            \
+                  scalar_t, index_t, uint32_t, -1, false);                     \
+            }                                                                  \
+          }                                                                    \
+        } else {                                                               \
+          /* fallback to the linear indexing kernel, including 1-d and         \
+           * other unregular cases */                                          \
+          int64_t selfAddDim = varSelfInfo.dims - 1;                           \
+          int64_t sourceAddDim = varSourceInfo.dims - 1;                       \
+          /* use the way of torch's IndexToOffset, the size of indexed         \
+           * dimension needs to be set to 1 */                                 \
+          varSourceInfo.reduceDim(sourceAddDim);                               \
+          varSelfInfo.reduceDim(selfAddDim);                                   \
+          const dim3 grid(std::min(                                            \
+              ceil_div(sliceSize, (int64_t)128), (int64_t)(mp_count * 8)));    \
+          const dim3 block(std::min(sliceSize, (int64_t)128));                 \
+          LAUNCH_THREAD_SCAN_INDICES_KERNEL(                                   \
+              scalar_t, index_t, uint32_t, -1, -1, -1);                        \
+        }                                                                      \
+      } else if (!run_global_atomic) {                                         \
+        /* workgroup atomic path */                                            \
+        if (has_regular_dims) {                                                \
+          int sliceDim = varSourceInfo.dims - 1;                               \
+          int64_t xNumel =                                                     \
+              varSourceInfo.dims == 1 ? 1 : varSourceInfo.sizes[0];            \
+          int64_t yNumel = sliceSize / xNumel;                                 \
+                                                                               \
+          /* the number of block at indexed dimension should be 1 in this      \
+           * path, now always regrad z-dim as indexed dimension */             \
+          dim3 block = {1, 1, 8};                                              \
+          dim3 grid = {1, 1, 1};                                               \
+          int num_thread_x = ceil_div(xNumel, vec_load_eligible ? vlen : 1);   \
+          if (num_thread_x <= 128) {                                           \
+            block.x = 32;                                                      \
+          } else if (num_thread_x <= 256) {                                    \
+            block.x = 64;                                                      \
+          } else {                                                             \
+            block.x = 128;                                                     \
+          }                                                                    \
+          block.x = std::min(block.x, 1024 / block.z);                         \
+          grid.x = ceil_div(                                                   \
+              xNumel, (int64_t)block.x * (vec_load_eligible ? vlen : 1));      \
+          grid.y = ceil_div(yNumel, (int64_t)block.y);                         \
+                                                                               \
+          if (vec_load_eligible) {                                             \
+            if (varSourceInfo.dims == 2) {                                     \
+              LAUNCH_BLOCK_SCAN_INDICES_VEC_2D_KERNEL(                         \
+                  scalar_t, index_t, uint32_t, 1, true, vlen);                 \
+            } else if (varSourceInfo.dims == 3) {                              \
+              LAUNCH_BLOCK_SCAN_INDICES_VEC_2D_KERNEL(                         \
+                  scalar_t, index_t, uint32_t, 2, true, vlen);                 \
+            } else {                                                           \
+              LAUNCH_BLOCK_SCAN_INDICES_VEC_2D_KERNEL(                         \
+                  scalar_t, index_t, uint32_t, -1, false, vlen);               \
+            }                                                                  \
+          } else {                                                             \
+            if (varSourceInfo.dims == 1) {                                     \
+              LAUNCH_BLOCK_SCAN_INDICES_2D_KERNEL(                             \
+                  scalar_t, index_t, uint32_t, 0, true);                       \
+            } else if (varSourceInfo.dims == 2) {                              \
+              LAUNCH_BLOCK_SCAN_INDICES_2D_KERNEL(                             \
+                  scalar_t, index_t, uint32_t, 1, true);                       \
+            } else if (varSourceInfo.dims == 3) {                              \
+              LAUNCH_BLOCK_SCAN_INDICES_2D_KERNEL(                             \
+                  scalar_t, index_t, uint32_t, 2, true);                       \
+            } else {                                                           \
+              LAUNCH_BLOCK_SCAN_INDICES_2D_KERNEL(                             \
+                  scalar_t, index_t, uint32_t, -1, false);                     \
+            }                                                                  \
+          }                                                                    \
+        } else {                                                               \
+          int64_t selfAddDim = varSelfInfo.dims - 1;                           \
+          int64_t sourceAddDim = varSourceInfo.dims - 1;                       \
+          varSourceInfo.reduceDim(sourceAddDim);                               \
+          varSelfInfo.reduceDim(selfAddDim);                                   \
+          const dim3 block = {128, 8, 1};                                      \
+          dim3 grid = {1, 1, 1};                                               \
+          grid.x = ceil_div(sliceSize, (int64_t)128);                          \
+          LAUNCH_BLOCK_SCAN_INDICES_KERNEL(                                    \
+              scalar_t, index_t, uint32_t, -1, -1);                            \
+        }                                                                      \
+      } else {                                                                 \
+        constexpr int64_t vlen = sizeof(scalar_t) <= 4                         \
+            ? (sizeof(scalar_t) <= 2 ? (sizeof(scalar_t) <= 1 ? 4 : 2) : 2)    \
+            : 2;                                                               \
+        /* global atomic path */                                               \
+        if (has_regular_dims) {                                                \
+          /* use 2D thread block to ensure that vectorization cases could      \
+           * be landed, and also avoid the cases that too many idle            \
+           * threads exists. */                                                \
+          int sliceDim = varSourceInfo.dims - 1;                               \
+          varIndexInfo.Fill();                                                 \
+          varIndexInfo.Swap(0, sliceDim);                                      \
+          varIndexInfo.dims = varSourceInfo.dims;                              \
+                                                                               \
+          int64_t indexedStride = varSelfInfo.strides[sliceDim];               \
+          varSelfInfo.strides[sliceDim] = 0;                                   \
+                                                                               \
+          int64_t xNumel =                                                     \
+              varSourceInfo.dims == 1 ? sourceNumel : varSourceInfo.sizes[0];  \
+          int64_t yNumel = sourceNumel / xNumel;                               \
+                                                                               \
+          dim3 block = {1, 1, 1};                                              \
+          dim3 grid = {1, 1, 1};                                               \
+          int num_thread_x = ceil_div(xNumel, vec_load_eligible ? vlen : 1);   \
+          if (num_thread_x <= 128) {                                           \
+            block.x = 32;                                                      \
+          } else if (num_thread_x <= 256) {                                    \
+            block.x = 64;                                                      \
+          } else {                                                             \
+            block.x = 128;                                                     \
+          }                                                                    \
+          block.y = 512 / block.x;                                             \
+          grid.x = ceil_div(                                                   \
+              xNumel, (int64_t)block.x * (vec_load_eligible ? vlen : 1));      \
+          grid.y = ceil_div(yNumel, (int64_t)block.y);                         \
+                                                                               \
+          if (vec_load_eligible) {                                             \
+            if (varSourceInfo.dims == 2) {                                     \
+              LAUNCH_GRID_SCAN_INDICES_VEC_2D_KERNEL(                          \
+                  scalar_t, index_t, uint32_t, 2, true, vlen);                 \
+            } else {                                                           \
+              LAUNCH_GRID_SCAN_INDICES_VEC_2D_KERNEL(                          \
+                  scalar_t, index_t, uint32_t, -1, false, vlen);               \
+            }                                                                  \
+          } else {                                                             \
+            if (varSourceInfo.dims == 1) {                                     \
+              LAUNCH_GRID_SCAN_INDICES_2D_KERNEL(                              \
+                  scalar_t, index_t, uint32_t, 1, true);                       \
+            } else if (varSourceInfo.dims == 2) {                              \
+              LAUNCH_GRID_SCAN_INDICES_2D_KERNEL(                              \
+                  scalar_t, index_t, uint32_t, 2, true);                       \
+            } else {                                                           \
+              LAUNCH_GRID_SCAN_INDICES_2D_KERNEL(                              \
+                  scalar_t, index_t, uint32_t, -1, false);                     \
+            }                                                                  \
+          }                                                                    \
+        } else {                                                               \
+          int dstSliceDim = varSelfInfo.dims - 1;                              \
+          int srcSliceDim = varSourceInfo.dims - 1;                            \
+          varIndexInfo.Fill();                                                 \
+          varIndexInfo.Swap(0, srcSliceDim);                                   \
+          varIndexInfo.dims = varSourceInfo.dims;                              \
+                                                                               \
+          int64_t indexedStride = varSelfInfo.strides[dstSliceDim];            \
+          varSelfInfo.strides[dstSliceDim] = 0;                                \
+                                                                               \
+          const dim3 block(128);                                               \
+          const dim3 grid(std::min(                                            \
+              ceil_div(sourceNumel, (int64_t)block.x),                         \
+              (int64_t)(mp_count * 8)));                                       \
+          LAUNCH_GRID_SCAN_INDICES_1D_KERNEL(scalar_t, index_t, uint32_t);     \
+        }                                                                      \
+      }                                                                        \
+    });                                                                        \
+  });
 
-          int originSelfAddDim = varSelfInfo.collapseDims(dim);
-          const auto alpha_value = alpha.to<scalar_t>();
-
-          AT_DISPATCH_INDEX_TYPES(index.scalar_type(), "index_add_musa_", [&] {
-            musa::detail::VariantTensorInfo<scalar_t, uint32_t> varSourceInfo =
-                musa::detail::getTensorInfo<scalar_t, uint32_t>(source_);
-            int originSourceAddDim = varSourceInfo.collapseDims(dim);
-
-            musa::detail::VariantTensorInfo<index_t, uint32_t> varIndexInfo =
-                musa::detail::getTensorInfo<index_t, uint32_t>(index);
-            varIndexInfo.collapseDims();
-
-            // all other dimensions match except dim-th dimension after
-            // dimension collapseing
-            const bool has_regular_dims =
-                (originSelfAddDim == originSourceAddDim &&
-                 IsNonSliceDimsSameAfterCollapse(
-                     varSelfInfo, varSourceInfo, originSelfAddDim));
-            varSelfInfo.Fill();
-            varSourceInfo.Fill();
-            // Put the indexed dimension to the end
-            varSelfInfo.Swap(originSelfAddDim, varSelfInfo.dims - 1);
-            varSourceInfo.Swap(originSourceAddDim, varSourceInfo.dims - 1);
-
-            int contig_dim = -1;
-            bool vec_load_eligible = false;
-            if (has_regular_dims) {
-              for (int i = 0; i < varSelfInfo.dims - 1; i++) {
-                if (varSelfInfo.strides[i] == 1 &&
-                    varSourceInfo.strides[i] == 1) {
-                  contig_dim = i;
-                  break;
-                }
-              }
-              vec_load_eligible = contig_dim != -1;
-              if (vec_load_eligible) {
-                varSelfInfo.Swap(contig_dim, 0);
-                varSourceInfo.Swap(contig_dim, 0);
-              }
-            }
-
-            constexpr int64_t vlen = sizeof(scalar_t) <= 4
-                ? (sizeof(scalar_t) <= 2 ? (sizeof(scalar_t) <= 1 ? 16 : 8) : 4)
-                : 2;
-
-            const bool run_non_atomic =
-                (device_major_version >= 3 && numIndices <= 16) ||
-                (device_major_version < 3 && numIndices <= 1024 &&
-                 sliceSize >= mp_count * /*maxThreadsPerBlock*/ 1024);
-            const bool run_global_atomic = !run_non_atomic &&
-                (device_major_version >= 3 || numIndices > 8192);
-            if (run_non_atomic) {
-              if (has_regular_dims && varSourceInfo.dims > 1) {
-                int sliceDim = varSourceInfo.dims - 1;
-                dim3 block = {1, 1, 1};
-                dim3 grid = {1, 1, 1};
-                int64_t xNumel = varSourceInfo.sizes[0];
-                int64_t yNumel =
-                    varSourceInfo.dims <= 2 ? 1 : varSourceInfo.sizes[1];
-                int64_t zNumel = sliceSize / (xNumel * yNumel);
-
-                block.x = 128;
-                block.y = std::min((int64_t)(1024 / block.x), yNumel);
-                grid.x = ceil_div(
-                    xNumel, (int64_t)block.x * (vec_load_eligible ? vlen : 1));
-                grid.y = ceil_div(yNumel, (int64_t)block.y);
-                grid.z = ceil_div(zNumel, (int64_t)block.z);
-
-                if (vec_load_eligible) {
-                  if (varSourceInfo.dims == 2) {
-                    LAUNCH_THREAD_SCAN_INDICES_VEC_3D_KERNEL(
-                        scalar_t, index_t, uint32_t, 1, true, vlen);
-                  } else if (varSourceInfo.dims == 3) {
-                    LAUNCH_THREAD_SCAN_INDICES_VEC_3D_KERNEL(
-                        scalar_t, index_t, uint32_t, 2, true, vlen);
-                  } else if (varSourceInfo.dims == 4) {
-                    LAUNCH_THREAD_SCAN_INDICES_VEC_3D_KERNEL(
-                        scalar_t, index_t, uint32_t, 3, true, vlen);
-                  } else {
-                    LAUNCH_THREAD_SCAN_INDICES_VEC_3D_KERNEL(
-                        scalar_t, index_t, uint32_t, -1, false, vlen);
-                  }
-                } else {
-                  if (varSourceInfo.dims == 2) {
-                    LAUNCH_THREAD_SCAN_INDICES_3D_KERNEL(
-                        scalar_t, index_t, uint32_t, 1, true);
-                  } else if (varSourceInfo.dims == 3) {
-                    LAUNCH_THREAD_SCAN_INDICES_3D_KERNEL(
-                        scalar_t, index_t, uint32_t, 2, true);
-                  } else if (varSourceInfo.dims == 4) {
-                    LAUNCH_THREAD_SCAN_INDICES_3D_KERNEL(
-                        scalar_t, index_t, uint32_t, 3, true);
-                  } else {
-                    LAUNCH_THREAD_SCAN_INDICES_3D_KERNEL(
-                        scalar_t, index_t, uint32_t, -1, false);
-                  }
-                }
-              } else {
-                // fallback to the linear indexing kernel, including 1-d and
-                // other unregular cases
-                int64_t selfAddDim = varSelfInfo.dims - 1;
-                int64_t sourceAddDim = varSourceInfo.dims - 1;
-                // use the way of torch's IndexToOffset, the size of indexed
-                // dimension needs to be set to 1
-                varSourceInfo.reduceDim(sourceAddDim);
-                varSelfInfo.reduceDim(selfAddDim);
-                const dim3 grid(std::min(
-                    ceil_div(sliceSize, (int64_t)128),
-                    (int64_t)(mp_count * 8)));
-                const dim3 block(std::min(sliceSize, (int64_t)128));
-                LAUNCH_THREAD_SCAN_INDICES_KERNEL(
-                    scalar_t, index_t, uint32_t, -1, -1, -1);
-              }
-            } else if (!run_global_atomic) {
-              // workgroup atomic path
-              if (has_regular_dims) {
-                int sliceDim = varSourceInfo.dims - 1;
-                int64_t xNumel =
-                    varSourceInfo.dims == 1 ? 1 : varSourceInfo.sizes[0];
-                int64_t yNumel = sliceSize / xNumel;
-
-                // the number of block at indexed dimension should be 1 in this
-                // path, now always regrad z-dim as indexed dimension
-                dim3 block = {1, 1, 8};
-                dim3 grid = {1, 1, 1};
-                int num_thread_x =
-                    ceil_div(xNumel, vec_load_eligible ? vlen : 1);
-                if (num_thread_x <= 128) {
-                  block.x = 32;
-                } else if (num_thread_x <= 256) {
-                  block.x = 64;
-                } else {
-                  block.x = 128;
-                }
-                block.x = std::min(block.x, 1024 / block.z);
-                grid.x = ceil_div(
-                    xNumel, (int64_t)block.x * (vec_load_eligible ? vlen : 1));
-                grid.y = ceil_div(yNumel, (int64_t)block.y);
-
-                if (vec_load_eligible) {
-                  if (varSourceInfo.dims == 2) {
-                    LAUNCH_BLOCK_SCAN_INDICES_VEC_2D_KERNEL(
-                        scalar_t, index_t, uint32_t, 1, true, vlen);
-                  } else if (varSourceInfo.dims == 3) {
-                    LAUNCH_BLOCK_SCAN_INDICES_VEC_2D_KERNEL(
-                        scalar_t, index_t, uint32_t, 2, true, vlen);
-                  } else {
-                    LAUNCH_BLOCK_SCAN_INDICES_VEC_2D_KERNEL(
-                        scalar_t, index_t, uint32_t, -1, false, vlen);
-                  }
-                } else {
-                  if (varSourceInfo.dims == 1) {
-                    LAUNCH_BLOCK_SCAN_INDICES_2D_KERNEL(
-                        scalar_t, index_t, uint32_t, 0, true);
-                  } else if (varSourceInfo.dims == 2) {
-                    LAUNCH_BLOCK_SCAN_INDICES_2D_KERNEL(
-                        scalar_t, index_t, uint32_t, 1, true);
-                  } else if (varSourceInfo.dims == 3) {
-                    LAUNCH_BLOCK_SCAN_INDICES_2D_KERNEL(
-                        scalar_t, index_t, uint32_t, 2, true);
-                  } else {
-                    LAUNCH_BLOCK_SCAN_INDICES_2D_KERNEL(
-                        scalar_t, index_t, uint32_t, -1, false);
-                  }
-                }
-              } else {
-                int64_t selfAddDim = varSelfInfo.dims - 1;
-                int64_t sourceAddDim = varSourceInfo.dims - 1;
-                varSourceInfo.reduceDim(sourceAddDim);
-                varSelfInfo.reduceDim(selfAddDim);
-                const dim3 block = {128, 8, 1};
-                dim3 grid = {1, 1, 1};
-                grid.x = ceil_div(sliceSize, (int64_t)128);
-                LAUNCH_BLOCK_SCAN_INDICES_KERNEL(
-                    scalar_t, index_t, uint32_t, -1, -1);
-              }
-            } else {
-              constexpr int64_t vlen = sizeof(scalar_t) <= 4
-                  ? (sizeof(scalar_t) <= 2 ? (sizeof(scalar_t) <= 1 ? 4 : 2)
-                                           : 2)
-                  : 2;
-              // global atomic path
-              if (has_regular_dims) {
-                // use 2D thread block to ensure that vectorization cases could
-                // be landed, and also avoid the cases that too many idle
-                // threads exists.
-                int sliceDim = varSourceInfo.dims - 1;
-                varIndexInfo.Fill();
-                varIndexInfo.Swap(0, sliceDim);
-                varIndexInfo.dims = varSourceInfo.dims;
-
-                int64_t indexedStride = varSelfInfo.strides[sliceDim];
-                varSelfInfo.strides[sliceDim] = 0;
-
-                int64_t xNumel = varSourceInfo.dims == 1
-                    ? sourceNumel
-                    : varSourceInfo.sizes[0];
-                int64_t yNumel = sourceNumel / xNumel;
-
-                dim3 block = {1, 1, 1};
-                dim3 grid = {1, 1, 1};
-                int num_thread_x =
-                    ceil_div(xNumel, vec_load_eligible ? vlen : 1);
-                if (num_thread_x <= 128) {
-                  block.x = 32;
-                } else if (num_thread_x <= 256) {
-                  block.x = 64;
-                } else {
-                  block.x = 128;
-                }
-                block.y = 512 / block.x;
-                grid.x = ceil_div(
-                    xNumel, (int64_t)block.x * (vec_load_eligible ? vlen : 1));
-                grid.y = ceil_div(yNumel, (int64_t)block.y);
-
-                if (vec_load_eligible) {
-                  if (varSourceInfo.dims == 2) {
-                    LAUNCH_GRID_SCAN_INDICES_VEC_2D_KERNEL(
-                        scalar_t, index_t, uint32_t, 2, true, vlen);
-                  } else {
-                    LAUNCH_GRID_SCAN_INDICES_VEC_2D_KERNEL(
-                        scalar_t, index_t, uint32_t, -1, false, vlen);
-                  }
-                } else {
-                  if (varSourceInfo.dims == 1) {
-                    LAUNCH_GRID_SCAN_INDICES_2D_KERNEL(
-                        scalar_t, index_t, uint32_t, 1, true);
-                  } else if (varSourceInfo.dims == 2) {
-                    LAUNCH_GRID_SCAN_INDICES_2D_KERNEL(
-                        scalar_t, index_t, uint32_t, 2, true);
-                  } else {
-                    LAUNCH_GRID_SCAN_INDICES_2D_KERNEL(
-                        scalar_t, index_t, uint32_t, -1, false);
-                  }
-                }
-              } else {
-                int dstSliceDim = varSelfInfo.dims - 1;
-                int srcSliceDim = varSourceInfo.dims - 1;
-                varIndexInfo.Fill();
-                varIndexInfo.Swap(0, srcSliceDim);
-                varIndexInfo.dims = varSourceInfo.dims;
-
-                int64_t indexedStride = varSelfInfo.strides[dstSliceDim];
-                varSelfInfo.strides[dstSliceDim] = 0;
-
-                const dim3 block(128);
-                const dim3 grid(std::min(
-                    ceil_div(sourceNumel, (int64_t)block.x),
-                    (int64_t)(mp_count * 8)));
-                LAUNCH_GRID_SCAN_INDICES_1D_KERNEL(scalar_t, index_t, uint32_t);
-              }
-            }
-          });
-        });
+    if constexpr (is_index_add) {
+      DISPATCH_NTYPES_IMPL(
+          AT_DISPATCH_ALL_TYPES_AND3,
+          at::ScalarType::Bool,
+          at::ScalarType::Half,
+          at::ScalarType::BFloat16)
+    } else {
+      DISPATCH_NTYPES_IMPL(
+          AT_DISPATCH_ALL_TYPES_AND2,
+          at::ScalarType::Half,
+          at::ScalarType::BFloat16)
+    }
+#undef DISPATCH_NTYPES_IMPL
   } else {
     // 64 bit indexing
-    AT_DISPATCH_ALL_TYPES_AND3(
-        at::ScalarType::Bool,
-        at::ScalarType::Half,
-        at::ScalarType::BFloat16,
-        result.scalar_type(),
-        "index_add",
-        [&]() {
-          musa::detail::VariantTensorInfo<scalar_t, uint64_t> varSelfInfo =
-              musa::detail::getTensorInfo<scalar_t, uint64_t>(self_);
-          const int selfAddDim = varSelfInfo.collapseDims(dim);
-          const auto alpha_value = alpha.to<scalar_t>();
-
-          musa::detail::VariantTensorInfo<scalar_t, uint64_t> varSourceInfo =
-              musa::detail::getTensorInfo<scalar_t, uint64_t>(source_);
-          const int sourceAddDim = varSourceInfo.collapseDims(dim);
-
-          AT_DISPATCH_INDEX_TYPES(index.scalar_type(), "index_add_musa_", [&] {
-            musa::detail::VariantTensorInfo<index_t, uint64_t> varIndexInfo =
-                musa::detail::getTensorInfo<index_t, uint64_t>(index);
-            varIndexInfo.collapseDims();
-
-            int dstSliceDim = selfAddDim;
-            int srcSliceDim = sourceAddDim;
-            varIndexInfo.Fill();
-            varIndexInfo.Swap(0, srcSliceDim);
-            varIndexInfo.dims = varSourceInfo.dims;
-
-            int64_t indexedStride = varSelfInfo.strides[dstSliceDim];
-            varSelfInfo.strides[dstSliceDim] = 0;
-
-            const dim3 block(128);
-            const dim3 grid(std::min(
-                ceil_div(sourceNumel, (int64_t)block.x),
-                (int64_t)(mp_count * 8)));
-            LAUNCH_GRID_SCAN_INDICES_1D_KERNEL(scalar_t, index_t, uint64_t);
-          });
-        });
+#define DISPATCH_NTYPES_IMPL(_, ...)                                          \
+  _(__VA_ARGS__, result.scalar_type(), "index_add", [&]() {                   \
+    musa::detail::VariantTensorInfo<scalar_t, uint64_t> varSelfInfo =         \
+        musa::detail::getTensorInfo<scalar_t, uint64_t>(self_);               \
+    const int selfAddDim = varSelfInfo.collapseDims(dim);                     \
+    const auto alpha_value = alpha.to<scalar_t>();                            \
+                                                                              \
+    musa::detail::VariantTensorInfo<scalar_t, uint64_t> varSourceInfo =       \
+        musa::detail::getTensorInfo<scalar_t, uint64_t>(source_);             \
+    const int sourceAddDim = varSourceInfo.collapseDims(dim);                 \
+                                                                              \
+    AT_DISPATCH_INDEX_TYPES(index.scalar_type(), "index_add_musa_", [&] {     \
+      musa::detail::VariantTensorInfo<index_t, uint64_t> varIndexInfo =       \
+          musa::detail::getTensorInfo<index_t, uint64_t>(index);              \
+      varIndexInfo.collapseDims();                                            \
+                                                                              \
+      int dstSliceDim = selfAddDim;                                           \
+      int srcSliceDim = sourceAddDim;                                         \
+      varIndexInfo.Fill();                                                    \
+      varIndexInfo.Swap(0, srcSliceDim);                                      \
+      varIndexInfo.dims = varSourceInfo.dims;                                 \
+                                                                              \
+      int64_t indexedStride = varSelfInfo.strides[dstSliceDim];               \
+      varSelfInfo.strides[dstSliceDim] = 0;                                   \
+                                                                              \
+      const dim3 block(128);                                                  \
+      const dim3 grid(std::min(                                               \
+          ceil_div(sourceNumel, (int64_t)block.x), (int64_t)(mp_count * 8))); \
+      LAUNCH_GRID_SCAN_INDICES_1D_KERNEL(scalar_t, index_t, uint64_t);        \
+    });                                                                       \
+  });
+    if constexpr (is_index_add) {
+      DISPATCH_NTYPES_IMPL(
+          AT_DISPATCH_ALL_TYPES_AND3,
+          at::ScalarType::Bool,
+          at::ScalarType::Half,
+          at::ScalarType::BFloat16)
+    } else {
+      DISPATCH_NTYPES_IMPL(
+          AT_DISPATCH_ALL_TYPES_AND2,
+          at::ScalarType::Half,
+          at::ScalarType::BFloat16)
+    }
+#undef DISPATCH_NTYPES_IMPL
   }
 }
 
@@ -1171,6 +1315,39 @@ TORCH_IMPL_FUNC(index_add_musa_out)
       reduce_atomic_add,
       alpha,
       result);
+}
+
+TORCH_IMPL_FUNC(index_reduce_musa_out)
+(const Tensor& self,
+ int64_t dim,
+ const Tensor& index,
+ const Tensor& source,
+ const c10::string_view reduce,
+ bool include_self,
+ const Tensor& result) {
+  // clang-format off
+  if (reduce == "prod") {
+    IndexReduceFuncMUSAImpl<false>(self, dim, index, source, include_self, ReductionType::PROD, vec_reduce_multiply, reduce_multiply, vec_reduce_atomic_multiply, reduce_atomic_multiply, 1.0, result);
+  } else if (reduce == "mean") {
+    IndexReduceFuncMUSAImpl<false>(self, dim, index, source, include_self, ReductionType::MEAN, vec_reduce_add, reduce_add, vec_reduce_atomic_add, reduce_atomic_add, 1.0, result);
+    auto counts = include_self ? at::ones_like(result) : at::zeros_like(result);
+    counts.index_add_(dim, index, at::ones_like(source));
+    counts.masked_fill_(counts == 0, 1);
+    if (result.is_floating_point()) {
+      // it's save not to check complex dtype, the unsupported complex dtype
+      // will report error in advance
+      result.div_(counts);
+    } else {
+      result.div_(counts, "floor");
+    }
+  } else if (reduce == "amin") {
+    IndexReduceFuncMUSAImpl<false>(self, dim, index, source, include_self, ReductionType::MIN, vec_reduce_minimum, reduce_minimum, vec_reduce_atomic_minimum, reduce_atomic_minimum, 1.0, result);
+  } else if (reduce == "amax") {
+    IndexReduceFuncMUSAImpl<false>(self, dim, index, source, include_self, ReductionType::MAX, vec_reduce_maximum, reduce_maximum, vec_reduce_atomic_maximum, reduce_atomic_maximum, 1.0, result);
+  } else {
+    TORCH_CHECK(false, "reduce argument must be either prod, mean, amax or amin, got ", reduce, ".");
+  }
+  // clang-format on
 }
 
 template <typename scalar_t>

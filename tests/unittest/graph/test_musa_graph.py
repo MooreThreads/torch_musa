@@ -110,7 +110,8 @@ def train():
 
 
 @pytest.mark.skipif(
-    testing.get_musa_arch() < 22, reason="bf16 is not supported on arch older than qy2"
+    testing.get_musa_arch() < 22,
+    reason="MUSAGraph is not supported on arch older than qy2",
 )
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 def test_musa_graph():

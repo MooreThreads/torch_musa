@@ -163,6 +163,7 @@ void permute_to_contiguous(const Tensor& self, const Tensor& src) {
   CHECK_MUDNN_STATUS(op.Run(h, contiguous_out, contiguous_in), "Run");
 }
 
+// Performs a Device-to-Device (D2D) copy between tensors of the same type.
 void mtgpu_impl_copy_d2d(
     const Tensor& tensor_self,
     const Tensor& tensor_src,
@@ -215,6 +216,18 @@ void mtgpu_impl_copy_d2d(
     if (needs_MemcpyPeer && src_device != dst_device) {
       TORCH_MUSA_CHECK(musaMemcpyPeerAsync(
           dst, dst_device.index(), src, src_device.index(), size, copy_stream));
+    } else if (
+        src_device == dst_device && tensor_src.dim() <= 8 &&
+        tensor_self.dim() <= 8) {
+      // we call the identity op to implement memcpy(d2d), which has better
+      // performance
+      muHandle& h = GetMudnnHandle();
+      ::musa::dnn::Unary op;
+      CHECK_MUDNN_STATUS(
+          op.SetMode(::musa::dnn::Unary::Mode::IDENTITY), "SetMode");
+      auto in = CreateMUTensor(tensor_src);
+      auto out = CreateMUTensor(tensor_self);
+      CHECK_MUDNN_STATUS(op.Run(h, out, in), "Run Copy by Identity");
     } else {
       TORCH_MUSA_CHECK(musaMemcpyAsync(
           dst, src, size, musaMemcpyDeviceToDevice, copy_stream));

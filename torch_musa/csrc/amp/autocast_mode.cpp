@@ -29,14 +29,14 @@ void set_autocast_musa_enabled(bool new_enabled) {
 }
 
 at::ScalarType get_autocast_musa_dtype() {
-  return at::autocast::get_autocast_privateuseone_dtype();
+  return at::autocast::get_autocast_dtype(at::kPrivateUse1);
 }
 
 void set_autocast_musa_dtype(at::ScalarType dtype) {
   TORCH_CHECK(
       dtype == at::kHalf || dtype == at::kBFloat16 || dtype == at::kFloat,
       "Currently, AutoCastMusa only support float16/bfloat16/float32 as the autocast_musa_dtype");
-  return at::autocast::set_autocast_privateuseone_dtype(dtype);
+  return at::autocast::set_autocast_dtype(at::kPrivateUse1, dtype);
 }
 
 /*******************************

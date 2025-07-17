@@ -214,6 +214,25 @@ Tensor ClampMin(const Tensor& self, const Scalar& min) {
   return output;
 }
 
+Tensor& ClampMin_(Tensor& self, const Scalar& min) {
+  MUSA_TENSOR_TYPE_CHECK(self);
+  const c10::musa::MUSAGuard device_guard(self.device());
+  Tensor output = at::empty_like(
+      self,
+      c10::TensorOptions(self.suggest_memory_format())
+          .dtype(self.scalar_type()));
+  ClampScalarCall(
+      __func__,
+      output,
+      self,
+      true,
+      c10::optional<Scalar>(min),
+      false,
+      c10::optional<Scalar>());
+  self.copy_(output);
+  return self;
+}
+
 Tensor& ClampMinOut(const Tensor& self, const Scalar& min, Tensor& out) {
   MUSA_TENSOR_TYPE_CHECK(self);
   const c10::musa::MUSAGuard device_guard(self.device());
@@ -252,6 +271,25 @@ Tensor ClampMax(const Tensor& self, const Scalar& max) {
   return output;
 }
 
+Tensor& ClampMax_(Tensor& self, const Scalar& max) {
+  MUSA_TENSOR_TYPE_CHECK(self);
+  const c10::musa::MUSAGuard device_guard(self.device());
+  Tensor output = at::empty_like(
+      self,
+      c10::TensorOptions(self.suggest_memory_format())
+          .dtype(self.scalar_type()));
+  ClampScalarCall(
+      __func__,
+      output,
+      self,
+      false,
+      c10::optional<Scalar>(),
+      true,
+      c10::optional<Scalar>(max));
+  self.copy_(output);
+  return self;
+}
+
 Tensor& ClampMaxOut(const Tensor& self, const Scalar& max, Tensor& out) {
   MUSA_TENSOR_TYPE_CHECK(self);
   const c10::musa::MUSAGuard device_guard(self.device());
@@ -270,6 +308,98 @@ Tensor& ClampMaxOut(const Tensor& self, const Scalar& max, Tensor& out) {
       true,
       c10::optional<Scalar>(max));
   return out;
+}
+
+Tensor& ClampMaxTensorOut(
+    const Tensor& self,
+    const Tensor& max,
+    Tensor& output) {
+  MUSA_TENSOR_TYPE_CHECK(self);
+  MUSA_TENSOR_TYPE_CHECK(max);
+  c10::musa::MUSAGuard device_guard(self.device());
+  // set output shape, must be consistent with self's sizes
+  if (!output.sizes().equals(self.sizes())) {
+    output.resize_(self.sizes());
+  }
+  if (!output.numel()) {
+    return output;
+  }
+
+  // if the min is not provided, call binary's minimum op
+  MinimumTensorOut(self, max, output);
+  return output;
+}
+
+Tensor ClampMaxTensor(const Tensor& self, const Tensor& max) {
+  MUSA_TENSOR_TYPE_CHECK(self);
+  MUSA_TENSOR_TYPE_CHECK(max);
+  c10::musa::MUSAGuard device_guard(self.device());
+  Tensor output = at::empty_like(
+      self,
+      c10::TensorOptions(self.suggest_memory_format())
+          .dtype(self.scalar_type()));
+
+  return MinimumTensorOut(self, max, output);
+}
+
+Tensor& ClampMaxTensor_(Tensor& self, const Tensor& max) {
+  MUSA_TENSOR_TYPE_CHECK(self);
+  MUSA_TENSOR_TYPE_CHECK(max);
+  c10::musa::MUSAGuard device_guard(self.device());
+  Tensor output = at::empty_like(
+      self,
+      c10::TensorOptions(self.suggest_memory_format())
+          .dtype(self.scalar_type()));
+  // if the min is not provided, call binary's minimum op
+  MinimumTensorOut(self, max, output);
+  self.copy_(output);
+  return self;
+}
+
+Tensor& ClampMinTensorOut(
+    const Tensor& self,
+    const Tensor& min,
+    Tensor& output) {
+  MUSA_TENSOR_TYPE_CHECK(self);
+  MUSA_TENSOR_TYPE_CHECK(min);
+  c10::musa::MUSAGuard device_guard(self.device());
+  // set output shape, must be consistent with self's sizes
+  if (!output.sizes().equals(self.sizes())) {
+    output.resize_(self.sizes());
+  }
+  if (!output.numel()) {
+    return output;
+  }
+
+  // if the min is not provided, call binary's minimum op
+  MaximumTensorOut(self, min, output);
+  return output;
+}
+
+Tensor ClampMinTensor(const Tensor& self, const Tensor& min) {
+  MUSA_TENSOR_TYPE_CHECK(self);
+  MUSA_TENSOR_TYPE_CHECK(min);
+  c10::musa::MUSAGuard device_guard(self.device());
+  Tensor output = at::empty_like(
+      self,
+      c10::TensorOptions(self.suggest_memory_format())
+          .dtype(self.scalar_type()));
+
+  return MaximumTensorOut(self, min, output);
+}
+
+Tensor& ClampMinTensor_(Tensor& self, const Tensor& min) {
+  MUSA_TENSOR_TYPE_CHECK(self);
+  MUSA_TENSOR_TYPE_CHECK(min);
+  c10::musa::MUSAGuard device_guard(self.device());
+  Tensor output = at::empty_like(
+      self,
+      c10::TensorOptions(self.suggest_memory_format())
+          .dtype(self.scalar_type()));
+  // if the min is not provided, call binary's minimum op
+  MaximumTensorOut(self, min, output);
+  self.copy_(output);
+  return self;
 }
 
 Tensor& ClampTensorOut(
@@ -321,7 +451,10 @@ Tensor& ClampTensorOut(
     // process.
     return ClampOut(self, min.value().item(), max.value().item(), output);
   }
-  ClampTensorCall(output, self, min.value(), max.value());
+  // TODO(@kang.chen): mudnn now only support the inputs of same dtypes.
+  Tensor min_ = min.value().to(self.scalar_type());
+  Tensor max_ = max.value().to(self.scalar_type());
+  ClampTensorCall(output, self, min_, max_);
   return output;
 }
 

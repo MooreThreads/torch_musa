@@ -5,43 +5,38 @@ we refer to the mapping rules of torch.cuda ideally.
 See specific meanings of Dynamo variables in torch/_dynamo/trace_rules.py
 """
 
+__all__ = ["_apply_dynamo_trace_rules_patches"]
+
+import importlib
+import torch
 from torch._dynamo.variables import (
-    SkipFilesVariable,
-    TorchCtxManagerClassVariable,
+    # SkipFilesVariable,
+    # TorchCtxManagerClassVariable,
     TorchInGraphFunctionVariable,
 )
 from torch._dynamo.trace_rules import torch_name_rule_map
 
 
-_manual_torch_musa_name_rule_map = {
-    "torch.musa.get_rng_state": SkipFilesVariable,
-    "torch.musa.set_rng_state": SkipFilesVariable,
-}
+_torch_musa_non_c_binding_in_graph_functions = dict.fromkeys(
+    [
+        "torch.musa.current_stream",
+        "torch.musa.default_stream",
+        "torch.musa.stream",
+    ],
+    TorchInGraphFunctionVariable,
+)
 
-_torch_musa_ctx_manager_classes = {
-    k: TorchCtxManagerClassVariable
-    for k in [
-        "torch_musa.core.amp.autocast_base.AutocastBase",  # torch.amp.autocast_mode.autocast
-        "torch_musa.core.amp.autocast_mode.autocast",
-    ]
-}
+# NOTE: before updating the torch_name_rule_map, clear the lru_cache
+torch._dynamo.trace_rules.get_torch_obj_rule_map.cache_clear()
+torch_name_rule_map[2].update(_torch_musa_non_c_binding_in_graph_functions)
 
-_torch_musa_non_c_binding_in_graph_functions = {
-    k: TorchInGraphFunctionVariable
-    for k in [
-        "torch.musa._get_rng_state_offset",
-        "torch.musa._set_rng_state_offset",
-        "torch.musa.random.get_rng_state_all",
-        "torch.musa.random.set_rng_state_all",
-    ]
-}
 
-_torch_musa_name_rule_map = {
-    **_manual_torch_musa_name_rule_map,
-    **_torch_musa_ctx_manager_classes,
-    **_torch_musa_non_c_binding_in_graph_functions,
-}
+def _load_obj_from_str(fully_qualified_name):
+    module, obj_name = fully_qualified_name.rsplit(".", maxsplit=1)
+    if module == "torch.musa":
+        module = "torch_musa"
+    return getattr(importlib.import_module(module), obj_name)
 
-# NOTE: torch_name_rule_map should be updated before get_torch_obj_rule_map is invoked
-# TODO(mt-ai): implement dynamo logic on torch_musa APIs if needed
-torch_name_rule_map.update(_torch_musa_name_rule_map)
+
+def _apply_dynamo_trace_rules_patches():
+    torch._dynamo.trace_rules._load_obj_from_str = _load_obj_from_str

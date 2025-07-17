@@ -985,9 +985,10 @@ def test_uint_binary_add_sub(input_data, func, dtype):
     if reverse:
         test(r_cpu, l_cpu, r_musa, l_musa, func)
 
+
 @pytest.mark.skipif(
-    testing.get_musa_arch() < 22,
-    reason="Only support arch greater equal 22")
+    testing.get_musa_arch() < 22, reason="Only support arch greater equal 22"
+)
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize(
     "shapes_and_tags",
@@ -1050,9 +1051,7 @@ def test_binary_mixed_types(shapes_and_tags, dtypes, func):
     l_musa = to_musa(l_cpu)
     r_musa = to_musa(r_cpu)
 
-    cmp = testing.DefaultComparator(
-        abs_diff=1e-3, rel_diff=1e-3, equal_nan=True
-    )
+    cmp = testing.DefaultComparator(abs_diff=1e-3, rel_diff=1e-3, equal_nan=True)
 
     if "functional" in tags:
         res_cpu = func(l_cpu, r_cpu)
@@ -1365,3 +1364,55 @@ def test_binary_fmin_fmax_float(shape, io_types):
             m_musa_o = m_musa_o.to(o_t)
             torch.fmax(musa_i, musa_a, out=m_musa_o)
             assert_detail(m_cpu_o, m_musa_o)
+
+
+input_datas = [
+    {"input": torch.tensor(random.uniform(-10, 10)), "other": torch.randn(30, 30)},
+    {"input": torch.randn(30), "other": torch.tensor(random.uniform(-10, 10))},
+    {"input": torch.randn(30, 1), "other": torch.randn(30, 30)},
+    {"input": torch.randn(30, 1), "other": torch.randn(1, 30)},
+]
+for data in testing.get_raw_data():
+    input_datas.append({"input": data, "other": data})
+
+all_float_types = [torch.float16, torch.float32, torch.float64]
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_datas)
+@pytest.mark.parametrize("dtype", all_float_types)
+@pytest.mark.parametrize("other_dtype", all_float_types)
+@pytest.mark.parametrize("func", [torch.logaddexp, torch.logaddexp2])
+def test_logaddexp_float(input_data, dtype, other_dtype, func):
+
+    function(input_data, dtype, other_dtype, func)
+
+
+input_int_data = [
+    {"input": torch.tensor([12, 18, 100], dtype=torch.int32),
+     "other": torch.tensor([8, 24, 25], dtype=torch.int32)},
+    {"input": torch.tensor([[35, 10], [99, 12]], dtype=torch.int64),
+     "other": torch.tensor([[5, 30], [9, 6]], dtype=torch.int64)},
+]
+
+
+@pytest.mark.parametrize("input_data", input_int_data)
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_gcd(input_data):
+    test = testing.OpTest(
+        func=torch.gcd,
+        input_args=input_data,
+        comparators=testing.DefaultComparator(),
+    )
+    test.check_result()
+
+
+@pytest.mark.parametrize("input_data", input_int_data)
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_lcm(input_data):
+    test = testing.OpTest(
+        func=torch.lcm,
+        input_args=input_data,
+        comparators=testing.DefaultComparator(),
+    )
+    test.check_result()

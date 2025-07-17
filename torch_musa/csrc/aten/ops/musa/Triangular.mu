@@ -40,7 +40,7 @@ __global__ void triangular_matrix(
         bool mask[4] = {true, true, true, true};
 #pragma unroll
         for (int i = 0; i < 4; ++i) {
-          if (offset + i > prefix) {
+          if (offset + i >= prefix) {
             carry = 0;
           }
           int col = (offset - MxN * (num_matrix - carry) + i) % N;

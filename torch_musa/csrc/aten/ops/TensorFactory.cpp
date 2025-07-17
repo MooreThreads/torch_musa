@@ -14,8 +14,8 @@
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/core/Device.h"
 #include "torch_musa/csrc/core/MUSACachingAllocator.h"
+#include "torch_musa/csrc/core/Device.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 #include "torch_musa/csrc/core/PeerToPeerAccess.h"
 
@@ -99,6 +99,21 @@ Tensor empty_strided_musa(
       options.layout_opt(),
       options.device_opt(),
       options.pinned_memory_opt());
+}
+
+TensorBase empty_strided_musa(
+    IntArrayRef size,
+    IntArrayRef stride,
+    ScalarType dtype,
+    std::optional<Device> device_opt) {
+  at::musa::lazyInitMUSA();
+  const auto device = device_or_default(device_opt);
+  TORCH_INTERNAL_ASSERT(device.is_privateuseone());
+  const DeviceGuard device_guard(device);
+  auto* allocator = c10::musa::MUSACachingAllocator::get();
+  constexpr c10::DispatchKeySet musa_dispatch_key(at::musa::kMUSAKey);
+  return at::detail::empty_strided_generic(
+      size, stride, allocator, musa_dispatch_key, dtype);
 }
 
 } // namespace detail

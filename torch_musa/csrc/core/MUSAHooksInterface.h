@@ -1,51 +1,82 @@
-#ifndef TORCH_MUSA_CSRC_CORE_MUSA_HOOKS_INTERFACE_H_
-#define TORCH_MUSA_CSRC_CORE_MUSA_HOOKS_INTERFACE_H_
-#include <ATen/core/Generator.h>
+#ifndef TORCH_MUSA_CSRC_CORE_MUSAHOOKSINTERFACE_H_
+#define TORCH_MUSA_CSRC_CORE_MUSAHOOKSINTERFACE_H_
+
 #include <ATen/detail/PrivateUse1HooksInterface.h>
-#include <c10/core/Device.h>
-#include <c10/util/Exception.h>
 #include <c10/util/Registry.h>
 
 namespace at {
 
-struct MUSAHooksInterface : public at::PrivateUse1HooksInterface {
-  virtual ~MUSAHooksInterface() = default;
+struct MUSAHooksInterface : PrivateUse1HooksInterface {
+  ~MUSAHooksInterface() override = default;
 
   virtual void initMUSA() const {
-    TORCH_CHECK(false, "Cannot initialize MUSA without torch_musa library.")
+    TORCH_CHECK(false, "Cannot initialize MUSA without torch_musa library.");
+  }
+  void initPrivateUse1() const override {
+    initMUSA();
+  }
+
+  bool hasPrimaryContext(DeviceIndex device_index) const override {
+    TORCH_CHECK(
+        false,
+        "Cannot call hasPrimaryContext(",
+        device_index,
+        ") without torch_musa library.");
   }
 
   virtual const Generator& getDefaultMUSAGenerator(
-      DeviceIndex device_index = -1) const {
-    (void)device_index; // Suppress unused variable warning
+      DeviceIndex device_index) const {
     TORCH_CHECK(
         false, "Cannot get default MUSA generator without torch_musa library.");
   }
-
-  virtual c10::Device getDeviceFromPtr(void* /*data*/) const {
-    TORCH_CHECK(false, "Cannot initialize MUSA without torch_musa library.")
+  const Generator& getDefaultGenerator(
+      DeviceIndex device_index) const override {
+    return getDefaultMUSAGenerator(device_index);
   }
+
+  Device getDeviceFromPtr(void* data) const override {
+    TORCH_CHECK(
+        false,
+        "Cannot get device of pointer on MUSA without torch_musa library.");
+  }
+
+  Allocator* getPinnedMemoryAllocator() const override {
+    TORCH_CHECK(false, "Pinned memory requires MUSA.");
+  }
+
+  virtual void resizeMUSABytes(const Storage& storage, size_t newsize) const {
+    TORCH_CHECK(false, "Resize bytes requires MUSA.");
+  }
+  void resizePrivateUse1Bytes(const Storage& storage, size_t newsize)
+      const override;
 
   virtual bool hasMUSA() const {
     return false;
   }
 
-  virtual int64_t current_device() const {
+  virtual DeviceIndex current_device() const {
     return -1;
+  }
+  DeviceIndex getCurrentDevice() const override {
+    return current_device();
   }
 
   virtual int getNumGPUs() const {
     return 0;
   }
+  DeviceIndex deviceCount() const override {
+    return static_cast<DeviceIndex>(getNumGPUs());
+  }
 
-  virtual void deviceSynchronize(int64_t /*device_index*/) const {
-    TORCH_CHECK(false, "Cannot initialize MUSA without torch_musa library.")
+  virtual void deviceSynchronize(DeviceIndex device_index) const {
+    TORCH_CHECK(
+        false, "Cannot synchronize MUSA device without torch_musa library.");
   }
 };
 
-struct MUSAHooksArgs : public at::PrivateUse1HooksArgs {};
+struct MUSAHooksArgs : PrivateUse1HooksArgs {};
 
-C10_DECLARE_REGISTRY(MUSAHooksRegistry, MUSAHooksInterface, MUSAHooksArgs);
+TORCH_DECLARE_REGISTRY(MUSAHooksRegistry, MUSAHooksInterface, MUSAHooksArgs);
 #define REGISTER_MUSA_HOOKS(clsname) \
   C10_REGISTER_CLASS(MUSAHooksRegistry, clsname, clsname)
 
@@ -54,4 +85,4 @@ const MUSAHooksInterface& getMUSAHooks();
 } // namespace detail
 } // namespace at
 
-#endif // TORCH_MUSA_CSRC_CORE_MUSA_HOOKS_INTERFACE_H_
+#endif // TORCH_MUSA_CSRC_CORE_MUSAHOOKSINTERFACE_H_

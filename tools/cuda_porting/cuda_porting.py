@@ -146,6 +146,7 @@ def port_cuda(
         "<ATen/musa/CUDADevice\.h>": '"torch_musa/csrc/core/Device.h"',
         "<ATen/musa/CUDABlas\.h>": '"torch_musa/csrc/aten/musa/MUSABlas.h"',
         "<ATen/musa/CUDAContext\.h>": '"torch_musa/csrc/aten/musa/MUSAContext.h"',
+        "<ATen/musa/CUDAContextLight\.h>": '"torch_musa/csrc/aten/musa/MUSAContextLight.h"',
         "<ATen/musa/Exceptions\.h>": '"torch_musa/csrc/aten/musa/Exceptions.h"',
         "<ATen/musa/PinnedMemoryAllocator\.h>": '"torch_musa/csrc/core/PinnedMemoryAllocator.h"',
         "<ATen/musa/CachingHostAllocator\.h>": '"torch_musa/csrc/core/CachingHostAllocator.h"',
@@ -156,6 +157,7 @@ def port_cuda(
         "<ATen/musa/CUDAGraphsUtils\.muh>": '"torch_musa/csrc/aten/musa/MUSAGraphsUtils.muh"',
         "Device\(kCUDA, current_device\(\)\)": "Device(kMUSA, current_device())",
         "__syncthreads\(\)": "__SYNCTHREADS",  # check file before applying this
+        "impl::CUDAGuardImpl": "impl::MUSAGuardImpl",
     }
 
     # unregister CUDA kernel bindings that managed by stub mechiasm,

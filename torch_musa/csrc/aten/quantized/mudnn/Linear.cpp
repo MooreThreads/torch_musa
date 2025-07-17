@@ -29,7 +29,7 @@ void PackedLinearWeightMudnn::apply_impl_helper(
 
   auto bias = bias_.has_value()
       ? c10::MaybeOwned<at::Tensor>::borrowed(*bias_)
-      : c10::MaybeOwned<at::Tensor>::owned(c10::in_place);
+      : c10::MaybeOwned<at::Tensor>::owned(std::in_place);
 
   at::Tensor contig_input;
   at::Tensor contig_weight;

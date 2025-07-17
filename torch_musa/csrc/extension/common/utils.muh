@@ -1,0 +1,96 @@
+#pragma once
+
+#include <musa_runtime.h>
+
+namespace musa_extension {
+
+#if defined(__MUSA_ARCH__) && __MUSA_ARCH__ <= 220
+#define WARP_SIZE 128
+#else
+#define WARP_SIZE 32
+#endif
+
+template <typename T, int N, int Alignment = sizeof(T) * N>
+struct alignas(Alignment) AlignedArray {
+  __device__ AlignedArray() {}
+  __device__ AlignedArray(const AlignedArray& rhs) {
+#pragma unroll
+    for (int i = 0; i < N; i++) {
+      this->data[i] = rhs.data[i];
+    }
+  }
+  __device__ AlignedArray(const T& value) {
+#pragma unroll
+    for (int i = 0; i < N; i++) {
+      this->data[i] = value;
+    }
+  }
+
+  T data[N];
+};
+
+template <typename T, int iobit = 128, int bits_of_byte = 8>
+struct VecTraits {
+  static constexpr int vlen = iobit / sizeof(T) / bits_of_byte;
+  using AccessType = AlignedArray<T, vlen>;
+};
+
+template <typename T, int width>
+__device__ __forceinline__ T musa_shfl_xor_sync(T val, int lane_mask) {
+#if (defined(__MUSA_ARCH__) && (__MUSA_ARCH__ > 220))
+  return __shfl_xor_sync(0xffffffff, val, lane_mask, width);
+#elif (defined(__MUSA_ARCH__) && (__MUSA_ARCH__ > 210))
+  static_assert(sizeof(T) >= 4 && width == 128);
+
+  if constexpr (sizeof(T) == 4) {
+    int ret = __musa_shfl_xor_sync_i32(
+        *(reinterpret_cast<int32_t*>(&val)),
+        lane_mask & 0x7f,
+        ((~(128 - 1)) & 0x7f) << 7 | (128 - 1));
+    return *(reinterpret_cast<T*>(&ret));
+  } else {
+    return 0;
+  }
+#else
+  return 0;
+#endif
+}
+
+template <typename T>
+struct Add {
+  __device__ __forceinline__ T operator()(T a, T b) const {
+    return a + b;
+  }
+};
+
+template <typename T>
+struct Max {
+  __device__ __forceinline__ T operator()(T a, T b) const {
+    return a < b ? b : a;
+  }
+};
+
+template <typename T, template <typename> class ReduceOp, int WIDTH = 128>
+__device__ __forceinline__ T warpReduce(T val) {
+  ReduceOp<T> r;
+#pragma unroll
+  for (int offset = WIDTH >> 1; offset > 0; offset >>= 1) {
+    T b = musa_shfl_xor_sync<T, WIDTH>(val, offset);
+    val = r(val, b);
+  }
+  return val;
+}
+
+__device__ __host__ __forceinline__ uint32_t next_power_of_two(uint32_t n) {
+  if (n == 0)
+    return 1;
+  n -= 1;
+  n |= n >> 1;
+  n |= n >> 2;
+  n |= n >> 4;
+  n |= n >> 8;
+  n |= n >> 16;
+  return -~n;
+}
+
+} // namespace musa_extension

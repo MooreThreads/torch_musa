@@ -10,6 +10,8 @@
 #include <torch/csrc/distributed/c10d/Backend.hpp>
 #include <chrono>
 #include <exception>
+#include <future>
+#include <iostream>
 #include <map>
 #include <string>
 #include <thread>
@@ -21,6 +23,7 @@
 #include "torch_musa/csrc/core/MUSAStream.h"
 #include "torch_musa/csrc/distributed/MCCLUtils.h"
 
+#include <torch/csrc/distributed/c10d/NCCLUtils.hpp>
 #include <torch/csrc/distributed/c10d/ParamCommsUtils.hpp>
 #include <torch/csrc/distributed/c10d/PrefixStore.hpp>
 #include <torch/csrc/distributed/c10d/ProcessGroup.hpp>
@@ -36,7 +39,61 @@
 #define MCCL_BF16_SUPPORTED 0
 #endif
 
+#if defined(MARCH_TYPE) && (MARCH_TYPE >= 310)
+#define MCCL_FP8_SUPPORTED 1
+#else
+#define MCCL_FP8_SUPPORTED 0
+#endif
+
 namespace c10d {
+
+using DEV_MCCL_COMM_MAP =
+    std::unordered_map<std::string, std::vector<std::shared_ptr<MCCLComm>>>;
+using UNIQID_MCCL_COMM_MAP = DEV_MCCL_COMM_MAP;
+
+struct DumpPipe {
+  DumpPipe(int rank) {
+    std::string fileStem =
+        getCvarString({"TORCH_MCCL_DEBUG_INFO_PIPE_FILE"}, "");
+    if (fileStem.empty() ||
+        getCvarInt({"TORCH_MCCL_TRACE_BUFFER_SIZE"}, 0) <= 0) {
+      return;
+    }
+    TORCH_CHECK(!fileStem.empty(), "TORCH_MCCL_DEBUG_INFO_TEMP_FILE is empty");
+    std::string filename = c10::str(fileStem, rank, ".pipe");
+    TORCH_CHECK(
+        unlink(filename.c_str()) != -1 || errno == ENOENT,
+        "Error removing existing named pipe ",
+        filename);
+    TORCH_CHECK(
+        mkfifo(filename.c_str(), 0666) != -1,
+        "Error creating named pipe ",
+        filename);
+    fd_ = open(filename.c_str(), O_RDONLY | O_NONBLOCK);
+    LOG(INFO) << "Pipe file " << filename
+              << " has been opened, write to it to trigger MCCL Debug Dump.";
+    TORCH_CHECK(fd_ != -1, "Error opening named pipe ", filename);
+  }
+  bool shouldDump() {
+    if (fd_ == -1) {
+      return false;
+    }
+    char buf[128];
+    // non-blocking from O_NONBLOCK above.
+    // Ignore EINTR because we already will poll this
+    // again later.
+    ssize_t bytesRead = read(fd_, &buf, 128);
+    return bytesRead > 0;
+  }
+  ~DumpPipe() {
+    if (fd_ != -1) {
+      close(fd_);
+    }
+  }
+
+ private:
+  int fd_ = -1;
+};
 
 // Environment variable which controls whether we perform a MCCL health check
 // which ensures communicators are healthy at the beginning of init.
@@ -67,9 +124,27 @@ static std::vector<std::string> TORCH_MCCL_DESYNC_DEBUG = {"MCCL_DESYNC_DEBUG"};
 static std::vector<std::string> TORCH_MCCL_AVOID_RECORD_STREAMS = {
     "TORCH_MCCL_AVOID_RECORD_STREAMS"};
 
+// Control the interval inside the monitoring thread to check the coordinated
+// signal from other ranks, e.g. to dump the debugging information.
+static std::vector<std::string> TORCH_MCCL_COORD_CHECK_MILSEC = {
+    "TORCH_MCCL_COORD_CHECK_MILSEC"};
+
+// Control the heartbeat monitor of mccl trace for flight record
+static std::vector<std::string> TORCH_MCCL_HEARBEAT_MONITOR = {
+    "TORCH_MCCL_HEARBEAT_MONITOR"};
+
+// Control how much extra time we will wait for dumping the debugging info
+// before we exit and throws timeout exception.
+static std::vector<std::string> TORCH_MCCL_WAIT_TIMEOUT_DUMP_MILSEC = {
+    "TORCH_MCCL_WAIT_TIMEOUT_DUMP_MILSEC"};
+
 enum ErrorHandlingMode { NoHandling = 0, TearDown = 1, CleanUpOnly = 2 };
+
 constexpr const char* MCCL_BACKEND_NAME = "mccl";
 
+constexpr const char* EXCEPTION_DUMP = "exception_dump";
+
+constexpr const int kWorkStatusUpdatePeriodMs = 30 * 1000; // 30 seconds
 class TORCH_API ProcessGroupMCCL : public Backend {
  public:
   class WorkMCCL : public Work, public std::enable_shared_from_this<WorkMCCL> {
@@ -289,7 +364,7 @@ class TORCH_API ProcessGroupMCCL : public Backend {
   ~ProcessGroupMCCL() override;
 
   static c10::intrusive_ptr<Backend> MCCLcreator(
-      c10d::PrefixStore& store,
+      const c10::intrusive_ptr<::c10d::Store>& store,
       int rank,
       int size,
       std::chrono::milliseconds op_time_out);
@@ -424,6 +499,15 @@ class TORCH_API ProcessGroupMCCL : public Backend {
   // Tests if the UCC fallback path is available
   bool isUCCAvailable() const;
 
+  // Helper function for iteratively aborting communicators in the provided map
+  void abortCommsFromMap(
+      const std::unordered_map<
+          std::string,
+          std::vector<std::shared_ptr<MCCLComm>>>& mcclCommsMap,
+      std::optional<std::string> abortReason);
+
+  bool abort(std::optional<std::string> abortReason = std::nullopt);
+
  protected:
   // Helper that broadcasts mccl unique ID to all ranks through the store
   void broadcastUniqueMCCLID(
@@ -546,9 +630,28 @@ class TORCH_API ProcessGroupMCCL : public Backend {
 
   void workCleanupLoop();
 
+  void heartbeatMonitor();
+
+  bool dumpDebuggingInfo();
+
+  std::string dumpMCCLTrace(
+      bool includeCollectives,
+      bool includeStackTraces,
+      bool onlyActive);
+
+  std::string getMCCLWatchdogTimeoutErrorMsg(const std::string& extraMsg);
+
+  void waitForFutureOrTimeout(
+      std::future<bool>& fut,
+      const std::chrono::milliseconds& timeOutMilSec,
+      const std::string& futDescription,
+      bool throwException,
+      bool log);
+
  protected:
   static const int64_t kWatchdogThreadSleepMillis;
   static const int64_t kWorkCleanupThreadSleepMillis;
+  static const int64_t kHeartBeatThreadSleepMillis;
 
   // The store is used to broadcast the MCCL unique ID of rank 0.
   c10::intrusive_ptr<Store> store_;
@@ -596,18 +699,21 @@ class TORCH_API ProcessGroupMCCL : public Backend {
   // communication, the key will be "1:2" on both processes. Note: this is for
   // the scenario where there is only 1 GPU per process. When it comes to
   // multiple GPUs per process, this part may need to redesigned.
-  std::unordered_map<std::string, std::vector<std::shared_ptr<MCCLComm>>>
-      devMCCLCommMap_;
+  DEV_MCCL_COMM_MAP devMCCLCommMap_;
 
   // Map from mcclUniqueId to appropriate communicator.
-  std::unordered_map<std::string, std::vector<std::shared_ptr<MCCLComm>>>
-      mcclIdToCommMap_;
+  UNIQID_MCCL_COMM_MAP mcclIdToCommMap_;
 
   // Mutex to guard maps like devMCCLCommMap_ and mcclIdToCommMap_.
   std::mutex mutex_;
 
   // Watchdog thread which looks for errors on the cached MCCL communicators.
   std::thread mcclCommWatchdogThread_;
+
+  // Monitor thread which checks the heartbeat of Watchdog thread.
+  // If the monitor thread finds there is no heartbeat, it will dump debug info
+  // and then kill the watchdog thread to avoid hang.
+  std::thread mcclHeartbeatMonitorThread_;
 
   // Whether or not we should terminate the watchdog and workCleanup threads.
   std::atomic<bool> terminateProcessGroup_;
@@ -698,6 +804,59 @@ class TORCH_API ProcessGroupMCCL : public Backend {
 
   // Counting for the sequential number of MCCL collective call.
   uint64_t seq_{0};
+
+  // Whether or not to dump debug info on exception including both watchdog
+  // timeout and mccl errors.
+  bool dumpOnTimeoutOrEx_;
+
+  // The number of ProcessGroupMCCL created on the current rank.
+  size_t local_id_{0};
+
+  // Whether or not we should terminate the heartbeat monitoring threads.
+  std::atomic<bool> terminateHeartbeatMonitorThread_;
+
+  // Condition Variable for monitor thread to wake up early
+  std::condition_variable monitorWakeUpCV_;
+
+  // Mutex to Guard monitorWakeUpCV_
+  std::mutex monitorMutex_;
+
+  // Size of ring buffer where we store MCCL Traces for debugging.
+  int mcclTraceBufferSize_;
+
+  // The time interval used for deciding whether there is no watchdog heartbeat.
+  int heartbeatTimeoutInSec_{60 * 8}; // 8 min
+
+  // Interval of check coordinated signals in ProcessGroupMCCL from other ranks
+  // e.g., trigger the dump of the debugging info for timeout when notified.
+  int coordCheckIntervalMilSec_;
+
+  // timeout for the dump to finish.
+  int waitTimeoutDumpInMilSec_;
+
+  // the flag of heartbeat monitor for mccl status
+  bool mcclHeartBeatMonitor_{false};
+
+  // Heartbeat of watchdog thread.
+  std::atomic_uint64_t heartbeat_;
+
+  // This is the signal from watchdog threads to indicate whether the monitor
+  // thread should dump. Making it static so that it is accessiable from all the
+  // PGs. With this flag, monitor thread would dump debug info under any one of
+  // the three conditions:
+  //
+  // 1: watchdog thread of any PG detects a collective timeout.
+  // 2: timeout signal is received from other ranks through tcpstore.
+  // 3: current PG's watchdog heartbeat timeout occurs.
+  //
+  // Note that only the monitor thread from PG0 will dump the debug info for
+  // case one and two so that the debug info is only dumped once.
+  static std::atomic<bool> shouldDump_;
+
+  std::chrono::time_point<std::chrono::steady_clock> lastWorkListUpdateTime_;
+
+  std::shared_ptr<ProcessGroupStatus> pgStatus_ =
+      std::make_shared<ProcessGroupStatus>();
 
 }; // class ProcessGroupMCCL
 

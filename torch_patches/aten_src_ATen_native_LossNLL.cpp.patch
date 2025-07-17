@@ -1,17 +1,17 @@
 diff --git a/aten/src/ATen/native/LossNLL.cpp b/aten/src/ATen/native/LossNLL.cpp
-index 8935e64..521b68c 100644
+index 0b07e79..002f584 100644
 --- a/aten/src/ATen/native/LossNLL.cpp
 +++ b/aten/src/ATen/native/LossNLL.cpp
-@@ -17,6 +17,8 @@
- #else
- #include <ATen/ops/cross_entropy_loss_native.h>
- #include <ATen/ops/empty.h>
+@@ -26,6 +26,8 @@
+ #include <ATen/ops/nll_loss_native.h>
+ #include <ATen/ops/nll_loss_nd.h>
+ #include <ATen/ops/nll_loss_nd_native.h>
 +#include <ATen/ops/cross_entropy_loss_2d_choice.h>
 +#include <ATen/ops/_fused_cross_entropy_loss_2d_forward.h>
- #include <ATen/ops/log_softmax.h>
- #include <ATen/ops/nll_loss.h>
- #include <ATen/ops/nll_loss2d.h>
-@@ -638,6 +640,9 @@ Tensor cross_entropy_loss_symint(
+ #endif
+ 
+ #include <c10/core/TensorOptions.h>
+@@ -646,6 +648,9 @@ Tensor cross_entropy_loss_symint(
      c10::MaybeOwned<Tensor> weight_maybe_owned = at::borrow_from_optional_tensor(weight);
      const Tensor& weight_ = *weight_maybe_owned;
      ret = cross_entropy_loss_label_smoothing(self, target, weight_, reduction, std::move(ignore_index), label_smoothing);

@@ -36,40 +36,43 @@ template <typename DType>
 __global__ void QuantizePerTensorAffineKernel(
     DType* out,
     const float* in,
-    const double scale,
+    const double inv_scale,
     const int64_t zero_point,
     const int64_t qmin,
     const int64_t qmax,
     const int64_t total_num) {
-  int64_t idx = (threadIdx.x + blockIdx.x * blockDim.x) * 4;
-  if (idx < total_num) {
-    int64_t qvalue0 = std::min<int64_t>(
-        std::max<int64_t>(
-            static_cast<int64_t>(std::nearbyint(in[idx] / scale) + zero_point),
-            qmin),
-        qmax);
-    int64_t qvalue1 = std::min<int64_t>(
-        std::max<int64_t>(
-            static_cast<int64_t>(
-                std::nearbyint(in[idx + 1] / scale) + zero_point),
-            qmin),
-        qmax);
-    int64_t qvalue2 = std::min<int64_t>(
-        std::max<int64_t>(
-            static_cast<int64_t>(
-                std::nearbyint(in[idx + 2] / scale) + zero_point),
-            qmin),
-        qmax);
-    int64_t qvalue3 = std::min<int64_t>(
-        std::max<int64_t>(
-            static_cast<int64_t>(
-                std::nearbyint(in[idx + 3] / scale) + zero_point),
-            qmin),
-        qmax);
-    out[idx] = qvalue0;
-    out[idx + 1] = qvalue1;
-    out[idx + 2] = qvalue2;
-    out[idx + 3] = qvalue3;
+  const int64_t tid = blockIdx.x * blockDim.x + threadIdx.x;
+  const int64_t idx = tid * 4;
+
+  if (idx + 3 < total_num) {
+    const float4 in_val = reinterpret_cast<const float4*>(in + idx)[0];
+
+    int4 qval;
+    qval.x = __float2int_rn(in_val.x * inv_scale) + zero_point;
+    qval.y = __float2int_rn(in_val.y * inv_scale) + zero_point;
+    qval.z = __float2int_rn(in_val.z * inv_scale) + zero_point;
+    qval.w = __float2int_rn(in_val.w * inv_scale) + zero_point;
+
+    qval.x = std::min<int32_t>(std::max<int32_t>(qval.x, qmin), qmax);
+    qval.y = std::min<int32_t>(std::max<int32_t>(qval.y, qmin), qmax);
+    qval.z = std::min<int32_t>(std::max<int32_t>(qval.z, qmin), qmax);
+    qval.w = std::min<int32_t>(std::max<int32_t>(qval.w, qmin), qmax);
+
+    out[idx] = static_cast<DType>(qval.x);
+    out[idx + 1] = static_cast<DType>(qval.y);
+    out[idx + 2] = static_cast<DType>(qval.z);
+    out[idx + 3] = static_cast<DType>(qval.w);
+  } else {
+#pragma unroll
+    for (int i = 0; i < 4; ++i) {
+      const int64_t elem_idx = idx + i;
+      if (elem_idx >= total_num)
+        return;
+
+      const int qval = __float2int_rn(in[elem_idx] * inv_scale) + zero_point;
+      out[elem_idx] = static_cast<DType>(
+          std::min<int32_t>(std::max<int32_t>(qval, qmin), qmax));
+    }
   }
 }
 
@@ -107,13 +110,15 @@ void quantize_tensor_per_tensor_affine_musa(
   dim3 block_size{block_x, 1, 1};
   dim3 grid_size{grid_x, 1, 1};
 
+  double inv_scale = 1.0f / scale;
+
   if (qtensor.scalar_type() == ScalarType::QInt8) {
     constexpr int64_t qmin = std::numeric_limits<int8_t>::min();
     constexpr int64_t qmax = std::numeric_limits<int8_t>::max();
     QuantizePerTensorAffineKernel<int8_t><<<grid_size, block_size, 0, stream>>>(
         static_cast<int8_t*>(qtensor.data_ptr()),
         (float*)rtensor.data_ptr(),
-        scale,
+        inv_scale,
         zero_point,
         qmin,
         qmax,
@@ -125,7 +130,7 @@ void quantize_tensor_per_tensor_affine_musa(
         <<<grid_size, block_size, 0, stream>>>(
             static_cast<uint8_t*>(qtensor.data_ptr()),
             (float*)rtensor.data_ptr(),
-            scale,
+            inv_scale,
             zero_point,
             qmin,
             qmax,

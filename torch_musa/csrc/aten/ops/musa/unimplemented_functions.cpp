@@ -15,6 +15,7 @@ musaThreadExchangeStreamCaptureMode(enum musaStreamCaptureMode* mode) {
   return musaErrorNotSupported;
 }
 
+#if defined(REAL_MUSA_VERSION) && (REAL_MUSA_VERSION < 4020)
 __host__ musaError_t musaGraphDebugDotPrint(
     musaGraph_t graph,
     const char* path,
@@ -23,6 +24,7 @@ __host__ musaError_t musaGraphDebugDotPrint(
       NotImplementedError, "musaGraphDebugDotPrint is not supported now!");
   return musaErrorNotSupported;
 }
+#endif
 
 __host__ musaError_t musaStreamGetCaptureInfo(
     musaStream_t stream,

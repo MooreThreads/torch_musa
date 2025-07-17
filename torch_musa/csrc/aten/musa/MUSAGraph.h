@@ -2,6 +2,7 @@
 #define TORCH_MUSA_CSRC_ATEN_MUSA_MUSAGRAPH_H_
 
 #include <ATen/Tensor.h>
+#include <c10/util/flat_hash_map.h>
 #include "torch_musa/csrc/aten/musa/MUSAGeneratorImpl.h"
 #include "torch_musa/csrc/core/MUSAGraphsC10Utils.h"
 
@@ -27,6 +28,10 @@ struct C10_EXPORT MUSAGraph {
   static void inc_pending_event_queries();
   static void dec_pending_event_queries();
   static int num_pending_event_queries();
+  // See Note [Explicit Registration of Generators to the MUSA Graph]
+  void register_generator_state(
+      c10::intrusive_ptr<at::MUSAGeneratorState> state);
+  void register_generator_state(const at::Generator& generator);
   void capture_begin(
       MempoolId_t pool = {0, 0},
       musaStreamCaptureMode capture_mode = musaStreamCaptureModeGlobal);
@@ -51,8 +56,9 @@ struct C10_EXPORT MUSAGraph {
   // Set to true in capture_end if MUSAGraphInstantiate succeeded
   bool has_graph_exec_ = false;
 
-  // uuid of this instance's current capture, retrieved from musa
-  CaptureId_t id_;
+  // the ID assigned by cuda during graph capture,
+  // used to identify when a stream is participating in capture
+  CaptureId_t capture_id_ = -1;
 
   // uuid used to request a particular private mempool from
   // musaCachingAllocator. By default, this will be set to {id_, 0}.
@@ -72,19 +78,16 @@ struct C10_EXPORT MUSAGraph {
   // Stream on which capture began
   at::musa::MUSAStream capture_stream_;
 
-  // Default generator on device where capture began
-  at::MUSAGeneratorImpl* capture_gen_;
+  // multiple generator states and their wholegraph_increments in this graph
+  // that are managed by the MUSA Graph
+  ska::flat_hash_map<c10::intrusive_ptr<at::MUSAGeneratorState>, uint64_t>
+      captured_generator_states_;
 
   // Device where capture occurred. Right now, for simplicity, we require all
   // ops in a capture to run on the same device, but this is a limitation of
   // MUSAGraph, not MUSA itself.  We can straightforwardly modify MUSAGraph to
   // support multi-device captures if needed.
   int capture_dev_;
-
-  // RNG state trackers
-  at::Tensor seed_extragraph_;
-  at::Tensor offset_extragraph_;
-  uint64_t wholegraph_increment_;
 };
 
 } // namespace musa

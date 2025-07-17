@@ -4,6 +4,7 @@
 #include <ATen/core/op_registration/adaption.h>
 #include <ATen/native/layer_norm.h>
 #include <torch/library.h>
+#include <iostream>
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
@@ -12,6 +13,30 @@
 
 namespace at {
 namespace musa {
+
+static inline void resize_out_helper(
+    const at::Tensor& dst,
+    const at::Tensor& src) {
+  at::resize(dst, src.sizes());
+}
+
+static void copy_arg(const at::Tensor& dst, const at::Tensor& src) {
+  TORCH_CHECK(
+      src.dtype() == dst.dtype(),
+      "Expected out tensor to have dtype ",
+      src.dtype(),
+      ", but got ",
+      dst.dtype(),
+      " instead");
+  TORCH_CHECK(
+      src.device() == dst.device(),
+      "Expected out tensor to have device ",
+      src.device(),
+      ", but got ",
+      dst.device(),
+      " instead");
+  dst.copy_(src);
+}
 
 void check_dims_match_num_input_features(
     const char* arg_name,
@@ -26,7 +51,7 @@ void check_dims_match_num_input_features(
       actual);
 }
 
-std::tuple<Tensor, Tensor, Tensor> NativeBatchNorm(
+std::tuple<Tensor&, Tensor&, Tensor&> NativeBatchNormOut(
     const Tensor& input,
     const c10::optional<Tensor>& weight_opt,
     const c10::optional<Tensor>& bias_opt,
@@ -34,7 +59,10 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNorm(
     const c10::optional<Tensor>& running_var_opt,
     bool training,
     double momentum,
-    double eps) {
+    double eps,
+    Tensor& output,
+    Tensor& save_mean,
+    Tensor& save_invstd) {
   TORCH_CHECK(
       input.scalar_type() == at::ScalarType::Float ||
           input.scalar_type() == at::ScalarType::Half ||
@@ -50,19 +78,15 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNorm(
   // Copy from Normalization.cpp : _batch_norm_impl_index
   auto num_features = input.size(1);
   if (input.numel() == 0) {
-    auto out = input.clone();
-    auto options = input.options();
-    auto save_mean = at::empty({num_features}, options);
-    auto save_invstd = at::empty({num_features}, options);
     if (weight.defined()) {
-      out = out * weight[0];
+      output = output * weight[0];
     }
     if (bias.defined()) {
-      out = out + bias[0];
+      output = output + bias[0];
     }
-    return std::tuple<Tensor&, Tensor&, Tensor&>{out, save_mean, save_invstd};
+    return std::tuple<Tensor&, Tensor&, Tensor&>(
+        output, save_mean, save_invstd);
   }
-
   const Tensor& running_mean =
       c10::value_or_else(running_mean_opt, [] { return Tensor(); });
   const Tensor& running_var =
@@ -72,13 +96,10 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNorm(
   Tensor contiguous_input = FormatContiguous(input, input_memory_format);
   auto options = input.options().dtype(input.scalar_type());
 
-  Tensor output = at::empty_like(contiguous_input);
   Tensor contiguous_weight;
   Tensor contiguous_bias;
   Tensor contiguous_running_mean;
   Tensor contiguous_running_var;
-  Tensor save_mean = at::empty({0}, options);
-  Tensor save_invstd = at::empty({0}, options);
 
   // Copy from Normalization.cpp : _batch_norm_impl_index
   if (running_mean.defined()) {
@@ -161,7 +182,191 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNorm(
             InternalMemAlloc),
         "RunComposite");
   }
-  return std::tuple<Tensor&, Tensor&, Tensor&>{output, save_mean, save_invstd};
+  return std::tuple<Tensor&, Tensor&, Tensor&>(output, save_mean, save_invstd);
+}
+
+std::tuple<Tensor, Tensor, Tensor> NativeBatchNorm(
+    const Tensor& self,
+    const c10::optional<Tensor>& weight_opt,
+    const c10::optional<Tensor>& bias_opt,
+    const c10::optional<Tensor>& running_mean_opt,
+    const c10::optional<Tensor>& running_var_opt,
+    bool train,
+    double momentum,
+    double eps) {
+  auto tmp_output = at::empty_like(self);
+  int64_t n_input = self.size(1);
+  auto options = self.options().dtype(self.scalar_type());
+  auto tmp_save_mean = at::empty({n_input}, options);
+  auto tmp_save_invstd = at::empty({n_input}, options);
+
+  NativeBatchNormOut(
+      self,
+      weight_opt,
+      bias_opt,
+      running_mean_opt,
+      running_var_opt,
+      train,
+      momentum,
+      eps,
+      tmp_output,
+      tmp_save_mean,
+      tmp_save_invstd);
+
+  return std::make_tuple(tmp_output, tmp_save_mean, tmp_save_invstd);
+}
+
+std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor>
+NativeBatchNormLegitfunctional(
+    const at::Tensor& input,
+    const ::std::optional<at::Tensor>& weight,
+    const ::std::optional<at::Tensor>& bias,
+    const at::Tensor& running_mean,
+    const at::Tensor& running_var,
+    bool training,
+    double momentum,
+    double eps) {
+  auto running_mean_clone = running_mean.clone();
+  auto running_var_clone = running_var.clone();
+  auto output = NativeBatchNormLegit(
+      input,
+      weight,
+      bias,
+      const_cast<Tensor&>(running_mean_clone),
+      const_cast<Tensor&>(running_var_clone),
+      training,
+      momentum,
+      eps);
+  return ::std::
+      tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor>(
+          std::get<0>(output),
+          std::get<1>(output),
+          std::get<2>(output),
+          running_mean_clone,
+          running_var_clone);
+}
+
+std::tuple<Tensor, Tensor, Tensor> NativeBatchNormLegit(
+    const Tensor& self,
+    const std::optional<Tensor>& weight_opt,
+    const std::optional<Tensor>& bias_opt,
+    Tensor& running_mean,
+    Tensor& running_var,
+    bool train,
+    double momentum,
+    double epsilon) {
+  return NativeBatchNorm(
+      self,
+      weight_opt,
+      bias_opt,
+      running_mean,
+      running_var,
+      train,
+      momentum,
+      epsilon);
+}
+
+std::tuple<Tensor, Tensor, Tensor> NativeBatchNormLegitNoTraining(
+    const Tensor& self,
+    const std::optional<Tensor>& weight_opt,
+    const std::optional<Tensor>& bias_opt,
+    const Tensor& running_mean,
+    const Tensor& running_var,
+    double momentum,
+    double eps) {
+  return NativeBatchNormLegit(
+      self,
+      weight_opt,
+      bias_opt,
+      const_cast<Tensor&>(running_mean),
+      const_cast<Tensor&>(running_var),
+      /*train=*/false,
+      momentum,
+      eps);
+}
+
+std::tuple<at::Tensor&, at::Tensor&, at::Tensor&>
+NativeBatchNormLegitNoTrainingOut(
+    const at::Tensor& input,
+    const ::std::optional<at::Tensor>& weight,
+    const ::std::optional<at::Tensor>& bias,
+    const at::Tensor& running_mean,
+    const at::Tensor& running_var,
+    double momentum,
+    double eps,
+    at::Tensor& out0,
+    at::Tensor& out1,
+    at::Tensor& out2) {
+  auto tmp_output = NativeBatchNormLegitNoTraining(
+      input, weight, bias, running_mean, running_var, momentum, eps);
+  resize_out_helper(out0, std::get<0>(tmp_output));
+  copy_arg(out0, std::get<0>(tmp_output));
+  resize_out_helper(out1, std::get<1>(tmp_output));
+  copy_arg(out1, std::get<1>(tmp_output));
+  resize_out_helper(out2, std::get<2>(tmp_output));
+  copy_arg(out2, std::get<2>(tmp_output));
+  return ::std::tuple<at::Tensor&, at::Tensor&, at::Tensor&>(out0, out1, out2);
+}
+
+std::tuple<Tensor&, Tensor&, Tensor&> NativeBatchNormLegitOut(
+    const Tensor& self,
+    const std::optional<Tensor>& weight_opt,
+    const std::optional<Tensor>& bias_opt,
+    Tensor& running_mean,
+    Tensor& running_var,
+    bool train,
+    double momentum,
+    double epsilon,
+    Tensor& output,
+    Tensor& save_mean,
+    Tensor& save_invstd) {
+  return NativeBatchNormOut(
+      self,
+      weight_opt,
+      bias_opt,
+      running_mean,
+      running_var,
+      train,
+      momentum,
+      epsilon,
+      output,
+      save_mean,
+      save_invstd);
+}
+
+std::tuple<Tensor, Tensor, Tensor> NativeBatchNormLegitNoStats(
+    const Tensor& self,
+    const std::optional<Tensor>& weight_opt,
+    const std::optional<Tensor>& bias_opt,
+    bool train,
+    double momentum,
+    double epsilon) {
+  return NativeBatchNorm(
+      self, weight_opt, bias_opt, Tensor(), Tensor(), train, momentum, epsilon);
+}
+
+std::tuple<Tensor&, Tensor&, Tensor&> NativeBatchNormLegitNoStatsOut(
+    const Tensor& self,
+    const std::optional<Tensor>& weight_opt,
+    const std::optional<Tensor>& bias_opt,
+    bool train,
+    double momentum,
+    double epsilon,
+    Tensor& output,
+    Tensor& save_mean,
+    Tensor& save_invstd) {
+  return NativeBatchNormOut(
+      self,
+      weight_opt,
+      bias_opt,
+      Tensor(),
+      Tensor(),
+      train,
+      momentum,
+      epsilon,
+      output,
+      save_mean,
+      save_invstd);
 }
 
 std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(

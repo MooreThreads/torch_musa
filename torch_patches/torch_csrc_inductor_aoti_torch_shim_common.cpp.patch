@@ -1,0 +1,15 @@
+diff --git a/torch/csrc/inductor/aoti_torch/shim_common.cpp b/torch/csrc/inductor/aoti_torch/shim_common.cpp
+index e402f58..de6253d 100644
+--- a/torch/csrc/inductor/aoti_torch/shim_common.cpp
++++ b/torch/csrc/inductor/aoti_torch/shim_common.cpp
+@@ -123,6 +123,10 @@ int32_t aoti_torch_device_type_cuda() {
+   return (int32_t)c10::DeviceType::CUDA;
+ }
+ 
++int32_t aoti_torch_device_type_musa() {
++  return (int32_t)c10::DeviceType::PrivateUse1;
++}
++
+ #define AOTI_TORCH_DTYPE_IMPL(dtype, stype) \
+   int32_t aoti_torch_dtype_##dtype() {      \
+     return (int32_t)c10::ScalarType::stype; \

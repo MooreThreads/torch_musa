@@ -1,14 +1,23 @@
-"""Testing distribution operators: uniform, normal, bernoulli"""
+"""Testing distribution operators"""
 
 # pylint: disable=import-outside-toplevel, invalid-name
 
+import math
+import numpy as np
 import torch
+from torch.utils._import_utils import _check_module_exists
 import pytest
 from torch_musa import testing
+
 
 float_dtypes = [torch.float32, torch.float16]
 if testing.get_musa_arch() >= 22:
     float_dtypes.append(torch.bfloat16)
+
+
+skip_if_no_scipy = pytest.mark.skipif(
+    not _check_module_exists("scipy"), reason="test requires SciPy, but SciPy not found"
+)
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -74,3 +83,133 @@ def test_bernoulli_self(dtype):
         t.fill_(2)
         t.bernoulli_(torch.rand_like(t, dtype=p_dtype))
         assert isBinary(t.cpu())
+
+
+@skip_if_no_scipy
+class TestDistribution:
+    """Test distribution operators"""
+
+    @testing.test_on_nonzero_card_if_multiple_musa_device(1)
+    @pytest.mark.parametrize("dtype", testing.get_float_types())
+    def test_lognormal_kstest(self, dtype):
+        """test lognormal by kstest"""
+        from scipy import stats
+
+        size = 4096
+        device = torch.musa.current_device()
+        for mean in [-3, 0, 7]:
+            for std in [1, 5, 7]:
+                t = torch.empty(size, dtype=dtype, device=device).log_normal_(
+                    mean=mean, std=std
+                )
+                res = stats.kstest(
+                    t.cpu().to(torch.double), "lognorm", args=(std, 0, math.exp(mean))
+                )
+                if dtype == torch.half:
+                    assert res.statistic < 0.3
+                else:
+                    assert res.statistic < 0.1
+
+    @testing.test_on_nonzero_card_if_multiple_musa_device(1)
+    @pytest.mark.parametrize("dtype", testing.get_float_types())
+    def test_geometric_kstest(self, dtype):
+        """test geometric by kstest"""
+        from scipy import stats
+
+        size = 1000
+        device = torch.musa.current_device()
+        torch.manual_seed(42)
+        for p in [0.2, 0.8]:
+            t = torch.empty(size, dtype=dtype, device=device).geometric_(p=p)
+            actual = np.histogram(t.cpu().to(torch.double), np.arange(1, 100))[0]
+            expected = stats.geom(p).pmf(np.arange(1, 99)) * size
+            res = stats.chisquare(actual, expected)
+            np.testing.assert_allclose(res.pvalue, 1.0, atol=0.1, rtol=0)
+
+    @testing.test_on_nonzero_card_if_multiple_musa_device(1)
+    @pytest.mark.parametrize("dtype", testing.get_float_types())
+    def test_cauchy_kstest(self, dtype):
+        """test cauchy by kstest"""
+        from scipy import stats
+
+        sizes = [(4096,), (5, 4096), (2, 3, 5000)]
+        device = torch.musa.current_device()
+        torch.manual_seed(42)
+        for size in sizes:
+            for median in [-10, 0, 50]:
+                for sigma in [0.5, 1.0, 10.0]:
+                    t = torch.empty(size, dtype=dtype, device=device).cauchy_(
+                        median=median, sigma=sigma
+                    )
+                    t_double = t.cpu().to(torch.double)
+                    for row in t_double.view(-1, t_double.shape[-1]):
+                        res = stats.kstest(row, "cauchy", args=(median, sigma))
+                        assert res.statistic < 0.1
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("dtype", float_dtypes)
+def test_normal_tensor_float(dtype):
+    mean = torch.randn(128, dtype=dtype)
+    std = 1.5
+    cpu_out = torch.normal(mean, std)
+    musa_out = torch.normal(mean.to("musa"), std)
+    assert musa_out.shape == cpu_out.shape
+    assert musa_out.dtype == mean.dtype
+    assert abs(musa_out.mean().cpu() - cpu_out.mean()) < 0.5
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("dtype", float_dtypes)
+def test_normal_float_tensor(dtype):
+    std = torch.rand(128, dtype=dtype)
+    mean = 2.0
+    cpu_out = torch.normal(mean, std)
+    musa_out = torch.normal(mean, std.to("musa"))
+    assert musa_out.shape == cpu_out.shape
+    assert musa_out.dtype == std.dtype
+    assert abs(musa_out.mean().cpu() - cpu_out.mean()) < 0.5
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("dtype", float_dtypes)
+def test_normal_tensor_tensor(dtype):
+    mean = torch.randn(128, dtype=dtype)
+    std = torch.rand(128, dtype=dtype) + 0.1
+    cpu_out = torch.normal(mean, std)
+    musa_out = torch.normal(mean.to("musa"), std.to("musa"))
+    assert musa_out.shape == cpu_out.shape
+    assert musa_out.dtype == mean.dtype
+    assert abs(musa_out.mean().cpu() - cpu_out.mean()) < 0.5
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("dtype", float_dtypes)
+def test_normal_tensor_tensor_out(dtype):
+    """Test normal distribution with tensor-tensor output."""
+    mean = torch.randn(128, dtype=dtype)
+    std = torch.rand(128, dtype=dtype) + 0.1
+    out_cpu = torch.empty_like(mean)
+    out_musa = torch.empty_like(mean.to("musa"))
+
+    torch.normal(mean, std, out=out_cpu)
+    torch.normal(mean.to("musa"), std.to("musa"), out=out_musa)
+
+    assert out_cpu.shape == out_musa.shape
+    assert abs(out_musa.mean().cpu() - out_cpu.mean()) < 0.5
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("dtype", float_dtypes)
+def test_normal_float_tensor_out(dtype):
+    """Test normal distribution with float-tensor output."""
+    std = torch.rand(128, dtype=dtype) + 0.1
+    mean = 1.5
+    out_cpu = torch.empty_like(std)
+    out_musa = torch.empty_like(std.to("musa"))
+
+    torch.normal(mean, std, out=out_cpu)
+    torch.normal(mean, std.to("musa"), out=out_musa)
+
+    assert out_cpu.shape == out_musa.shape
+    assert abs(out_musa.mean().cpu() - out_cpu.mean()) < 0.5

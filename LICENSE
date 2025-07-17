@@ -55,3 +55,8 @@ docs
 Apache Software Foundation License 2.0
 --------------------------------------
 examples/cpp
+
+
+BSD 3-Clause License
+--------------------
+torch_musa/csrc/aten/utils/Numeric.h

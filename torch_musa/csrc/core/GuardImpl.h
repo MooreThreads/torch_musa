@@ -1,88 +1,63 @@
-#ifndef TORCH_MUSA_CSRC_CORE_MUSA_GUARDIMPL_H_
-#define TORCH_MUSA_CSRC_CORE_MUSA_GUARDIMPL_H_
+#ifndef TORCH_MUSA_CSRC_CORE_GUARDIMPL_H_
+#define TORCH_MUSA_CSRC_CORE_GUARDIMPL_H_
 
-#include <c10/core/DeviceGuard.h>
-#include <c10/core/Stream.h>
 #include <c10/core/impl/DeviceGuardImplInterface.h>
 #include <c10/core/impl/GPUTrace.h>
 
-#include "musa_runtime_api.h"
+#include <musa_runtime_api.h>
+
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/core/Device.h"
 #include "torch_musa/csrc/core/MUSACachingAllocator.h"
 #include "torch_musa/csrc/core/MUSAException.h"
+#include "torch_musa/csrc/core/MUSAFunctions.h"
 #include "torch_musa/csrc/core/MUSAStream.h"
 
-namespace c10 {
-namespace musa {
-using at::musa::kMUSA;
-using c10::Device;
-using c10::DeviceType;
-using c10::Stream;
+namespace c10::musa::impl {
 
-namespace impl {
+using at::musa::kMUSA;
 
 struct MUSAGuardImpl final : public c10::impl::DeviceGuardImplInterface {
   static constexpr DeviceType static_type = kMUSA;
+
   MUSAGuardImpl() = default;
+
   explicit MUSAGuardImpl(DeviceType t) {
     TORCH_INTERNAL_ASSERT(t == kMUSA);
   }
+
   DeviceType type() const override {
     return kMUSA;
   }
+
   Device exchangeDevice(Device d) const override {
     TORCH_INTERNAL_ASSERT(d.type() == kMUSA);
-    Device old_device = getDevice();
-    if (old_device.index() != d.index()) {
-      TORCH_MUSA_CHECK(musaSetDevice(d.index()));
-    }
-    return old_device;
-  }
-  Device getDevice() const override {
-    int device;
-    TORCH_MUSA_CHECK(musaGetDevice(&device));
-    return Device(kMUSA, device);
-  }
-  c10::optional<Device> uncheckedGetDevice() const noexcept {
-    int device;
-    const auto err = TORCH_MUSA_ERROR_HANDLE(musaGetDevice(&device));
-    TORCH_MUSA_CHECK_WARN(err);
-    if (err != musaSuccess) {
-      return c10::nullopt;
-    }
-    return Device(kMUSA, device);
+    const auto old_device_index = ExchangeDevice(d.index());
+    return Device(kMUSA, old_device_index);
   }
 
-  bool hasPrimaryContext(int64_t device_index) const {
-    TORCH_CHECK(
-        device_index >= 0 && device_index < deviceCount(),
-        "hasPrimaryContext expects a valid device index, but got device_index=",
-        device_index);
-    unsigned int ctx_flags;
-    int ctx_is_active = 0;
-    muDevicePrimaryCtxGetState(device_index, &ctx_flags, &ctx_is_active);
-    return ctx_is_active == 1;
+  Device getDevice() const override {
+    DeviceIndex device_id = 0;
+    C10_MUSA_CHECK(GetDevice(&device_id));
+    return Device(kMUSA, device_id);
+  }
+
+  std::optional<Device> uncheckedGetDevice() const noexcept {
+    DeviceIndex device_id = -1;
+    const auto err = C10_MUSA_ERROR_HANDLED(GetDevice(&device_id));
+    TORCH_MUSA_CHECK_WARN(err);
+    if (err != musaSuccess) {
+      return std::nullopt;
+    }
+    return Device(kMUSA, device_id);
   }
 
   void setDevice(Device d) const override {
-    if (!hasPrimaryContext(d.index())) {
-      // To keep consistent logic with `Engine::thread_init`
-      // in pytorch/torch/csrc/autograd/engine.cpp
-      return;
-    }
-
     TORCH_INTERNAL_ASSERT(d.type() == kMUSA);
-    Device current_device = getDevice();
-    if (current_device != d) {
-      TORCH_MUSA_CHECK(musaSetDevice(d.index()));
-    }
+    C10_MUSA_CHECK(SetDevice(d.index()));
   }
+
   void uncheckedSetDevice(Device d) const noexcept override {
-    auto current_device = uncheckedGetDevice();
-    if (!current_device.has_value() || current_device.value() != d) {
-      TORCH_MUSA_CHECK_WARN(musaSetDevice(d.index()));
-    }
+    TORCH_MUSA_CHECK_WARN(MaybeSetDevice(d.index()));
   }
 
   Stream getStream(Device d) const noexcept override {
@@ -93,9 +68,13 @@ struct MUSAGuardImpl final : public c10::impl::DeviceGuardImplInterface {
     return getDefaultMUSAStream(d.index());
   }
 
-  Stream getStreamFromGlobalPool(Device d, bool high_priority = false)
+  Stream getNewStream(Device d, int priority = 0) const override {
+    return getStreamFromPool(priority, d.index());
+  }
+
+  Stream getStreamFromGlobalPool(Device d, bool isHighPriority = false)
       const override {
-    return getStreamFromPool(high_priority, d.index());
+    return getStreamFromPool(isHighPriority, d.index());
   }
 
   Stream exchangeStream(Stream s) const noexcept override {
@@ -119,59 +98,58 @@ struct MUSAGuardImpl final : public c10::impl::DeviceGuardImplInterface {
     musa_stream.synchronize();
   }
 
-  void createEvent(musaEvent_t* musa_event, const c10::EventFlag flag) const {
+  void createEvent(musaEvent_t* musa_event, const EventFlag flag) const {
     auto musa_flag = musaEventDefault;
     switch (flag) {
-      case c10::EventFlag::PYTORCH_DEFAULT:
-        // c10::EventFlag defined CUDA_EVENT_DISABLE_TIME,
-        // we don't need this enum, so just use PYTORCH_DEFAULT.
+      case EventFlag::PYTORCH_DEFAULT:
         musa_flag = musaEventDisableTiming;
         break;
-      case c10::EventFlag::BACKEND_DEFAULT:
-        // c10::EventFlag defined CUDA_EVENT_DEFAULT,
-        // we don't need this enum, so just use BACKEND_DEFAULT.
+      case EventFlag::BACKEND_DEFAULT:
         musa_flag = musaEventDefault;
         break;
       default:
         TORCH_CHECK(false, "MUSA event received unknown flag");
     }
-    TORCH_MUSA_CHECK(musaEventCreateWithFlags(musa_event, musa_flag));
+
+    C10_MUSA_CHECK(musaEventCreateWithFlags(musa_event, musa_flag));
     const c10::impl::PyInterpreter* interp = c10::impl::GPUTrace::get_trace();
     if (C10_UNLIKELY(interp)) {
       (*interp)->trace_gpu_event_creation(
-          reinterpret_cast<uintptr_t>(musa_event));
+          kMUSA, reinterpret_cast<uintptr_t>(musa_event));
     }
   }
 
   void destroyEvent(void* event, const DeviceIndex device_index)
       const noexcept override {
-    if (!event)
+    if (!event) {
       return;
+    }
     auto musa_event = static_cast<musaEvent_t>(event);
-    int orig_device;
-    TORCH_MUSA_CHECK_WARN(musaGetDevice(&orig_device));
-    TORCH_MUSA_CHECK_WARN(musaSetDevice(device_index));
+    DeviceIndex orig_device{-1};
+    TORCH_MUSA_CHECK_WARN(GetDevice(&orig_device));
+    TORCH_MUSA_CHECK_WARN(SetDevice(device_index));
     const c10::impl::PyInterpreter* interp = c10::impl::GPUTrace::get_trace();
     if (C10_UNLIKELY(interp)) {
       (*interp)->trace_gpu_event_deletion(
-          reinterpret_cast<uintptr_t>(musa_event));
+          kMUSA, reinterpret_cast<uintptr_t>(musa_event));
     }
     TORCH_MUSA_CHECK_WARN(musaEventDestroy(musa_event));
-    TORCH_MUSA_CHECK_WARN(musaSetDevice(orig_device));
+    TORCH_MUSA_CHECK_WARN(SetDevice(orig_device));
   }
 
   void block(void* event, const Stream& stream) const override {
-    if (!event)
+    if (!event) {
       return;
+    }
     musaEvent_t musa_event = static_cast<musaEvent_t>(event);
     MUSAStream musa_stream{stream};
-    const Device orig_device = getDevice();
+    const auto orig_device = getDevice();
     setDevice(stream.device());
-    TORCH_MUSA_CHECK(
-        musaStreamWaitEvent(musa_stream, musa_event, 0)); // TODO:check musa API
+    C10_MUSA_CHECK(musaStreamWaitEvent(musa_stream, musa_event, 0));
     const c10::impl::PyInterpreter* interp = c10::impl::GPUTrace::get_trace();
     if (C10_UNLIKELY(interp)) {
       (*interp)->trace_gpu_event_wait(
+          kMUSA,
           reinterpret_cast<uintptr_t>(musa_event),
           reinterpret_cast<uintptr_t>(musa_stream.stream()));
     }
@@ -179,12 +157,13 @@ struct MUSAGuardImpl final : public c10::impl::DeviceGuardImplInterface {
   }
 
   bool queryEvent(void* event) const override {
-    if (!event)
+    if (!event) {
       return true;
+    }
     musaEvent_t musa_event = static_cast<musaEvent_t>(event);
     const musaError_t err = TORCH_MUSA_ERROR_HANDLE(musaEventQuery(musa_event));
     if (err != musaErrorNotReady) {
-      TORCH_MUSA_CHECK(err);
+      C10_MUSA_CHECK(err);
     } else {
       // ignore and clear the error if not ready
       (void)musaGetLastError();
@@ -196,7 +175,7 @@ struct MUSAGuardImpl final : public c10::impl::DeviceGuardImplInterface {
       void** event,
       const Stream& stream,
       const DeviceIndex device_index,
-      const c10::EventFlag flag) const override {
+      const EventFlag flag) const override {
     TORCH_CHECK(
         device_index == -1 || device_index == stream.device_index(),
         "Event device index ",
@@ -209,18 +188,20 @@ struct MUSAGuardImpl final : public c10::impl::DeviceGuardImplInterface {
     MUSAStream musa_stream{stream};
 
     // Moves to stream's device to record
-    const Device orig_device = getDevice();
+    const auto orig_device = getDevice();
     setDevice(stream.device());
 
     // Creates the event (lazily)
-    if (!musa_event)
+    if (!musa_event) {
       createEvent(&musa_event, flag);
-    TORCH_MUSA_CHECK(musaEventRecord(musa_event, musa_stream));
+    }
+    C10_MUSA_CHECK(musaEventRecord(musa_event, musa_stream));
     // Makes the void* point to the (possibly just allocated) MUSA event
     *event = musa_event;
     const c10::impl::PyInterpreter* interp = c10::impl::GPUTrace::get_trace();
     if (C10_UNLIKELY(interp)) {
       (*interp)->trace_gpu_event_record(
+          kMUSA,
           reinterpret_cast<uintptr_t>(musa_event),
           reinterpret_cast<uintptr_t>(musa_stream.stream()));
     }
@@ -234,9 +215,40 @@ struct MUSAGuardImpl final : public c10::impl::DeviceGuardImplInterface {
     MUSAStream musa_stream{stream};
     MUSACachingAllocator::recordStream(data_ptr, musa_stream);
   }
-};
-} // namespace impl
-} // namespace musa
-} // namespace c10
 
-#endif // TORCH_MUSA_CSRC_CORE_MUSA_GUARDIMPL_H_
+  void synchronizeEvent(void* event) const override {
+    if (!event) {
+      return;
+    }
+    musaEvent_t musa_event = static_cast<musaEvent_t>(event);
+    const c10::impl::PyInterpreter* interp = c10::impl::GPUTrace::get_trace();
+    if (C10_UNLIKELY(interp)) {
+      (*interp)->trace_gpu_event_synchronization(
+          kMUSA, reinterpret_cast<uintptr_t>(musa_event));
+    }
+
+    C10_MUSA_CHECK(musaEventSynchronize(musa_event));
+  }
+
+  double elapsedTime(void* event1, void* event2, const DeviceIndex device_index)
+      const override {
+    TORCH_CHECK(
+        event1 && event2,
+        "Both events must be recorded before calculating elapsed time.");
+
+    DeviceIndex orig_device{-1};
+    C10_MUSA_CHECK(GetDevice(&orig_device));
+    C10_MUSA_CHECK(SetDevice(device_index));
+    musaEvent_t musa_event1 = static_cast<musaEvent_t>(event1);
+    musaEvent_t musa_event2 = static_cast<musaEvent_t>(event2);
+    float time_ms = 0;
+    // raise musaErrorNotReady if either event is recorded but not yet completed
+    C10_MUSA_CHECK(musaEventElapsedTime(&time_ms, musa_event1, musa_event2));
+    C10_MUSA_CHECK(SetDevice(orig_device));
+    return static_cast<double>(time_ms);
+  }
+};
+
+} // namespace c10::musa::impl
+
+#endif // TORCH_MUSA_CSRC_CORE_GUARDIMPL_H_

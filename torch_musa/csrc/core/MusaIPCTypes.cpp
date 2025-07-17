@@ -1,16 +1,17 @@
-#include <ATen/MapAllocator.h>
+#include "torch_musa/csrc/core/MusaIPCTypes.h"
+
 #include <atomic>
 #include <map>
 #include <mutex>
 #include <string>
 
+#include <ATen/MapAllocator.h>
+#include <c10/util/Logging.h>
+
 #include "torch_musa/csrc/core/MUSAFunctions.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
-#include "torch_musa/csrc/core/MusaIPCTypes.h"
 
-namespace torch {
-
-namespace musa {
+namespace torch::musa {
 
 void warnProducerTerminatedBeforeSharedTensorsReleased() {
   static bool warned = false;
@@ -247,11 +248,10 @@ bool MusaIPCCollect() {
   return freed_memory;
 }
 
-} // namespace musa
-} // namespace torch
+} // namespace torch::musa
 
-namespace c10 {
-namespace musa {
+namespace c10::musa {
+
 REGISTER_FREE_MEMORY_CALLBACK("musa_ipc_collect", MusaIPCCollectCallback);
-} // namespace musa
-} // namespace c10
+
+} // namespace c10::musa

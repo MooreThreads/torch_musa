@@ -1,9 +1,11 @@
 #include "torch_musa/csrc/core/MUSAAllocatorConfig.h"
+
+#include <c10/util/llvmMathExtras.h>
+
+#include "torch_musa/csrc/core/MUSACachingAllocator.h"
 #include "torch_musa/csrc/core/driver_api.h"
 
-namespace c10 {
-namespace musa {
-namespace MUSACachingAllocator {
+namespace c10::musa::MUSACachingAllocator {
 
 constexpr size_t kRoundUpPowerOfTwoIntervals = 16;
 
@@ -13,7 +15,8 @@ MUSAAllocatorConfig::MUSAAllocatorConfig()
       m_pinned_num_register_threads(1),
       m_expandable_segments(false),
       m_release_lock_on_musamalloc(false),
-      m_pinned_use_musa_host_register(false) {
+      m_pinned_use_musa_host_register(false),
+      m_last_allocator_settings("") {
   m_roundup_power2_divisions.assign(kRoundUpPowerOfTwoIntervals, 0);
 }
 
@@ -63,7 +66,7 @@ void MUSAAllocatorConfig::consumeToken(
     size_t i,
     const char c) {
   TORCH_CHECK(
-      i < config.size() && config[i].compare(std::string(1, c)) == 0,
+      i < config.size() && config[i] == std::string(1, c),
       "Error parsing CachingAllocator settings, expected ",
       c,
       "");
@@ -73,15 +76,16 @@ size_t MUSAAllocatorConfig::parseMaxSplitSize(
     const std::vector<std::string>& config,
     size_t i) {
   consumeToken(config, ++i, ':');
+  constexpr int mb = 1024 * 1024;
   if (++i < config.size()) {
     size_t val1 = stoi(config[i]);
     TORCH_CHECK(
-        val1 > kLargeBuffer / (1024 * 1024),
+        val1 > kLargeBuffer / mb,
         "CachingAllocator option max_split_size_mb too small, must be > ",
-        kLargeBuffer / (1024 * 1024),
+        kLargeBuffer / mb,
         "");
-    val1 = std::max(val1, kLargeBuffer / (1024 * 1024));
-    val1 = std::min(val1, (std::numeric_limits<size_t>::max() / (1024 * 1024)));
+    val1 = std::max(val1, kLargeBuffer / mb);
+    val1 = std::min(val1, (std::numeric_limits<size_t>::max() / mb));
     m_max_split_size = val1 * 1024 * 1024;
   } else {
     TORCH_CHECK(false, "Error, expecting max_split_size_mb value", "");
@@ -114,9 +118,9 @@ size_t MUSAAllocatorConfig::parseRoundUpPower2Divisions(
   bool first_value = true;
 
   if (++i < config.size()) {
-    if (config[i].compare("[") == 0) {
+    if (std::string_view(config[i]) == "[") {
       size_t last_index = 0;
-      while (++i < config.size() && config[i].compare("]") != 0) {
+      while (++i < config.size() && std::string_view(config[i]) != "]") {
         const std::string& val1 = config[i];
         size_t val2 = 0;
 
@@ -128,11 +132,11 @@ size_t MUSAAllocatorConfig::parseRoundUpPower2Divisions(
               false, "Error parsing roundup_power2_divisions value", "");
         }
         TORCH_CHECK(
-            llvm::isPowerOf2_64(val2),
-            "For roundups, the divisons has to be power of 2 ",
+            val2 == 0 || llvm::isPowerOf2_64(val2),
+            "For roundups, the divisons has to be power of 2 or 0 to disable roundup ",
             "");
 
-        if (val1.compare(">") == 0) {
+        if (std::string_view(val1) == ">") {
           std::fill(
               std::next(
                   m_roundup_power2_divisions.begin(),
@@ -167,7 +171,7 @@ size_t MUSAAllocatorConfig::parseRoundUpPower2Divisions(
           last_index = index;
         }
 
-        if (config[i + 1].compare("]") != 0) {
+        if (std::string_view(config[i + 1]) != "]") {
           consumeToken(config, ++i, ',');
         }
       }
@@ -199,8 +203,11 @@ size_t MUSAAllocatorConfig::parseAllocatorConfig(
         "Unknown allocator backend, "
         "options are native and musaMallocAsync");
     used_musaMallocAsync = (config[i] == "musaMallocAsync");
-    // MUSA supports musaMallocAsync and does not need to check versions
-
+    if (used_musaMallocAsync) {
+      TORCH_CHECK(
+          false,
+          "backend:musaMallocAsync is ON, but not supported for MUSA yet.");
+    }
     TORCH_INTERNAL_ASSERT(
         config[i] == get()->name(),
         "Allocator backend parsed at runtime != "
@@ -222,46 +229,62 @@ void MUSAAllocatorConfig::parseArgs(const char* env) {
   if (env == nullptr) {
     return;
   }
+  {
+    std::lock_guard<std::mutex> lock(m_last_allocator_settings_mutex);
+    m_last_allocator_settings = env;
+  }
 
   std::vector<std::string> config;
   lexArgs(env, config);
 
   for (size_t i = 0; i < config.size(); i++) {
-    if (config[i].compare("max_split_size_mb") == 0) {
+    std::string_view config_item_view(config[i]);
+    if (config_item_view == "max_split_size_mb") {
       i = parseMaxSplitSize(config, i);
       used_native_specific_option = true;
-    } else if (config[i].compare("garbage_collection_threshold") == 0) {
+    } else if (config_item_view == "garbage_collection_threshold") {
       i = parseGarbageCollectionThreshold(config, i);
       used_native_specific_option = true;
-    } else if (config[i].compare("roundup_power2_divisions") == 0) {
+    } else if (config_item_view == "roundup_power2_divisions") {
       i = parseRoundUpPower2Divisions(config, i);
       used_native_specific_option = true;
-    } else if (config[i].compare("backend") == 0) {
+    } else if (config_item_view == "backend") {
       i = parseAllocatorConfig(config, i, used_musaMallocAsync);
-    } else if (config[i] == "expandable_segments") {
+    } else if (config_item_view == "expandable_segments") {
       used_native_specific_option = true;
       consumeToken(config, ++i, ':');
       ++i;
       TORCH_CHECK(
-          i < config.size() && (config[i] == "True" || config[i] == "False"),
+          i < config.size() &&
+              (std::string_view(config[i]) == "True" ||
+               std::string_view(config[i]) == "False"),
           "Expected a single True/False argument for expandable_segments");
-      m_expandable_segments = (config[i] == "True");
-    } else if (config[i].compare("release_lock_on_musamalloc") == 0) {
+      config_item_view = config[i];
+      m_expandable_segments = (config_item_view == "True");
+    } else if (
+        config_item_view == "release_lock_on_musamalloc" ||
+        config_item_view == "release_lock_on_cudamalloc") {
       used_native_specific_option = true;
       consumeToken(config, ++i, ':');
       ++i;
       TORCH_CHECK(
-          i < config.size() && (config[i] == "True" || config[i] == "False"),
+          i < config.size() &&
+              (std::string_view(config[i]) == "True" ||
+               std::string_view(config[i]) == "False"),
           "Expected a single True/False argument for release_lock_on_musamalloc");
-      m_release_lock_on_musamalloc = (config[i] == "True");
-    } else if (config[i].compare("pinned_use_musa_host_register") == 0) {
+      config_item_view = config[i];
+      m_release_lock_on_musamalloc = (config_item_view == "True");
+    } else if (
+        config_item_view == "pinned_use_musa_host_register" ||
+        config_item_view == "pinned_use_cuda_host_register") {
       i = parsePinnedUseMusaHostRegister(config, i);
       used_native_specific_option = true;
-    } else if (config[i].compare("pinned_num_register_threads") == 0) {
+    } else if (config_item_view == "pinned_num_register_threads") {
       i = parsePinnedNumRegisterThreads(config, i);
       used_native_specific_option = true;
     } else {
-      TORCH_CHECK(false, "Unrecognized CachingAllocator option: ", config[i]);
+      TORCH_CHECK(
+          false, "Unrecognized CachingAllocator option: ", config_item_view);
     }
 
     if (i + 1 < config.size()) {
@@ -318,9 +341,7 @@ size_t MUSAAllocatorConfig::parsePinnedNumRegisterThreads(
 
 // General caching allocator utilities
 void setAllocatorSettings(const std::string& env) {
-  MUSAAllocatorConfig::MUSAAllocatorConfig::instance().parseArgs(env.c_str());
+  MUSACachingAllocator::MUSAAllocatorConfig::instance().parseArgs(env.c_str());
 }
 
-} // namespace MUSACachingAllocator
-} // namespace musa
-} // namespace c10
+} // namespace c10::musa::MUSACachingAllocator

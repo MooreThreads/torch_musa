@@ -1,25 +1,28 @@
 diff --git a/torch/_dynamo/utils.py b/torch/_dynamo/utils.py
-index c30f5ce..96bba9e 100644
+index 7b0cbbb..16adb65 100644
 --- a/torch/_dynamo/utils.py
 +++ b/torch/_dynamo/utils.py
-@@ -698,14 +698,18 @@ def preserve_rng_state():
-     with torch.utils._python_dispatch._disable_current_modes():
+@@ -1158,15 +1158,20 @@ def preserve_rng_state():
          rng_state = torch.clone(torch.random.get_rng_state())
+         skip_frame_if_in_functorch_mode(rng_state)
          if torch.cuda.is_available():
 -            cuda_rng_state = torch.clone(torch.cuda.get_rng_state())
 +            gpu_rng_state = torch.clone(torch.cuda.get_rng_state())
-+        elif hasattr(torch, "musa") and torch.musa.is_available():
-+            gpu_rng_state = torch.clone(torch.musa.get_rng_state())
++        elif custom_backend_mod := getattr(torch, torch._C._get_privateuse1_backend_name(), None):
++            if getattr(custom_backend_mod, "is_available")():
++                gpu_rng_state = torch.clone(getattr(custom_backend_mod, "get_rng_state")())
      try:
          yield
      finally:
          with torch.utils._python_dispatch._disable_current_modes():
              torch.random.set_rng_state(rng_state)
              if torch.cuda.is_available():
--                torch.cuda.set_rng_state(cuda_rng_state)
-+                torch.cuda.set_rng_state(gpu_rng_state)
-+            elif hasattr(torch, "musa") and torch.musa.is_available():
-+                torch.musa.set_rng_state(gpu_rng_state)
- 
+-                torch.cuda.set_rng_state(cuda_rng_state)  # type: ignore[possibly-undefined]
+-
++                torch.cuda.set_rng_state(gpu_rng_state)  # type: ignore[possibly-undefined]
++            elif custom_backend_mod := getattr(torch, torch._C._get_privateuse1_backend_name(), None):
++                if getattr(custom_backend_mod, "is_available")():
++                    getattr(custom_backend_mod, "set_rng_state")(gpu_rng_state)
  
  def is_jit_model(model0):
+     return isinstance(

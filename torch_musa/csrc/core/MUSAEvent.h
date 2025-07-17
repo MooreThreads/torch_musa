@@ -1,38 +1,36 @@
-#ifndef TORCH_MUSA_CSRC_CORE_MUSA_EVENT_H_
-#define TORCH_MUSA_CSRC_CORE_MUSA_EVENT_H_
-
-#include <c10/core/impl/GPUTrace.h>
-#include "musa_runtime_api.h"
-#include "torch_musa/csrc/core/MUSAException.h"
-#include "torch_musa/csrc/core/MUSAGuard.h"
-#include "torch_musa/csrc/core/MUSAStream.h"
+#ifndef TORCH_MUSA_CSRC_CORE_MUSAEVENT_H_
+#define TORCH_MUSA_CSRC_CORE_MUSAEVENT_H_
 
 #include <cstdint>
 #include <utility>
 
-namespace at {
-namespace musa {
-using namespace c10::musa;
+#include <musa_runtime_api.h>
+
+#include <c10/core/impl/GPUTrace.h>
+
+#include "torch_musa/csrc/core/MUSAGuard.h"
+#include "torch_musa/csrc/core/MUSAStream.h"
+
+namespace at::musa {
 
 /*
  * MUSAEvents are movable not copyable wrappers around MUSA's events.
  *
  * MUSAEvents are constructed lazily when first recorded unless it is
- * reconstructed from a MUSAIpcEventHandle_t. The event has a device, and this
+ * reconstructed from a musaIpcEventHandle_t. The event has a device, and this
  * device is acquired from the first recording stream. However, if reconstructed
  * from a handle, the device should be explicitly specified; or if ipc_handle()
  * is called before the event is ever recorded, it will use the current device.
  * Later streams that record the event must match this device.
  */
 struct MUSAEvent {
-  // Constructors
-  // Default value for `flags` is specified below - it's MUSAEventDisableTiming
   MUSAEvent() noexcept = default;
+
   MUSAEvent(unsigned int flags) noexcept : flags_{flags} {}
 
-  MUSAEvent(DeviceIndex device_index, const musaIpcEventHandle_t* handle) {
-    device_index_ = device_index;
-    MUSAGuard guard(device_index_);
+  MUSAEvent(DeviceIndex device_index, const musaIpcEventHandle_t* handle)
+      : device_index_(device_index) {
+    const MUSAGuard guard(device_index_);
 
     TORCH_MUSA_CHECK(musaIpcOpenEventHandle(&event_, *handle));
     is_created_ = true;
@@ -43,16 +41,16 @@ struct MUSAEvent {
   ~MUSAEvent() {
     try {
       if (is_created_) {
-        MUSAGuard guard(device_index_);
+        const MUSAGuard guard(device_index_);
         const c10::impl::PyInterpreter* interp =
             c10::impl::GPUTrace::get_trace();
         if (C10_UNLIKELY(interp)) {
           (*interp)->trace_gpu_event_deletion(
-              reinterpret_cast<uintptr_t>(event_));
+              kMUSA, reinterpret_cast<uintptr_t>(event_));
         }
-        musaEventDestroy(event_);
+        TORCH_MUSA_CHECK(musaEventDestroy(event_));
       }
-    } catch (...) { /* No throw */
+    } catch (...) {
     }
   }
 
@@ -73,42 +71,42 @@ struct MUSAEvent {
     return event();
   }
 
-  // Less than operator (to allow use in sets)
   friend bool operator<(const MUSAEvent& left, const MUSAEvent& right) {
     return left.event_ < right.event_;
   }
 
-  optional<at::Device> device() const {
+  std::optional<Device> device() const {
     if (is_created_) {
-      return at::Device(at::musa::kMUSA, device_index_);
+      return Device(kMUSA, device_index_);
     } else {
-      return {};
+      return std::nullopt;
     }
   }
 
   bool isCreated() const {
     return is_created_;
   }
+
   DeviceIndex device_index() const {
     return device_index_;
   }
+
   musaEvent_t event() const {
     return event_;
   }
 
-  // Note: MUSAEventQuery can be safely called from any device
+  // Note: musaEventQuery can be safely called from any device
   bool query() const {
     if (!is_created_) {
       return true;
     }
 
-    musaError_t err = musaEventQuery(event_);
+    const auto err = TORCH_MUSA_ERROR_HANDLE(musaEventQuery(event_));
     if (err == musaSuccess) {
       return true;
     } else if (err != musaErrorNotReady) {
-      TORCH_MUSA_CHECK(err);
+      C10_MUSA_CHECK(err);
     } else {
-      // ignore and clear the error if not ready
       musaGetLastError();
     }
 
@@ -120,11 +118,12 @@ struct MUSAEvent {
   }
 
   void recordOnce(const MUSAStream& stream) {
-    if (!was_recorded_)
+    if (!was_recorded_) {
       record(stream);
+    }
   }
 
-  // Note: MUSAEventRecord must be called on the same device as the event.
+  // Note: musaEventRecord must be called on the same device as the event.
   void record(const MUSAStream& stream) {
     if (!is_created_) {
       createEvent(stream.device_index());
@@ -137,63 +136,66 @@ struct MUSAEvent {
         " does not match recording stream's device ",
         stream.device_index(),
         ".");
-    MUSAGuard guard(device_index_);
+    const MUSAGuard guard(device_index_);
     TORCH_MUSA_CHECK(musaEventRecord(event_, stream));
     const c10::impl::PyInterpreter* interp = c10::impl::GPUTrace::get_trace();
     if (C10_UNLIKELY(interp)) {
       (*interp)->trace_gpu_event_record(
+          kMUSA,
           reinterpret_cast<uintptr_t>(event_),
           reinterpret_cast<uintptr_t>(stream.stream()));
     }
     was_recorded_ = true;
   }
 
-  // Note: MUSAStreamWaitEvent must be called on the same device as the stream.
+  // Note: musaStreamWaitEvent must be called on the same device as the stream.
   // The event has no actual GPU resources associated with it.
   void block(const MUSAStream& stream) {
     if (is_created_) {
-      MUSAGuard guard(stream.device_index());
+      const MUSAGuard guard(stream.device_index());
       TORCH_MUSA_CHECK(musaStreamWaitEvent(stream, event_, 0));
       const c10::impl::PyInterpreter* interp = c10::impl::GPUTrace::get_trace();
       if (C10_UNLIKELY(interp)) {
         (*interp)->trace_gpu_event_wait(
+            kMUSA,
             reinterpret_cast<uintptr_t>(event_),
             reinterpret_cast<uintptr_t>(stream.stream()));
       }
     }
   }
 
-  // Note: MUSAEventElapsedTime can be safely called from any device
+  // Note: musaEventElapsedTime can be safely called from any device
   float elapsed_time(const MUSAEvent& other) const {
     TORCH_CHECK(
         is_created_ && other.isCreated(),
         "Both events must be recorded before calculating elapsed time.");
     float time_ms = 0;
-    // raise MUSAErrorNotReady if either event is recorded but not yet completed
+    const MUSAGuard guard(device_index_);
+    // raise musaErrorNotReady if either event is recorded but not yet completed
     TORCH_MUSA_CHECK(musaEventElapsedTime(&time_ms, event_, other.event_));
     return time_ms;
   }
 
-  // Note: MUSAEventSynchronize can be safely called from any device
+  // Note: musaEventSynchronize can be safely called from any device
   void synchronize() const {
     if (is_created_) {
       const c10::impl::PyInterpreter* interp = c10::impl::GPUTrace::get_trace();
       if (C10_UNLIKELY(interp)) {
         (*interp)->trace_gpu_event_synchronization(
-            reinterpret_cast<uintptr_t>(event_));
+            kMUSA, reinterpret_cast<uintptr_t>(event_));
       }
       TORCH_MUSA_CHECK(musaEventSynchronize(event_));
     }
   }
 
-  // Note: MUSAIpcGetEventHandle must be called on the same device as the event
+  // Note: musaIpcGetEventHandle must be called on the same device as the event
   void ipc_handle(musaIpcEventHandle_t* handle) {
     if (!is_created_) {
       // this MUSAEvent object was initially constructed from flags but event_
       // is not created yet.
       createEvent(getCurrentMUSAStream().device_index());
     }
-    MUSAGuard guard(device_index_);
+    const MUSAGuard guard(device_index_);
     TORCH_MUSA_CHECK(musaIpcGetEventHandle(handle, event_));
   }
 
@@ -206,11 +208,12 @@ struct MUSAEvent {
 
   void createEvent(DeviceIndex device_index) {
     device_index_ = device_index;
-    MUSAGuard guard(device_index_);
+    const MUSAGuard guard(device_index_);
     TORCH_MUSA_CHECK(musaEventCreateWithFlags(&event_, flags_));
     const c10::impl::PyInterpreter* interp = c10::impl::GPUTrace::get_trace();
     if (C10_UNLIKELY(interp)) {
-      (*interp)->trace_gpu_event_creation(reinterpret_cast<uintptr_t>(event_));
+      (*interp)->trace_gpu_event_creation(
+          kMUSA, reinterpret_cast<uintptr_t>(event_));
     }
     is_created_ = true;
   }
@@ -224,6 +227,6 @@ struct MUSAEvent {
   }
 };
 
-} // namespace musa
-} // namespace at
-#endif // TORCH_MUSA_CSRC_CORE_MUSA_EVENT_H_
+} // namespace at::musa
+
+#endif // TORCH_MUSA_CSRC_CORE_MUSAEVENT_H_
