@@ -1,0 +1,19 @@
+diff --git a/torch/_dynamo/variables/builder.py b/torch/_dynamo/variables/builder.py
+index 5644f45..7c5106f 100644
+--- a/torch/_dynamo/variables/builder.py
++++ b/torch/_dynamo/variables/builder.py
+@@ -828,9 +828,13 @@ class VariableBuilder:
+             return StreamContextVariable.create(self.tx, stream_var)
+         elif isinstance(value, _StreamBase):
+             self.install_guards(GuardBuilder.ID_MATCH)
++            if custom_backend_mod := getattr(torch, torch._C._get_privateuse1_backend_name(), None):
++                kind = getattr(custom_backend_mod, "Stream")
++            else:
++                kind = torch.cuda.Stream
+             stream_proxy = self.tx.output.create_proxy(
+                 "call_function",
+-                torch.cuda.Stream,
++                kind,
+                 (),
+                 {
+                     "stream_id": value.stream_id,

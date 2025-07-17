@@ -2,12 +2,31 @@
 Utilities for Attention OP Unittests.
 """
 
+# pylint: disable=C0116
+from functools import lru_cache
+import json
 import math
+import subprocess
+from packaging import version
 
 import torch
 from torch.nn import functional as F
 
 MASK_TYPES = [-1, 0, 1, 2]
+
+
+@lru_cache
+def get_musa_version():
+    bin_file = "musa_toolkits_version"
+    res = subprocess.run([bin_file], stdout=subprocess.PIPE, text=True, check=True)
+    res = res.stdout.replace("musa_toolkits:", "").strip()
+    res = json.loads(res)["version"]
+    res = version.parse(res)
+    res = res.major * 1000 + res.minor * 10 + res.micro
+    return res
+
+
+explicit_scales = [True, False] if get_musa_version() >= 4020 else [False]
 
 
 class RawSDP(torch.nn.Module):
@@ -35,7 +54,14 @@ class RawSDP(torch.nn.Module):
         )
 
     def forward(
-        self, query, key, value, attn_mask=None, dropout_p=0.0, is_causal=False
+        self,
+        query,
+        key,
+        value,
+        attn_mask=None,
+        dropout_p=0.0,
+        is_causal=False,
+        scale=None,
     ):
         """
         Forward call.
@@ -52,15 +78,18 @@ class RawSDP(torch.nn.Module):
         key = self.repeak_kv(key, group_size)
         value = self.repeak_kv(value, group_size)
 
-        half_sqrt = math.sqrt(math.sqrt(head_dim))
-        query = query / half_sqrt
+        if scale is not None:
+            half_sqrt = math.sqrt(scale)
+        else:
+            half_sqrt = 1 / math.sqrt(math.sqrt(head_dim))
+        query = query * half_sqrt
         if is_causal:
             kv_seq_len = key.shape[-2]
             # ignore the generated mask for the test case with is_causal=True
             attn_mask = torch.ones(
                 (q_seq_len, kv_seq_len), device=query.device, dtype=torch.bool
             ).tril()
-        attn_weight = query @ (key.transpose(-2, -1) / half_sqrt)
+        attn_weight = query @ (key.transpose(-2, -1) * half_sqrt)
         if attn_mask is not None and attn_mask.dtype == torch.bool:
             new_mask = torch.zeros_like(
                 attn_mask, dtype=query.dtype, device=query.device
@@ -83,7 +112,9 @@ class RawSDP(torch.nn.Module):
         return output
 
 
-def sdp_func(query, key, value, attn_mask=None, dropout_p=0.0, is_causal=False):
+def sdp_func(
+    query, key, value, attn_mask=None, dropout_p=0.0, is_causal=False, scale=None
+):
     batch_size, _, seq_len, _ = query.shape
     if (
         attn_mask is not None
@@ -93,7 +124,14 @@ def sdp_func(query, key, value, attn_mask=None, dropout_p=0.0, is_causal=False):
         # we should make the mask broadcastable to the atten_probs
         attn_mask = attn_mask.view(batch_size, 1, 1, seq_len)
     return F.scaled_dot_product_attention(
-        query, key, value, attn_mask, dropout_p, is_causal
+        query,
+        key,
+        value,
+        attn_mask,
+        dropout_p,
+        is_causal,
+        enable_gqa=True,
+        scale=scale,
     )
 
 
@@ -149,7 +187,9 @@ def generate_pad_mask(batch_size: int, seq_len: int):
     return mask
 
 
-def gen_input_data(case, mask_type, dtype=torch.float32):
+def gen_input_data(
+    case, mask_type, dtype=torch.float32, is_causal=False, explicit_scale=False
+):
     """
     Generating the mocked input data of SDP.
     """
@@ -181,6 +221,11 @@ def gen_input_data(case, mask_type, dtype=torch.float32):
     item["query"] = query
     item["key"] = key
     item["value"] = value
+    item["scale"] = 1 / math.sqrt(query.size(-1)) if explicit_scale else None
+
+    item["is_causal"] = is_causal
+    if is_causal is True:
+        return item
 
     # generating bool mask.
     if mask_type == 1:

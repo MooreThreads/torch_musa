@@ -140,13 +140,14 @@ void SetMudnnQuantizationInfo(
     muTensor& self,
     double scales,
     int64_t zero_points) {
-  TORCH_CHECK(
-      0 == zero_points,
+  TORCH_CHECK(0 == zero_points,
       "torch_musa only supports symmetric quantization",
       "which requires zero_point == 0, got: ",
       zero_points);
   float scales_ = static_cast<float>(scales);
-  CHECK_MUDNN_STATUS(self.SetQuantizationInfo(scales_), "SetQuantizationInfo");
+  CHECK_MUDNN_STATUS(
+      self.SetQuantizationInfo(scales_),
+      "SetQuantizationInfo");
 }
 
 muTensor CreateMUTensorByCompressDim(const Tensor& t) {
@@ -254,6 +255,9 @@ bool MatContiguous(const Tensor& mat) {
 bool IsTranspose(const Tensor& mat, bool strict) {
   if (mat.dim() >= 2) {
     const Tensor t_mat = mat.transpose(-2, -1);
+    if (!strict && t_mat.is_contiguous() && mat.is_contiguous()) {
+      return false;
+    }
     return strict ? MatContiguous(t_mat) : t_mat.is_contiguous();
   }
   return false;

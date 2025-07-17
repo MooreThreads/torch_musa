@@ -55,7 +55,7 @@ using MuBlasPoolType = DeviceThreadHandlePool<
 // TODO(MTAI):END
 
 mublasHandle_t getCurrentMUSABlasHandle() {
-  int device = 0;
+  DeviceIndex device = 0;
   AT_MUSA_CHECK(at::musa::GetDevice(&device));
 
   // Use a leaky singleton for the pool following standard practice around

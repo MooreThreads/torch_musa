@@ -493,6 +493,17 @@ Tensor& NormDtypeOut(
   return out;
 }
 
+Tensor NormScalarOptDimDtype(
+    const Tensor& self,
+    const c10::optional<at::Scalar>& p,
+    at::IntArrayRef dim,
+    bool keepdim,
+    at::ScalarType dtype) {
+  Tensor output = at::empty_like(self, self.options().dtype(dtype));
+  NormDtypeOut(self, p, dim, keepdim, dtype, output);
+  return output;
+}
+
 Tensor& NormOut(
     const Tensor& self,
     const c10::optional<at::Scalar>& p,

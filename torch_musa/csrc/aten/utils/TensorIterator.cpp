@@ -164,7 +164,7 @@ void MusaTensorIterator::add_owned_output(const TensorBase& output) {
       static_cast<size_t>(num_outputs_) == operands_.size(),
       "Outputs must be added before any inputs.");
   operands_.emplace_back(
-      c10::MaybeOwned<TensorBase>::owned(c10::in_place, output));
+      c10::MaybeOwned<TensorBase>::owned(std::in_place, output));
   operands_[num_outputs_].is_output = true;
   ++num_outputs_;
 }
@@ -181,7 +181,7 @@ void MusaTensorIterator::add_borrowed_output(const TensorBase& output) {
 void MusaTensorIterator::add_owned_input(const TensorBase& input) {
   TORCH_INTERNAL_ASSERT(num_outputs_ > 0, "At least one output must be added.");
   operands_.emplace_back(
-      c10::MaybeOwned<TensorBase>::owned(c10::in_place, input));
+      c10::MaybeOwned<TensorBase>::owned(std::in_place, input));
 }
 
 void MusaTensorIterator::add_borrowed_input(const TensorBase& input) {
@@ -209,7 +209,7 @@ void MusaTensorIterator::replace_input(int arg, const TensorBase& input) {
       }
     }
   }
-  op.tensor(c10::MaybeOwned<TensorBase>::owned(c10::in_place, input));
+  op.tensor(c10::MaybeOwned<TensorBase>::owned(std::in_place, input));
   op.data = input.data_ptr();
   op.current_dtype = new_dtype;
   op.target_dtype = new_dtype;

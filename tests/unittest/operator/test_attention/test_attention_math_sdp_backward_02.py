@@ -6,7 +6,13 @@ Op Unittest for Attention OP.
 import pytest
 import torch
 
-from test_attention_base import RawSDP, gen_input_data, MASK_TYPES, sdp_func
+from test_attention_base import (
+    RawSDP,
+    gen_input_data,
+    MASK_TYPES,
+    sdp_func,
+    explicit_scales,
+)
 
 from torch_musa import testing
 from torch_musa.testing.base_test_tool import DefaultComparator
@@ -77,12 +83,13 @@ def function(input_data, func, train=False):
 @pytest.mark.parametrize("dtype", [torch.float32, torch.half])
 @pytest.mark.parametrize("func", [sdp_func])
 @pytest.mark.parametrize("mask_type", MASK_TYPES)
-def test_math_sdp_backward(case, dtype, func, mask_type):
+@pytest.mark.parametrize("explicit_scale", explicit_scales)
+def test_math_sdp_backward(case, dtype, func, mask_type, explicit_scale):
     """
     Math SDP backward test.
     """
-    if case[-1] != case[-2]:  # gqa case, math doesn't support now.
-        pytest.skip(reason="Math SDP doesn't support GQA now.")
-    with torch.backends.cuda.sdp_kernel(enable_math=True, enable_flash=False):
-        input_data = gen_input_data(case, mask_type, dtype)
+    with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.MATH):
+        input_data = gen_input_data(
+            case, mask_type, dtype, explicit_scale=explicit_scale
+        )
         function(input_data, func, True)

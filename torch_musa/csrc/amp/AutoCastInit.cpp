@@ -27,10 +27,11 @@ static PyObject* GetAutocastMusaDtype(
 
 static PyObject* SetAutocastMusaDtype(PyObject* /* unused */, PyObject* arg) {
   HANDLE_TH_ERRORS
-  if (!THPDtype_Check(arg)) {
-    throw c10::TypeError(
-        "dtype must be a torch.dtype (got %s)", Py_TYPE(arg)->tp_name);
-  }
+  TORCH_CHECK_TYPE(
+      THPDtype_Check(arg),
+      "dtype must be a torch.dtype (got ",
+      Py_TYPE(arg)->tp_name,
+      ")");
   at::ScalarType target_type = reinterpret_cast<THPDtype*>(arg)->scalar_type;
   at::autocast::musa::set_autocast_musa_dtype(target_type);
   Py_RETURN_NONE;
@@ -39,10 +40,11 @@ static PyObject* SetAutocastMusaDtype(PyObject* /* unused */, PyObject* arg) {
 
 static PyObject* SetAutocastMusaEnabled(PyObject* /* unused */, PyObject* arg) {
   HANDLE_TH_ERRORS
-  if (!PyBool_Check(arg)) {
-    throw c10::TypeError(
-        "enabled must be a bool (got %s)", Py_TYPE(arg)->tp_name);
-  }
+  TORCH_CHECK_TYPE(
+      PyBool_Check(arg),
+      "enabled must be a bool (got ",
+      Py_TYPE(arg)->tp_name,
+      ")");
   at::autocast::musa::set_autocast_musa_enabled(arg == Py_True);
   Py_RETURN_NONE;
   END_HANDLE_TH_ERRORS

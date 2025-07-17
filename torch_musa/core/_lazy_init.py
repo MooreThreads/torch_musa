@@ -1,14 +1,15 @@
+# pylint: disable=unused-argument
 """This file is about musa init."""
 
-# pylint: disable=C0103, W0621, W0602, W0622, C0411, C0412, C0413, W0236, E0202
+# pylint: disable=C0103, W0621, W0602, W0622, C0411, C0412, C0413, W0236, E0202, W0614, W0401
 import traceback
 import threading
 from typing import Any, Tuple, List
 import torch
-from torch import classproperty
 import torch_musa
 
 from ._utils import _get_musa_device_index
+from .musa import *
 
 _initialized = False
 _tls = threading.local()
@@ -168,137 +169,6 @@ class _MusaBase:
 
     __new__ = _lazy_new
 
-
-from torch.storage import _LegacyStorage, _warn_typed_storage_removal
-
-
-class _MusaLegacyStorage(_LegacyStorage):
-    @classmethod
-    def from_buffer(cls, *args, **kwargs):
-        _warn_typed_storage_removal()
-        raise RuntimeError("from_buffer: Not available for MUSA storage")
-
-    @classmethod
-    def _new_with_weak_ptr(cls, *args, **kwargs):
-        raise RuntimeError("_new_with_weak_ptr: Not available for MUSA storage")
-
-    @classmethod
-    def _new_shared_filename(cls, manager, obj, size, *, device=None, dtype=None):
-        raise RuntimeError("_new_shared_filename: Not available for MUSA storage")
-
-
-class ByteStorage(_MusaLegacyStorage):
-    @classproperty
-    def dtype(self):
-        _warn_typed_storage_removal()
-        return self._dtype
-
-    @classproperty
-    def _dtype(self):
-        return torch.uint8
-
-
-class DoubleStorage(_MusaLegacyStorage):
-    @classproperty
-    def dtype(self):
-        _warn_typed_storage_removal()
-        return self._dtype
-
-    @classproperty
-    def _dtype(self):
-        return torch.double
-
-
-class FloatStorage(_MusaLegacyStorage):
-    @classproperty
-    def dtype(self):
-        _warn_typed_storage_removal()
-        return self._dtype
-
-    @classproperty
-    def _dtype(self):
-        return torch.float
-
-
-class HalfStorage(_MusaLegacyStorage):
-    @classproperty
-    def dtype(self):
-        _warn_typed_storage_removal()
-        return self._dtype
-
-    @classproperty
-    def _dtype(self):
-        return torch.half
-
-
-class LongStorage(_MusaLegacyStorage):
-    @classproperty
-    def dtype(self):
-        _warn_typed_storage_removal()
-        return self._dtype
-
-    @classproperty
-    def _dtype(self):
-        return torch.long
-
-
-class IntStorage(_MusaLegacyStorage):
-    @classproperty
-    def dtype(self):
-        _warn_typed_storage_removal()
-        return self._dtype
-
-    @classproperty
-    def _dtype(self):
-        return torch.int
-
-
-class ShortStorage(_MusaLegacyStorage):
-    @classproperty
-    def dtype(self):
-        _warn_typed_storage_removal()
-        return self._dtype
-
-    @classproperty
-    def _dtype(self):
-        return torch.short
-
-
-class CharStorage(_MusaLegacyStorage):
-    @classproperty
-    def dtype(self):
-        _warn_typed_storage_removal()
-        return self._dtype
-
-    @classproperty
-    def _dtype(self):
-        return torch.int8
-
-
-class BoolStorage(_MusaLegacyStorage):
-    @classproperty
-    def dtype(self):
-        _warn_typed_storage_removal()
-        return self._dtype
-
-    @classproperty
-    def _dtype(self):
-        return torch.bool
-
-
-class BFloat16Storage(_MusaLegacyStorage):
-    @classproperty
-    def dtype(self):
-        _warn_typed_storage_removal()
-        return self._dtype
-
-    @classproperty
-    def _dtype(self):
-        return torch.bfloat16
-
-
-del _LegacyStorage
-del _MusaLegacyStorage
 
 setattr(torch_musa, "DoubleStorage", DoubleStorage)
 setattr(torch_musa, "FloatStorage", FloatStorage)

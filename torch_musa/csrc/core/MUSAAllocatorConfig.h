@@ -1,19 +1,17 @@
-#pragma once
+#ifndef TORCH_MUSA_CSRC_CORE_MUSAALLOCATORCONFIG_H_
+#define TORCH_MUSA_CSRC_CORE_MUSAALLOCATORCONFIG_H_
 
 #include <c10/musa/MUSAMacros.h>
 #include <c10/util/Exception.h>
-#include <c10/util/llvmMathExtras.h>
-// #include <cuda_runtime_api.h>
-
-#include "torch_musa/csrc/core/MUSACachingAllocator.h"
-#include "torch_musa/csrc/core/MUSAException.h"
 
 #include <atomic>
+#include <cstddef>
+#include <cstdlib>
+#include <mutex>
+#include <string>
 #include <vector>
 
-namespace c10 {
-namespace musa {
-namespace MUSACachingAllocator {
+namespace c10::musa::MUSACachingAllocator {
 
 // Environment config parser
 class C10_MUSA_API MUSAAllocatorConfig {
@@ -62,6 +60,16 @@ class C10_MUSA_API MUSAAllocatorConfig {
   // using env variable: PYTORCH_MUSA_ALLOC_CONF=roundup_power2_divisions:4
   static size_t roundup_power2_divisions(size_t size);
 
+  static std::vector<size_t> roundup_power2_divisions() {
+    return instance().m_roundup_power2_divisions;
+  }
+
+  static std::string last_allocator_settings() {
+    std::lock_guard<std::mutex> lock(
+        instance().m_last_allocator_settings_mutex);
+    return instance().m_last_allocator_settings;
+  }
+
   static MUSAAllocatorConfig& instance() {
     static MUSAAllocatorConfig* s_instance = ([]() {
       auto inst = new MUSAAllocatorConfig();
@@ -77,8 +85,8 @@ class C10_MUSA_API MUSAAllocatorConfig {
  private:
   MUSAAllocatorConfig();
 
-  void lexArgs(const char* env, std::vector<std::string>& config);
-  void consumeToken(
+  static void lexArgs(const char* env, std::vector<std::string>& config);
+  static void consumeToken(
       const std::vector<std::string>& config,
       size_t i,
       const char c);
@@ -107,11 +115,13 @@ class C10_MUSA_API MUSAAllocatorConfig {
   std::atomic<bool> m_expandable_segments;
   std::atomic<bool> m_release_lock_on_musamalloc;
   std::atomic<bool> m_pinned_use_musa_host_register;
+  std::string m_last_allocator_settings;
+  std::mutex m_last_allocator_settings_mutex;
 };
 
 // General caching allocator utilities
 C10_MUSA_API void setAllocatorSettings(const std::string& env);
 
-} // namespace MUSACachingAllocator
-} // namespace musa
-} // namespace c10
+} // namespace c10::musa::MUSACachingAllocator
+
+#endif // TORCH_MUSA_CSRC_CORE_MUSAALLOCATORCONFIG_H_

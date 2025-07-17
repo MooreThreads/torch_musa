@@ -51,3 +51,33 @@ def test_pool3d(
     test = testing.OpTest(func=torch.nn.AvgPool3d, input_args=input_params)
     test.check_result({"input": input_data["input"]}, train=False)
     test.check_grad_fn()
+
+
+input_data = [
+    torch.randn(2, 3, 8, 8, 8).requires_grad_(),
+    torch.randn(0, 3, 8, 8, 8).requires_grad_(),
+    torch.randn(1, 3, 9, 9, 9).requires_grad_(),
+    torch.randn(4, 2, 10, 10, 10).requires_grad_(),
+]
+
+
+pool_params = [
+    {"kernel_size": 2, "output_size": (5, 5, 5), "return_indices": False},
+    {"kernel_size": (2, 2, 2), "output_size": (6, 6, 6), "return_indices": True},
+    {"kernel_size": 2, "output_ratio": 0.5, "return_indices": False},
+    {"kernel_size": (2, 2, 2), "output_ratio": (0.7, 0.8, 0.7), "return_indices": True},
+]
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_data)
+@pytest.mark.parametrize("params", pool_params)
+@pytest.mark.parametrize("dtype", [torch.float32])
+def test_fractional_max_pool3d(input_data, params, dtype):
+    input_data = input_data.to(dtype)
+    batch_size, channel = input_data.shape[:2]
+    random_samples = torch.rand(batch_size, channel, 3)
+    params["_random_samples"] = random_samples
+    m = torch.nn.FractionalMaxPool3d(**params)
+    test = testing.OpTest(func=m, input_args={"input": input_data})
+    test.check_result()

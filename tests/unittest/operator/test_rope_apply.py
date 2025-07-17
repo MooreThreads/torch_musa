@@ -1,6 +1,6 @@
 """Test rope forward & backward operator."""
 
-# pylint: disable=missing-function-docstring, redefined-outer-name, unused-import, redefined-builtin, unused-argument
+# pylint: disable=missing-function-docstring, redefined-outer-name, unused-import, redefined-builtin, unused-argument, unexpected-keyword-arg
 import torch
 import pytest
 from torch.nn import functional as F
@@ -17,6 +17,7 @@ def rotate_half(t: torch.Tensor) -> torch.Tensor:
 def apply_rotary_pos_emb_bshd(
     input: torch.Tensor,
     freq_cis: torch.Tensor,
+    multi_latent_attention: bool = False,
     rotary_interleaved: bool = False,
     batch_first: bool = False,
 ):
@@ -28,6 +29,9 @@ def apply_rotary_pos_emb_bshd(
     # ideally t_pass is empty so rotary pos embedding is applied to all tensor t
     t, t_pass = input[..., :rot_dim], input[..., rot_dim:]
 
+    if multi_latent_attention:
+        t = torch.cat([t[..., 0::2], t[..., 1::2]], dim=-1)
+
     # first part is cosine component
     # second part is sine component, need to change signs with _rotate_half method
     cos_ = torch.cos(freq_cis).to(t.dtype)
@@ -38,13 +42,19 @@ def apply_rotary_pos_emb_bshd(
     return torch.cat((t, t_pass), dim=-1)
 
 
+multi_latent_attention = [False]
+if torch.backends.mudnn.version() > 2800:
+    multi_latent_attention.append(True)
+
+
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.skipif(testing.get_musa_arch() < 22, reason="only test on arch>=22")
 @pytest.mark.parametrize("batch_size", [1, 16, 32])
 @pytest.mark.parametrize("dim", [512, 2048, 4096])
 @pytest.mark.parametrize("max_seq_len", [2048, 4096])
 @pytest.mark.parametrize("dtype", [torch.float32])
-def test_rope(batch_size, dim, max_seq_len, dtype):
+@pytest.mark.parametrize("multi_latent_attention", multi_latent_attention)
+def test_rope(batch_size, dim, max_seq_len, dtype, multi_latent_attention):
 
     head_num = 32
     dim = dim // head_num
@@ -56,25 +66,35 @@ def test_rope(batch_size, dim, max_seq_len, dtype):
     freqs_cis = torch.randn(max_seq_len, dim, dtype=dtype)  # SD
     freqs_cis_4d = freqs_cis.reshape(max_seq_len, 1, 1, dim)
 
-    cpu_ret = apply_rotary_pos_emb_bshd(input_ts, freqs_cis_4d)
+    cpu_ret = apply_rotary_pos_emb_bshd(input_ts, freqs_cis_4d, multi_latent_attention)
 
     # -----------------------------test nn.RoPE ---------------------
     input_data_out = {
         "freq_cis": freqs_cis,
         "rotary_interleaved": False,
         "batch_first": False,
+        "multi_latent_attention": multi_latent_attention,
     }
     m = torch.nn.RoPE(**input_data_out).musa()
     musa_ret_out = m(input_ts.musa())
     assert check_func(cpu_ret, musa_ret_out)
 
     # -----------------------------test rope.out ---------------------
-    input_data_out = {
-        "input": input_ts.musa(),
-        "freq_cis": freqs_cis.musa(),
-        "rotary_interleaved": False,
-        "batch_first": False,
-    }
+    if multi_latent_attention:
+        input_data_out = {
+            "input": input_ts.musa(),
+            "freq_cis": freqs_cis.musa(),
+            "rotary_interleaved": False,
+            "batch_first": False,
+            "multi_latent_attention": multi_latent_attention,
+        }
+    else:
+        input_data_out = {
+            "input": input_ts.musa(),
+            "freq_cis": freqs_cis.musa(),
+            "rotary_interleaved": False,
+            "batch_first": False,
+        }
     ret1 = F.rope(**input_data_out)
     assert check_func(cpu_ret, ret1)
 
@@ -85,6 +105,7 @@ def test_rope(batch_size, dim, max_seq_len, dtype):
 @pytest.mark.parametrize("dim", [512, 2048, 4096])
 @pytest.mark.parametrize("max_seq_len", [2048, 4096])
 @pytest.mark.parametrize("dtype", [torch.float32])
+@pytest.mark.parametrize("multi_latent_attention", multi_latent_attention)
 @pytest.mark.parametrize(
     "scenario",
     [
@@ -92,7 +113,9 @@ def test_rope(batch_size, dim, max_seq_len, dtype):
         "dist_split",
     ],
 )
-def test_rope_non_contiguous_scenarios(batch_size, dim, max_seq_len, dtype, scenario):
+def test_rope_non_contiguous_scenarios(
+    batch_size, dim, max_seq_len, dtype, multi_latent_attention, scenario
+):
 
     head_num = 32
     head_dim = dim // head_num
@@ -113,7 +136,7 @@ def test_rope_non_contiguous_scenarios(batch_size, dim, max_seq_len, dtype, scen
         dist_chunk = input_ts[:, :, : (head_num // 2), :]
         input_ts = dist_chunk
 
-    cpu_ret = apply_rotary_pos_emb_bshd(input_ts, freqs_cis_4d)
+    cpu_ret = apply_rotary_pos_emb_bshd(input_ts, freqs_cis_4d, multi_latent_attention)
 
     input_ts_musa = input_ts.clone().musa()
     freqs_musa = freqs_cis.clone().musa()
@@ -122,6 +145,7 @@ def test_rope_non_contiguous_scenarios(batch_size, dim, max_seq_len, dtype, scen
         "freq_cis": freqs_musa,
         "rotary_interleaved": False,
         "batch_first": False,
+        "multi_latent_attention": multi_latent_attention,
     }
     module = torch.nn.RoPE(**rope_args).musa()
     musa_ret = module(input_ts_musa).cpu()
@@ -136,6 +160,7 @@ def test_rope_non_contiguous_scenarios(batch_size, dim, max_seq_len, dtype, scen
         "freq_cis": freqs_musa,
         "rotary_interleaved": False,
         "batch_first": False,
+        "multi_latent_attention": multi_latent_attention,
     }
 
     musa_ret = F.rope(**rope_args).cpu()
@@ -152,7 +177,8 @@ def test_rope_non_contiguous_scenarios(batch_size, dim, max_seq_len, dtype, scen
 @pytest.mark.parametrize("dim", [512, 2048, 4096])
 @pytest.mark.parametrize("max_seq_len", [2048, 4096])
 @pytest.mark.parametrize("dtype", [torch.float32])
-def test_rope_backward(batch_size, dim, max_seq_len, dtype):
+@pytest.mark.parametrize("multi_latent_attention", multi_latent_attention)
+def test_rope_backward(batch_size, dim, max_seq_len, dtype, multi_latent_attention):
 
     head_num = 32
     dim = dim // head_num
@@ -166,6 +192,7 @@ def test_rope_backward(batch_size, dim, max_seq_len, dtype):
         "freq_cis": freqs_cis,
         "rotary_interleaved": False,
         "batch_first": False,
+        "multi_latent_attention": multi_latent_attention,
     }
 
     if dtype == torch.float16:

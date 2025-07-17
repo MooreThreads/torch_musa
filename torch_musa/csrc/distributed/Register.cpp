@@ -90,19 +90,26 @@ void registerProcessGroupMCCL(PyObject* mod) {
           module,
           "ProcessGroupMCCL",
           backend); // Define a python ProcessGroupMCCL
-  processGroupMCCL.def( // Define the Init function of python ProcessGroupMCCL
-      py::init([](c10d::PrefixStore& store,
-                  int rank,
-                  int world_size,
-                  // std::chrono::duration<float>& timeout) {
-                  std::chrono::milliseconds timeout) {
-        auto options = c10d::ProcessGroupMCCL::Options::create();
-        options->timeout = timeout;
-        return c10::make_intrusive<::c10d::ProcessGroupMCCL>(
-            store.getUnderlyingStore(), rank, world_size, options);
-      }),
-      py::arg("store"),
-      py::arg("rank"),
-      py::arg("world_size"),
-      py::arg("timeout"));
+  processGroupMCCL
+      .def( // Define the Init function of python ProcessGroupMCCL
+          py::init([](const c10::intrusive_ptr<::c10d::Store>& store,
+                      int rank,
+                      int world_size,
+                      // std::chrono::duration<float>& timeout) {
+                      std::chrono::milliseconds timeout) {
+            auto options = c10d::ProcessGroupMCCL::Options::create();
+            options->timeout = timeout;
+            return c10::make_intrusive<::c10d::ProcessGroupMCCL>(
+                store, rank, world_size, options);
+          }),
+          py::arg("store"),
+          py::arg("rank"),
+          py::arg("world_size"),
+          py::arg("timeout"))
+      .def(
+          "abort",
+          [](const c10::intrusive_ptr<::c10d::ProcessGroupMCCL>& self) {
+            return self->abort();
+          },
+          py::call_guard<py::gil_scoped_release>());
 }

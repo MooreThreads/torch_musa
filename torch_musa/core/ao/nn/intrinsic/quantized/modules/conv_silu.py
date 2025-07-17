@@ -1,6 +1,6 @@
 """intrinsic quantized conv_silu modules"""
 
-# pylint: disable=C0103,W0622
+# pylint: disable=C0103,W0622,W0221,C0116
 
 import torch
 import torch.ao.nn.intrinsic.qat

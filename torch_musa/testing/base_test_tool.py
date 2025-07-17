@@ -10,6 +10,7 @@ import copy
 import inspect
 from typing import Callable
 from functools import wraps
+import platform
 
 import time
 import types
@@ -27,6 +28,7 @@ try:
 except ImportError:
     _HAS_TRITON = False
 
+
 MUSA_AVAILABLE = torch_musa.is_available()
 MULTIGPU_AVAILABLE = MUSA_AVAILABLE and torch_musa.device_count() >= 2
 
@@ -36,6 +38,19 @@ skip_if_musa_unavailable = pytest.mark.skipif(
 skip_if_not_multiple_musa_device = pytest.mark.skipif(
     not MULTIGPU_AVAILABLE, reason="Expect multiple MUSA devices"
 )
+
+
+def skip_on_cpu_arch(arch: str = "aarch64", reason: str = None):
+    """skip on the specified cpu architecture"""
+    if isinstance(arch, str):
+        arches = [arch]
+
+    current_arch = platform.processor().lower()
+    skip = any(arch.lower() == current_arch for arch in arches)
+
+    reason = reason or f"Limited support on {current_arch}"
+
+    return pytest.mark.skipif(skip, reason=reason)
 
 
 def test_on_nonzero_card_if_multiple_musa_device(musa_device: int):
@@ -799,7 +814,7 @@ class OpTest:
         # with torch.set_grad_enabled(train):
         cpu_res = self._call_func(inputs, "cpu", train, test_out, refer=True, **kwargs)
         mtgpu_res = self._call_func(inputs, "musa", train, test_out, **kwargs)
-        self.compare_res(cpu_res, mtgpu_res)
+        self.compare_res(mtgpu_res, cpu_res)
 
     def get_addr_list_of_args(self, args):
         addr_list = []

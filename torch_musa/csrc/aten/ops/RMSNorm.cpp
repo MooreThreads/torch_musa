@@ -142,7 +142,7 @@ std::tuple<Tensor&, Tensor&> FusedRMSNormForwardOut(
       "Device of input tensor of RMSNorm must be MUSA, but now is ",
       input_device);
   TORCH_CHECK(
-      !input.defined() || input.sizes().equals(output.sizes()),
+      !output.defined() || input.sizes().equals(output.sizes()),
       "Expected input to be of same shape as output, but got ",
       "input of shape = ",
       input.sizes(),

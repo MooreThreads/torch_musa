@@ -15,17 +15,21 @@ class TestCtxManager:
         if device == "musa":
             import torch_musa  # pylint: disable=import-outside-toplevel
 
-            autocast = torch.musa.amp.autocast(enabled=True)
-        else:
-            autocast = torch.cpu.amp.autocast(enabled=True)
+        def func_musa(x, y):
+            # with autocast:
+            with torch.musa.amp.autocast(enabled=True):
+                out = torch.matmul(x, y)
+            return out
 
-        def func(x, y):
-            with autocast:
+        def func_cpu(x, y):
+            with torch.amp.autocast("cpu", enabled=True):
                 out = torch.matmul(x, y)
             return out
 
         x = torch.randn((8, 8), device=device, requires_grad=True)
         y = torch.randn((8, 8), device=device, requires_grad=True)
+
+        func = func_musa if device == "musa" else func_cpu
 
         ref = func(x, y)
         cnts_backend = torch._dynamo.testing.CompileCounter()

@@ -3,6 +3,7 @@
 Before falling back to aten, we should remove the operator
 from the decomposition table.
 """
+
 from typing import Sequence, Union
 import torch
 from torch._ops import OpOverload, OpOverloadPacket
@@ -18,6 +19,7 @@ _decomps_to_exclude = [
 ]
 
 # Remove unwanted decompositions before fallback to aten
+
 
 def _make_torch_musa_aten_fallback():
     # lazily import inductor modules
@@ -35,7 +37,8 @@ def _make_torch_musa_aten_fallback():
 def _fallback_to_aten(
     aten_ops: Sequence[Union[OpOverload, OpOverloadPacket]],
     layout_constraint=None,
-    warn=True):
+    warn=True,
+):
     # pylint: disable=import-outside-toplevel
     from torch._inductor.lowering import make_fallback
 

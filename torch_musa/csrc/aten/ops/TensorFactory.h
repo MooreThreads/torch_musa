@@ -44,6 +44,12 @@ Tensor empty_strided_musa(
     IntArrayRef strides,
     const TensorOptions& options);
 
+TensorBase empty_strided_musa(
+    IntArrayRef size,
+    IntArrayRef stride,
+    ScalarType dtype,
+    std::optional<Device> device_opt);
+
 } // namespace detail
 
 namespace musa {
@@ -72,6 +78,8 @@ Tensor ContiguousRef(
     const Tensor& self,
     Tensor& result,
     MemoryFormat memory_format = MemoryFormat::Contiguous);
+
+void resize_bytes_musa(StorageImpl* storage, size_t size_bytes);
 
 } // namespace musa
 } // namespace at

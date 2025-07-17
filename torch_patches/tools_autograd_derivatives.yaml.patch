@@ -1,25 +1,26 @@
 diff --git a/tools/autograd/derivatives.yaml b/tools/autograd/derivatives.yaml
-index 2c6886a..61c9ca0 100644
+index 9f7ea3f..c3f5904 100644
 --- a/tools/autograd/derivatives.yaml
 +++ b/tools/autograd/derivatives.yaml
-@@ -2787,6 +2787,28 @@
-   output_differentiability: [True, False, False, False, False, False]
-   query, key, value, bias: _efficient_attention_backward_symint(grad, query, key, value, bias, output, cu_seqlens_q, cu_seqlens_k, max_seqlen_batch_q, max_seqlen_batch_k, logsumexp, dropout_p, philox_seed, philox_offset, custom_mask_type, bias.requires_grad(), scale)
- 
-+- name: _scaled_dot_product_attention_math_musa(Tensor query, Tensor key, Tensor value, Tensor? attn_mask=None, float dropout_p=0.0, bool is_causal=False, *, float? scale=None) -> (Tensor output, Tensor attn_weights, Tensor bwd_reserve)
-+  output_differentiability: [True, False, False]
-+  query, key, value: _scaled_dot_product_attention_math_musa_backward(grad, query, key, value, output, attn_weights, bwd_reserve, scale)
-+
-+- name: _scaled_dot_product_attention_flash_musa(Tensor query, Tensor key, Tensor value, Tensor? attn_mask=None, float dropout_p=0.0, bool is_causal=False, *, float? scale=None) -> (Tensor output, Tensor logsumexp, Tensor dropout_mask)
-+  output_differentiability: [True, False, False]
-+  query, key, value: _scaled_dot_product_attention_flash_musa_backward(grad, query, key, value, output, logsumexp, dropout_mask, is_causal, attn_mask, scale)
+@@ -3204,3 +3204,25 @@
+ - name: _foreach_norm.Scalar(Tensor[] self, Scalar ord=2, ScalarType? dtype=None) -> Tensor[]
+   self: norm_backward(grads[i], self[i], ord, result[i])
+   result: norm_jvp(self_p, self_t, ord, result[i])
 +
 +- name: _fused_rmsnorm_forward(Tensor input, int[] normalized_shape, float eps, Tensor? weight=None) -> (Tensor output, Tensor invvar)
 +  output_differentiability: [True, False]
 +  input, weight: _fused_rmsnorm_backward(grad, invvar, input, normalized_shape, eps, weight)
 +
-+- name: _fused_rope_forward(Tensor input, Tensor freq_cis, bool rotary_interleaved, bool batch_first) -> Tensor
-+  input: _fused_rope_backward(grad, freq_cis, rotary_interleaved, batch_first)
++- name: _scaled_dot_product_attention_math_musa(Tensor query, Tensor key, Tensor value, Tensor? attn_mask=None, float dropout_p=0.0, bool is_causal=False, *, float? scale=None) -> (Tensor output, Tensor attn_weights, Tensor dropout_mask)
++  output_differentiability: [True, False, False]
++  query, key, value: _scaled_dot_product_attention_math_musa_backward(grad, query, key, value, output, attn_weights, dropout_mask, scale)
++
++- name: _scaled_dot_product_attention_flash_musa(Tensor query, Tensor key, Tensor value, Tensor? attn_mask=None, float dropout_p=0.0, bool is_causal=False, *, float? scale=None) -> (Tensor output, Tensor logsumexp, Tensor dropout_mask)
++  output_differentiability: [True, False, False]
++  query, key, value: _scaled_dot_product_attention_flash_musa_backward(grad, query, key, value, output, logsumexp, dropout_mask, is_causal, attn_mask, scale)
++
++- name: _fused_rope_forward(Tensor input, Tensor freq_cis, bool rotary_interleaved, bool batch_first, bool multi_latent_attention=False) -> Tensor
++  input: _fused_rope_backward(grad, freq_cis, rotary_interleaved, batch_first, multi_latent_attention)
 +
 +- name: _fused_swiglu_forward(Tensor input) -> Tensor
 +  output_differentiability: [True]
@@ -27,7 +28,3 @@ index 2c6886a..61c9ca0 100644
 +
 +- name: _fused_cross_entropy_loss_2d_forward(Tensor self, Tensor target, Tensor? weight=None, int reduction=Mean, int ignore_index=-100, float label_smoothing=0.0) -> Tensor
 +  self: _fused_cross_entropy_loss_2d_backward(grad, self, target, weight, reduction, ignore_index, label_smoothing)
-+
- # fft
- - name: _fft_r2c(Tensor self, int[] dim, int normalization, bool onesided) -> Tensor
-   self: fft_r2c_backward(grad, dim, normalization, onesided, self.sym_size(dim.back()))

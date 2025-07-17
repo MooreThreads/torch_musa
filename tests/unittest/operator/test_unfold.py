@@ -32,3 +32,7 @@ def test_unfold(input_data, kernel_size, dilation, padding, stride, dtype):
     data = input_data.to(dtype)
     test = testing.OpTest(func=torch.nn.Unfold, input_args=input_args)
     test.check_result({"input": data})
+
+    data = torch.rand_like(input_data).to(dtype)
+    data.requires_grad = True
+    test.check_result({"input": data}, train=True)

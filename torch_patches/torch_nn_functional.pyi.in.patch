@@ -1,8 +1,8 @@
 diff --git a/torch/nn/functional.pyi.in b/torch/nn/functional.pyi.in
-index 4955aef..26a4d10 100644
+index ed68b8e..be33e43 100644
 --- a/torch/nn/functional.pyi.in
 +++ b/torch/nn/functional.pyi.in
-@@ -586,6 +586,13 @@ def multi_head_attention_forward(
+@@ -602,6 +602,14 @@ def multi_head_attention_forward(
      average_attn_weights: bool = True,
      is_causal: bool = False,
  ) -> Tuple[Tensor, Optional[Tensor]]: ...
@@ -11,6 +11,7 @@ index 4955aef..26a4d10 100644
 +    freq_cis: Tensor,
 +    rotary_interleaved: bool,
 +    batch_first: bool,
++    multi_latent_attention: bool,
 +) -> Tensor: ...
 +def swish_glu(input: Tensor) -> Tensor: ...
  

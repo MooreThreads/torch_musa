@@ -1,3 +1,4 @@
+# pylint: disable=unused-argument
 """FusedLAMB Optimizer"""
 
 import torch

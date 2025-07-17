@@ -6,7 +6,13 @@ Op Unittest for Attention OP.
 import pytest
 import torch
 
-from test_attention_base import RawSDP, gen_input_data, MASK_TYPES, sdp_func
+from test_attention_base import (
+    RawSDP,
+    gen_input_data,
+    MASK_TYPES,
+    sdp_func,
+    explicit_scales,
+)
 
 from torch_musa import testing
 from torch_musa.testing.base_test_tool import DefaultComparator
@@ -79,7 +85,8 @@ def function(input_data, func, train=False):
 @pytest.mark.parametrize("func", [sdp_func])
 @pytest.mark.parametrize("mask_type", MASK_TYPES)
 @pytest.mark.parametrize("is_causal", [True, False])
-def test_flash_sdp_backward(case, dtype, func, mask_type, is_causal):
+@pytest.mark.parametrize("explicit_scale", explicit_scales)
+def test_flash_sdp_backward(case, dtype, func, mask_type, is_causal, explicit_scale):
     """
     Flash SDP test.
     """
@@ -89,7 +96,26 @@ def test_flash_sdp_backward(case, dtype, func, mask_type, is_causal):
         pytest.skip(
             reason="Flash backward doesn't support case with head dim not equal to 64 or 128"
         )
-    with torch.backends.cuda.sdp_kernel(enable_math=False, enable_flash=True):
-        input_data = gen_input_data(case, mask_type, dtype)
-        input_data["is_causal"] = is_causal
+    with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.FLASH_ATTENTION):
+        input_data = gen_input_data(case, mask_type, dtype, is_causal, explicit_scale)
         function(input_data, func, True)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.skipif(
+    testing.get_musa_arch() != 31,
+    reason="SKIP this test if in GPU with arch not equal 31.",
+)
+@pytest.mark.parametrize("dtype", [torch.bfloat16])
+@pytest.mark.parametrize("func", [sdp_func])
+def test_flash_sdp_qk192_v128_backward(dtype, func):
+    """
+    Flash SDP but qk_headdim != v_headdim test.
+    """
+    item = {}
+    item["query"] = torch.randn([2, 32, 512, 192], dtype=dtype)
+    item["key"] = torch.randn([2, 32, 512, 192], dtype=dtype)
+    item["value"] = torch.randn([2, 32, 512, 128], dtype=dtype)
+    item["is_causal"] = True
+    with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.FLASH_ATTENTION):
+        function(item, func, True)

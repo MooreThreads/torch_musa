@@ -1,11 +1,11 @@
 diff --git a/torch/_inductor/codecache.py b/torch/_inductor/codecache.py
-index f26b8fa..5e1b8b9 100644
+index 59cc47a..a729c19 100644
 --- a/torch/_inductor/codecache.py
 +++ b/torch/_inductor/codecache.py
-@@ -156,7 +156,7 @@ class CacheBase:
-                     "allow_tf32": torch.backends.cuda.matmul.allow_tf32,
-                 },
-             }
+@@ -216,7 +216,7 @@ class CacheBase:
+             else:
+                 system["device"]["name"] = device_properties.gcnArchName
+                 system["version"]["hip"] = torch.version.hip
 -        except (AssertionError, RuntimeError):
 +        except (AssertionError, RuntimeError, AttributeError):
              # If cuda is not installed, none of the above config is relevant.

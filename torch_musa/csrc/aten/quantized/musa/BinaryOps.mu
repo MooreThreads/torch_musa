@@ -38,39 +38,52 @@ __global__ void QuantizedAddKernel(
     int64_t qmin,
     int64_t qmax,
     int64_t total_num) {
-  int idx = (threadIdx.x + blockIdx.x * blockDim.x) * 4;
-  if (idx < total_num) {
-    double dequant_b0 = (qa[idx] + qb[idx] * qb_dequant_scale) * requant_scale;
-    int64_t qvalue0 = std::min<int64_t>(
-        std::max<int64_t>(
-            static_cast<int64_t>(std::nearbyint(dequant_b0 + bias_optional)),
-            qmin),
-        qmax);
+  const int64_t tid = blockIdx.x * blockDim.x + threadIdx.x;
+  const int64_t idx = tid * 4;
+  if (idx + 3 < total_num) {
+    using VecType = typename std::
+        conditional<std::is_same<DataType, int8_t>::value, char4, uchar4>::type;
+    const VecType qa_val = reinterpret_cast<const VecType*>(qa)[tid];
+    const VecType qb_val = reinterpret_cast<const VecType*>(qb)[tid];
+
+    int4 qval;
+    double dequant_b0 =
+        (qa_val.x + qb_val.x * qb_dequant_scale) * requant_scale;
     double dequant_b1 =
-        (qa[idx + 1] + qb[idx + 1] * qb_dequant_scale) * requant_scale;
-    int64_t qvalue1 = std::min<int64_t>(
-        std::max<int64_t>(
-            static_cast<int64_t>(std::nearbyint(dequant_b1 + bias_optional)),
-            qmin),
-        qmax);
+        (qa_val.y + qb_val.y * qb_dequant_scale) * requant_scale;
     double dequant_b2 =
-        (qa[idx + 2] + qb[idx + 2] * qb_dequant_scale) * requant_scale;
-    int64_t qvalue2 = std::min<int64_t>(
-        std::max<int64_t>(
-            static_cast<int64_t>(std::nearbyint(dequant_b2 + bias_optional)),
-            qmin),
-        qmax);
+        (qa_val.z + qb_val.z * qb_dequant_scale) * requant_scale;
     double dequant_b3 =
-        (qa[idx + 3] + qb[idx + 3] * qb_dequant_scale) * requant_scale;
-    int64_t qvalue3 = std::min<int64_t>(
-        std::max<int64_t>(
-            static_cast<int64_t>(std::nearbyint(dequant_b3 + bias_optional)),
-            qmin),
-        qmax);
-    out[idx] = qvalue0;
-    out[idx + 1] = qvalue1;
-    out[idx + 2] = qvalue2;
-    out[idx + 3] = qvalue3;
+        (qa_val.w + qb_val.w * qb_dequant_scale) * requant_scale;
+
+    qval.x = __float2int_rn(dequant_b0 + bias_optional);
+    qval.y = __float2int_rn(dequant_b1 + bias_optional);
+    qval.z = __float2int_rn(dequant_b2 + bias_optional);
+    qval.w = __float2int_rn(dequant_b3 + bias_optional);
+
+    qval.x = std::min<int32_t>(std::max<int32_t>(qval.x, qmin), qmax);
+    qval.y = std::min<int32_t>(std::max<int32_t>(qval.y, qmin), qmax);
+    qval.z = std::min<int32_t>(std::max<int32_t>(qval.z, qmin), qmax);
+    qval.w = std::min<int32_t>(std::max<int32_t>(qval.w, qmin), qmax);
+
+    out[idx] = static_cast<DataType>(qval.x);
+    out[idx + 1] = static_cast<DataType>(qval.y);
+    out[idx + 2] = static_cast<DataType>(qval.z);
+    out[idx + 3] = static_cast<DataType>(qval.w);
+  } else {
+#pragma unroll
+    for (int i = 0; i < 4; ++i) {
+      const int64_t elem_idx = idx + i;
+      if (elem_idx >= total_num)
+        return;
+
+      double dequant =
+          (qa[elem_idx] + qb[elem_idx] * qb_dequant_scale) * requant_scale;
+      int32_t qval = std::min<int32_t>(
+          std::max<int32_t>(__float2int_rn(dequant + bias_optional), qmin),
+          qmax);
+      out[elem_idx] = static_cast<DataType>(qval);
+    }
   }
 }
 

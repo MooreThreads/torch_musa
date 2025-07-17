@@ -196,5 +196,44 @@ std::tuple<at::Tensor&, at::Tensor&> AMinMaxOut(
   return std::forward_as_tuple(min, max);
 }
 
+std::tuple<at::Tensor, at::Tensor> AMinMax(
+    const at::Tensor& self,
+    c10::optional<int64_t> dim_opt,
+    bool keepdim) {
+  DimVector shape;
+  if (dim_opt.has_value()) {
+    auto dim = maybe_wrap_dim(dim_opt.value(), self.ndimension());
+    at::native::zero_numel_check_dims(self, dim, "aminmax");
+    shape = at::meta::get_reduction_shape(self, dim, keepdim);
+  } else {
+    TORCH_CHECK(
+        self.numel() > 0,
+        "aminmax(): cannot compute aminmax over an empty dimension as the "
+        "operation has no identity.");
+    if (keepdim) {
+      shape = DimVector(self.ndimension(), 1);
+    }
+  }
+  at::Tensor min = at::empty(shape, self.options());
+  at::Tensor max = at::empty(shape, self.options());
+  return AMinMaxOut(self, dim_opt, keepdim, min, max);
+}
+
+std::tuple<at::Tensor, at::Tensor> AMinMaxAll(const at::Tensor& self) {
+  TORCH_WARN_ONCE(
+      "_aminmax is deprecated as of PyTorch 1.11 and will be removed in a future release. Use aminmax instead."
+      " This warning will only appear once per process.");
+  return at::aminmax(self);
+}
+
+std::tuple<Tensor, Tensor> AMinMax_(
+    const Tensor& self,
+    int64_t dim,
+    bool keepdim) {
+  TORCH_WARN_ONCE(
+      "_aminmax is deprecated as of PyTorch 1.11 and will be removed in a future release. Use aminmax instead."
+      " This warning will only appear once per process.");
+  return at::aminmax(self, dim, keepdim);
+}
 } // namespace musa
 } // namespace at

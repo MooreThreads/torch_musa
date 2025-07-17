@@ -112,7 +112,10 @@ def test_set_dtype():
 
     for dtype, type_str in dtype_dict.items():
         x = torch.randn(3, 3)
-        y = x.type(dtype)
+        y_1 = x.type(type_str)
+        y_2 = x.type(dtype)
         assert x.device == torch.device("cpu")
-        assert y.type() == type_str
-        assert y.device == torch.device("musa:0")
+        assert y_1.type() == type_str
+        assert y_2.type() == type_str
+        assert y_1.device == torch.device("musa:0")
+        assert y_2.device == torch.device("musa:0")

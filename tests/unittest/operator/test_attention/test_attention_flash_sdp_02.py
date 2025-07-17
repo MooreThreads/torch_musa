@@ -6,7 +6,13 @@ Op Unittest for Attention OP.
 import pytest
 import torch
 
-from test_attention_base import RawSDP, gen_input_data, MASK_TYPES, sdp_func
+from test_attention_base import (
+    RawSDP,
+    gen_input_data,
+    MASK_TYPES,
+    sdp_func,
+    explicit_scales,
+)
 
 from torch_musa import testing
 from torch_musa.testing.base_test_tool import DefaultComparator
@@ -79,12 +85,12 @@ def function(input_data, func, train=False):
 @pytest.mark.parametrize("func", [sdp_func])
 @pytest.mark.parametrize("mask_type", MASK_TYPES)
 @pytest.mark.parametrize("is_causal", [True, False])
-def test_flash_sdp(case, dtype, func, mask_type, is_causal):
+@pytest.mark.parametrize("explicit_scale", explicit_scales)
+def test_flash_sdp(case, dtype, func, mask_type, is_causal, explicit_scale):
     # mask shape flash supports: [B, L], [L,L], [B,1,L,L], [B*Hn, L, L]
     """
     Flash SDP test.
     """
-    with torch.backends.cuda.sdp_kernel(enable_math=False, enable_flash=True):
-        input_data = gen_input_data(case, mask_type, dtype)
-        input_data["is_causal"] = is_causal
+    with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.FLASH_ATTENTION):
+        input_data = gen_input_data(case, mask_type, dtype, is_causal, explicit_scale)
         function(input_data, func)

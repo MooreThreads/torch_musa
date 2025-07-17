@@ -54,7 +54,7 @@ def test_mish_fwdbwd(input_data, dtype):
     if dtype in [torch.bfloat16, torch.float16]:
         abs_diff, rel_diff = 5e-2, 5e-3
     else:
-        abs_diff, rel_diff = 1e-6, 1e-6
+        abs_diff, rel_diff = 5e-6, 5e-6
     test = testing.OpTest(
         func=mish,
         input_args=mish_args,

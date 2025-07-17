@@ -1,8 +1,8 @@
 diff --git a/cmake/Dependencies.cmake b/cmake/Dependencies.cmake
-index acc95842b63..0bd60c2933c 100644
+index e78305e..cf221a1 100644
 --- a/cmake/Dependencies.cmake
 +++ b/cmake/Dependencies.cmake
-@@ -1851,6 +1851,17 @@ if(USE_KINETO)
+@@ -1581,6 +1581,15 @@ if(USE_KINETO)
    message(STATUS "  KINETO_BUILD_TESTS = ${KINETO_BUILD_TESTS}")
    message(STATUS "  KINETO_LIBRARY_TYPE = ${KINETO_LIBRARY_TYPE}")
  
@@ -11,11 +11,9 @@ index acc95842b63..0bd60c2933c 100644
 +  else()
 +    set(MUSA_HOME "/usr/local/musa")
 +  endif()
-+
 +  set(MUSA_SOURCE_DIR ${MUSA_HOME} CACHE STRING "" FORCE)
 +  set(MUPTI_INCLUDE_DIR ${MUSA_HOME}/include CACHE STRING "" FORCE)
 +  set(MUSA_mupti_LIBRARY ${MUSA_HOME}/lib CACHE STRING "" FORCE)
-+  set(LIBKINETO_NOMUPTI OFF CACHE STRING "" FORCE)
 +
    if(NOT LIBKINETO_NOCUPTI)
      set(CUDA_SOURCE_DIR "${CUDA_TOOLKIT_ROOT_DIR}" CACHE STRING "")

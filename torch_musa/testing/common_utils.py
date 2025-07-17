@@ -1,11 +1,18 @@
 """Implement common function for test"""
 
+from typing import Callable, Any
+import os
+import sys
+import tempfile
+import subprocess
 import contextlib
 import functools
 from statistics import mean
-
+import cloudpickle
 import pytest
+
 import torch
+import torch.multiprocessing as mp
 from torch.testing._comparison import (
     BooleanPair,
     NonePair,
@@ -113,6 +120,7 @@ class ImagePair(TensorLikePair):
         self.mae = mae
 
     def compare(self) -> None:
+        """ImagePair comparison main logic"""
         actual, expected = self.actual, self.expected
 
         self._compare_attributes(actual, expected)
@@ -177,3 +185,70 @@ def assert_close(
 
 
 assert_equal = functools.partial(assert_close, rtol=0, atol=0)
+
+
+_SUBPROCESS_INVOKE_CMD = [sys.executable, "-m", "torch_musa.testing.common_utils"]
+
+
+# pylint: disable=W1510,C0301,C0103
+def spawn_isolated_test(fn: Callable[..., Any]) -> Callable[..., None]:
+    """Decorator to spawn subprocess for each test function.
+
+    Basically, the tests share the same process after we run pytest tests/,
+    which makes it impossible for some special tests' running environment
+    to be isolated from others except that we launch each test one by one like
+    pytest tests/test_01.py pytest tests/test_02/py ...
+
+    An alternative solution is to create a new process for each test case.
+
+    Usage:
+    @spawn_isolated_test
+    @pytest.mark.parametrize("param", [param0, param1])
+    def test_foo(param):
+        ...
+    """
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs) -> None:
+        ori_start_method = mp.get_start_method()
+        with contextlib.suppress(RuntimeError):
+            mp.set_start_method("spawn")
+
+        env = os.environ.copy()
+
+        with tempfile.TemporaryDirectory() as tempdir:
+            output_filepath = os.path.join(tempdir, "subprocess_output.tmp")
+
+            # refered from https://github.com/vllm-project/vllm/blob/v0.9.0/vllm/model_executor/models/registry.py#L575
+            # `cloudpickle` allows pickling complex functions directly
+            input_bytes = cloudpickle.dumps((fn, args, kwargs, output_filepath))
+
+            # set cwd to /tmp to find module under python site-packages,
+            # rather than torch_musa project directory.
+            returned = subprocess.run(
+                _SUBPROCESS_INVOKE_CMD,
+                input=input_bytes,
+                capture_output=True,
+                env=env,
+                cwd="/tmp",
+            )
+            try:
+                with contextlib.suppress(RuntimeError):
+                    mp.set_start_method(ori_start_method)
+                returned.check_returncode()
+                # print(returned.stdout)
+            except Exception as e:
+                raise RuntimeError(
+                    f"[Error raised in subprocess]:\n" f"{returned.stderr.decode()}"
+                ) from e
+
+    return wrapper
+
+
+def _run_subprocess():
+    func, args, kwargs, _ = cloudpickle.loads(sys.stdin.buffer.read())
+    func(*args, **kwargs)
+
+
+if __name__ == "__main__":
+    _run_subprocess()

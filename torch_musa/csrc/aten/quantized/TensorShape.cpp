@@ -199,8 +199,7 @@ Tensor CatQuantizedMusaImpl(
     return qx0;
   }
 
-  TORCH_CHECK(
-      0 == zero_point,
+  TORCH_CHECK(0 == zero_point,
       "torch_musa only supports symmetric quantization",
       "which requires zero_point == 0, got: ",
       zero_point);
@@ -270,7 +269,8 @@ Tensor CatQuantizedMusaImpl(
   }
 
   CHECK_MUDNN_STATUS(
-      out_.SetQuantizationInfo(scale_m), "Set quantization info");
+      out_.SetQuantizationInfo(scale_m),
+      "Set quantization info");
 
   // run mudnn op
   at::musa::muHandle& h = at::GetMudnnHandle();

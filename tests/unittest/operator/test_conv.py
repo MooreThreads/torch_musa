@@ -32,6 +32,18 @@ def get_conv_test_tolerance(direction="FWD"):
     raise ValueError(f"illegal direction: {direction}")
 
 
+def get_test_method(dtype: torch.dtype = torch.float32) -> str:
+    method = "check_result"
+    if dtype == torch.float16:
+        method = "check_musafp16_vs_cpufp32"
+    elif dtype == torch.bfloat16:
+        # It's user's responsibility to ensure the precision under fp16, i.e.,
+        # torch.float16 dtype should also be tested
+        method = "check_musabf16_vs_musafp16"
+
+    return method
+
+
 conv1d_fwd_configs = [
     # sizes, in_c, out_c, k, s, p, d, g
     [(2, 3, 16), 3, 3, 3, 1, 1, 1, 3],  # depthwise
@@ -170,10 +182,7 @@ def test_conv1d_fwd(common_config, bias, dtype):
         input_args={"input": img},
         comparators=testing.DefaultComparator(abs_diff=abs_diff, rel_diff=rel_diff),
     )
-    if dtype == torch.float16:
-        test.check_musafp16_vs_cpufp32()
-    else:
-        test.check_result()
+    getattr(test, get_test_method(dtype))()
     test.check_grad_fn()
 
 
@@ -209,11 +218,7 @@ def test_conv1d_bwd(common_config, dtype):
         common_config[6],  # groups
         [True, True, False],
     ]
-
-    if dtype == torch.float16:
-        test.check_musafp16_vs_cpufp32(inputs=inputs)
-    else:
-        test.check_result(inputs=inputs)
+    getattr(test, get_test_method(dtype))(inputs=inputs)
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -242,10 +247,7 @@ def test_conv2d_fwd(common_config, bias, channels_last, dtype):
         comparators=testing.DefaultComparator(abs_diff=abs_diff, rel_diff=rel_diff),
         test_dtype=dtype,
     )
-    if dtype == torch.float16:
-        test.check_musafp16_vs_cpufp32()
-    else:
-        test.check_result()
+    getattr(test, get_test_method(dtype))()
     test.check_grad_fn()
 
 
@@ -282,11 +284,7 @@ def test_conv2d_bwd(common_config, dtype, channels_last):
         common_config[6],
         [False, True, False],
     ]
-
-    if dtype == torch.float16:
-        test.check_musafp16_vs_cpufp32(inputs=inputs)
-    else:
-        test.check_result(inputs=inputs)
+    getattr(test, get_test_method(dtype))(inputs=inputs)
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -314,10 +312,7 @@ def test_conv3d_fwd(common_config, bias, channels_last, dtype):
         test_dtype=dtype,
     )
     img = torch.randn(common_config[0]).type(dtype)
-    if dtype == torch.float16:
-        test.check_musafp16_vs_cpufp32({"input": img})
-    else:
-        test.check_result({"input": img})
+    getattr(test, get_test_method(dtype))({"input": img})
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -353,11 +348,7 @@ def test_conv3d_bwd(common_config, dtype, channels_last):
         common_config[6],
         [False, True, False],
     ]
-
-    if dtype == torch.float16:
-        test.check_musafp16_vs_cpufp32(inputs=inputs)
-    else:
-        test.check_result(inputs=inputs)
+    getattr(test, get_test_method(dtype))(inputs=inputs)
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -384,10 +375,7 @@ def test_conv_transpose1d_fwd(common_config, bias, dtype):
         test_dtype=dtype,
     )
     img = torch.randn(common_config[0]).type(dtype)
-    if dtype == torch.float16:
-        test.check_musafp16_vs_cpufp32({"input": img})
-    else:
-        test.check_result({"input": img})
+    getattr(test, get_test_method(dtype))({"input": img})
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -420,11 +408,7 @@ def test_conv_transpose1d_bwd(common_config, dtype):
         common_config[7],
         [True, True, False],
     ]
-
-    if dtype == torch.float16:
-        test.check_musafp16_vs_cpufp32(inputs=inputs)
-    else:
-        test.check_result(inputs=inputs)
+    getattr(test, get_test_method(dtype))(inputs=inputs)
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -453,10 +437,7 @@ def test_conv_transpose2d_fwd(common_config, bias, channels_last, dtype):
         test_dtype=dtype,
     )
     img = torch.randn(common_config[0]).type(dtype)
-    if dtype == torch.float16:
-        test.check_musafp16_vs_cpufp32({"input": img})
-    else:
-        test.check_result({"input": img})
+    getattr(test, get_test_method(dtype))({"input": img})
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -492,11 +473,7 @@ def test_conv_transpose2d_bwd(common_config, dtype, channels_last):
         common_config[7],
         [True, True, False],
     ]
-
-    if dtype == torch.float16:
-        test.check_musafp16_vs_cpufp32(inputs=inputs)
-    else:
-        test.check_result(inputs=inputs)
+    getattr(test, get_test_method(dtype))(inputs=inputs)
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -526,10 +503,7 @@ def test_conv_transpose3d_fwd(common_config, bias, channels_last, dtype):
         test_dtype=dtype,
     )
     img = torch.randn(common_config[0]).type(dtype)
-    if dtype == torch.float16:
-        test.check_musafp16_vs_cpufp32({"input": img})
-    else:
-        test.check_result({"input": img})
+    getattr(test, get_test_method(dtype))({"input": img})
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -564,8 +538,4 @@ def test_conv_transpose3d_bwd(common_config, dtype, channels_last):
         common_config[7],
         [True, True, False],
     ]
-
-    if dtype == torch.float16:
-        test.check_musafp16_vs_cpufp32(inputs=inputs)
-    else:
-        test.check_result(inputs=inputs)
+    getattr(test, get_test_method(dtype))(inputs=inputs)

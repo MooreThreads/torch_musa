@@ -311,8 +311,7 @@ def test_dist_comm(dtype):
     _test_demo(_test_function, 2, dtype)
 
 
-# @pytest.mark.skipif(testing.get_musa_arch() < 31, reason="MCCL not released for ph1")
-@pytest.mark.skipif(True, reason="MCCL close fp8 comm ut")
+@pytest.mark.skipif(testing.get_musa_arch() < 31, reason="MCCL not released for ph1")
 @testing.skip_if_not_multiple_musa_device
 @pytest.mark.parametrize(
     "dtype",

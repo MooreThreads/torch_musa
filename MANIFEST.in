@@ -10,9 +10,12 @@ include torch_musa/csrc/aten/ops/musa/*.h
 include torch_musa/csrc/aten/utils/*.h
 include torch_musa/share/cmake/*.cmake
 include torch_musa/share/cmake/modules/*.cmake
+include torch_musa/share/cmake/TorchMusa/*.cmake
 include torch_musa/setup_helpers/*.py
 include torch_musa/utils/*.py
 include torch_musa/utils/mapping/*.json
 include torch_musa/lib/*.so*
+include torch_musa/_inductor/codegen/aoti_runtime/*.cpp
 recursive-include torch_musa/share/generated_cuda_compatible *.*
 recursive-include torch_musa/share/torch_musa_codegen *.*
+recursive-include torch_musa/csrc/inductor *.*

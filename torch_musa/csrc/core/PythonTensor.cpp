@@ -1,19 +1,16 @@
-#include "PythonTensor.h"
+#include "torch_musa/csrc/core/PythonTensor.h"
 
 #include <torch/csrc/autograd/generated/VariableType.h>
 #include <torch/csrc/autograd/utils/wrap_outputs.h>
-#include <torch/csrc/tensor/python_tensor.h>
+#include <torch/csrc/utils/device_lazy_init.h>
 #include <torch/csrc/utils/pycfunction_helpers.h>
+#include <torch/csrc/utils/python_arg_parser.h>
 #include <torch/csrc/utils/tensor_new.h>
-#include <torch/csrc/utils/tensor_types.h>
 
-#include "Device.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-#include "torch_musa/csrc/utils/Logging.h"
-#include "torch_musa/csrc/utils/musa_lazy_init.h"
+#include "torch_musa/csrc/core/MUSAFunctions.h"
 
-namespace torch {
-namespace musa {
+namespace torch::musa {
 
 struct PyTensorType {
   PyTypeObject py_type;
@@ -41,31 +38,6 @@ static_assert(
     std::is_standard_layout<PyTensorType>::value,
     "PyTensorType must be standard layout");
 
-static TypeError UnavailableType(const PyTensorType& type) {
-  return TypeError(
-      "type %s not available. Torch not compiled with musa enabled.",
-      type.name);
-}
-
-std::vector<at::DeprecatedTypeProperties*> AllTypesForBackends(
-    at::ArrayRef<at::Backend> backends) {
-  std::vector<at::DeprecatedTypeProperties*> res;
-  res.reserve(backends.size());
-  for (auto p : backends) {
-    for (int64_t s = 0; s < static_cast<int64_t>(at::ScalarType::NumOptions);
-         s++) {
-      auto& type = at::getDeprecatedTypeProperties(
-          static_cast<at::Backend>(p), static_cast<at::ScalarType>(s));
-      res.emplace_back(&type);
-    }
-  }
-  return res;
-}
-
-std::vector<at::DeprecatedTypeProperties*> AllMusaTypes() {
-  return AllTypesForBackends({at::musa::kMUSABackend});
-}
-
 static const char* GetBackendName(at::Backend backend) {
   switch (backend) {
     case at::Backend::CPU:
@@ -77,82 +49,17 @@ static const char* GetBackendName(at::Backend backend) {
   }
 }
 
-std::string replace_torch_musa(std::string str) {
-  if (str.find("torch_musa") != std::string::npos) {
-    // replace torch_musa with torch.musa
-    std::replace(str.begin(), str.begin() + 6, '_', '.');
-  }
-  return str;
-}
-
-std::string OptionsToString(const at::TensorOptions options) {
-  std::ostringstream ss;
-  ss << GetBackendName(options.backend()) << "."
-     << toString(at::typeMetaToScalarType(options.dtype())) << "Tensor";
-  return replace_torch_musa(ss.str());
-}
-
-std::string TypeToString(const at::DeprecatedTypeProperties& type) {
-  std::ostringstream ss;
-  ss << GetBackendName(type.backend()) << "." << toString(type.scalarType())
-     << "Tensor";
-  return ss.str();
-}
-
-at::TensorOptions OptionsFromString(const std::string& str) {
-  static std::once_flag cpu_once;
-  static std::once_flag musa_once;
-  static std::unordered_map<std::string, at::DeprecatedTypeProperties*> cpu_map;
-  static std::unordered_map<std::string, at::DeprecatedTypeProperties*>
-      musa_map;
-
-  const std::unordered_map<std::string, at::DeprecatedTypeProperties*>*
-      type_map = nullptr;
-
-  if (str == "torch.Tensor") {
-    auto backend =
-        dispatchKeyToBackend(torch::tensors::get_default_dispatch_key());
-    auto scalar_type = torch::tensors::get_default_scalar_type();
-    return at::getDeprecatedTypeProperties(backend, scalar_type).options();
-  }
-
-  if ((str.find("torch_musa.") != std::string::npos) ||
-      (str.find("torch.musa.") != std::string::npos)) {
-    // torch.musa. or torch_musa. is prefix of str
-    std::call_once(musa_once, []() {
-      for (auto type : AllMusaTypes()) {
-        std::string origStr = TypeToString(*type);
-        musa_map.emplace(origStr, type);
-        // hence torch.musa.xxx key is also included
-        musa_map.emplace(replace_torch_musa(origStr), type);
-      }
-    });
-    type_map = &musa_map;
-  } else {
-    std::call_once(cpu_once, []() {
-      for (auto type : torch::autograd::VariableType::allCPUTypes()) {
-        cpu_map.emplace(torch::utils::type_to_string(*type), type);
-      }
-    });
-    type_map = &cpu_map;
-  }
-
-  auto it = type_map->find(str);
-  if (it == type_map->end()) {
-    throw torch::ValueError("invalid type: '%s'", str.c_str());
-  }
-  return it->second->options();
-}
-
 static PyObject* TensorNew(
     PyTypeObject* type,
     PyObject* args,
     PyObject* kwargs) {
   HANDLE_TH_ERRORS
   auto& tensor_type = *((PyTensorType*)type);
-  if (tensor_type.is_musa && c10::musa::device_count() == 0) {
-    throw UnavailableType(tensor_type);
-  }
+  TORCH_CHECK_TYPE(
+      !tensor_type.is_musa || c10::musa::is_musa_available(),
+      "type ",
+      tensor_type.name,
+      " not available. Torch not compiled with MUSA enabled.")
   if (tensor_type.is_musa) {
     TORCH_WARN_ONCE(
         "The torch.musa.*DtypeTensor constructors are no longer recommended. "
@@ -220,59 +127,7 @@ static at::Tensor dispatch_to(
     bool copy,
     c10::optional<c10::MemoryFormat> optional_memory_format) {
   pybind11::gil_scoped_release no_gil;
-  // TODO: Make this call the TensorOptions version, maybe?
   return self.to(device, dtype, non_blocking, copy, optional_memory_format);
-}
-
-PyObject* GetTensorType(PyObject* self, PyObject* args, PyObject* kwargs) {
-  HANDLE_TH_ERRORS
-  static torch::PythonArgParser parser(
-      {"type(Tensor temp, PyObject* dtype=None, bool non_blocking=False, *, MemoryFormat? memory_format=None)",
-       "type(Tensor temp, PyObject* dtype=None, bool async=False, *, MemoryFormat? memory_format=None)|deprecated"});
-
-  torch::ParsedArgs<4> parsed_args;
-  auto r = parser.parse(self, args, kwargs, parsed_args);
-  auto self_ = r.tensor(0);
-  if (r.has_torch_function()) {
-    return torch::handle_torch_function(
-        r, args, kwargs, THPVariableClass, "torch.Tensor");
-  }
-
-  if (r.isNone(1)) {
-    return THPUtils_packString(OptionsToString(self_.options()));
-  }
-  auto obj = r.pyobject(1);
-  auto opt_memory_format = r.memoryformatOptional(3);
-  std::string type_name;
-  bool is_dtype = false;
-  if (PyType_Check(obj)) {
-    if (obj == THPVariableClass) {
-      type_name = "torch.Tensor";
-    } else {
-      type_name = ((PyTypeObject*)obj)->tp_name;
-    }
-  } else if (THPUtils_checkString(obj)) {
-    type_name = THPUtils_unpackString(obj);
-  } else if (THPDtype_Check(obj)) {
-    is_dtype = true;
-  } else {
-    throw torch::TypeError("dtype must be a type, str, or dtype object");
-  }
-  c10::ScalarType scalar_type;
-  c10::Device device = self_.device();
-  if (is_dtype) {
-    scalar_type = r.scalartype(1);
-  } else {
-    at::TensorOptions options = OptionsFromString(type_name);
-    scalar_type = at::typeMetaToScalarType(options.dtype());
-    auto device_type = options.device().type();
-    if (device_type != device.type()) {
-      device = at::Device(device_type);
-    }
-  }
-  return THPVariable_Wrap(dispatch_to(
-      self_, device, scalar_type, r.toBool(2), false, opt_memory_format));
-  END_HANDLE_TH_ERRORS
 }
 
 static PyObject* TensorIsMusa(
@@ -331,13 +186,12 @@ static PyObject* THPVariable_musa(
   TORCH_CHECK(
       device.type() == at::DeviceType::PrivateUse1,
       "Invalid device, must be musa device");
-  torch::utils::musa_lazy_init();
+  torch::utils::device_lazy_init(at::musa::kMUSA);
   return THPVariable_Wrap(
       dispatch_to(self_, device, r.toBool(2), false, opt_memory_format));
   END_HANDLE_TH_ERRORS
 }
 
-// NOLINTNEXTLINE(cppcoreguidelines-avoid-c-arrays,cppcoreguidelines-avoid-non-const-global-variables,modernize-avoid-c-arrays)
 static struct PyMethodDef metaclass_methods[] = {
     {"__instancecheck__", TensorInstancecheck, METH_O, nullptr},
     {nullptr}};
@@ -358,8 +212,7 @@ static void PyInitializeMetaclass(PyTypeObject& metaclass) {
   metaclass.tp_getset = metaclass_properties;
   metaclass.tp_base = &PyType_Type;
   if (PyType_Ready(&metaclass) < 0) {
-    logging::LOG_FATAL << "Metaclass initialization failed!"
-                       << "\n";
+    throw python_error();
   }
 }
 
@@ -383,13 +236,10 @@ static void PyInitializeTensorType(
   type.tp_name = name;
   type.tp_new = TensorNew;
   if (PyType_Ready(&type) < 0) {
-    logging::LOG_FATAL << "Tensor type initialization failed!"
-                       << "\n";
+    throw python_error();
   }
-
   if (PyDict_Merge(type.tp_dict, tp_dict, 0) < 0) {
-    logging::LOG_FATAL << "Merge tensor type failed!"
-                       << "\n";
+    throw python_error();
   }
 }
 
@@ -406,8 +256,9 @@ static void SetType(
   // This field is lazily initialized from backend and scalar_type
   type_obj.backend = static_cast<int>(backend);
   type_obj.scalar_type = static_cast<int>(scalarType);
-  type_obj.layout = torch::getTHPLayout(layout_from_backend(backend));
-  type_obj.dtype = torch::getTHPDtype(scalarType);
+  type_obj.layout =
+      (THPLayout*)Py_NewRef(torch::getTHPLayout(layout_from_backend(backend)));
+  type_obj.dtype = (THPDtype*)Py_NewRef(torch::getTHPDtype(scalarType));
   type_obj.is_musa = (backend == at::musa::kMUSABackend);
 }
 
@@ -420,14 +271,12 @@ static void SetName(PyTensorType& type_obj, const std::string& name) {
 static THPObjectPtr GetTensorDict() {
   auto torch = THPObjectPtr(PyImport_ImportModule("torch"));
   if (!torch) {
-    logging::LOG_FATAL << "torch module not found!"
-                       << "\n";
+    throw python_error();
   }
 
   auto tensor_class = THPObjectPtr(PyObject_GetAttrString(torch, "Tensor"));
   if (!tensor_class) {
-    logging::LOG_FATAL << "Get tensor attribute from torch failed!"
-                       << "\n";
+    throw python_error();
   }
 
   auto tensor_type = (PyTypeObject*)tensor_class.get();
@@ -435,17 +284,14 @@ static THPObjectPtr GetTensorDict() {
 
   auto res = THPObjectPtr(PyDict_New());
   if (!res) {
-    logging::LOG_FATAL << "Get tensor class failed!"
-                       << "\n";
+    throw python_error();
   }
 
   if (PyDict_Merge(res.get(), tensor_type->tp_dict, 0) < 0) {
-    logging::LOG_FATAL << "Merge tensor dict failed!"
-                       << "\n";
+    throw python_error();
   }
   if (PyDict_Merge(res.get(), tensor_type->tp_base->tp_dict, 0) < 0) {
-    logging::LOG_FATAL << "Merge tensor base dict failed!"
-                       << "\n";
+    throw python_error();
   }
 
   return res;
@@ -487,15 +333,13 @@ static void InitializeMusaAtenTypes(std::vector<PyTensorType>& tensor_types) {
 static void PyBindTensorTypes(const std::vector<PyTensorType>& tensor_types) {
   auto torch_module = THPObjectPtr(PyImport_ImportModule("torch_musa"));
   if (!torch_module) {
-    logging::LOG_FATAL << "torch_musa module not found!"
-                       << "\n";
+    throw python_error();
   }
 
   auto tensor_classes = THPObjectPtr(
       PyObject_GetAttrString(torch_module.get(), "_tensor_classes"));
   if (!tensor_classes) {
-    logging::LOG_FATAL << "_tensor_classes not found in torch_musa!"
-                       << "\n";
+    throw python_error();
   }
 
   for (auto& tensor_type : tensor_types) {
@@ -506,19 +350,16 @@ static void PyBindTensorTypes(const std::vector<PyTensorType>& tensor_types) {
 
     auto module_obj = THPObjectPtr(PyImport_ImportModule(module_name.c_str()));
     if (!module_obj) {
-      logging::LOG_FATAL << module_name << " not found!"
-                         << "\n";
+      throw python_error();
     }
 
     PyObject* type_obj = (PyObject*)&tensor_type;
     Py_INCREF(type_obj);
     if (PyModule_AddObject(module_obj.get(), type_name.c_str(), type_obj) < 0) {
-      logging::LOG_FATAL << name << " tenosr type not found!"
-                         << "\n";
+      throw python_error();
     }
     if (PySet_Add(tensor_classes.get(), type_obj) < 0) {
-      logging::LOG_FATAL << " Add type object to classes failed!"
-                         << "\n";
+      throw python_error();
     }
   }
 }
@@ -526,10 +367,6 @@ static void PyBindTensorTypes(const std::vector<PyTensorType>& tensor_types) {
 static PyMethodDef MusaTensorMethods[] = {
     {"_musa",
      castPyCFunctionWithKeywords(THPVariable_musa),
-     METH_VARARGS | METH_KEYWORDS,
-     nullptr},
-    {"_type",
-     castPyCFunctionWithKeywords(GetTensorType),
      METH_VARARGS | METH_KEYWORDS,
      nullptr},
     {"_is_musa",
@@ -570,73 +407,4 @@ void InitializePythonBindings() {
   PyBindTensorTypes(tensor_types);
 }
 
-static c10::Backend default_backend = c10::Backend::CPU;
-
-static THPObjectPtr GetStorageObj(c10::Backend backend, c10::ScalarType dtype) {
-  auto module_name = GetBackendName(backend);
-  auto module_obj = THPObjectPtr(PyImport_ImportModule(module_name));
-  if (!module_obj)
-    throw python_error();
-
-  auto storage_name = std::string(toString(dtype)) + "Storage";
-  THPObjectPtr storage(
-      PyObject_GetAttrString(module_obj.get(), storage_name.c_str()));
-  if (!storage.get()) {
-    throw TypeError("couldn't find storage object %s", storage_name.c_str());
-  }
-  return storage;
-}
-
-void SetDefaultStorageType(c10::Backend backend, c10::ScalarType dtype) {
-  THPObjectPtr storage = GetStorageObj(backend, dtype);
-
-  auto torch_module = THPObjectPtr(PyImport_ImportModule("torch"));
-  if (!torch_module)
-    throw python_error();
-
-  if (PyObject_SetAttrString(torch_module.get(), "Storage", storage) != 0) {
-    throw python_error();
-  }
-}
-
-void SetDefaultTensorType(
-    c10::optional<c10::Backend> backend,
-    c10::optional<c10::ScalarType> dtype) {
-  if (backend.has_value()) {
-    TORCH_CHECK_TYPE(
-        *backend != c10::Backend::Undefined,
-        "default type cannot be undefined");
-    TORCH_CHECK_TYPE(
-        !c10::isSparse(*backend),
-        "only dense types are supported as the default type");
-  }
-  if (dtype.has_value()) {
-    TORCH_CHECK_TYPE(
-        at::isFloatingType(*dtype),
-        "only floating-point types are supported as the default type");
-  }
-
-  // Try setting default storage in python first as it's the only operation that
-  // can fail
-  SetDefaultStorageType(
-      backend.value_or(default_backend),
-      dtype.value_or(at::get_default_dtype_as_scalartype()));
-
-  if (dtype.has_value()) {
-    at::set_default_dtype(c10::scalarTypeToTypeMeta(*dtype));
-  }
-  if (backend.has_value()) {
-    default_backend = *backend;
-  }
-}
-
-void PySetDefaultDtype(PyObject* obj) {
-  TORCH_CHECK_TYPE(
-      THPDtype_Check(obj),
-      "invalid dtype object: only floating-point types are supported as the default type");
-  auto scalar_type = ((THPDtype*)obj)->scalar_type;
-  SetDefaultTensorType(/*backend=*/c10::nullopt, scalar_type);
-}
-
-} // namespace musa
-} // namespace torch
+} // namespace torch::musa

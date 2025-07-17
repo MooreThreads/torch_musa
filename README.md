@@ -89,16 +89,16 @@ bash build.sh -m -w
 otherwise, an compilation error would be thrown.
 
 ### torchvision and torchaudio
-PyTorch v2.2.0 needs torchvision==0.17.2 and torchaudio==2.2.2, and for torch_musa users we
-shouldn't have them installed like `pip install torchvision==0.17.2`, instead, we should build
+PyTorch v2.5.0 needs torchvision==0.20.0 and torchaudio==2.5.0, and for torch_musa users we
+shouldn't have them installed like `pip install torchvision==0.20.0`, instead, we should build
 them from source:
 ```shell
 # build & install torchvision
-git clone https://github.com/pytorch/vision.git -b v0.17.2 --depth 1
+git clone https://github.com/pytorch/vision.git -b v0.20.0 --depth 1
 cd visoin && python setup.py install
 
 # build & install torchaudio
-git clone https://github.com/pytorch/audio.git -b v2.2.2 --depth 1
+git clone https://github.com/pytorch/audio.git -b v2.5.0 --depth 1
 cd audio && python setup.py install
 ```
 

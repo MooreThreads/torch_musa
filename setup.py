@@ -173,7 +173,7 @@ def configure_extension_build():
     cpp_extension = CppExtension(
         name="torch_musa._MUSAC",
         sources=torch_musa_sources,
-        libraries=["musa_python"],
+        libraries=["musa_python", "musa_kernels"],
         include_dirs=[],
         extra_compile_args=extra_compile_args,
         library_dirs=[os.path.join(BASE_DIR, "torch_musa/lib")],
@@ -182,7 +182,7 @@ def configure_extension_build():
     ext_extension = CppExtension(
         name="torch_musa._ext",
         sources=glob.glob("torch_musa/csrc/extension/C_frontend.cpp"),
-        libraries=["_ext_musa_kernels", "musa_python"],
+        libraries=["_ext_musa_kernels", "musa_python", "musa_kernels"],
         include_dirs=[],
         extra_compile_args={"cxx": ["-std=c++17"]},
         library_dirs=[os.path.join(BASE_DIR, "torch_musa/lib")],
@@ -235,7 +235,10 @@ if __name__ == "__main__":
         install_requires=install_requires,
         extras_require={},
         entry_points={
-            "console_scripts": ["musa-converter = torch_musa.utils.musa_converter:main"]
+            "console_scripts": [
+                "musa-converter = torch_musa.utils.musa_converter:main"
+            ],
+            "torch.backends": ["torch_musa = torch_musa:_autoload"],
         },
         cmdclass={"build_ext": Build, "clean": Clean, "install": Install},
     )

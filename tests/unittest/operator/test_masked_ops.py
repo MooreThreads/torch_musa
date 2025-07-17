@@ -57,3 +57,36 @@ def test_masked_scatter(input_data, dtype):
     golden = data.masked_scatter(mask, source)
     result = mu_data.masked_scatter(mu_mask, mu_source)
     torch.allclose(golden, result.cpu())
+
+
+input_shapes = [
+    (10,),  # 1D
+    (16, 32),  # 2D
+    (32, 8, 16),  # 3D
+]
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("shape", input_shapes)
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("dim", [0, -1])  # 测试首尾维度
+@pytest.mark.parametrize("mask_type", [2])
+def test_masked_softmax(shape, dtype, dim, mask_type):
+    if testing.get_musa_arch() < 22 and dtype == torch.bfloat16:
+        pytest.skip("bf16 not supported")
+    input_data = torch.randn(shape, dtype=dtype)
+    mask = generate_mask(shape)
+    abs_diff = 1e-6
+    if dtype in (torch.float16, torch.bfloat16):
+        abs_diff = 5e-3
+    test = testing.OpTest(
+        func=torch._masked_softmax,
+        input_args={
+            "input": input_data,
+            "mask": mask,
+            "dim": dim,
+            "mask_type": mask_type,
+        },
+        comparators=testing.DefaultComparator(abs_diff=abs_diff),
+    )
+    test.check_result()

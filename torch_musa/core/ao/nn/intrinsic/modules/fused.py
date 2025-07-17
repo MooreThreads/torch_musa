@@ -1,6 +1,6 @@
 """intrinsic fused modules"""
 
-# pylint: disable=W0221
+# pylint: disable=W0221, C0103
 
 from torch.ao.nn.intrinsic import _FusedModule
 from torch.nn import Conv2d, BatchNorm2d, SiLU

@@ -33,6 +33,7 @@ Tensor& RopeOut(
     const Tensor& freqs_cis,
     bool rotary_interleaved,
     bool batch_first,
+    bool multi_latent_attention,
     Tensor& output) {
 #if defined(MUDNN_VERSION) && MUDNN_VERSION >= 2800
 
@@ -69,6 +70,17 @@ Tensor& RopeOut(
   CHECK_MUDNN_STATUS(
       rope.SetRotaryInterleaved(rotary_interleaved), "SetRotaryInterleaved");
   CHECK_MUDNN_STATUS(rope.SetBatchFirst(batch_first), "SetBatchFirst");
+#if defined(MUDNN_VERSION) && MUDNN_VERSION >= 2900
+  CHECK_MUDNN_STATUS(
+      rope.SetMultiLatentAttention(multi_latent_attention),
+      "SetMultiLatentAttention");
+#else
+  if (multi_latent_attention) {
+    TORCH_CHECK(
+        false,
+        "RoPE.multi_latent_attention is set to True, which is only supported on mudnn version >= 2.9");
+  }
+#endif
   CHECK_MUDNN_STATUS(
       rope.Run(handler, mt_output, mt_input, mt_freqs_cis), "Run");
 
@@ -85,9 +97,16 @@ Tensor Rope(
     const Tensor& input,
     const Tensor& freqs_cis,
     bool rotary_interleaved,
-    bool batch_first) {
+    bool batch_first,
+    bool multi_latent_attention) {
   Tensor output = at::empty_like(input, at::MemoryFormat::Contiguous);
-  return RopeOut(input, freqs_cis, rotary_interleaved, batch_first, output);
+  return RopeOut(
+      input,
+      freqs_cis,
+      rotary_interleaved,
+      batch_first,
+      multi_latent_attention,
+      output);
 }
 
 Tensor& RopeBackwardOut(
@@ -95,6 +114,7 @@ Tensor& RopeBackwardOut(
     const Tensor& freqs_cis,
     bool rotary_interleaved,
     bool batch_first,
+    bool multi_latent_attention,
     Tensor& grad_input) {
 #if defined(MUDNN_VERSION) && MUDNN_VERSION >= 2800
   c10::musa::MUSAGuard device_guard(grad_output.device());
@@ -125,6 +145,17 @@ Tensor& RopeBackwardOut(
   CHECK_MUDNN_STATUS(
       rope.SetRotaryInterleaved(rotary_interleaved), "SetRotaryInterleaved");
   CHECK_MUDNN_STATUS(rope.SetBatchFirst(batch_first), "SetBatchFirst");
+#if defined(MUDNN_VERSION) && MUDNN_VERSION >= 2900
+  CHECK_MUDNN_STATUS(
+      rope.SetMultiLatentAttention(multi_latent_attention),
+      "SetMultiLatentAttention");
+#else
+  if (multi_latent_attention) {
+    TORCH_CHECK(
+        false,
+        "RoPE.multi_latent_attention is set to True, which is only supported on mudnn version >= 2.9");
+  }
+#endif
   CHECK_MUDNN_STATUS(
       rope.RunBwd(handler, mt_grad_input, mt_grad_output, mt_freqs_cis),
       "RunBwd");
@@ -141,10 +172,16 @@ Tensor RopeBackward(
     const Tensor& grad_output,
     const Tensor& freqs_cis,
     bool rotary_interleaved,
-    bool batch_first) {
+    bool batch_first,
+    bool multi_latent_attention) {
   Tensor grad_input = at::empty_like(grad_output, at::MemoryFormat::Contiguous);
   return RopeBackwardOut(
-      grad_output, freqs_cis, rotary_interleaved, batch_first, grad_input);
+      grad_output,
+      freqs_cis,
+      rotary_interleaved,
+      batch_first,
+      multi_latent_attention,
+      grad_input);
 }
 
 } // namespace musa

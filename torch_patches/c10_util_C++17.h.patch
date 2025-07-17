@@ -2,17 +2,16 @@ diff --git a/c10/util/C++17.h b/c10/util/C++17.h
 index 0597544ffba..397f756baff 100644
 --- a/c10/util/C++17.h
 +++ b/c10/util/C++17.h
-@@ -140,8 +140,11 @@ using void_t = typename make_void<Ts...>::type;
- #define CUDA_HOST_DEVICE C10_HOST_DEVICE
- #endif
+@@ -54,7 +54,11 @@ make_unique_base(Args&&... args) {
+   return std::unique_ptr<Base>(new Child(std::forward<Args>(args)...));
+ }
  
--#if defined(__cpp_lib_apply) && !defined(__CUDA_ARCH__)
--
-+//#if defined(__cpp_lib_apply) && !defined(__CUDA_ARCH__)
+-#if defined(__cpp_lib_apply) && !defined(__CUDA_ARCH__) && !defined(__HIP__)
++// #if defined(__cpp_lib_apply) && !defined(__CUDA_ARCH__) && !defined(__HIP__)
 +// As porting we should define __MUSA_ARCH__ = sth like cuda.
 +// However, when torch-musa is available, MUSA must be enabled,
 +// thus, just set to 0 and use fully implementation of apply.
 +#if 0
+ 
  template <class F, class Tuple>
- CUDA_HOST_DEVICE inline constexpr decltype(auto) apply(F&& f, Tuple&& t) {
-   return std::apply(std::forward<F>(f), std::forward<Tuple>(t));
+ C10_HOST_DEVICE inline constexpr decltype(auto) apply(F&& f, Tuple&& t) {

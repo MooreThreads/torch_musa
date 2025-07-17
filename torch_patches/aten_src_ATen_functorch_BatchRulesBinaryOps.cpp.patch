@@ -1,0 +1,16 @@
+diff --git a/aten/src/ATen/functorch/BatchRulesBinaryOps.cpp b/aten/src/ATen/functorch/BatchRulesBinaryOps.cpp
+index 0580be7..e5443db 100644
+--- a/aten/src/ATen/functorch/BatchRulesBinaryOps.cpp
++++ b/aten/src/ATen/functorch/BatchRulesBinaryOps.cpp
+@@ -294,7 +294,10 @@ static std::tuple<Tensor, std::optional<int64_t>> log_sigmoid_backward_batch_rul
+   // We do this because on cuda, buffer is a dummy tensor always of logical rank 1 and
+   // it becomes an issue when the rest of the inputs are scalar
+   int64_t out_logical_rank = std::max(rankWithoutBatchDim(grad, grad_bdim), rankWithoutBatchDim(self, self_bdim));
+-  if (!grad.is_cuda() && !self.is_cuda() && !buffer.is_cuda()) {
++  auto is_cuda_or_musa = [](const Tensor& t) -> bool {
++    return t.is_cuda() || t.is_privateuseone();
++  };
++  if (!is_cuda_or_musa(grad) && !is_cuda_or_musa(self) && !is_cuda_or_musa(buffer)) {
+     out_logical_rank = std::max(out_logical_rank, rankWithoutBatchDim(buffer, buffer_bdim));
+   }
+   Tensor out_grad = maybePadToLogicalRank(moveBatchDimToFront(grad, grad_bdim), grad_bdim, out_logical_rank);
