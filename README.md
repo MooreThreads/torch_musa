@@ -27,8 +27,8 @@
 ## Installation
 ### Prerequisites
 Before installing torch_musa, here are some software packages that need to be installed on your machine first:
-- MUSA-Driver, Container-Toolkit, MTML, sGPU, [download link](https://mcconline.mthreads.com/software)
-- MUSA SDK including musa_toolkit, muDNN and MCCL, [download link](https://developer.mthreads.com/sdk/download/musa?equipment=&os=&driverVersion=&version=)
+- ~~Container-Toolkit, MTML, sGPU, [download link](https://mcconline.mthreads.com/software)~~ (Packages updating)
+- MUSA SDK, including MUSA Driver, musa_toolkit, muDNN and MCCL(*S4000 only*), [download link](https://developer.mthreads.com/sdk/download/musa?equipment=&os=&driverVersion=&version=)
 - MathLibs, including [muThrust](https://github.com/MooreThreads/muThrust) and [muAlg](https://github.com/MooreThreads/muAlg)
 
 ### Docker Image
@@ -79,6 +79,10 @@ Some important building parameters are as follows:
 For example, if one has built PyTorch and only needs to build torch_musa with wheel, run:
 ```bash
 bash build.sh -m -w
+```
+For **S80/S3000** users, since the MCCL library is not provided for such architectures, please add `USE_MCCL=0` whilst building torch_musa:
+```bash
+USE_MCCL=0 bash build.sh -c
 ```
 
 ### torchvision and torchaudio
