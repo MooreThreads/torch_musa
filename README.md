@@ -27,9 +27,9 @@
 ## Installation
 ### Prerequisites
 Before installing torch_musa, here are some software packages that need to be installed on your machine first:
-- ~~Container-Toolkit, MTML, sGPU, [download link](https://mcconline.mthreads.com/software)~~ (Packages updating)
-- MUSA SDK, including MUSA Driver, musa_toolkit, muDNN and MCCL(*S4000 only*), [download link](https://developer.mthreads.com/sdk/download/musa?equipment=&os=&driverVersion=&version=)
-- MathLibs, including [muThrust](https://github.com/MooreThreads/muThrust) and [muAlg](https://github.com/MooreThreads/muAlg)
+- *(For Docker users)* **KUAE Cloud Native Toolkits**, including Container-Toolkit, MTML, sGPU, [download link](https://developer.mthreads.com/sdk/download/CloudNative?equipment=&os=&driverVersion=&version=)
+- **MUSA-SDK**, including MUSA Driver, musa_toolkit, muDNN and MCCL(*S4000 only*), [download link](https://developer.mthreads.com/sdk/download/musa?equipment=&os=&driverVersion=&version=)
+- **Other libraries**, including [muThrust](https://github.com/MooreThreads/muThrust) and [muAlg](https://github.com/MooreThreads/muAlg)
 
 ### Docker Image
 We provide several released docker images and they can be easily found [HERE](https://mcconline.mthreads.com/repo).
