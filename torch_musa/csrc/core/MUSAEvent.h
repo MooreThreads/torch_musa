@@ -32,7 +32,7 @@ struct MUSAEvent {
       : device_index_(device_index) {
     const MUSAGuard guard(device_index_);
 
-    TORCH_MUSA_CHECK(musaIpcOpenEventHandle(&event_, *handle));
+    C10_MUSA_CHECK(musaIpcOpenEventHandle(&event_, *handle));
     is_created_ = true;
   }
 
@@ -48,7 +48,7 @@ struct MUSAEvent {
           (*interp)->trace_gpu_event_deletion(
               kMUSA, reinterpret_cast<uintptr_t>(event_));
         }
-        TORCH_MUSA_CHECK(musaEventDestroy(event_));
+        C10_MUSA_CHECK(musaEventDestroy(event_));
       }
     } catch (...) {
     }
@@ -137,7 +137,7 @@ struct MUSAEvent {
         stream.device_index(),
         ".");
     const MUSAGuard guard(device_index_);
-    TORCH_MUSA_CHECK(musaEventRecord(event_, stream));
+    C10_MUSA_CHECK(musaEventRecord(event_, stream));
     const c10::impl::PyInterpreter* interp = c10::impl::GPUTrace::get_trace();
     if (C10_UNLIKELY(interp)) {
       (*interp)->trace_gpu_event_record(
@@ -153,7 +153,7 @@ struct MUSAEvent {
   void block(const MUSAStream& stream) {
     if (is_created_) {
       const MUSAGuard guard(stream.device_index());
-      TORCH_MUSA_CHECK(musaStreamWaitEvent(stream, event_, 0));
+      C10_MUSA_CHECK(musaStreamWaitEvent(stream, event_, 0));
       const c10::impl::PyInterpreter* interp = c10::impl::GPUTrace::get_trace();
       if (C10_UNLIKELY(interp)) {
         (*interp)->trace_gpu_event_wait(
@@ -172,7 +172,7 @@ struct MUSAEvent {
     float time_ms = 0;
     const MUSAGuard guard(device_index_);
     // raise musaErrorNotReady if either event is recorded but not yet completed
-    TORCH_MUSA_CHECK(musaEventElapsedTime(&time_ms, event_, other.event_));
+    C10_MUSA_CHECK(musaEventElapsedTime(&time_ms, event_, other.event_));
     return time_ms;
   }
 
@@ -184,7 +184,7 @@ struct MUSAEvent {
         (*interp)->trace_gpu_event_synchronization(
             kMUSA, reinterpret_cast<uintptr_t>(event_));
       }
-      TORCH_MUSA_CHECK(musaEventSynchronize(event_));
+      C10_MUSA_CHECK(musaEventSynchronize(event_));
     }
   }
 
@@ -196,7 +196,7 @@ struct MUSAEvent {
       createEvent(getCurrentMUSAStream().device_index());
     }
     const MUSAGuard guard(device_index_);
-    TORCH_MUSA_CHECK(musaIpcGetEventHandle(handle, event_));
+    C10_MUSA_CHECK(musaIpcGetEventHandle(handle, event_));
   }
 
  private:
@@ -209,7 +209,7 @@ struct MUSAEvent {
   void createEvent(DeviceIndex device_index) {
     device_index_ = device_index;
     const MUSAGuard guard(device_index_);
-    TORCH_MUSA_CHECK(musaEventCreateWithFlags(&event_, flags_));
+    C10_MUSA_CHECK(musaEventCreateWithFlags(&event_, flags_));
     const c10::impl::PyInterpreter* interp = c10::impl::GPUTrace::get_trace();
     if (C10_UNLIKELY(interp)) {
       (*interp)->trace_gpu_event_creation(

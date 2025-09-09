@@ -12,6 +12,7 @@ from test_attention_base import (
     MASK_TYPES,
     sdp_func,
     explicit_scales,
+    make_causal_4d_mask_float,
 )
 
 from torch_musa import testing
@@ -100,3 +101,27 @@ def test_flash_sdp_backward(case, dtype, func, mask_type, is_causal, explicit_sc
     with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.FLASH_ATTENTION):
         input_data = gen_input_data(case, mask_type, dtype, is_causal, explicit_scale)
         function(input_data, func, True)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.skipif(
+    testing.get_musa_arch() < 22, reason="SKIP this test if in GPU with arch below 22."
+)
+@pytest.mark.parametrize("dtype", [torch.bfloat16])
+@pytest.mark.parametrize("func", [sdp_func])
+@pytest.mark.parametrize("is_causal", [True, False])
+def test_flash_sdp_dim3_backward(dtype, func, is_causal):
+    """
+    Flash SDP with dim3 q/k/v.
+    """
+    item = {}
+    item["query"] = torch.randn([4, 512, 64], dtype=dtype)
+    item["key"] = torch.randn([4, 512, 64], dtype=dtype)
+    item["value"] = torch.randn([4, 512, 64], dtype=dtype)
+    if is_causal:
+        item["is_causal"] = True
+    else:
+        dim3_mask = make_causal_4d_mask_float((1, 512), dtype)
+        item["attn_mask"] = torch.squeeze(dim3_mask, 0)
+    with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.FLASH_ATTENTION):
+        function(item, func, True)

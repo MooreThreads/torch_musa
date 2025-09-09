@@ -205,7 +205,6 @@ def make_dir_if_not_exist(dir):
 
 
 class RandomSample:
-
     def __init__(self, configs):
         self.saved_cum_distribution = {}
         self.configs = configs
@@ -373,7 +372,7 @@ def init_dict_to_serializable(init_dict):
     result = copy.deepcopy(init_dict)
     for key, val in init_dict.items():
         # torch.dtype
-        if isinstance(val, torch.dtype):
+        if isinstance(val, torch.dtype) or isinstance(val, torch.memory_format):
             result[key] = str(val)
         elif isinstance(val, np.ndarray):
             result[key] = np.around(val, decimals=3).tolist()

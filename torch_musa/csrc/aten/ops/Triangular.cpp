@@ -33,6 +33,9 @@ void TriCallOut(
     TriangularMode mode,
     const int64_t diag,
     const std::string name) {
+  if (out.numel() == 0) {
+    return;
+  }
   // TODO(@mt-ai/mt-sw-compute): this kernel now doesn't support dim>=8
   TORCH_CHECK(
       input.device().type() == kMUSA,

@@ -12,6 +12,9 @@ namespace musa {
 
 namespace {
 
+// TODO(@ai-infra, @sw-compute): muBlas & muSolver are using the same handle
+// pool, so we can use the same pool for both.
+
 std::map<std::tuple<void*, void*>, at::DataPtr>&
 mublas_handle_stream_to_workspace() {
   static auto& instance = *new std::map<std::tuple<void*, void*>, at::DataPtr>;
@@ -33,25 +36,24 @@ using MuBlasPoolType = DeviceThreadHandlePool<
 
 } // namespace
 
-// TODO(MTAI): mublas_set_workspace() is not supported by MUBLAS now!
-// void clearMublasWorkspaces() {
-//   mublas_handle_stream_to_workspace().clear();
-// }
+void clearMublasWorkspaces() {
+  mublas_handle_stream_to_workspace().clear();
+}
 
-// size_t parseChosenWorkspaceSize() {
-//   const size_t default_size = 4096 * 8 * 1024;
-//   return default_size;
-// }
+size_t parseChosenWorkspaceSize() {
+  const size_t default_size = 4096 * 8 * 1024;
+  return default_size;
+}
 
-// size_t getChosenWorkspaceSize() {
-//   size_t pool_size = parseChosenWorkspaceSize();
-//   return pool_size;
-// }
+size_t getChosenWorkspaceSize() {
+  size_t pool_size = parseChosenWorkspaceSize();
+  return pool_size;
+}
 
-// at::DataPtr getNewWorkspace() {
-//   return c10::musa::MUSACachingAllocator::get()->allocate(
-//       getChosenWorkspaceSize());
-// }
+at::DataPtr getNewWorkspace() {
+  return c10::musa::MUSACachingAllocator::get()->allocate(
+      getChosenWorkspaceSize());
+}
 // TODO(MTAI):END
 
 mublasHandle_t getCurrentMUSABlasHandle() {
@@ -70,11 +72,12 @@ mublasHandle_t getCurrentMUSABlasHandle() {
   auto handle = myPoolWindow->reserve(device);
   auto stream = c10::musa::getCurrentMUSAStream();
   TORCH_MUSABLAS_CHECK(mublasSetStream(handle, stream));
-  musaStream_t key_stream = stream;
-  auto key = std::make_tuple(
-      static_cast<void*>(handle), static_cast<void*>(key_stream));
 
   // TODO(MTAI): mublas_set_workspace() is not supported by MUBLAS now!
+  // musaStream_t key_stream = stream;
+  // auto key = std::make_tuple(
+  //     static_cast<void*>(handle), static_cast<void*>(key_stream));
+
   // auto workspace_it = mublas_handle_stream_to_workspace().find(key);
   // if (workspace_it == mublas_handle_stream_to_workspace().end()) {
   //   workspace_it = mublas_handle_stream_to_workspace().insert(

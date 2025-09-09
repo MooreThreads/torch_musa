@@ -81,7 +81,7 @@ benchmark_result = runner.run()
 Benchmark results could be saved to disk as a JSON file. To save the output of operator benchmarks, you need to pass the argument `--res-dir` (the directory to store the results) and `--res-file-name` (the filename of the saved results). Below is sample output of operator benchmark of `RMSNorm`:
 
 ```bash
-python -m tests.rmsnorm_test --res-dir DIR_SPECIFIED -res-file-name benchmark_test
+python -m tests.rmsnorm_test --res-dir DIR_SPECIFIED --res-file-name benchmark_test
 ```
 Result file `${DIR_SPECIFIED}/benchmark_test.json`:
 ```json

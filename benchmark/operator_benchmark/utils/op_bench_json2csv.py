@@ -25,14 +25,15 @@ def visualize_json(json_file_path):
     cols_name = [
         "OP",
         "Mode",
-        "TestCase",
         "TestConfig",  # str
         "backward",
-        "macs",
-        "tflops",
-        "Latency",
-        "latency_variance",
-        "latency_mean",
+        "intensity",
+        "memory",
+        "gb/s",
+        "FLOPS",
+        "TFLOPs",
+        "lat_mean",
+        "lat_variance",
         "0%",
         "25%",
         "50%",
@@ -48,15 +49,26 @@ def visualize_json(json_file_path):
         mode = op_res["mode"]
         for test_case in op_res["test_cases"]:
             row = [op_name, mode]
-            row.append(test_case["test_name"])  # test_case_name
             row.append(str(test_case["test_config"]))
             row.append(test_case["backward"])
-            row.append(test_case["macs"])
+            row.append(test_case["intensity"])
+            memory = int(test_case["memory"])
+            if memory >= 1e9:
+                memory = str(round(memory / 1e9, 3)) + "GB"
+            else:
+                memory = str(round(memory / 1e6, 1)) + "MB"
+            row.append(memory)
+            row.append(test_case["gb/s"])
+            flops = int(test_case["flops"])
+            if flops >= 1e10:
+                flops = str(round(flops / 1e12, 3)) + "T"
+            else:
+                flops = str(round(flops / 1e9, 3)) + "G"
+            row.append(flops)
             row.append(test_case["tflops"])
-            row.append(test_case["latency"])
             time_metric = test_case["time_metric"]
-            row.append(time_metric[1])
             row.append(time_metric[0])
+            row.append(time_metric[1])
             for percent in time_metric[2]:
                 row.append(percent)
 

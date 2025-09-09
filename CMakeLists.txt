@@ -122,7 +122,7 @@ torch_musa_parse_version_str(TORCH_MUSA ${TORCH_MUSA_DEFAULT_VERSION})
 set(TORCH_MUSA_SOVERSION
     "${TORCH_MUSA_VERSION_MAJOR}.${TORCH_MUSA_VERSION_MINOR}")
 
-set(TORCH_MUSA_PYTHON_MINIMUM_VERSION 3.8)
+set(TORCH_MUSA_PYTHON_MINIMUM_VERSION 3.9)
 
 # Set default build type
 if(NOT CMAKE_BUILD_TYPE)
@@ -143,11 +143,6 @@ string(APPEND CMAKE_CXX_FLAGS " -Wno-attributes")
 string(APPEND CMAKE_CXX_FLAGS " -Wno-redundant-move")
 string(APPEND CMAKE_CXX_FLAGS " -Wno-sign-compare")
 string(APPEND CMAKE_CXX_FLAGS " -Wno-missing-field-initializers")
-# cmake-format: off
-# cmake-lint: disable=C0301
-string(APPEND CMAKE_CXX_FLAGS " -Wno-non-template-friend") # TODO(MT-AI): remove this CXX_FLAG after https://jira.mthreads.com/browse/SW-22268 resolved.
-string(APPEND CMAKE_CXX_FLAGS " -Wno-comment") # TODO(MT-AI): remove this CXX_FLAG after https://jira.mthreads.com/browse/SW-22268 resolved.
-# cmake-format: on
 
 # Use ld.gold if available, fall back to ld.bfd (the default ld) if not
 if(USE_GOLD_LINKER)
@@ -248,7 +243,6 @@ if(MUSA_FOUND)
   # torch_musa/csrc/extension will also use TORCH_MUSA_ARCH, so parse mcc
   # compile arch flags here once.
   torch_musa_get_mcc_arch_list(TORCH_MUSA_ARCH_LIST)
-  message(STATUS "TORCH_MUSA_ARCH_LIST ${TORCH_MUSA_ARCH_LIST}")
 
   set(MAX_TORCH_MUSA_ARCH_VERSION 0)
 
@@ -262,12 +256,17 @@ if(MUSA_FOUND)
     endif()
   endforeach()
 
-  find_package(MUSAToolkit REQUIRED)
+  find_package(MUSAToolkit REQUIRED COMPONENTS musolver)
   find_package(MUDNN REQUIRED)
 
   list(APPEND DEPENDENT_INCLUDE_DIRS ${MUSAToolkit_INCLUDE_DIR}
        ${MUDNN_INCLUDE_DIRS})
-  list(APPEND DEPENDENT_LIBRARIES ${MUSA_LIBRARIES} ${MUDNN_LIBRARIES})
+  list(
+    APPEND
+    DEPENDENT_LIBRARIES
+    ${MUSA_LIBRARIES}
+    ${MUDNN_LIBRARIES}
+    MUSA::musolver)
 
   if(USE_MCCL)
     if(NOT DEFINED ENV{MCCL_INCLUDE_DIR})
@@ -315,8 +314,11 @@ else()
 endif()
 
 set(CODEGEN_TARGET "musa_codegen")
-set(GENERATED_MUSA_CSRCS "${CODE_GENERATED_DIR}/ATen/RegisterMUSA.cpp"
-                         "${CODE_GENERATED_DIR}/ATen/RegisterQuantizedMUSA.cpp")
+set(GENERATED_MUSA_CSRCS
+    "${CODE_GENERATED_DIR}/ATen/RegisterMUSA.cpp"
+    "${CODE_GENERATED_DIR}/ATen/RegisterQuantizedMUSA.cpp"
+    "${PROJECT_SOURCE_DIR}/torch_musa/csrc/inductor/aoti_torch/generated/c_shim_musa.cpp"
+)
 add_custom_command(
   OUTPUT ${GENERATED_MUSA_CSRCS}
   COMMENT "Generating for musa op files ..."
@@ -360,7 +362,6 @@ if(USE_PER_OPERATOR_HEADERS)
 endif()
 
 parse_real_musa_version(REAL_MUSA_VERSION)
-message(STATUS "REAL_MUSA_VERSION = ${REAL_MUSA_VERSION}")
 target_compile_definitions(${MUSA_KERNELS_LIB}
                            PUBLIC -DREAL_MUSA_VERSION=${REAL_MUSA_VERSION})
 target_compile_definitions(${PLUGIN_NAME}

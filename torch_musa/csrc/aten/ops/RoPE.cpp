@@ -70,7 +70,7 @@ Tensor& RopeOut(
   CHECK_MUDNN_STATUS(
       rope.SetRotaryInterleaved(rotary_interleaved), "SetRotaryInterleaved");
   CHECK_MUDNN_STATUS(rope.SetBatchFirst(batch_first), "SetBatchFirst");
-#if defined(MUDNN_VERSION) && MUDNN_VERSION >= 2900
+#if defined(MUDNN_VERSION) && MUDNN_VERSION >= 3000
   CHECK_MUDNN_STATUS(
       rope.SetMultiLatentAttention(multi_latent_attention),
       "SetMultiLatentAttention");
@@ -78,7 +78,7 @@ Tensor& RopeOut(
   if (multi_latent_attention) {
     TORCH_CHECK(
         false,
-        "RoPE.multi_latent_attention is set to True, which is only supported on mudnn version >= 2.9");
+        "RoPE.multi_latent_attention is set to True, which is only supported on mudnn version >= 3.0.0");
   }
 #endif
   CHECK_MUDNN_STATUS(
@@ -145,7 +145,7 @@ Tensor& RopeBackwardOut(
   CHECK_MUDNN_STATUS(
       rope.SetRotaryInterleaved(rotary_interleaved), "SetRotaryInterleaved");
   CHECK_MUDNN_STATUS(rope.SetBatchFirst(batch_first), "SetBatchFirst");
-#if defined(MUDNN_VERSION) && MUDNN_VERSION >= 2900
+#if defined(MUDNN_VERSION) && MUDNN_VERSION >= 3000
   CHECK_MUDNN_STATUS(
       rope.SetMultiLatentAttention(multi_latent_attention),
       "SetMultiLatentAttention");
@@ -153,7 +153,7 @@ Tensor& RopeBackwardOut(
   if (multi_latent_attention) {
     TORCH_CHECK(
         false,
-        "RoPE.multi_latent_attention is set to True, which is only supported on mudnn version >= 2.9");
+        "RoPE.multi_latent_attention is set to True, which is only supported on mudnn version >= 3.0.0");
   }
 #endif
   CHECK_MUDNN_STATUS(

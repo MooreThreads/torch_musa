@@ -43,7 +43,7 @@ def apply_rotary_pos_emb_bshd(
 
 
 multi_latent_attention = [False]
-if torch.backends.mudnn.version() > 2800:
+if torch.backends.mudnn.version() >= 3000:
     multi_latent_attention.append(True)
 
 

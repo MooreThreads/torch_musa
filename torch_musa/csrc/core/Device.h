@@ -14,8 +14,6 @@ void set_device(DeviceIndex device);
 
 void Synchronize();
 
-void init_mem_get_func(PyObject* module);
-
 } // namespace c10::musa
 
 #endif // TORCH_MUSA_CSRC_CORE_MUSADEVICE_H_

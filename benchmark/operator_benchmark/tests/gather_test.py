@@ -12,16 +12,20 @@ gather_configs_short = op_bench.config_list(
     attrs=[
         [256, 512, 0],
         [512, 512, 1],
+        [1024, 1024, 0],
+        [2048, 2048, 1],
+        [4096, 2048, 0],
+        [4096, 4096, 1],
     ],
     cross_product_configs={
-        "device": ["cpu", "musa"],
+        "device": ["musa"],
     },
     tags=["short"],
 )
 
 
 gather_configs_long = op_bench.cross_product_configs(
-    M=[128, 1024], N=[128, 1024], dim=[0, 1], device=["cpu", "musa"], tags=["long"]
+    M=[128, 1024], N=[128, 1024], dim=[0, 1], device=["musa"], tags=["long"]
 )
 
 

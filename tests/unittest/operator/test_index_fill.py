@@ -10,6 +10,7 @@ from torch_musa import testing
     "config",
     [
         # self_shape, dim, index_numel
+        [[16, 1024], 0, 0],
         [[16, 1024], 0, 7],
         [[16, 1023], 0, 12],
         [[16, 128, 2], 1, 64],
@@ -21,7 +22,7 @@ from torch_musa import testing
     torch.float32, torch.half, torch.bfloat16, torch.bool,
     torch.uint8, torch.int8, torch.int16, torch.int32, torch.int64
 ])
-def test_index_reduce(config, dtype):
+def test_index_fill(config, dtype):
     """test index_fill with supported dtypes"""
     fill_dim, index_numel = config[1], config[2]
     input_data = {

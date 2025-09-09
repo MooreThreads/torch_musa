@@ -62,13 +62,52 @@ inline bool check_musa_attention_input(
   return true;
 }
 
+inline bool check_musa_tensor_shapes(const sdp_params& params, bool is_debug) {
+  const auto query_dim = params.query.dim();
+  const auto qkv_same_dim =
+      (query_dim == params.key.dim() && query_dim == params.value.dim());
+  const auto valid_dim = (query_dim == 4 || query_dim == 3);
+
+  if (!(qkv_same_dim && valid_dim)) {
+    if (is_debug) {
+      TORCH_WARN(
+          "All fused kernels requires query, key and value to be 3(no batch) ",
+          "or 4(with batch) dimensional, but got Query dim: ",
+          query_dim,
+          ", Key dim: ",
+          params.key.dim(),
+          ", Value dim: ",
+          params.value.dim(),
+          " instead.");
+    }
+    return false;
+  }
+  return true;
+}
+
+inline bool check_musa_attn_mask(const sdp_params& params, bool is_debug) {
+  auto attn_mask = params.attn_mask;
+  if (!attn_mask.has_value()) {
+    return true;
+  }
+  if (attn_mask.value().requires_grad()) {
+    if (is_debug) {
+      TORCH_WARN(
+          "MUSA Flash SDPA does not support calculate attn_mask gradient.");
+    }
+    return false;
+  }
+  return true;
+}
+
 inline bool use_flash_attention(const sdp_params& params) {
   using SDPParamsCheckFunc = bool (*)(const sdp_params&, bool);
-  constexpr int conditions_num = 4;
+  constexpr int conditions_num = 5;
   constexpr std::array<SDPParamsCheckFunc, conditions_num> conditions{
       {check_runtime_disabled_flash,
-       check_tensor_shapes,
+       check_musa_tensor_shapes,
        check_musa_attention_input,
+       check_musa_attn_mask,
        check_musa_arch}};
   auto res = std::all_of(
       conditions.begin(), conditions.end(), [&params](SDPParamsCheckFunc func) {

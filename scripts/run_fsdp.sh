@@ -1,5 +1,7 @@
 #!/bin/bash --login
 set -exo pipefail
+export MUSA_LAUNCH_BLOCKING=1
+
 TEST_REPORT_DIR=build/reports/unit_test
 mkdir -p ${TEST_REPORT_DIR}
 GPU_TYPE=${GPU_TYPE:-S3000}

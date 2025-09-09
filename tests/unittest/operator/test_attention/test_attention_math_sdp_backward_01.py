@@ -12,6 +12,7 @@ from test_attention_base import (
     MASK_TYPES,
     sdp_func,
     explicit_scales,
+    make_causal_4d_mask_float,
 )
 
 from torch_musa import testing
@@ -93,3 +94,83 @@ def test_math_sdp_backward(case, dtype, func, mask_type, explicit_scale):
             case, mask_type, dtype, explicit_scale=explicit_scale
         )
         function(input_data, func, True)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.skipif(
+    testing.get_musa_arch() < 22, reason="SKIP this test if in GPU with arch below 22."
+)
+@pytest.mark.parametrize("dtype", [torch.bfloat16])
+@pytest.mark.parametrize("func", [sdp_func])
+@pytest.mark.parametrize("is_causal", [True, False])
+def test_math_sdp_dim3_backward(dtype, func, is_causal):
+    """
+    Math SDP with dim3 q/k/v.
+    """
+    item = {}
+    item["query"] = torch.randn([4, 512, 16], dtype=dtype)
+    item["key"] = torch.randn([4, 512, 16], dtype=dtype)
+    item["value"] = torch.randn([4, 512, 16], dtype=dtype)
+    if is_causal:
+        item["is_causal"] = True
+    else:
+        dim3_mask = make_causal_4d_mask_float((1, 512), dtype)
+        item["attn_mask"] = torch.squeeze(dim3_mask, 0)
+    with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.MATH):
+        function(item, func, True)
+
+
+@pytest.mark.skipif(
+    testing.get_musa_arch() < 22, reason="SKIP this test if in GPU with arch below 22."
+)
+@pytest.mark.parametrize("dtype", [torch.bfloat16])
+@pytest.mark.parametrize("mask_type", [0, 1, 2])
+def test_math_sdp_grad_mask(dtype, mask_type):
+    """
+    Math SDP with grad attn-mask.
+    """
+    is_pad_mask = mask_type == 1
+    case = [(2, 512, 512), 512, 16, 16]
+    grad_c = torch.tensor(1e-3, dtype=dtype)
+    grad_m = grad_c.musa()
+
+    def prepare(d):
+        for _, v in d.items():
+            if not isinstance(v, torch.Tensor):
+                continue
+            v.requires_grad_()
+            v.retain_grad()
+            if v.grad:
+                v.grad.zero_()
+
+    def to_musa(d):
+        musa_d = {}
+        for k, v in d.items():
+            if isinstance(v, torch.Tensor):
+                musa_d[k] = v.clone().detach().musa()
+        return musa_d
+
+    args = gen_input_data(case, mask_type, dtype)
+    args_musa = to_musa(args)
+
+    if is_pad_mask:
+        args["attn_mask"].unsqueeze_(1).unsqueeze_(1)
+    prepare(args)
+    prepare(args_musa)
+
+    f = torch.nn.functional.scaled_dot_product_attention
+
+    cpu_res = f(**args)
+    cpu_res.sum().backward(grad_c)
+
+    with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.MATH):
+        musa_res = f(**args_musa)
+    musa_res.sum().backward(grad_m)
+
+    comparator = DefaultComparator(abs_diff=1e-1, rel_diff=1e-1)
+
+    gold = args["attn_mask"].grad
+    if is_pad_mask:
+        gold =  gold.detach().squeeze(1).squeeze(1)
+    target = args_musa["attn_mask"].grad.cpu()
+    assert comparator(target, gold)

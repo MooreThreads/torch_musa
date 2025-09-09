@@ -58,7 +58,7 @@ void gated_silu_output(const at::Tensor& input, at::Tensor& out) {
   int element_num = out.numel();
 
   int cur_device = -1;
-  TORCH_MUSA_CHECK(musaGetDevice(&cur_device));
+  C10_MUSA_CHECK(musaGetDevice(&cur_device));
 
   size_t block_num = (element_num - 1) / MAX_THREADS + 1;
   dim3 grid(block_num);

@@ -15,7 +15,7 @@ CUR_DIR=$(
 TORCH_MUSA_HOME=$CUR_DIR
 PYTORCH_PATH=${PYTORCH_REPO_PATH:-$(realpath ${TORCH_MUSA_HOME}/../pytorch)}
 TORCH_PATCHES_DIR=${TORCH_MUSA_HOME}/torch_patches/
-KINETO_URL=${KINETO_URL:-https://github.com/MooreThreads/kineto.git}
+KINETO_URL=${KINETO_URL:-https://sh-code.mthreads.com/ai/kineto.git}
 KINETO_TAG=v2.0.1
 
 BUILD_WHEEL=0
@@ -201,7 +201,9 @@ apply_torch_patches() {
 }
 
 update_kineto_source() {
+  echo -e "\033[34mUpdating Kineto...\033[0m"
   pushd ${PYTORCH_PATH}
+  rm -rf ${PYTORCH_PATH}/third_party/kineto
   git submodule update --init --recursive --depth 1
   rm -rf ${PYTORCH_PATH}/third_party/kineto
   popd
@@ -233,6 +235,7 @@ update_submodule() {
   if [ -d ${PYTORCH_PATH}/third_party/kineto ]; then
     pushd ${PYTORCH_PATH}/third_party/kineto
     remote_url=$(git remote get-url origin)
+    current_tag=$(git describe --tags --always)
     popd
 
     if [ ${USE_KINETO} -eq 0 ]; then
@@ -242,9 +245,9 @@ update_submodule() {
       pushd ${PYTORCH_PATH}
       git submodule update --init --recursive --depth 1
       popd
-    elif [ "${remote_url}" = "${KINETO_URL}" ]; then
+    elif [ "${remote_url}" = "${KINETO_URL}" ] && [ "${current_tag}" = "${KINETO_TAG}" ]; then
       pushd ${PYTORCH_PATH}/third_party/kineto
-      echo  -e "\033[34mUpdating KINETO_URL, might take a while...\033[0m"
+      echo  -e "\033[34mUpdating KINETO submodule, might take a while...\033[0m"
       git submodule update --init --recursive
       popd
       if [ -d "/tmp/kineto" ]; then

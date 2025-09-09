@@ -2,6 +2,7 @@
 
 #include <ATen/core/Tensor.h>
 #include <c10/macros/Macros.h>
+#include <ATen/native/musa/MemoryAccess.muh>
 #include <ATen/native/musa/MultiTensorApply.muh>
 
 // Borrowed from cuda/MultiTensorApply.cuh
@@ -12,8 +13,8 @@ namespace musa_extension {
 namespace {
 
 // may have different settings with CUDA
-static constexpr int64_t kILP = 4;
-static constexpr int64_t kChunkSize = 65536;
+static constexpr int64_t kILP = 8;
+static constexpr int64_t kChunkSize = 65536 * 2;
 static constexpr int64_t kBlockSize = 512;
 
 static constexpr int depth_to_max_tensors[5] = {110, 64, 48, 36, 30};
@@ -32,8 +33,49 @@ __global__ void multi_tensor_apply_kernel(
   callable(kChunkSize, tensorListMeta, args...);
 }
 
+template <typename T>
+__device__ __forceinline__ void load_store(
+    T* dst,
+    T* src,
+    int64_t dst_offset,
+    int64_t src_offset) {
+  using LT = at::native::memory::aligned_vector<T, kILP>;
+  ((LT*)dst)[dst_offset] = ((LT*)src)[src_offset];
+}
+
+template <int depth, typename T>
+__device__ void load_args(
+    T r_args[][kILP],
+    T** args,
+    const int64_t i_start,
+    const int64_t chunk_size,
+    const int64_t n) {
+  for (int ii = 0; ii < kILP; ii++) {
+    const auto i = i_start + threadIdx.x + ii * blockDim.x;
+    for (int r_index = 0; r_index < depth; r_index++) {
+      r_args[r_index][ii] = 0;
+      if (i < n && i < chunk_size) {
+        r_args[r_index][ii] = args[r_index][i];
+      }
+    }
+  }
+}
+
+template <typename T>
+__device__ void store_args(
+    T* dst,
+    T* src,
+    const int64_t i_start,
+    const int64_t chunk_size,
+    const int64_t n) {
+  for (int ii = 0; ii < kILP; ii++) {
+    const int64_t i = i_start + threadIdx.x + ii * blockDim.x;
+    if (i < n && i < chunk_size)
+      dst[i] = src[ii];
+  }
+}
+
 using at::native::is_aligned;
-using at::native::load_store;
 } // namespace
 
 } // namespace musa_extension

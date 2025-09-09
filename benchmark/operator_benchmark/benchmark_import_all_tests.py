@@ -11,7 +11,8 @@ from tests import (  # noqa: F401  # noqa: F401
     norm_test,
     shape_test,
     softmax_test,
-    
+    indexing_test,
+    logsumexp_test,
 )
 
 import operator_benchmark as op_bench

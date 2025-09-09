@@ -1,6 +1,6 @@
 """This package adds the memory utilities. These APIs are borrowed from cuda memory."""
 
-# pylint: disable=C0301, W1113, unused-import, invalid-name, too-many-statements, too-many-locals, unused-argument, unspecified-encoding
+# pylint: disable=C0301, W1113, C0415, unused-import, invalid-name, too-many-statements, too-many-locals, unused-argument, unspecified-encoding
 import sys
 import ctypes
 import contextlib
@@ -342,8 +342,11 @@ def _dump_snapshot(filename="dump_snapshot.pickle"):
 
 
 def _select_format_flamegraph(flamegraph_lines):
-    from os import getenv # pylint: disable=C0415
-    from torch.cuda._memory_viz import format_flamegraph as _format_flamegraph # pylint: disable=C0415
+    from os import getenv  # pylint: disable=C0415
+    from torch.cuda._memory_viz import (
+        format_flamegraph as _format_flamegraph,
+    )  # pylint: disable=C0415
+
     local_script = getenv("FLAMEGRAPH_PL_SCRIPT", None)
     return _format_flamegraph(flamegraph_lines, local_script)
 
@@ -567,7 +570,7 @@ def mem_get_info(device: Union[Device, int] = None) -> Tuple[int, int]:
     if device is None:
         device = torch.musa.current_device()
     device = _get_musa_device_index(device, optional=True)
-    return torch.musa._MUSAC._musart.musaMemGetInfo(device)
+    return torch.musa.musart().musaMemGetInfo(device)
 
 
 def _set_allocator_settings(env: str):

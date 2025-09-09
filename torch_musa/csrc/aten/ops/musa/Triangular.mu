@@ -237,6 +237,7 @@ void TriuRun(Tensor& o, const Tensor& i, const int64_t diag) {
   KernelTable kernel_triangular;
   kernel_triangular.launch<TriangularMode::TRIU>(
       o, i, M, N, MxN, static_cast<int>(diag), block_num, block_size, elements);
+  C10_MUSA_KERNEL_LAUNCH_CHECK();
 }
 
 void TrilRun(Tensor& o, const Tensor& i, const int64_t diag) {
@@ -263,6 +264,7 @@ void TrilRun(Tensor& o, const Tensor& i, const int64_t diag) {
   KernelTable kernel_triangular;
   kernel_triangular.launch<TriangularMode::TRIL>(
       o, i, M, N, MxN, static_cast<int>(diag), block_num, block_size, elements);
+  C10_MUSA_KERNEL_LAUNCH_CHECK();
 }
 
 REGISTER_MUSA_DISPATCH(triu_stub, &TriuRun);

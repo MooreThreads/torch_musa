@@ -46,4 +46,47 @@ void FusedAdamKernel(
       "torch.optim.Adam(fused=True) is not supported, try torch_musa.optim.FusedAdam instead");
 }
 
+void FusedAdamWKernel(
+    at::TensorList params,
+    at::TensorList grads,
+    at::TensorList exp_avgs,
+    at::TensorList exp_avg_sqs,
+    at::TensorList max_exp_avg_sqs,
+    at::TensorList state_steps,
+    const double lr,
+    const double beta1,
+    const double beta2,
+    const double weight_decay,
+    const double eps,
+    const bool amsgrad,
+    const bool maximize,
+    const c10::optional<at::Tensor>& grad_scale,
+    const c10::optional<at::Tensor>& found_inf) {
+  TORCH_CHECK(
+      false,
+      "torch.optim.AdamW(fused=True) is not supported, try torch_musa.optim.FusedAdamW instead");
+}
+
+// The following overload simply has a Tensor lr
+void FusedAdamWKernel(
+    at::TensorList params,
+    at::TensorList grads,
+    at::TensorList exp_avgs,
+    at::TensorList exp_avg_sqs,
+    at::TensorList max_exp_avg_sqs,
+    at::TensorList state_steps,
+    const at::Tensor& lr,
+    const double beta1,
+    const double beta2,
+    const double weight_decay,
+    const double eps,
+    const bool amsgrad,
+    const bool maximize,
+    const c10::optional<at::Tensor>& grad_scale,
+    const c10::optional<at::Tensor>& found_inf) {
+  TORCH_CHECK(
+      false,
+      "torch.optim.AdamW(fused=True) is not supported, try torch_musa.optim.FusedAdamW instead");
+}
+
 } // namespace at::musa

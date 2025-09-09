@@ -315,56 +315,41 @@ def test_index_tensor_bool_index(tensor_dtype):
 
 
 # test index_select
-input_datas = [
-    {
-        "input": torch.zeros(
-            10,
-        ),
-        "dim": 0,
-        "index": torch.randint(10, (5,)),
-    },
-    {"input": torch.zeros(10, 5), "dim": 1, "index": torch.randint(5, (3,))},
-    {"input": torch.zeros(10, 5, 3), "dim": 2, "index": torch.randint(3, (2,))},
-    {"input": torch.zeros(10, 5, 1, 3), "dim": 1, "index": torch.randint(1, (1,))},
-    {"input": torch.zeros(10, 5, 1, 3, 5), "dim": 4, "index": torch.randint(5, (3,))},
-    {
-        "input": torch.zeros(10, 5, 1, 3, 2, 6),
-        "dim": 1,
-        "index": torch.randint(5, (3,)),
-    },
-    {
-        "input": torch.zeros(10, 5, 1, 3, 1, 2, 7),
-        "dim": 3,
-        "index": torch.randint(3, (2,)),
-    },
-    {
-        "input": torch.zeros(10, 5, 1, 3, 1, 2, 3, 8),
-        "dim": 7,
-        "index": torch.randint(8, (3,)),
-    },
+# fmt: off
+index_select_configs = [
+    # input_shape, dim, indices_numel
+    [(10,), 0, 5],
+    [(10, 5), 1, 3],
+    [(10, 5, 3), 2, 2],
+    [(10, 5, 1, 3), 1, 1],
+    [(10, 5, 1, 3, 5), 4, 3],
+    [(10, 5, 1, 3, 1, 2, 7), 3, 2],
+
+    # vectorized cases
+    [(4, 128), 0, 2],
+    [(4, 128), 0, 8],
+    [(4, 128, 256,), 1, 64],
+
+    # indices_numel is 0
+    [(4, 128, 256), 1, 0],
 ]
 dtypes = testing.get_all_support_types()
-dtypes.extend([torch.uint8, torch.int16, torch.float16, torch.float64, torch.bool])
+dtypes.extend([torch.bfloat16, torch.uint8, torch.int16, torch.float16, torch.float64, torch.bool])
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@pytest.mark.parametrize("input_data", input_datas)
+@pytest.mark.parametrize("config", index_select_configs)
 @pytest.mark.parametrize("dtype", dtypes)
-def test_index_select(input_data, dtype):
-    input_data["input"] = input_data["input"].to(dtype)
+def test_index_select(config, dtype):
+    if testing.get_musa_arch() < 22 and dtype == torch.bfloat16:
+        pytest.skip("bf16 is not supported on arch older than qy2")
+    input_data = {}
+    indexed_dim = config[1]
+    indexed_dim_size = config[0][indexed_dim]
+    input_data["input"] = torch.empty(config[0]).uniform_(-10, 10).to(dtype)
+    input_data["dim"] = indexed_dim
+    input_data["index"] = torch.randint(0, indexed_dim_size, (config[2],))
+
     test = testing.OpTest(func=torch.index_select, input_args=input_data)
-    test.check_result()
-    test.check_grad_fn()
-
-
-@pytest.mark.skipif(
-    testing.get_musa_arch() < 22, reason="bf16 is not supported on arch older than qy2"
-)
-@testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@pytest.mark.parametrize("input_data", input_datas)
-def test_index_select_bf16(input_data):
-    input_args = copy.deepcopy(input_data)
-    input_args["input"] = input_args["input"].to(torch.bfloat16)
-    test = testing.OpTest(func=torch.index_select, input_args=input_args)
     test.check_result()
     test.check_grad_fn()

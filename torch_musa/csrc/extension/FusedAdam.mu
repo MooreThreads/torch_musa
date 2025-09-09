@@ -10,8 +10,6 @@
 
 namespace musa_extension {
 namespace {
-using at::native::load_args;
-using at::native::store_args;
 
 enum class ADAM_MODE : uint8_t { ORIGINAL = 0, ADAMW = 1 };
 
@@ -59,24 +57,23 @@ __device__ bool init_args(
 template <
     typename scalar_type,
     typename opmath_t,
-    int depth = 4,
-    bool precomputed_step_size = true,
+    int depth,
+    bool precomputed_step_size,
+    ADAM_MODE adam_mode,
+    bool amsgrad,
     std::enable_if_t<std::is_same<opmath_t, float>::value, int> = 0>
 __device__ __forceinline__ void AdamMath(
     scalar_type r_args[depth][kILP],
-    const double lr,
-    const double beta1,
-    const double beta2,
-    const opmath_t bias_correction1_r_or_step_size,
-    const opmath_t bias_correction2_rsqrt,
-    const double weight_decay,
-    const double eps,
-    const bool maximize,
-    const bool amsgrad,
+    const double& lr,
+    const double& beta1,
+    const double& beta2,
+    const opmath_t& bias_correction1_r_or_step_size,
+    const opmath_t& bias_correction2_rsqrt,
+    const double& weight_decay,
+    const double& eps,
+    const bool& maximize,
     const float* grad_scale_ptr,
-    const float* found_inf_ptr,
-    const ADAM_MODE adam_mode) {
-#pragma unroll
+    const float* found_inf_ptr) {
   for (int ii = 0; ii < kILP; ii++) {
     // Load values.
     opmath_t param = static_cast<opmath_t>(r_args[kParamIdx][ii]);
@@ -91,19 +88,16 @@ __device__ __forceinline__ void AdamMath(
     opmath_t exp_avg = static_cast<opmath_t>(r_args[kExpAvgIdx][ii]);
     opmath_t exp_avg_sq = static_cast<opmath_t>(r_args[kExpAvgSqIdx][ii]);
     opmath_t max_exp_avg_sq;
-    if (amsgrad) {
+    if constexpr (amsgrad) {
       max_exp_avg_sq = static_cast<opmath_t>(r_args[kMaxExpAvgSqIdx][ii]);
     }
     // Update param, grad, 1st and 2nd order momentum.
 
     if (weight_decay != 0) {
-      switch (adam_mode) {
-        case ADAM_MODE::ORIGINAL:
-          grad += param * weight_decay;
-          break;
-        case ADAM_MODE::ADAMW:
-          param -= lr * weight_decay * param;
-          break;
+      if constexpr (adam_mode == ADAM_MODE::ORIGINAL) {
+        grad += param * weight_decay;
+      } else if constexpr (adam_mode == ADAM_MODE::ADAMW) {
+        param -= lr * weight_decay * param;
       }
     }
 
@@ -116,7 +110,7 @@ __device__ __forceinline__ void AdamMath(
     exp_avg_sq = fmaf(beta2, exp_avg_sq, fmaf(-beta2, grad_2, grad_2));
 
     opmath_t denom;
-    if (amsgrad) {
+    if constexpr (amsgrad) {
       max_exp_avg_sq = fmaxf(max_exp_avg_sq, exp_avg_sq);
       denom = (sqrtf(max_exp_avg_sq) * bias_correction2_rsqrt) + eps;
     } else {
@@ -137,7 +131,7 @@ __device__ __forceinline__ void AdamMath(
     }
     r_args[kExpAvgIdx][ii] = exp_avg;
     r_args[kExpAvgSqIdx][ii] = exp_avg_sq;
-    if (amsgrad) {
+    if constexpr (amsgrad) {
       r_args[kMaxExpAvgSqIdx][ii] = max_exp_avg_sq;
     }
   }
@@ -146,24 +140,23 @@ __device__ __forceinline__ void AdamMath(
 template <
     typename scalar_type,
     typename opmath_t,
-    int depth = 4,
-    bool precomputed_step_size = false,
+    int depth,
+    bool precomputed_step_size,
+    ADAM_MODE adam_mode,
+    bool amsgrad,
     std::enable_if_t<!std::is_same<opmath_t, float>::value, int> = 0>
 __device__ __forceinline__ void AdamMath(
     scalar_type r_args[depth][kILP],
-    const double lr,
-    const double beta1,
-    const double beta2,
-    const opmath_t bias_correction1_r_or_step_size,
-    const opmath_t bias_correction2_rsqrt,
-    const double weight_decay,
-    const double eps,
-    const bool maximize,
-    const bool amsgrad,
+    const double& lr,
+    const double& beta1,
+    const double& beta2,
+    const opmath_t& bias_correction1_r_or_step_size,
+    const opmath_t& bias_correction2_rsqrt,
+    const double& weight_decay,
+    const double& eps,
+    const bool& maximize,
     const float* grad_scale_ptr,
-    const float* found_inf_ptr,
-    const ADAM_MODE adam_mode) {
-#pragma unroll
+    const float* found_inf_ptr) {
   for (int ii = 0; ii < kILP; ii++) {
     // Load values.
     opmath_t param = static_cast<opmath_t>(r_args[kParamIdx][ii]);
@@ -178,19 +171,16 @@ __device__ __forceinline__ void AdamMath(
     opmath_t exp_avg = static_cast<opmath_t>(r_args[kExpAvgIdx][ii]);
     opmath_t exp_avg_sq = static_cast<opmath_t>(r_args[kExpAvgSqIdx][ii]);
     opmath_t max_exp_avg_sq;
-    if (amsgrad) {
+    if constexpr (amsgrad) {
       max_exp_avg_sq = static_cast<opmath_t>(r_args[kMaxExpAvgSqIdx][ii]);
     }
     // Update param, grad, 1st and 2nd order momentum.
 
     if (weight_decay != 0) {
-      switch (adam_mode) {
-        case ADAM_MODE::ORIGINAL:
-          grad += param * weight_decay;
-          break;
-        case ADAM_MODE::ADAMW:
-          param -= lr * weight_decay * param;
-          break;
+      if constexpr (adam_mode == ADAM_MODE::ORIGINAL) {
+        grad += param * weight_decay;
+      } else if constexpr (adam_mode == ADAM_MODE::ADAMW) {
+        param -= lr * weight_decay * param;
       }
     }
 
@@ -224,13 +214,13 @@ __device__ __forceinline__ void AdamMath(
     }
     r_args[kExpAvgIdx][ii] = exp_avg;
     r_args[kExpAvgSqIdx][ii] = exp_avg_sq;
-    if (amsgrad) {
+    if constexpr (amsgrad) {
       r_args[kMaxExpAvgSqIdx][ii] = max_exp_avg_sq;
     }
   }
 }
 
-template <typename scalar_type, int depth = 4>
+template <typename scalar_type, int depth, ADAM_MODE adam_mode, bool amsgrad>
 struct FusedAdamMathFunctor {
   static_assert(
       depth == 4 || depth == 5,
@@ -240,16 +230,14 @@ struct FusedAdamMathFunctor {
       int chunk_size,
       FusedAdamOptimizerTensorListMetadata<depth, opmath_t>& tl,
       const float* lr_ptr,
-      const double lr,
-      const double beta1,
-      const double beta2,
-      const double weight_decay,
-      const double eps,
-      const bool maximize,
-      const bool amsgrad,
+      const double& lr,
+      const double& beta1,
+      const double& beta2,
+      const double& weight_decay,
+      const double& eps,
+      const bool& maximize,
       const float* grad_scale_ptr,
-      const float* found_inf_ptr,
-      const ADAM_MODE adam_mode) {
+      const float* found_inf_ptr) {
     int tensor_loc = tl.block_to_tensor[blockIdx.x];
     int chunk_idx = tl.block_to_chunk[blockIdx.x];
     int n = tl.numel_for_tensor[tensor_loc];
@@ -270,15 +258,17 @@ struct FusedAdamMathFunctor {
     scalar_type r_args[depth][kILP];
 
     if ((n % kILP == 0) && (chunk_size % kILP == 0) && all_aligned) {
+      // for (int64_t i_start = threadIdx.x * kILP;
+      //      i_start < n && i_start < chunk_size;
+      //      i_start += blockDim.x * kILP) {
       for (int64_t i_start = threadIdx.x;
            i_start * kILP < n && i_start * kILP < chunk_size;
            i_start += blockDim.x) {
-#pragma unroll
         for (int i = 0; i < depth; i++) {
           load_store(r_args[i], args[i], 0, i_start);
         }
         if (lr_ptr) {
-          AdamMath<scalar_type, opmath_t, depth, false>(
+          AdamMath<scalar_type, opmath_t, depth, false, adam_mode, amsgrad>(
               r_args,
               lr_double,
               beta1,
@@ -288,12 +278,10 @@ struct FusedAdamMathFunctor {
               weight_decay,
               eps,
               maximize,
-              amsgrad,
               grad_scale_ptr,
-              found_inf_ptr,
-              adam_mode);
+              found_inf_ptr);
         } else {
-          AdamMath<scalar_type, opmath_t, depth, true>(
+          AdamMath<scalar_type, opmath_t, depth, true, adam_mode, amsgrad>(
               r_args,
               lr_double,
               beta1,
@@ -303,12 +291,9 @@ struct FusedAdamMathFunctor {
               weight_decay,
               eps,
               maximize,
-              amsgrad,
               grad_scale_ptr,
-              found_inf_ptr,
-              adam_mode);
+              found_inf_ptr);
         }
-#pragma unroll
         for (int i = 0; i < depth; i++) {
           if (i != kGradIdx || grad_scale_ptr) {
             load_store(args[i], r_args[i], i_start, 0);
@@ -320,7 +305,7 @@ struct FusedAdamMathFunctor {
            i_start += blockDim.x * kILP) {
         load_args<depth>(r_args, args, i_start, chunk_size, n);
         if (lr_ptr) {
-          AdamMath<scalar_type, opmath_t, depth, false>(
+          AdamMath<scalar_type, opmath_t, depth, false, adam_mode, amsgrad>(
               r_args,
               lr_double,
               beta1,
@@ -330,12 +315,10 @@ struct FusedAdamMathFunctor {
               weight_decay,
               eps,
               maximize,
-              amsgrad,
               grad_scale_ptr,
-              found_inf_ptr,
-              adam_mode);
+              found_inf_ptr);
         } else {
-          AdamMath<scalar_type, opmath_t, depth, true>(
+          AdamMath<scalar_type, opmath_t, depth, true, adam_mode, amsgrad>(
               r_args,
               lr_double,
               beta1,
@@ -345,12 +328,9 @@ struct FusedAdamMathFunctor {
               weight_decay,
               eps,
               maximize,
-              amsgrad,
               grad_scale_ptr,
-              found_inf_ptr,
-              adam_mode);
+              found_inf_ptr);
         }
-#pragma unroll
         for (int i = 0; i < depth; i++) {
           if (i != kGradIdx || grad_scale_ptr) {
             store_args(args[i], r_args[i], i_start, chunk_size, n);
@@ -376,10 +356,8 @@ void multi_tensor_apply_for_fused_adam(
     const double weight_decay,
     const double eps,
     const bool maximize,
-    const bool amsgrad,
     const float* grad_scale_ptr,
-    const float* found_inf_ptr,
-    const ADAM_MODE adam_mode) {
+    const float* found_inf_ptr) {
   using opmath_t = at::opmath_type<scalar_t>;
   TORCH_CHECK(
       tensor_lists.size() == depth,
@@ -444,10 +422,8 @@ void multi_tensor_apply_for_fused_adam(
             weight_decay,
             eps,
             maximize,
-            amsgrad,
             grad_scale_ptr,
-            found_inf_ptr,
-            adam_mode);
+            found_inf_ptr);
         C10_MUSA_KERNEL_LAUNCH_CHECK();
 
         // Reset.
@@ -488,10 +464,8 @@ void multi_tensor_apply_for_fused_adam(
         weight_decay,
         eps,
         maximize,
-        amsgrad,
         grad_scale_ptr,
-        found_inf_ptr,
-        adam_mode);
+        found_inf_ptr);
     C10_MUSA_KERNEL_LAUNCH_CHECK();
   }
 }
@@ -532,7 +506,7 @@ void FusedAdamKernelImpl(
         multi_tensor_apply_for_fused_adam<scalar_t, 4>(
             tensor_lists,
             state_steps,
-            FusedAdamMathFunctor<scalar_t, 4>(),
+            FusedAdamMathFunctor<scalar_t, 4, ADAM_MODE::ORIGINAL, false>(),
             lr_ptr, // unused
             lr,
             beta1,
@@ -540,10 +514,8 @@ void FusedAdamKernelImpl(
             weight_decay,
             eps,
             maximize,
-            /* amsgrad */ false,
             grad_scale_ptr,
-            found_inf_ptr,
-            ADAM_MODE::ORIGINAL);
+            found_inf_ptr);
       });
 }
 
@@ -580,7 +552,7 @@ void FusedAdamKernelImpl(
         multi_tensor_apply_for_fused_adam<scalar_t, 4>(
             tensor_lists,
             state_steps,
-            FusedAdamMathFunctor<scalar_t, 4>(),
+            FusedAdamMathFunctor<scalar_t, 4, ADAM_MODE::ORIGINAL, false>(),
             lr_ptr,
             1.0, // unused
             beta1,
@@ -588,10 +560,8 @@ void FusedAdamKernelImpl(
             weight_decay,
             eps,
             maximize,
-            /* amsgrad */ false,
             grad_scale_ptr,
-            found_inf_ptr,
-            ADAM_MODE::ORIGINAL);
+            found_inf_ptr);
       });
 }
 
@@ -628,7 +598,7 @@ void FusedAdamAMSGradKernelImpl(
         multi_tensor_apply_for_fused_adam<scalar_t, 5>(
             tensor_lists,
             state_steps,
-            FusedAdamMathFunctor<scalar_t, 5>(),
+            FusedAdamMathFunctor<scalar_t, 5, ADAM_MODE::ORIGINAL, true>(),
             lr_ptr, // unused
             lr,
             beta1,
@@ -636,10 +606,8 @@ void FusedAdamAMSGradKernelImpl(
             weight_decay,
             eps,
             maximize,
-            /* amsgrad */ true,
             grad_scale_ptr,
-            found_inf_ptr,
-            ADAM_MODE::ORIGINAL);
+            found_inf_ptr);
       });
 }
 
@@ -676,7 +644,7 @@ void FusedAdamAMSGradKernelImpl(
         multi_tensor_apply_for_fused_adam<scalar_t, 5>(
             tensor_lists,
             state_steps,
-            FusedAdamMathFunctor<scalar_t, 5>(),
+            FusedAdamMathFunctor<scalar_t, 5, ADAM_MODE::ORIGINAL, true>(),
             lr_ptr,
             1.0, // unused
             beta1,
@@ -684,10 +652,191 @@ void FusedAdamAMSGradKernelImpl(
             weight_decay,
             eps,
             maximize,
-            /* amsgrad */ true,
             grad_scale_ptr,
-            found_inf_ptr,
-            ADAM_MODE::ORIGINAL);
+            found_inf_ptr);
+      });
+}
+
+void FusedAdamWKernelImpl(
+    std::vector<at::Tensor> params,
+    std::vector<at::Tensor> grads,
+    std::vector<at::Tensor> exp_avgs,
+    std::vector<at::Tensor> exp_avg_sqs,
+    std::vector<at::Tensor> state_steps,
+    const double lr,
+    const double beta1,
+    const double beta2,
+    const double weight_decay,
+    const double eps,
+    const bool maximize,
+    const c10::optional<at::Tensor>& grad_scale,
+    const c10::optional<at::Tensor>& found_inf) {
+  std::vector<std::vector<at::Tensor>> tensor_lists{
+      params, grads, exp_avgs, exp_avg_sqs};
+
+  float* grad_scale_ptr =
+      grad_scale.has_value() ? grad_scale->data_ptr<float>() : nullptr;
+  float* found_inf_ptr =
+      found_inf.has_value() ? found_inf->data_ptr<float>() : nullptr;
+  float* lr_ptr = nullptr;
+
+  AT_DISPATCH_FLOATING_TYPES_AND2(
+      at::kHalf,
+      at::kBFloat16,
+      params[0].scalar_type(),
+      "fused_adamw_kernel_musa",
+      [&]() {
+        multi_tensor_apply_for_fused_adam<scalar_t, 4>(
+            tensor_lists,
+            state_steps,
+            FusedAdamMathFunctor<scalar_t, 4, ADAM_MODE::ADAMW, false>(),
+            lr_ptr, // unused
+            lr,
+            beta1,
+            beta2,
+            weight_decay,
+            eps,
+            maximize,
+            grad_scale_ptr,
+            found_inf_ptr);
+      });
+}
+
+// The following overload simply has a Tensor lr
+void FusedAdamWKernelImpl(
+    std::vector<at::Tensor> params,
+    std::vector<at::Tensor> grads,
+    std::vector<at::Tensor> exp_avgs,
+    std::vector<at::Tensor> exp_avg_sqs,
+    std::vector<at::Tensor> state_steps,
+    const at::Tensor& lr,
+    const double beta1,
+    const double beta2,
+    const double weight_decay,
+    const double eps,
+    const bool maximize,
+    const c10::optional<at::Tensor>& grad_scale,
+    const c10::optional<at::Tensor>& found_inf) {
+  std::vector<std::vector<at::Tensor>> tensor_lists{
+      params, grads, exp_avgs, exp_avg_sqs};
+
+  float* grad_scale_ptr =
+      grad_scale.has_value() ? grad_scale->data_ptr<float>() : nullptr;
+  float* found_inf_ptr =
+      found_inf.has_value() ? found_inf->data_ptr<float>() : nullptr;
+  float* lr_ptr = lr.data_ptr<float>();
+
+  AT_DISPATCH_FLOATING_TYPES_AND2(
+      at::kHalf,
+      at::kBFloat16,
+      params[0].scalar_type(),
+      "fused_adamw_kernel_musa",
+      [&]() {
+        multi_tensor_apply_for_fused_adam<scalar_t, 4>(
+            tensor_lists,
+            state_steps,
+            FusedAdamMathFunctor<scalar_t, 4, ADAM_MODE::ADAMW, false>(),
+            lr_ptr,
+            1.0, // unused
+            beta1,
+            beta2,
+            weight_decay,
+            eps,
+            maximize,
+            grad_scale_ptr,
+            found_inf_ptr);
+      });
+}
+
+void FusedAdamWAMSGradKernelImpl(
+    std::vector<at::Tensor> params,
+    std::vector<at::Tensor> grads,
+    std::vector<at::Tensor> exp_avgs,
+    std::vector<at::Tensor> exp_avg_sqs,
+    std::vector<at::Tensor> max_exp_avg_sqs,
+    std::vector<at::Tensor> state_steps,
+    const double lr,
+    const double beta1,
+    const double beta2,
+    const double weight_decay,
+    const double eps,
+    const bool maximize,
+    const c10::optional<at::Tensor>& grad_scale,
+    const c10::optional<at::Tensor>& found_inf) {
+  std::vector<std::vector<at::Tensor>> tensor_lists{
+      params, grads, exp_avgs, exp_avg_sqs, max_exp_avg_sqs};
+
+  float* grad_scale_ptr =
+      grad_scale.has_value() ? grad_scale->data_ptr<float>() : nullptr;
+  float* found_inf_ptr =
+      found_inf.has_value() ? found_inf->data_ptr<float>() : nullptr;
+  float* lr_ptr = nullptr;
+
+  AT_DISPATCH_FLOATING_TYPES_AND2(
+      at::kHalf,
+      at::kBFloat16,
+      params[0].scalar_type(),
+      "fused_adamw_kernel_musa",
+      [&]() {
+        multi_tensor_apply_for_fused_adam<scalar_t, 5>(
+            tensor_lists,
+            state_steps,
+            FusedAdamMathFunctor<scalar_t, 5, ADAM_MODE::ADAMW, true>(),
+            lr_ptr, // unused
+            lr,
+            beta1,
+            beta2,
+            weight_decay,
+            eps,
+            maximize,
+            grad_scale_ptr,
+            found_inf_ptr);
+      });
+}
+
+void FusedAdamWAMSGradKernelImpl(
+    std::vector<at::Tensor> params,
+    std::vector<at::Tensor> grads,
+    std::vector<at::Tensor> exp_avgs,
+    std::vector<at::Tensor> exp_avg_sqs,
+    std::vector<at::Tensor> max_exp_avg_sqs,
+    std::vector<at::Tensor> state_steps,
+    const at::Tensor& lr,
+    const double beta1,
+    const double beta2,
+    const double weight_decay,
+    const double eps,
+    const bool maximize,
+    const c10::optional<at::Tensor>& grad_scale,
+    const c10::optional<at::Tensor>& found_inf) {
+  std::vector<std::vector<at::Tensor>> tensor_lists{
+      params, grads, exp_avgs, exp_avg_sqs, max_exp_avg_sqs};
+
+  float* grad_scale_ptr =
+      grad_scale.has_value() ? grad_scale->data_ptr<float>() : nullptr;
+  float* found_inf_ptr =
+      found_inf.has_value() ? found_inf->data_ptr<float>() : nullptr;
+  float* lr_ptr = lr.data_ptr<float>();
+
+  AT_DISPATCH_FLOATING_TYPES_AND2(
+      at::kHalf,
+      at::kBFloat16,
+      params[0].scalar_type(),
+      "fused_adamw_kernel_musa",
+      [&]() {
+        multi_tensor_apply_for_fused_adam<scalar_t, 5>(
+            tensor_lists,
+            state_steps,
+            FusedAdamMathFunctor<scalar_t, 5, ADAM_MODE::ADAMW, true>(),
+            lr_ptr,
+            1.0, // unused
+            beta1,
+            beta2,
+            weight_decay,
+            eps,
+            maximize,
+            grad_scale_ptr,
+            found_inf_ptr);
       });
 }
 
@@ -711,9 +860,7 @@ void FusedAdamKernel(
     const bool maximize,
     const c10::optional<at::Tensor>& grad_scale,
     const c10::optional<at::Tensor>& found_inf) {
-  TORCH_CHECK(
-      state_steps[0].is_cpu(),
-      "state_steps should be CPU Tensors, seems that you are using torch.optim.Adam(fused=True), try torch_musa.optim.FusedAdam instead");
+  TORCH_CHECK(state_steps[0].is_cpu(), "state_steps should be CPU Tensors");
   if (amsgrad) {
     TORCH_CHECK(
         at::native::check_fast_path_restrictions(
@@ -773,9 +920,7 @@ void FusedAdamKernel(
     const bool maximize,
     const c10::optional<at::Tensor>& grad_scale,
     const c10::optional<at::Tensor>& found_inf) {
-  TORCH_CHECK(
-      state_steps[0].is_cpu(),
-      "state_steps should be CPU Tensors, seems that you are using torch.optim.Adam(fused=True), try torch_musa.optim.FusedAdam instead");
+  TORCH_CHECK(state_steps[0].is_cpu(), "state_steps should be CPU Tensors");
   if (lr.is_cpu()) {
     FusedAdamKernel(
         params,
@@ -822,6 +967,145 @@ void FusedAdamKernel(
             {params, grads, exp_avgs, exp_avg_sqs}),
         "params, grads, exp_avgs, and exp_avg_sqs must have same dtype, device, and layout");
     musa_extension::FusedAdamKernelImpl(
+        params,
+        grads,
+        exp_avgs,
+        exp_avg_sqs,
+        state_steps,
+        lr,
+        beta1,
+        beta2,
+        weight_decay,
+        eps,
+        maximize,
+        grad_scale,
+        found_inf);
+  }
+}
+
+void FusedAdamWKernel(
+    std::vector<at::Tensor> params,
+    std::vector<at::Tensor> grads,
+    std::vector<at::Tensor> exp_avgs,
+    std::vector<at::Tensor> exp_avg_sqs,
+    std::vector<at::Tensor> max_exp_avg_sqs,
+    std::vector<at::Tensor> state_steps,
+    const double lr,
+    const double beta1,
+    const double beta2,
+    const double weight_decay,
+    const double eps,
+    const bool amsgrad,
+    const bool maximize,
+    const c10::optional<at::Tensor>& grad_scale,
+    const c10::optional<at::Tensor>& found_inf) {
+  TORCH_CHECK(state_steps[0].is_cpu(), "state_steps should be CPU Tensors");
+  if (amsgrad) {
+    TORCH_CHECK(
+        at::native::check_fast_path_restrictions(
+            {params, grads, exp_avgs, exp_avg_sqs, max_exp_avg_sqs}),
+        "params, grads, exp_avgs, exp_avg_sqs, and max_exp_avg_sqs must have same dtype, device, and layout");
+    musa_extension::FusedAdamWAMSGradKernelImpl(
+        params,
+        grads,
+        exp_avgs,
+        exp_avg_sqs,
+        max_exp_avg_sqs,
+        state_steps,
+        lr,
+        beta1,
+        beta2,
+        weight_decay,
+        eps,
+        maximize,
+        grad_scale,
+        found_inf);
+  } else {
+    TORCH_CHECK(
+        at::native::check_fast_path_restrictions(
+            {params, grads, exp_avgs, exp_avg_sqs}),
+        "params, grads, exp_avgs, and exp_avg_sqs must have same dtype, device, and layout");
+    musa_extension::FusedAdamWKernelImpl(
+        params,
+        grads,
+        exp_avgs,
+        exp_avg_sqs,
+        state_steps,
+        lr,
+        beta1,
+        beta2,
+        weight_decay,
+        eps,
+        maximize,
+        grad_scale,
+        found_inf);
+  }
+}
+
+// The following overload simply has a Tensor lr
+void FusedAdamWKernel(
+    std::vector<at::Tensor> params,
+    std::vector<at::Tensor> grads,
+    std::vector<at::Tensor> exp_avgs,
+    std::vector<at::Tensor> exp_avg_sqs,
+    std::vector<at::Tensor> max_exp_avg_sqs,
+    std::vector<at::Tensor> state_steps,
+    const at::Tensor& lr,
+    const double beta1,
+    const double beta2,
+    const double weight_decay,
+    const double eps,
+    const bool amsgrad,
+    const bool maximize,
+    const c10::optional<at::Tensor>& grad_scale,
+    const c10::optional<at::Tensor>& found_inf) {
+  TORCH_CHECK(state_steps[0].is_cpu(), "state_steps should be CPU Tensors");
+  if (lr.is_cpu()) {
+    FusedAdamWKernel(
+        params,
+        grads,
+        exp_avgs,
+        exp_avg_sqs,
+        max_exp_avg_sqs,
+        state_steps,
+        lr.item<double>(),
+        beta1,
+        beta2,
+        weight_decay,
+        eps,
+        amsgrad,
+        maximize,
+        grad_scale,
+        found_inf);
+    return;
+  }
+
+  if (amsgrad) {
+    TORCH_CHECK(
+        at::native::check_fast_path_restrictions(
+            {params, grads, exp_avgs, exp_avg_sqs, max_exp_avg_sqs}),
+        "params, grads, exp_avgs, exp_avg_sqs, and max_exp_avg_sqs must have same dtype, device, and layout");
+    musa_extension::FusedAdamWAMSGradKernelImpl(
+        params,
+        grads,
+        exp_avgs,
+        exp_avg_sqs,
+        max_exp_avg_sqs,
+        state_steps,
+        lr,
+        beta1,
+        beta2,
+        weight_decay,
+        eps,
+        maximize,
+        grad_scale,
+        found_inf);
+  } else {
+    TORCH_CHECK(
+        at::native::check_fast_path_restrictions(
+            {params, grads, exp_avgs, exp_avg_sqs}),
+        "params, grads, exp_avgs, and exp_avg_sqs must have same dtype, device, and layout");
+    musa_extension::FusedAdamWKernelImpl(
         params,
         grads,
         exp_avgs,

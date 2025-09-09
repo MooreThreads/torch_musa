@@ -8,6 +8,7 @@ file(
   amp/*.cpp
   aten/ops/*.cpp
   aten/ops/attention/mudnn/*.cpp
+  aten/linalg/*.cpp
   aten/utils/*.cpp
   aten/mudnn/*.cpp
   aten/quantized/*.cpp
@@ -155,6 +156,7 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/RenormKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/MaxUnpooling.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TensorCompare.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/RreluWithNoise.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/Activation.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/IntReprQuant.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/MakePerTensorQuantizedTensor.mu

@@ -224,6 +224,8 @@ void BucketizeRun(
 
   int bd_num = boundaries.numel();
   int elements = in.numel();
+  if (elements == 0)
+    return;
 
   // device info
   musaDeviceProp device_prop;
@@ -239,6 +241,7 @@ void BucketizeRun(
   static KernelTable kernel_bucketize;
   kernel_bucketize.launch(
       out, in, boundaries, right, elements, bd_num, nr_blocks, nr_threads);
+  C10_MUSA_KERNEL_LAUNCH_CHECK();
 }
 
 REGISTER_MUSA_DISPATCH(bucketize_stub, &BucketizeRun);

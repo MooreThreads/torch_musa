@@ -1,7 +1,7 @@
 # pylint: disable=unused-argument
 """This file is about musa init."""
 
-# pylint: disable=C0103, W0621, W0602, W0622, C0411, C0412, C0413, W0236, E0202, W0614, W0401
+# pylint: disable=C0103, W0621, W0602, W0622, C0411, C0412, C0413, W0236, E0202, W0614, W0401, C0415
 import traceback
 import threading
 from typing import Any, Tuple, List
@@ -10,6 +10,11 @@ import torch_musa
 
 from ._utils import _get_musa_device_index
 from .musa import *
+
+try:
+    from torch_musa._MUSAC import _musart  # type: ignore[attr-defined]
+except ImportError:
+    _musart = None
 
 _initialized = False
 _tls = threading.local()
@@ -105,6 +110,10 @@ def _lazy_init():
             )
         if not hasattr(torch_musa._MUSAC, "_musa_getDeviceCount"):
             raise AssertionError("Torch not compiled with MUSA enabled")
+        if _musart is None:
+            raise AssertionError(
+                "libmusart functions unavailable. It looks like you have a broken build?"
+            )
 
         torch_musa._MUSAC._musa_init()
         _tls.is_initializing = True
@@ -126,6 +135,41 @@ def _lazy_init():
         finally:
             delattr(_tls, "is_initializing")
         _initialized = True
+
+
+def musart():
+    r"""Retrieves the MUSA runtime API module.
+
+
+    This function initializes the MUSA runtime environment if it is not already
+    initialized and returns the MUSA runtime API module (_musart). The MUSA
+    runtime API module provides access to various MUSA runtime functions.
+
+    Args:
+        ``None``
+
+    Returns:
+        module: The MUSA runtime API module (_musart).
+
+    Raises:
+        RuntimeError: If MUSA cannot be re-initialized in a forked subprocess.
+        AssertionError: If PyTorch is not compiled with MUSA support or
+                        if libmusart functions are unavailable.
+
+    """
+    _lazy_init()
+    return _musart
+
+
+class MusaError(RuntimeError):
+    def __init__(self, code: int) -> None:
+        msg = _musart.musaGetErrorString(_musart.musaError(code))
+        super().__init__(f"{msg} ({code})")
+
+
+def check_error(res: int) -> None:
+    if res != _musart.musaError.success:
+        raise MusaError(res)
 
 
 class device:
@@ -180,3 +224,6 @@ setattr(torch_musa, "ByteStorage", ByteStorage)
 setattr(torch_musa, "HalfStorage", HalfStorage)
 setattr(torch_musa, "BoolStorage", BoolStorage)
 setattr(torch_musa, "BFloat16Storage", BFloat16Storage)
+setattr(torch_musa, "musart", musart)
+setattr(torch_musa, "MusaError", MusaError)
+setattr(torch_musa, "check_error", check_error)

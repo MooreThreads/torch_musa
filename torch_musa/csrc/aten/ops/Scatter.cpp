@@ -167,7 +167,7 @@ at::Tensor& ScatterValueOut(
       "Dtype of index tensor of scatter.out only support Long/Int, but "
       "now it is ",
       index.scalar_type());
-  Tensor src = at::empty_like(self);
+  Tensor src = at::empty_like(index, self.scalar_type());
   src.fill_(value);
   return ScatterOp(self, dim, index, src, out, Mode::UPDATE_ONLY);
 }

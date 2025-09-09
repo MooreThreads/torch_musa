@@ -220,7 +220,7 @@ void warn_or_error_on_sync() {
 
 Device getDeviceFromPtr(void* ptr) {
   musaPointerAttributes attr{};
-  TORCH_MUSA_CHECK(musaPointerGetAttributes(&attr, ptr));
+  C10_MUSA_CHECK(musaPointerGetAttributes(&attr, ptr));
   TORCH_CHECK(
       attr.type != musaMemoryTypeUnregistered,
       "The specified pointer resides on host memory and is not registered with any MUSA device.");
@@ -264,7 +264,7 @@ bool isPinnedPtr(const void* data) {
     (void)musaGetLastError();
     return false;
   }
-  TORCH_MUSA_CHECK(err);
+  C10_MUSA_CHECK(err);
   return attr.type == musaMemoryTypeHost;
 }
 

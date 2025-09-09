@@ -1,0 +1,22 @@
+diff --git a/aten/src/ATen/core/TransformationHelper.h b/aten/src/ATen/core/TransformationHelper.h
+index f81018a..6fb4a59 100644
+--- a/aten/src/ATen/core/TransformationHelper.h
++++ b/aten/src/ATen/core/TransformationHelper.h
+@@ -135,10 +135,16 @@ C10_HOST_DEVICE inline T exponential(T val, T lambda) {
+       // curand_uniform has (0,1] bounds. log(1) is 0 and exponential excludes 0.
+       // we need log to be not 0, and not underflow when converted to half
+       // fast __logf approximation can underflow, so set log to -epsilon/2 for 1 or close to 1 args
++      // fix exponential include 0:
++      // to align with pytorch exponential variate definition which excludes 0,
++      // we shift the exponential distribution location by adding a very small constant, eps.
++      // If X ~ Exp(lambda), then E(X) = 1/lambda, and V(X) = 1/lambda**2.
++      // If Y = X + eps, where eps ~= 0, then E(Y) = (1/lambda) + eps, and V(Y) = 1/lambda**2.
++      // If eps is very small, the two distributions are indistinguishable, and are almost identical.
+   auto log = val >= static_cast<T>(1.) - std::numeric_limits<T>::epsilon() / 2
+       ? -std::numeric_limits<T>::epsilon() / 2
+       : at::log(val);
+-  return static_cast<T>(-1.0) / lambda * log;
++  return static_cast<T>(-1.0) / lambda * log + std::numeric_limits<T>::min();
+ #else
+   return static_cast<T>(-1.0) / lambda * at::log1p(-val);
+ #endif

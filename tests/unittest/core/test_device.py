@@ -882,3 +882,15 @@ def test_random_fork_rng():
             assert torch.all(
                 res1.sort().values.long() == torch.arange(n, device=device)
             )
+
+
+def test_musart_register():
+    t = torch.ones(20)
+    assert t.is_pinned() == False
+    musart = torch.musa.musart()
+    r = musart.musaHostRegister(t.data_ptr(), t.numel() * t.element_size(), 0)
+    assert r == 0
+    assert t.is_pinned() == True
+    r = musart.musaHostUnregister(t.data_ptr())
+    assert r == 0
+    assert t.is_pinned() == False

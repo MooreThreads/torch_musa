@@ -57,8 +57,11 @@ extern void multi_tensor_lamb_musa(
       const c10::optional<at::Tensor>&, /*grad_scale*/ \
       const c10::optional<at::Tensor>& /*found_inf*/
 
-extern void FusedAdamKernel(FUSED_ADAM_PARAMS);
-extern void FusedAdamKernel(FUSED_ADAM_TENSOR_LR_PARAMS);
+void FusedAdamKernel(FUSED_ADAM_PARAMS);
+void FusedAdamKernel(FUSED_ADAM_TENSOR_LR_PARAMS);
+
+void FusedAdamWKernel(FUSED_ADAM_PARAMS);
+void FusedAdamWKernel(FUSED_ADAM_TENSOR_LR_PARAMS);
 
 at::Tensor online_softmax(at::Tensor logits, at::Tensor targets, int rank);
 
@@ -88,6 +91,14 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
       "fused_adam",
       py::overload_cast<FUSED_ADAM_TENSOR_LR_PARAMS>(&FusedAdamKernel),
       "Apply update for FusedAdam optimizer");
+  m.def(
+      "fused_adamw",
+      py::overload_cast<FUSED_ADAM_PARAMS>(&FusedAdamWKernel),
+      "Apply update for FusedAdamW optimizer");
+  m.def(
+      "fused_adamw",
+      py::overload_cast<FUSED_ADAM_TENSOR_LR_PARAMS>(&FusedAdamWKernel),
+      "Apply update for FusedAdamW optimizer");
 
   // fused cross_entropy_loss_parallel binding
   m.def(

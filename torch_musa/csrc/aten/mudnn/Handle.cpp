@@ -8,7 +8,7 @@ namespace {
 void CreateMuDNNHandle(mudnnHandle_t* handle) {
   TORCH_CHECK(handle, "Handle pointer is no-nullptr");
   int device;
-  TORCH_MUSA_CHECK(musaGetDevice(&device));
+  C10_MUSA_CHECK(musaGetDevice(&device));
   TORCH_CHECK(device >= 0);
   *handle = new musa::muHandle(device);
 }
@@ -29,7 +29,7 @@ using MudnnPoolType = at::musa::DeviceThreadHandlePool<
 
 ::musa::dnn::Handle& GetMudnnHandle() {
   int device;
-  TORCH_MUSA_CHECK(musaGetDevice(&device));
+  C10_MUSA_CHECK(musaGetDevice(&device));
 
   // Thread local PoolWindows are lazily-initialized
   // to avoid initialization issues that caused hangs on Windows.

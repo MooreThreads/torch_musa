@@ -14,7 +14,6 @@ microbenchmarks.
 """
 
 
-
 class TorchBenchmarkBase(torch.nn.Module):
     """This is a base class used to create Pytorch operator benchmark.
     module_name is the name of the operator being benchmarked.
@@ -112,6 +111,11 @@ class TorchBenchmarkBase(torch.nn.Module):
             raise RuntimeError(f"calc_flops should not be called after `init` called.")
         return -1
 
+    def calc_memory(self):
+        if not self._initialized:
+            raise RuntimeError(f"calc_memory should not be called after `init` called.")
+        return -1
+
     def test_name(self, **kargs):
         """this is a globally unique name which can be used to
         label a specific test
@@ -150,7 +154,8 @@ class PyTorchOperatorTestCase:
         self.time_series = []
         self._jit_forward_graph = None
         self._output = None
-        self._macs = None
+        self._memory = None
+        self._flops = None
         self._latency = None
         self._reported_time = None
         self._test_case_name = None
@@ -201,16 +206,35 @@ class PyTorchOperatorTestCase:
     def set_reported_time(self, latency):
         self._reported_time = latency
 
+    def allow_tf32(self):
+        return torch.backends.mudnn.allow_tf32
+
+    def get_intensity(self):
+        if self._flops < 0 or self._memory < 0:
+            return -1
+        return round(self._flops / self._memory, 3)
+
+    def get_tflops(self):
+        if self._flops < 0:
+            return -1
+        return round(self._flops / (self._reported_time * 1e6), 3)
+
     def get_flops(self):
-        if self._macs < 0:
-            return 0
-        return 1e-3 * self._macs / self._reported_time
+        return self._flops
 
-    def get_macs(self):
-        return self._macs
+    def set_flops(self, flops):
+        self._flops = flops
 
-    def set_macs(self, macs):
-        self._macs = macs
+    def get_memory(self):
+        return self._memory
+
+    def get_gbs(self):
+        if self._memory < 0:
+            return -1
+        return round(self._memory / (self._reported_time * 1e3), 3)
+
+    def set_memory(self, memory):
+        self._memory = memory
 
     def run_forward(self, num_runs, print_per_iter, cuda_sync):
         """Run the forward path of an op with eager mode"""
@@ -249,7 +273,7 @@ class PyTorchOperatorTestCase:
             return None
 
         def tensor_attr_to_dict(t: torch.Tensor):
-            return {"size": t.shape, "dtype": str(t.dtype)}
+            return {"size": t.shape, "dtype": str(t.dtype), "memory_format": str(t.memory_format)}
 
         res = copy.deepcopy(self.op_bench.inputs)
         for key, val in self.op_bench.inputs.items():
@@ -264,8 +288,11 @@ class PyTorchOperatorTestCase:
         res[res_keys.KEY_TEST_NAME] = self.test_config.test_name
         res[res_keys.KEY_LATENCY] = self.get_reported_time()
         res[res_keys.KEY_UNIT] = res_keys.KEY_LATENCY_UNIT
-        res[res_keys.KEY_MACS] = self.get_macs()
+        res[res_keys.KEY_MEMORY] = self.get_memory()
+        res[res_keys.KEY_GBS] = self.get_gbs()
         res[res_keys.KEY_FLOPS] = self.get_flops()
+        res[res_keys.KEY_TFLOPS] = self.get_tflops()
+        res[res_keys.KEY_INTENSITY] = self.get_intensity()
         res[res_keys.KEY_IS_BACKWARD] = self.test_config.run_backward
         res[res_keys.KEY_TIME_METRIC] = self.get_time_metric()
         res[res_keys.KEY_INPUT_CONFIG] = benchmark_utils.init_dict_to_serializable(

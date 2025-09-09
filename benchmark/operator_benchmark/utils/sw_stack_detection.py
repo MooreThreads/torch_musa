@@ -34,40 +34,15 @@ def get_musart_version():
     output = execute_command(command)
     # sample:
     """
-    "musa_runtime:\n{\n\t\"
-     version\":\t\"2.1.0\",\n\t\"git branch\":\t\"rc2.1.0\",\n\t\"git tag\":\t\"No tag\",\n\t\"commit id\":\t\"871ff3c18bb06e3c521275b0e7732b674cddb6dd\",\n\t\"commit date\":\t\"2024-03-25 15:29:03 +0800\"\n}\ndriver_dependency:\n{\n\t\"git branch\":\t\"heads/20240320_develop\",\n\t\"git tag\":\t\"20240320_develop\",\n\t\"commit id\":\t\"4f591d074070595db19003e5069e78a7ff8942d1\",\n\t\"commit date\":\t\"2024-03-20 15:28:45 +0800\"\n}"
+     musa_runtime:{"version":"4.1.0","gitbranch":"HEAD","gittag":"Notag","commitid":"1301a3d6b62f56f6fe0126be25f34e6aac0c95ff","commitdate":"2025-06-2317:39:48+0800"}
     """
     stripped_string = re.sub(r"[\n\t\s]*", "", output)
     # WARNING: This is highly related to MUSA Runtime version string, so keep
     # updating these hard-coded string extracted rightly with musa version changing.
-    index_of_driver = stripped_string.find("driver_dependency")
-    musa_runtime_str = stripped_string[:index_of_driver].replace("musa_runtime:", "")
-    driver_dependency_str = stripped_string[index_of_driver:].replace(
-        "driver_dependency:", ""
-    )
+    musa_runtime_str = stripped_string.replace("musa_runtime:", "")
     musa_runtime_info = json.loads(musa_runtime_str)
-    driver_depends_info = json.loads(driver_dependency_str)
-
     return {
         "musa_runtime_info": musa_runtime_info,
-        "driver_depends_info": driver_depends_info,
-    }
-
-
-def get_ddk_version():
-    command = "clinfo"
-    output = execute_command(command=command, args="| grep Driver")
-    output = output.splitlines()[
-        0
-    ]  # Only get the ddk version of the first device card.
-    output = re.sub(r"\s+", " ", output).strip()
-    _, _, ddk_date, ddk_type, ddk_version, ddk_commit = output.split(" ")
-
-    return {
-        "ddk_date": ddk_date,
-        "ddk_type": ddk_type,
-        "ddk_version": ddk_version,
-        "ddk_commit": ddk_commit,
     }
 
 
@@ -100,7 +75,6 @@ def get_musa_stack_version():
 
 if __name__ == "__main__":
     # test all
-    print(get_ddk_version())
     print(get_musart_version())
     print(get_musa_stack_version())
     print(get_mudnn_version())

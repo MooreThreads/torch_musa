@@ -205,8 +205,6 @@ void THMPStream_init(PyObject* module) {
           module, "_MusaStreamBase", (PyObject*)&THMPStreamType) < 0) {
     throw python_error();
   }
-
-  c10::musa::init_mem_get_func(module);
 }
 
 C10_DIAGNOSTIC_POP()
