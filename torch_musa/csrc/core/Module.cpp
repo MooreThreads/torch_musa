@@ -1,6 +1,7 @@
 #include <ATen/Parallel.h>
 #include <ATen/Utils.h>
 #include <ATen/autocast_mode.h>
+#include <c10/core/ScalarTypeToTypeMeta.h>
 #include <c10/util/Backtrace.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -14,6 +15,7 @@
 #include <torch/csrc/utils/invalid_arguments.h>
 #include <torch/csrc/utils/pybind.h>
 #include <torch/csrc/utils/pycfunction_helpers.h>
+#include <torch/csrc/utils/python_arg_parser.h>
 #include <torch/csrc/utils/python_numbers.h>
 #include <torch/csrc/utils/python_strings.h>
 #include <vector>
@@ -802,6 +804,28 @@ PyObject* THCPModule_isCurrentStreamCapturing_wrap(
   END_HANDLE_TH_ERRORS
 }
 
+PyObject* THCPModule_musaCachingAllocator_raw_delete(
+    PyObject* _unused,
+    PyObject* obj) {
+  HANDLE_TH_ERRORS
+  void* mem_ptr = PyLong_AsVoidPtr(obj);
+  {
+    pybind11::gil_scoped_release no_gil;
+    c10::musa::MUSACachingAllocator::raw_delete(mem_ptr);
+  }
+  Py_RETURN_NONE;
+  END_HANDLE_TH_ERRORS
+}
+
+static PyObject* THCPModule_clearBlasWorkspaces_wrap(
+    PyObject* self,
+    PyObject* noargs) {
+  HANDLE_TH_ERRORS
+  at::musa::clearMublasWorkspaces();
+  Py_RETURN_NONE;
+  END_HANDLE_TH_ERRORS
+}
+
 PyObject* PyMusaMudnnVersion(PyObject* /* unused */, PyObject* /* unused */) {
   HANDLE_TH_ERRORS
   return THPUtils_packInt64(MUDNN_VERSION);
@@ -939,6 +963,14 @@ static PyMethodDef MusaDeviceMethods[] = {
      PyMusaCanDeviceAccessPeer,
      METH_VARARGS,
      nullptr},
+    {"_musa_musaCachingAllocator_raw_delete",
+     THCPModule_musaCachingAllocator_raw_delete,
+     METH_O,
+     nullptr},
+    {"_musa_clearMublasWorkspaces",
+     THCPModule_clearBlasWorkspaces_wrap,
+     METH_NOARGS,
+     nullptr},
     {"_musa_synchronize", PyMusaSynchronize, METH_NOARGS, nullptr},
     {"_mudnn_version", PyMusaMudnnVersion, METH_NOARGS, nullptr},
     {"_musa_ipc_collect", PyMusaIPCCollect, METH_NOARGS, nullptr},
@@ -955,6 +987,47 @@ static PyMethodDef MusaDeviceMethods[] = {
 static PyMethodDef DynamoMethods[] = {
     {"_empty_strided_musa", PyMusaEmptyStridedMusa, METH_VARARGS, nullptr},
     {nullptr, nullptr, 0, nullptr}};
+
+// We choose to ignore certain blocks that are currently allocated
+// when we set the pool to its checkpoint. For those blocks, we need
+// to swap out the deleter function of their corresponding blocks
+// so that a deallocation is not triggered when they die.
+void removeStorageDeleterFns(
+    const std::vector<c10::StorageImpl*>& stale_live_storages,
+    std::unordered_set<void*> definitely_stale_pointers) {
+  for (c10::StorageImpl* stale_storage : stale_live_storages) {
+    auto ptr = stale_storage->data_ptr().get();
+    auto allocated_pointer = definitely_stale_pointers.find(ptr);
+    TORCH_CHECK(allocated_pointer != definitely_stale_pointers.end());
+    auto t = c10::musa::MUSACachingAllocator::get();
+    bool succeeded = stale_storage->mutable_data_ptr().compare_exchange_deleter(
+        t->raw_deleter(), &c10::detail::deleteNothing);
+
+    TORCH_CHECK(
+        succeeded,
+        "Unexpected deleter function on storage, could not swap function");
+  }
+}
+
+void addStorageDeleterFns(
+    std::vector<c10::StorageImpl*>& storages_to_add_deleters_to,
+    c10::musa::MUSACachingAllocator::CheckpointDelta& delta) {
+  std::unordered_map<void*, c10::StorageImpl*> storages;
+  for (auto& storage : storages_to_add_deleters_to) {
+    storages[storage->data_ptr().get()] = storage;
+  }
+
+  for (auto& data_ptr : delta.dataptrs_allocd) {
+    auto storage_pair = storages.find(data_ptr.get());
+    if (storage_pair != storages.end()) {
+      auto ctx = storage_pair->second->data_ptr().get_context();
+      TORCH_CHECK(ctx == nullptr, " Not expecting deleter function");
+      storage_pair->second->set_data_ptr_noswap(std::move(data_ptr));
+    } else {
+      data_ptr.release_context();
+    }
+  }
+}
 
 static void RegisterMUSAPluggableAllocator(PyObject* module) {
   // Bind MUSAPluggableAllocator releated C++ interfaces to Python
@@ -1065,6 +1138,54 @@ static void RegisterMUSAPluggableAllocator(PyObject* module) {
         malloc_fn, free_fn);
   });
 
+  // NOLINTNEXTLINE(bugprone-unused-raii)
+  py::class_<
+      c10::musa::MUSACachingAllocator::AllocatorState,
+      std::shared_ptr<c10::musa::MUSACachingAllocator::AllocatorState>>(
+      m, "_musa_MUSAAllocator_AllocatorState");
+
+  m.def("_storage_Use_Count", [](size_t storage_impl_ptr) {
+    // NOLINTNEXTLINE(performance-no-int-to-ptr)
+    c10::StorageImpl* storage_impl = (c10::StorageImpl*)storage_impl_ptr;
+    return c10::raw::weak_intrusive_ptr::use_count(storage_impl);
+  });
+
+  m.def(
+      "_tensors_data_ptrs_at_indices_equal",
+      [](py::list& tensors, py::list& data_ptrs, py::list& indices) {
+        for (size_t i = 0, end = indices.size(); i < end; ++i) {
+          auto index = indices[i].cast<int64_t>();
+          auto t = tensors[index].cast<at::Tensor>();
+          auto data_ptr = data_ptrs[index].cast<int64_t>();
+          if (reinterpret_cast<int64_t>(t.data_ptr()) != data_ptr) {
+            return false;
+          }
+        }
+        return true;
+      });
+
+  m.def(
+      "_construct_MUSA_Tensor_From_Storage_And_Metadata",
+      [](py::dict& metadata, c10::Storage s) {
+        auto dtype_arg = metadata["dtype"].ptr();
+        auto meta = c10::scalarTypeToTypeMeta(torch::toScalarType(dtype_arg));
+
+        constexpr c10::DispatchKeySet musa_dks(c10::DispatchKey::PrivateUse1);
+        at::Tensor tensor = at::detail::make_tensor_base<c10::TensorImpl>(
+            std::move(s), musa_dks, meta);
+
+        tensor.unsafeGetTensorImpl()->set_sizes_and_strides(
+            metadata["size"].cast<std::vector<int64_t>>(),
+            metadata["stride"].cast<std::vector<int64_t>>());
+        tensor.unsafeGetTensorImpl()->set_storage_offset(
+            metadata["storage_offset"].cast<int64_t>());
+        return tensor;
+      });
+
+  m.def("_musa_isHistoryEnabled", []() {
+    return c10::musa::MUSACachingAllocator::isHistoryEnabled();
+  });
+
   m.def(
       "_musa_beginAllocateToPool",
       [](c10::DeviceIndex device, c10::musa::MempoolId_t mempool_id) {
@@ -1089,6 +1210,109 @@ static void RegisterMUSAPluggableAllocator(PyObject* module) {
         c10::musa::MUSACachingAllocator::endAllocateToPool(device, mempool_id);
       });
 
+  m.def(
+      "_musa_releasePool",
+      [](c10::DeviceIndex device, at::musa::MempoolId_t mempool_id) {
+        c10::musa::MUSACachingAllocator::releasePool(device, mempool_id);
+      });
+
+  m.def(
+      "_musa_checkPoolLiveAllocations",
+      [](c10::DeviceIndex device,
+         at::musa::MempoolId_t mempool_id,
+         const py::set& expected_live_allocations) {
+        std::unordered_set<void*> allocations;
+        allocations.reserve(expected_live_allocations.size());
+        for (auto& elem : expected_live_allocations) {
+          // NOLINTNEXTLINE(performance-no-int-to-ptr)
+          allocations.insert(reinterpret_cast<void*>(py::cast<size_t>(elem)));
+        }
+        return c10::musa::MUSACachingAllocator::checkPoolLiveAllocations(
+            device, mempool_id, allocations);
+      });
+
+  m.def(
+      "_musa_getCheckpointState",
+      [](c10::DeviceIndex device, c10::musa::MempoolId_t id) {
+        return c10::musa::MUSACachingAllocator::getCheckpointState(device, id);
+      });
+
+  m.def(
+      "_musa_setCheckpointPoolState",
+      [](c10::DeviceIndex device,
+         std::shared_ptr<c10::musa::MUSACachingAllocator::AllocatorState> pps,
+         const std::vector<size_t>& stale_storages_ptr,
+         const std::vector<size_t>& storages_to_add_deleters_to_ptr = {}) {
+        std::unordered_set<c10::StorageImpl*> ptr_set;
+        std::vector<c10::StorageImpl*> ptrs;
+        for (size_t ptr_int : stale_storages_ptr) {
+          // NOLINTNEXTLINE(performance-no-int-to-ptr)
+          c10::StorageImpl* ptr = (c10::StorageImpl*)ptr_int;
+          if (!ptr_set.count(ptr)) {
+            ptrs.push_back(ptr);
+            ptr_set.insert(ptr);
+          }
+        }
+        auto delta = c10::musa::MUSACachingAllocator::setCheckpointPoolState(
+            device, std::move(pps));
+        auto& freed_pointers = delta.ptrs_freed;
+
+        std::unordered_set<void*> allocd_set;
+        for (auto& data_ptr : delta.dataptrs_allocd) {
+          allocd_set.insert(data_ptr.get());
+        }
+        std::unordered_set<void*> freed_pointer_set;
+        size_t definite_freed_count = 0;
+        for (void* ptr : freed_pointers) {
+          if (!allocd_set.count(ptr)) {
+            definite_freed_count += 1;
+          }
+          freed_pointer_set.insert((ptr));
+        }
+
+        // that block has already been freed,
+        // so even those this will error, so too will the allocator
+        // when the corresponding tensor dies because there is no
+        // live tensor corresponding to it
+
+        TORCH_CHECK(
+            ptr_set.size() >= definite_freed_count,
+            "Any stale tensors which are being manually freed"
+            " must be passed to set checkpoint");
+
+        removeStorageDeleterFns(ptrs, freed_pointer_set);
+        std::vector<c10::StorageImpl*> storages_to_add_deleters_to;
+        storages_to_add_deleters_to.reserve(
+            storages_to_add_deleters_to_ptr.size());
+        for (size_t ptr_int : storages_to_add_deleters_to_ptr) {
+          // NOLINTNEXTLINE(performance-no-int-to-ptr)
+          storages_to_add_deleters_to.push_back((c10::StorageImpl*)ptr_int);
+        }
+
+        addStorageDeleterFns(storages_to_add_deleters_to, delta);
+      });
+
+  m.def("_has_Standard_Deleter", [](size_t storage_impl_ptr) {
+    c10::StorageImpl* storage_impl = (c10::StorageImpl*)storage_impl_ptr;
+    auto alloc = c10::musa::MUSACachingAllocator::get();
+    return (storage_impl->data_ptr().get_deleter() == alloc->raw_deleter());
+  });
+
+  m.def(
+      "_set_storage_access_error_msg", [](const at::Tensor& t, std::string s) {
+        t.unsafeGetTensorImpl()
+            ->release_storage_and_set_meta_custom_data_ptr_error_msg_(s);
+      });
+
+  m.def("_free_And_Remove_DeleterFn", [](size_t storage_impl_ptr) {
+    c10::StorageImpl* storage_impl = (c10::StorageImpl*)storage_impl_ptr;
+    auto alloc = c10::musa::MUSACachingAllocator::get();
+    auto data_ptr = storage_impl->data_ptr().get();
+    bool succeeded = storage_impl->mutable_data_ptr().compare_exchange_deleter(
+        alloc->raw_deleter(), c10::detail::deleteNothing);
+    TORCH_CHECK(succeeded, "Expected standard deleter");
+    c10::musa::MUSACachingAllocator::raw_delete(data_ptr);
+  });
   // The interfaces above is a minimum set that enables Pluggable Allocator.
   // There are some other "cuda_graph_tree" related interfaces in the
   // torch/csrc/cuda/Module.cpp file that we should adapt in the future.
@@ -1115,6 +1339,10 @@ static void RegisterMemPool(PyObject* module) {
 
 PyObject* module;
 static std::vector<PyMethodDef> methods;
+
+namespace torch::musa {
+void initMusartBindings(PyObject* module);
+} // namespace torch::musa
 
 PyObject* InitMusaModule() {
   at::internal::lazy_init_num_threads();
@@ -1143,6 +1371,8 @@ PyObject* InitMusaModule() {
   torch::musa::python::InitCommMethods(module);
   AddMusaProcessGroupMethods(module);
 #endif
+
+  torch::musa::initMusartBindings(module);
 
   // Register MUSA aoti runner
   torch::inductor::initAOTIMUSARunnerBindings(module);

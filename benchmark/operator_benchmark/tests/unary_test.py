@@ -70,6 +70,10 @@ def half_(input):
 
 def long_(input):
     return input.long()
+    
+
+def copy(in1, in2):
+    return in1.copy_(in2)
 
 
 # FIXME(mt-ai): implement the commented op

@@ -21,7 +21,7 @@ const char* _mublasGetErrorEnum(mublasStatus_t error);
         " when calling `" #EXPR "`");               \
   } while (0)
 
-#define AT_MUSA_CHECK(EXPR) TORCH_MUSA_CHECK(EXPR)
+#define AT_MUSA_CHECK(EXPR) C10_MUSA_CHECK(EXPR)
 
 #define AT_MUSA_DRIVER_CHECK(EXPR)                    \
   do {                                                \

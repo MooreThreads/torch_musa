@@ -236,6 +236,12 @@ muTensor MusaTensorIterator::mu_tensor(int arg) const {
   return mt;
 }
 
+const Tensor& MusaTensorIterator::original_input(int arg) const {
+  arg += num_outputs_;
+  AT_ASSERT(arg >= num_outputs_ && arg < ntensors());
+  return original_output_tensor(operands_[arg]);
+}
+
 bool MusaTensorIterator::input_is_type_corrected(int arg) const {
   arg += num_outputs_;
   AT_ASSERT(arg >= num_outputs_ && arg < ntensors());

@@ -53,6 +53,14 @@ inline bool is_available() {
   return c10::musa::device_count() > 0;
 }
 
+void clearMublasWorkspaces();
+
+size_t parseChosenWorkspaceSize();
+
+size_t getChosenWorkspaceSize();
+
+at::DataPtr getNewWorkspace();
+
 musaDeviceProp* getCurrentDeviceProperties();
 
 musaDeviceProp* getDeviceProperties(int device);

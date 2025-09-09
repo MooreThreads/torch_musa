@@ -386,6 +386,25 @@
 - func: scatter_.value_reduce
 - func: scatter.value_reduce_out
 
+- func: _linalg_det.result
+- func: _linalg_det
+
+- func: linalg_lu_factor_ex
+- func: linalg_lu_factor_ex.out
+
+- func: linalg_lu_solve
+- func: linalg_lu_solve.out
+
+- func: _linalg_solve_ex
+- func: _linalg_solve_ex.result
+
+- func: linalg_cholesky_ex
+- func: linalg_cholesky_ex.L
+
+- func: linalg_inv_ex
+- func: linalg_inv_ex.inverse
+
+
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 #
 #                         UNSTRUCTURED FUNCTIONS
@@ -1665,30 +1684,13 @@
   dispatch:
     PrivateUse1: LinalgLstsqOut
 
-- func: linalg_cholesky_ex
-  dispatch:
-    PrivateUse1: LinalgCholeskyEx
-- func: linalg_cholesky_ex.L
-  structured: false
-  dispatch:
-    PrivateUse1: LinalgCholeskyExOut
-
 - func: cholesky_inverse
   dispatch:
-    PrivateUse1: CholeskyInverse
+    PrivateUse1: cholesky_inverse
 
 - func: cholesky_inverse.out
   dispatch:
-    PrivateUse1: CholeskyInverseOut
-
-- func: linalg_inv_ex.inverse
-  structured: false
-  dispatch:
-    PrivateUse1: LinalgInvExOutInverse
-
-- func: inverse
-  dispatch:
-    PrivateUse1: LinalgInverse
+    PrivateUse1: cholesky_inverse_out
 
 - func: mse_loss_backward
   dispatch:
@@ -2803,6 +2805,16 @@
   dispatch:
     PrivateUse1: FusedAdamKernel
 
+- func: _fused_adamw_
+  device_guard: True
+  dispatch:
+    PrivateUse1: FusedAdamWKernel
+
+- func: _fused_adamw_.tensor_lr
+  device_guard: True
+  dispatch:
+    PrivateUse1: FusedAdamWKernel
+
 - func: _fused_rope_forward
   dispatch:
     PrivateUse1: Rope
@@ -2844,14 +2856,6 @@
 - func: _pdist_backward
   dispatch:
     PrivateUse1: _pdist_backward
-
-- func: _linalg_solve_ex
-  dispatch:
-    PrivateUse1: LinalgSolveEx
-- func: _linalg_solve_ex.result
-  structured: false
-  dispatch:
-    PrivateUse1: LinalgSolveExResult
 
 - func: im2col.out
   dispatch:
@@ -3016,3 +3020,33 @@
 - func: max_unpool3d
   dispatch:
     PrivateUse1: max_unpooling3d_forward_cuda
+
+- func: rrelu_with_noise
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: rrelu_with_noise_cuda
+
+- func: rrelu_with_noise_
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: rrelu_with_noise_cuda_
+
+- func: rrelu_with_noise.out
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: rrelu_with_noise_out_cuda
+
+- func: nansum
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: nansum
+
+- func: nansum.out
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: nansum_out

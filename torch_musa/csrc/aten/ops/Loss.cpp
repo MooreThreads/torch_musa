@@ -11,13 +11,13 @@
 #include <ATen/Functions.h>
 #include <ATen/NativeFunctions.h>
 #else
+#include <ATen/ops/_fused_cross_entropy_loss_2d_backward_native.h>
+#include <ATen/ops/_fused_cross_entropy_loss_2d_forward_native.h>
 #include <ATen/ops/binary_cross_entropy_backward_native.h>
 #include <ATen/ops/binary_cross_entropy_native.h>
+#include <ATen/ops/cross_entropy_loss_2d_choice_native.h>
 #include <ATen/ops/mse_loss_backward_native.h>
 #include <ATen/ops/mse_loss_native.h>
-#include <ATen/ops/cross_entropy_loss_2d_choice_native.h>
-#include <ATen/ops/_fused_cross_entropy_loss_2d_forward_native.h>
-#include <ATen/ops/_fused_cross_entropy_loss_2d_backward_native.h>
 #include <ATen/ops/nll_loss2d_backward_native.h>
 #include <ATen/ops/nll_loss2d_forward_native.h>
 #include <ATen/ops/zeros_like.h>
@@ -578,6 +578,9 @@ Tensor FusedCrossEntropyLoss2dFwd(
 
   at::Tensor wt = weight.value_or(Tensor());
   at::Tensor output = at::empty({}, self.options());
+  if (reduction == Reduction::None) {
+    output.resize_({self.size(0)});
+  }
 
   muHandle& h = GetMudnnHandle();
 

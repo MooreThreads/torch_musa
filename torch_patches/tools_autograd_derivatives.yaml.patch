@@ -1,5 +1,5 @@
 diff --git a/tools/autograd/derivatives.yaml b/tools/autograd/derivatives.yaml
-index 9f7ea3f..c3f5904 100644
+index 9f7ea3f..8418573 100644
 --- a/tools/autograd/derivatives.yaml
 +++ b/tools/autograd/derivatives.yaml
 @@ -3204,3 +3204,25 @@
@@ -13,11 +13,11 @@ index 9f7ea3f..c3f5904 100644
 +
 +- name: _scaled_dot_product_attention_math_musa(Tensor query, Tensor key, Tensor value, Tensor? attn_mask=None, float dropout_p=0.0, bool is_causal=False, *, float? scale=None) -> (Tensor output, Tensor attn_weights, Tensor dropout_mask)
 +  output_differentiability: [True, False, False]
-+  query, key, value: _scaled_dot_product_attention_math_musa_backward(grad, query, key, value, output, attn_weights, dropout_mask, scale)
++  query, key, value, attn_mask: _scaled_dot_product_attention_math_musa_backward(grad, query, key, value, output, attn_weights, dropout_mask, is_causal, attn_mask, scale)
 +
 +- name: _scaled_dot_product_attention_flash_musa(Tensor query, Tensor key, Tensor value, Tensor? attn_mask=None, float dropout_p=0.0, bool is_causal=False, *, float? scale=None) -> (Tensor output, Tensor logsumexp, Tensor dropout_mask)
 +  output_differentiability: [True, False, False]
-+  query, key, value: _scaled_dot_product_attention_flash_musa_backward(grad, query, key, value, output, logsumexp, dropout_mask, is_causal, attn_mask, scale)
++  query, key, value, attn_mask: _scaled_dot_product_attention_flash_musa_backward(grad, query, key, value, output, logsumexp, dropout_mask, is_causal, attn_mask, scale)
 +
 +- name: _fused_rope_forward(Tensor input, Tensor freq_cis, bool rotary_interleaved, bool batch_first, bool multi_latent_attention=False) -> Tensor
 +  input: _fused_rope_backward(grad, freq_cis, rotary_interleaved, batch_first, multi_latent_attention)

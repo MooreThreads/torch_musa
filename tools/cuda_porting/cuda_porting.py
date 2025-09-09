@@ -123,7 +123,7 @@ def port_cuda(
         "C10_CUDA_KERNEL_LAUNCH_CHECK": "C10_MUSA_KERNEL_LAUNCH_CHECK",
         "C10_CUDA_IGNORE_ERROR": "C10_MUSA_IGNORE_ERROR",
         "C10_CUDA_ERROR_HANDLED": "C10_MUSA_ERROR_HANDLED",
-        "C10_CUDA_CHECK[(]": "TORCH_MUSA_CHECK(",
+        "C10_CUDA_CHECK[(]": "C10_MUSA_CHECK(",
         "C10_CUDA_CHECK_WARN[(]": "TORCH_MUSA_WARN(",
         'CUDA_KERNEL_ASSERT(index >= -sizes[i] && index < sizes[i] && "index out of bounds");': "",
         "C10_CUDA_API ": "C10_MUSA_API ",

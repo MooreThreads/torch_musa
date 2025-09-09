@@ -147,6 +147,9 @@ void ArangeRun(
         out);
   }
   int out_numel = out.numel();
+  if (out_numel == 0) {
+    return;
+  }
 
   // device info
   musaDeviceProp device_prop;
@@ -167,6 +170,7 @@ void ArangeRun(
 #endif
 
   launch(out, start, step, out_numel, block_size, block_num);
+  C10_MUSA_KERNEL_LAUNCH_CHECK();
 }
 
 REGISTER_MUSA_DISPATCH(arange_start_out_stub, &ArangeRun);

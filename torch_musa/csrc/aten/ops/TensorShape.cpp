@@ -5,6 +5,7 @@
 #include <ATen/core/op_registration/adaption.h>
 #include <ATen/native/IndexKernel.h>
 #include <ATen/native/IndexingUtils.h>
+#include <ATen/native/Resize.h>
 #include <ATen/native/TensorAdvancedIndexing.h>
 #include <ATen/native/TensorAdvancedIndexingUtils.h>
 
@@ -180,6 +181,21 @@ Tensor& IndexSelectOut(
     int64_t dim,
     const Tensor& index,
     Tensor& out) {
+  uint64_t numIndices = index.numel();
+  dim = at::maybe_wrap_dim(dim, self);
+  std::vector<int64_t> newSize = self.sizes().vec();
+  if (self.dim() > 0) {
+    newSize[dim] = numIndices;
+  }
+  if (self.is_quantized()) {
+    out = at::empty_quantized(newSize, out);
+  } else {
+    at::native::resize_output(out, newSize);
+  }
+  if (out.numel() == 0) {
+    return out;
+  }
+
   TORCH_CHECK(
       self.scalar_type() != at::ScalarType::QInt32,
       "Unsupported IndexSelect input dtype: ",
@@ -193,10 +209,6 @@ Tensor& IndexSelectOut(
   c10::musa::MUSAGuard device_guard(self.device());
   Tensor contiguous_self = self.contiguous();
   Tensor contiguous_other = index.contiguous();
-  TORCH_CHECK(
-      dim < contiguous_self.dim() && dim >= -contiguous_self.dim(),
-      "dim is invalid.");
-  dim = (dim + contiguous_self.dim()) % contiguous_self.dim();
 
   at::native::indexselect_stub(
       kMUSA, dim, out, contiguous_other, contiguous_self);

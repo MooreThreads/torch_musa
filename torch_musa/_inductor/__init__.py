@@ -1,6 +1,6 @@
 """Register MUSA backend for Inductor"""
 
-# pylint:disable=import-outside-toplevel
+# pylint:disable=import-outside-toplevel,W0718,C0103,W0612
 __all__ = ["_init_inductor_backend_registration"]
 
 import torch
@@ -34,7 +34,39 @@ def _init_inductor_backend_registration():
     _apply_triton_heuristics_patches()
 
 
+def _prepatch_triton_attrs_descriptor_for_torch25():
+    import importlib
+    try:
+        from packaging.version import Version
+        if Version(torch.__version__).release[:2] != (2, 5):
+            return
+    except Exception:
+        return
+
+    try:
+        tbc = importlib.import_module("triton.backends.compiler")
+    except Exception:
+        tbc = None
+
+    try:
+        tcc = importlib.import_module("triton.compiler.compiler")
+    except Exception:
+        return
+
+    from dataclasses import dataclass, is_dataclass
+    if tcc is not None:
+        AD_real = getattr(tcc, "AttrsDescriptor", None)
+        if AD_real is None or not is_dataclass(AD_real):
+            @dataclass
+            class _LegacyAttrsDescriptor:
+                divisible_by_16: tuple = ()
+                equal_to_1: tuple = ()
+            setattr(tcc, "AttrsDescriptor", _LegacyAttrsDescriptor)
+
+
+
 # `has_triton` might be called before our inductor backend registration (we use lazy
 # registration to avoid cicular import), so enable util patches once torch_musa is imported
 _apply_util_patches()
 _apply_ir_patch()
+_prepatch_triton_attrs_descriptor_for_torch25()

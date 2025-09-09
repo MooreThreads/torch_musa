@@ -6,11 +6,14 @@
 #include <ATen/Functions.h>
 #include <ATen/NativeFunctions.h>
 #else
+#include <ATen/ops/as_strided.h>
 #include <ATen/ops/mul_cpu_dispatch.h>
 #include <ATen/ops/reciprocal_cpu_dispatch.h>
 #endif
 
 #include <c10/util/Optional.h>
+
+#include "torch_musa/csrc/aten/utils/Utils.h"
 
 namespace at {
 namespace musa {
@@ -64,6 +67,41 @@ ScalarType UnaryTrueDivSuggestInputType(
   return isIntegralType(i_type, false) ? i_type : o_type;
 }
 
+std::optional<Tensor> BinaryMayContigRHS(MusaTensorIterator& iter) {
+  const auto& orig_l = iter.original_input(0);
+  const auto& orig_r = iter.original_input(1);
+  if (orig_l.numel() <= orig_r.numel()) {
+    return std::nullopt;
+  }
+
+  auto rt_r_str = iter.strides(2);
+  if (rt_r_str.back() == 1) {
+    return std::nullopt;
+  }
+
+  auto rt_shape = iter.shape();
+  const size_t rt_ndim = iter.ndim();
+  // fnbd -> first_not_broadcast_dim
+  size_t fnbd = 0;
+  while ((fnbd < rt_ndim) && (rt_r_str[fnbd] == 0)) {
+    ++fnbd;
+  }
+  if (fnbd == rt_ndim) {
+    return std::nullopt;
+  }
+
+  Tensor tmp_contig_rhs =
+      at::as_strided(iter.tensor(2), rt_shape.slice(fnbd), rt_r_str.slice(fnbd))
+          .contiguous();
+  auto tmp_str = tmp_contig_rhs.strides();
+
+  std::vector<int64_t> tmp_strides(rt_ndim, 0);
+  std::copy(tmp_str.begin(), tmp_str.end(), tmp_strides.begin() + fnbd);
+
+  auto res = at::as_strided(tmp_contig_rhs, rt_shape, tmp_strides);
+  return res;
+}
+
 } // anonymous namespace
 
 Scalar CPUScalarMulScalar(const Tensor& l_t, const Scalar& r_s) {
@@ -113,7 +151,13 @@ void BinaryCall(
   CHECK_MUDNN_STATUS(op.SetMode(mode), "SetMode");
   auto out = iter.mu_output(0);
   auto lhs = iter.mu_input(0);
-  auto rhs = iter.mu_input(1);
+
+  std::optional<Tensor> maybe_rhs_contig = BinaryMayContigRHS(iter);
+  auto rhs = maybe_rhs_contig.has_value()
+      ? CreateMUTensor(maybe_rhs_contig.value(), false)
+      : iter.mu_input(1);
+
+  // auto rhs = iter.mu_input(1);
   CHECK_MUDNN_STATUS(op.Run(h, out, lhs, rhs), "Run " + op_name);
 }
 
@@ -128,7 +172,13 @@ void BinaryAlphaCall(
   CHECK_MUDNN_STATUS(op.SetMode(mode), "SetMode");
   auto out = iter.mu_output(0);
   auto lhs = iter.mu_input(0);
-  auto rhs = iter.mu_input(1);
+
+  std::optional<Tensor> maybe_rhs_contig = BinaryMayContigRHS(iter);
+  auto rhs = maybe_rhs_contig.has_value()
+      ? CreateMUTensor(maybe_rhs_contig.value(), false)
+      : iter.mu_input(1);
+
+  // auto rhs = iter.mu_input(1);
   CHECK_MUDNN_STATUS(op.Run(h, out, lhs, rhs), "Run " + op_name);
 }
 

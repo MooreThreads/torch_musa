@@ -1,0 +1,12 @@
+#ifndef TORCH_MUSA_CSRC_ATEN_OPS_MUSA_ONEHOT_MUH_
+#define TORCH_MUSA_CSRC_ATEN_OPS_MUSA_ONEHOT_MUH_
+
+#include <ATen/core/Tensor.h>
+
+namespace at::musa {
+
+void OneHotRun(Tensor& o, const Tensor& i, int num_classes);
+
+} // namespace at::musa
+
+#endif // TORCH_MUSA_CSRC_ATEN_OPS_MUSA_ONEHOT_MUH_

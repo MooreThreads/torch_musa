@@ -1,5 +1,3 @@
-#include "torch_musa/csrc/aten/musa/MUSAContext.h"
-
 #include <deque>
 #include <mutex>
 #include <vector>
@@ -7,8 +5,9 @@
 #include <ATen/musa/MUSAConfig.h>
 #include <c10/util/CallOnce.h>
 
-#include "torch_musa/csrc/core/MUSACachingAllocator.h"
+#include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/core/Device.h"
+#include "torch_musa/csrc/core/MUSACachingAllocator.h"
 #include "torch_musa/csrc/core/MUSAException.h"
 
 namespace at {
@@ -28,7 +27,7 @@ void initMUSAContextVectors() {
 
 void initDeviceProperty(DeviceIndex device_index) {
   musaDeviceProp device_prop;
-  TORCH_MUSA_CHECK(musaGetDeviceProperties(&device_prop, device_index));
+  C10_MUSA_CHECK(musaGetDeviceProperties(&device_prop, device_index));
   device_properties[device_index] = device_prop;
 }
 
@@ -60,7 +59,7 @@ bool canDeviceAccessPeer(int device, int peer_device) {
   AT_ASSERT(device >= 0 && device < num_gpus);
   AT_ASSERT(peer_device >= 0 && peer_device < num_gpus);
   int can_access = 0;
-  TORCH_MUSA_CHECK(musaDeviceCanAccessPeer(&can_access, device, peer_device));
+  C10_MUSA_CHECK(musaDeviceCanAccessPeer(&can_access, device, peer_device));
   return can_access != 0;
 }
 

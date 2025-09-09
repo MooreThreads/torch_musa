@@ -179,7 +179,7 @@ def main():
     if args.res_dir is not None and args.res_file_name is not None:
         benchmark_utils.make_dir_if_not_exist(args.res_dir)
         with open(os.path.join(args.res_dir, f"{args.res_file_name}.json"), "w") as f:
-            json.dump(benchmark_res, f)
+            json.dump(benchmark_res, f, indent=2)
 
 
 if __name__ == "__main__":

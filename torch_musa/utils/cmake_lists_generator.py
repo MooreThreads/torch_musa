@@ -246,21 +246,7 @@ else()
     set(MUDNN_LIBRARIES "/usr/local/musa/lib/libmudnn.so")
 endif()
 
-find_package(MUSAToolkits)
-
-if(MUSAToolkits_FOUND)
-    list(APPEND DEPENDENT_INCLUDE_DIRS ${MUSAToolkits_INCLUDE_DIRS})
-    list(APPEND DEPENDENT_LIBRARIES ${MUSAToolkits_LIBRARIES})
-else()
-    message(WARNING " The environment variable MUSA_HOME may be not specified." 
-    "Using default MUSATOOLKITS PATH: /usr/local/musa")
-    
-    list(APPEND DEPENDENT_INCLUDE_DIRS "/usr/local/musa/include/")
-    list(APPEND DEPENDENT_LIBRARIES "/usr/local/musa/lib/libmusart.so")
-    set(ENV{MUSA_HOME} "/usr/local/musa")
-    set(MUSATOOLKITS_PATH "/usr/local/musa")
-    set(MUSAToolkits_LIBRARIES "/usr/local/musa/lib/")
-endif()
+find_package(MUSAToolkit REQUIRED)
 
 if(DEFINED PYTHON_INCLUDE_DIR)
     include_directories(${PYTHON_INCLUDE_DIR})

@@ -2,7 +2,7 @@
 Utilities for Attention OP Unittests.
 """
 
-# pylint: disable=C0116
+# pylint: disable=C0116, E1102
 from functools import lru_cache
 import json
 import math
@@ -67,6 +67,11 @@ class RawSDP(torch.nn.Module):
         Forward call.
         """
         # query: bs, head_num, seq_len, head_dim
+        need_sq = query.dim() == 3
+        if need_sq:
+            query = torch.unsqueeze(query, 0)
+            key = torch.unsqueeze(key, 0)
+            value = torch.unsqueeze(value, 0)
         batch_size, q_head_num, q_seq_len, head_dim = query.shape
         _, kv_head_num, kv_seq_len, _ = key.shape
         assert (
@@ -109,13 +114,19 @@ class RawSDP(torch.nn.Module):
             attn_weight = torch.dropout(attn_weight, dropout_p, train=True)
         # no dropout
         output = attn_weight @ value
+        if need_sq:
+            return torch.squeeze(output, 0)
         return output
 
 
 def sdp_func(
     query, key, value, attn_mask=None, dropout_p=0.0, is_causal=False, scale=None
 ):
-    batch_size, _, seq_len, _ = query.shape
+    if query.dim() == 3:
+        batch_size = 1
+        _, seq_len, _ = query.shape
+    else:
+        batch_size, _, seq_len, _ = query.shape
     if (
         attn_mask is not None
         and attn_mask.shape == (batch_size, seq_len)

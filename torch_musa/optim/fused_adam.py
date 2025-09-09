@@ -228,19 +228,23 @@ class FusedAdam(Optimizer):
                 max_exp_avg_sqs,
                 state_steps,
             )
-
-            fused_adam(
+            func = (
+                _fused_adam_tensor_lr
+                if isinstance(group["lr"], torch.Tensor)
+                else _fused_adam
+            )
+            func(
                 params_with_grad,
                 grads,
                 exp_avgs,
                 exp_avg_sqs,
                 max_exp_avg_sqs,
                 state_steps,
+                group["lr"],
                 amsgrad=group["amsgrad"],
                 has_complex=has_complex,
                 beta1=beta1,
                 beta2=beta2,
-                lr=group["lr"],
                 weight_decay=group["weight_decay"],
                 eps=group["eps"],
                 maximize=group["maximize"],
@@ -253,13 +257,14 @@ class FusedAdam(Optimizer):
         return loss
 
 
-def fused_adam(
+def _fused_adam_impl(
     params: List[Tensor],
     grads: List[Tensor],
     exp_avgs: List[Tensor],
     exp_avg_sqs: List[Tensor],
     max_exp_avg_sqs: List[Tensor],
     state_steps: List[Tensor],
+    lr: Union[float, Tensor],
     capturable: bool = False,
     differentiable: bool = False,
     grad_scale: Optional[Tensor] = None,
@@ -269,13 +274,10 @@ def fused_adam(
     amsgrad: bool,
     beta1: float,
     beta2: float,
-    lr: Union[float, Tensor],
     weight_decay: float,
     eps: float,
     maximize: bool,
-):
-    """fused_adam"""
-
+) -> None:
     if not params:
         return
 
@@ -351,3 +353,119 @@ def fused_adam(
             torch._foreach_sub_(
                 device_state_steps, [device_found_inf_] * len(device_state_steps)
             )
+
+
+# note(mingyuan.wang): To work with PyTorch Dispatch System, we need to register our fused adam operator,
+# This enables automatic handling of tensor subclasses (e.g., DTensor or WeightWithDynamicFloat8CastTensor)
+# via the __torch_dispatch__ mechanism.
+# Without registration, manual unwrapping of input tensors would be required, which is not convenient for maintenance.
+@torch.library.custom_op(
+    "musa::_fused_adam_",
+    mutates_args=(
+        "params",
+        "grads",
+        "exp_avgs",
+        "exp_avg_sqs",
+        "max_exp_avg_sqs",
+        "state_steps",
+    ),
+    device_types="musa",
+)
+def _fused_adam(
+    params: List[Tensor],
+    grads: List[Tensor],
+    exp_avgs: List[Tensor],
+    exp_avg_sqs: List[Tensor],
+    max_exp_avg_sqs: List[Tensor],
+    state_steps: List[Tensor],
+    lr: float,
+    capturable: bool = False,
+    differentiable: bool = False,
+    grad_scale: Optional[Tensor] = None,
+    found_inf: Optional[Tensor] = None,
+    has_complex: bool = False,
+    *,
+    amsgrad: bool,
+    beta1: float,
+    beta2: float,
+    weight_decay: float,
+    eps: float,
+    maximize: bool,
+) -> None:
+
+    _fused_adam_impl(
+        params,
+        grads,
+        exp_avgs,
+        exp_avg_sqs,
+        max_exp_avg_sqs,
+        state_steps,
+        lr,
+        capturable=capturable,
+        differentiable=differentiable,
+        grad_scale=grad_scale,
+        found_inf=found_inf,
+        has_complex=has_complex,
+        amsgrad=amsgrad,
+        beta1=beta1,
+        beta2=beta2,
+        weight_decay=weight_decay,
+        eps=eps,
+        maximize=maximize,
+    )
+
+
+@torch.library.custom_op(
+    "musa::_fused_adam_.tensor_lr",
+    mutates_args=(
+        "params",
+        "grads",
+        "exp_avgs",
+        "exp_avg_sqs",
+        "max_exp_avg_sqs",
+        "state_steps",
+    ),
+    device_types="musa",
+)
+def _fused_adam_tensor_lr(
+    params: List[Tensor],
+    grads: List[Tensor],
+    exp_avgs: List[Tensor],
+    exp_avg_sqs: List[Tensor],
+    max_exp_avg_sqs: List[Tensor],
+    state_steps: List[Tensor],
+    lr: Tensor,
+    capturable: bool = False,
+    differentiable: bool = False,
+    grad_scale: Optional[Tensor] = None,
+    found_inf: Optional[Tensor] = None,
+    has_complex: bool = False,
+    *,
+    amsgrad: bool,
+    beta1: float,
+    beta2: float,
+    weight_decay: float,
+    eps: float,
+    maximize: bool,
+) -> None:
+
+    _fused_adam_impl(
+        params,
+        grads,
+        exp_avgs,
+        exp_avg_sqs,
+        max_exp_avg_sqs,
+        state_steps,
+        lr,
+        capturable=capturable,
+        differentiable=differentiable,
+        grad_scale=grad_scale,
+        found_inf=found_inf,
+        has_complex=has_complex,
+        amsgrad=amsgrad,
+        beta1=beta1,
+        beta2=beta2,
+        weight_decay=weight_decay,
+        eps=eps,
+        maximize=maximize,
+    )

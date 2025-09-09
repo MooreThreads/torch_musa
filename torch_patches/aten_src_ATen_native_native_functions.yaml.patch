@@ -1,5 +1,5 @@
 diff --git a/aten/src/ATen/native/native_functions.yaml b/aten/src/ATen/native/native_functions.yaml
-index c7533e4..add22a1 100644
+index c7533e4..8b8d119 100644
 --- a/aten/src/ATen/native/native_functions.yaml
 +++ b/aten/src/ATen/native/native_functions.yaml
 @@ -15699,3 +15699,78 @@
@@ -26,7 +26,7 @@ index c7533e4..add22a1 100644
 +    CPU: _scaled_dot_product_attention_math_cpu_musa
 +  tags: nondeterministic_seeded
 +
-+- func: _scaled_dot_product_attention_math_musa_backward(Tensor grad_out, Tensor query, Tensor key, Tensor value, Tensor output, Tensor attn_weights, Tensor dropout_mask, *, float? scale=None) -> (Tensor grad_query, Tensor grad_key, Tensor grad_value)
++- func: _scaled_dot_product_attention_math_musa_backward(Tensor grad_out, Tensor query, Tensor key, Tensor value, Tensor output, Tensor attn_weights, Tensor dropout_mask, bool is_causal, Tensor? attn_mask=None, *, float? scale=None) -> (Tensor grad_query, Tensor grad_key, Tensor grad_value, Tensor grad_attn_mask)
 +  variants: function
 +  dispatch:
 +    CPU: _scaled_dot_product_attention_math_cpu_musa_backward
@@ -38,7 +38,7 @@ index c7533e4..add22a1 100644
 +    CPU: _scaled_dot_product_attention_flash_cpu_musa
 +  tags: nondeterministic_seeded
 +
-+- func: _scaled_dot_product_attention_flash_musa_backward(Tensor grad_out, Tensor query, Tensor key, Tensor value, Tensor output, Tensor logsumexp, Tensor dropout_mask, bool is_causal, Tensor? attn_mask=None, *, float? scale=None) -> (Tensor grad_query, Tensor grad_key, Tensor grad_value)
++- func: _scaled_dot_product_attention_flash_musa_backward(Tensor grad_out, Tensor query, Tensor key, Tensor value, Tensor output, Tensor logsumexp, Tensor dropout_mask, bool is_causal, Tensor? attn_mask=None, *, float? scale=None) -> (Tensor grad_query, Tensor grad_key, Tensor grad_value, Tensor grad_attn_mask)
 +  variants: function
 +  dispatch:
 +    CPU: _scaled_dot_product_attention_flash_cpu_musa_backward

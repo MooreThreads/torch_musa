@@ -7,7 +7,7 @@ from .device_interface import (
 )
 from .variables.torch import *
 from .trace_rules import _apply_dynamo_trace_rules_patches
-
+from .backend import musagraphs
 
 _apply_dynamo_trace_rules_patches()
 

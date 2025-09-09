@@ -32,6 +32,16 @@ Tensor& FillOp(
     CHECK_MUDNN_STATUS(op.SetValue(value.toDouble()), "SetValue");
   }
   if (mask.has_value()) {
+    TORCH_CHECK(
+        self.device() == mask->device(),
+        "expected self and mask to be on the same device, but got mask on ",
+        mask->device(),
+        " and self on ",
+        self.device());
+    TORCH_CHECK(
+        mask->scalar_type() == kBool,
+        "masked_fill only supports boolean masks, but got dtype ",
+        mask->scalar_type());
     auto mask_mu = at::musa::CreateMUTensor(mask.value());
     CHECK_MUDNN_STATUS(op.Run(h, self_mu, mask_mu), "RunMask");
   } else {

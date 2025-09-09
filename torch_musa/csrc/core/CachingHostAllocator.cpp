@@ -183,7 +183,7 @@ class MUSAHostAllocator {
     // TODO(MTAI): We might want to employ more efficient approaches, such as
     // memory coalescing for better pinned memory management.
     void* ptr = nullptr;
-    TORCH_MUSA_CHECK(musaHostAlloc(
+    C10_MUSA_CHECK(musaHostAlloc(
         &ptr, c10::llvm::PowerOf2Ceil(size), musaHostAllocDefault));
     auto block = new Block();
     block->size_ = c10::llvm::PowerOf2Ceil(size);
@@ -328,7 +328,7 @@ class MUSAHostAllocator {
           }
           return;
         } else if (err != musaSuccess) {
-          TORCH_MUSA_CHECK(err);
+          C10_MUSA_CHECK(err);
         }
       }
 

@@ -1,4 +1,4 @@
-Total amount of ops: 935
+Total amount of ops: 948
 - `__lshift__.Scalar`
 - `__lshift__.Tensor`
 - `__rshift__.Scalar`
@@ -77,6 +77,8 @@ Total amount of ops: 935
 - `_foreach_sub_.Scalar`
 - `_fused_adam_.tensor_lr`
 - `_fused_adam_`
+- `_fused_adamw_.tensor_lr`
+- `_fused_adamw_`
 - `_fused_cross_entropy_loss_2d_backward`
 - `_fused_cross_entropy_loss_2d_forward`
 - `_fused_rmsnorm_backward`
@@ -87,6 +89,8 @@ Total amount of ops: 935
 - `_fused_swiglu_backward`
 - `_fused_swiglu_forward`
 - `_index_put_impl_`
+- `_linalg_det.result`
+- `_linalg_det`
 - `_linalg_solve_ex.result`
 - `_linalg_solve_ex`
 - `_local_scalar_dense`
@@ -473,7 +477,6 @@ Total amount of ops: 935
 - `index_select.out`
 - `index_select`
 - `int_repr`
-- `inverse`
 - `is_set_to`
 - `isin.Scalar_Tensor_out`
 - `isin.Scalar_Tensor`
@@ -518,7 +521,12 @@ Total amount of ops: 935
 - `linalg_cross.out`
 - `linalg_cross`
 - `linalg_inv_ex.inverse`
+- `linalg_inv_ex`
 - `linalg_lstsq.out`
+- `linalg_lu_factor_ex.out`
+- `linalg_lu_factor_ex`
+- `linalg_lu_solve.out`
+- `linalg_lu_solve`
 - `linalg_vector_norm.out`
 - `linalg_vector_norm`
 - `linspace.out`
@@ -626,6 +634,8 @@ Total amount of ops: 935
 - `nan_to_num.out`
 - `nanmedian.dim_values`
 - `nanmedian`
+- `nansum.out`
+- `nansum`
 - `native_batch_norm.out`
 - `native_batch_norm_backward`
 - `native_batch_norm`
@@ -762,6 +772,9 @@ Total amount of ops: 935
 - `round_.decimals`
 - `round_`
 - `round`
+- `rrelu_with_noise.out`
+- `rrelu_with_noise_`
+- `rrelu_with_noise`
 - `rsqrt.out`
 - `rsqrt_`
 - `rsqrt`

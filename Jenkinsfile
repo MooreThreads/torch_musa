@@ -18,25 +18,25 @@ def Pipeline(String DockerImg, String DockerRunArgs, String GpuType) {
             // build
             sh '/bin/bash --login -c "KINETO_URL=https://sh-code.mthreads.com/ai/kineto.git conda run -n py310 --no-capture-output /bin/bash build.sh -c"'
         }
+        gitlabCommitStatus(name: "04-${GpuType}-fsdp unit test", state: "running") {
+            sh "MUSA_VISIBLE_DEVICES=0,1,2,3 GPU_TYPE=${GpuType} /bin/bash --login scripts/run_fsdp.sh"
+        }
         parallel (
             UNITTEST: {
-                gitlabCommitStatus(name: "04-${GpuType}-basic unit tests", state: "running") {
+                gitlabCommitStatus(name: "05-${GpuType}-basic unit tests", state: "running") {
                     // unit test
-                    sh "export MUSA_VISIBLE_DEVICES=0,1"
-                    sh "GPU_TYPE=${GpuType} FLAMEGRAPH_PL_SCRIPT=/tmp/flamegraph.pl /bin/bash --login scripts/run_unittest.sh"
+                    sh "MUSA_VISIBLE_DEVICES=0,1 GPU_TYPE=${GpuType} FLAMEGRAPH_PL_SCRIPT=/tmp/flamegraph.pl /bin/bash --login scripts/run_unittest.sh"
                 }
             },
-            FSDP: {
-                gitlabCommitStatus(name: "04-${GpuType}-fsdp unit tests", state: "running") {
+            OP_UNITTEST: {
+                gitlabCommitStatus(name: "05-${GpuType}-operator unit tests", state: "running") {
                     // unit test
-                    sh "export MUSA_VISIBLE_DEVICES=2,3"
-                    sh "GPU_TYPE=${GpuType} /bin/bash --login scripts/run_fsdp.sh"
+                    sh "MUSA_VISIBLE_DEVICES=2,3 GPU_TYPE=${GpuType} /bin/bash --login scripts/run_op_unittest.sh"
                 }
             },
             INTEGRATION: {
                 gitlabCommitStatus(name: "05-${GpuType}-integration tests", state: "running") {
                     // integration test
-                    sh "export MUSA_VISIBLE_DEVICES=4,5"
                     sh "MUSA_VISIBLE_DEVICES=4,5 GPU_TYPE=${GpuType} /bin/bash --login scripts/run_integration_test.sh"
                 }
             }
@@ -52,8 +52,8 @@ pipeline {
   }
 
   environment {
-    S4000IMG = 'sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py310:rc4.0.0-v2.0.0-pt25-qy2'
-    S5000IMG = 'sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py310:rc4.0.0-v2.0.0-pt25-ph1'
+    S4000IMG = 'sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py310:rc4.0.0-v2.0.0-ci-qy2'
+    S5000IMG = 'sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py310:rc4.0.0-v2.0.0-ci-ph1'
     DOCKER_RUN_ARGS = '--network=host ' +
       '--user root ' +
       '--privileged ' +

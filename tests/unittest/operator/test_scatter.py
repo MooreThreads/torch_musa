@@ -108,31 +108,45 @@ def test_scatter_add(inputs, dtype):
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@pytest.mark.parametrize("inputs", inputs)
+@pytest.mark.parametrize(
+    "config",
+    [
+        # self_shape, index_shape, src_shape, dim
+        [(64,), (64,), (64,), 0],
+        [(64,), (128,), (128,), 0],
+        [(16, 64), (16, 64), (16, 64), 0],
+        [(16, 64), (16, 32), (16, 32), 0],
+        [(16, 64), (16, 32), (16, 128), 0],
+    ],
+)
+@pytest.mark.parametrize("reduce", ["sum", "prod", "mean", "amax", "amin"])
 @pytest.mark.parametrize("dtype", dtypes)
-@pytest.mark.parametrize("reduce", reduce)
-def test_scatter_reduce(inputs, dtype, reduce):
+@pytest.mark.parametrize("include_self", [False, True])
+def test_scatter_reduce(config, reduce, dtype, include_self):
+    # not implemented for torch.bool
     if dtype == torch.bool:
         return
-    inputs["input"] = inputs["input"].to(dtype)
-    inputs["src"] = inputs["src"].to(dtype)
-    inputs["reduce"] = reduce
+    self_shape, index_shape, src_shape, dim = config
+    input_args = {
+        "input": torch.randn(self_shape).to(dtype),
+        "src": torch.randn(src_shape).to(dtype),
+        "index": torch.randint(0, self_shape[dim], index_shape),
+        "reduce": reduce,
+        "include_self": include_self,
+        "dim": dim,
+    }
+    if dtype == torch.float16:
+        abs_diff, rel_diff = 5e-3, 5e-3
+    elif dtype == torch.bfloat16:
+        abs_diff, rel_diff = 5e-2, 5e-2
+    else:
+        abs_diff, rel_diff = 1e-5, 1e-6
     test = testing.OpTest(
-        func=torch.scatter,
-        input_args=inputs,
+        func=torch.scatter_reduce,
+        input_args=input_args,
+        comparators=testing.DefaultComparator(abs_diff=abs_diff, rel_diff=rel_diff),
     )
     test.check_result()
-    test.check_out_ops()
-    inplace_input = copy.deepcopy(inputs)
-    self_tensor = inplace_input["input"]
-    inplace_input.pop("input")
-    test = testing.InplaceOpChek(
-        func_name=torch.scatter.__name__ + "_",
-        self_tensor=self_tensor,
-        input_args=inplace_input,
-    )
-    test.check_address()
-    test.check_res()
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)

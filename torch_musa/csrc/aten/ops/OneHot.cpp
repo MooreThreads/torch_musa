@@ -1,35 +1,24 @@
 #include <ATen/ATen.h>
 #include <ATen/Config.h>
-#include <ATen/NamedTensorUtils.h>
-#include <ATen/NativeFunctions.h>
-#include <torch/library.h>
 
-#include "torch_musa/csrc/aten/ops/OneHot.h"
+#ifndef AT_PER_OPERATOR_HEADERS
+#include <ATen/Functions.h>
+#include <ATen/NativeFunctions.h>
+#else
+#include <ATen/ops/empty.h>
+#include <ATen/ops/one_hot_native.h>
+#endif
+
+#include "torch_musa/csrc/aten/ops/musa/OneHot.muh"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 
-namespace at {
-namespace native {
-
-DEFINE_DISPATCH(onehot_stub);
-REGISTER_NO_CPU_DISPATCH(onehot_stub);
-
-} // namespace native
-
-namespace musa {
+namespace at::musa {
 
 Tensor OneHot(const Tensor& self, int64_t num_classes) {
   TORCH_CHECK(
-      self.device().type() == kMUSA,
-      "Device of input tensor of Bucketize must be MUSA, but now is ",
-      self.device());
-  TORCH_CHECK(
-      self.scalar_type() == at::ScalarType::Float ||
-          self.scalar_type() == at::ScalarType::Long ||
-          self.scalar_type() == at::ScalarType::Int,
-      "OneHot supports dtypes of float32, int32 and int64, but "
-      "now it is ",
-      self.scalar_type());
+      self.scalar_type() == at::ScalarType::Long,
+      "one_hot is only applicable to index tensor of type LongTensor.");
 
   c10::musa::MUSAGuard device_guard(self.device());
   auto shape = self.sizes().vec();
@@ -52,16 +41,15 @@ Tensor OneHot(const Tensor& self, int64_t num_classes) {
   }
 
   shape.push_back(num_classes);
-  Tensor ret = at::zeros(
+  Tensor ret = at::empty(
       shape, self.options().memory_format(c10::MemoryFormat::Contiguous));
 
   // onehot kernel dosen't support un-contiguous tensors currently
   Tensor self_contiguous = self.contiguous();
 
-  at::native::onehot_stub(kMUSA, ret, self_contiguous, num_classes);
+  OneHotRun(ret, self_contiguous, num_classes);
 
   return ret;
 }
 
-} // namespace musa
-} // namespace at
+} // namespace at::musa

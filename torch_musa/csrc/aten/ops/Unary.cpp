@@ -45,10 +45,7 @@ void ReciprocalImpl(MusaTensorIterator& iter, const std::string& op_name) {
   UnaryAlphaCall(iter, alpha, UNARY_MODE::POW, op_name);
 }
 
-void ErfMeta(
-    MusaTensorIterator& iter,
-    const Tensor& out,
-    const Tensor& inp) {
+void ErfMeta(MusaTensorIterator& iter, const Tensor& out, const Tensor& inp) {
   InitUnaryIterator(iter, out, inp);
   TensorIteratorConfig config;
   SetUpUnaryFloatConfig(config);

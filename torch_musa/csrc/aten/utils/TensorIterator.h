@@ -52,6 +52,8 @@ class MusaTensorIterator : public TensorIteratorBase {
 
   bool output_is_type_corrected(int arg) const;
 
+  const Tensor& original_input(int arg) const;
+
  protected:
   virtual void _set_output_raw_strided(
       int64_t output_idx,

@@ -214,7 +214,7 @@ void mtgpu_impl_copy_d2d(
     void* src = const_cast<void*>(tensor_src.data_ptr());
     size_t size = tensor_src.nbytes();
     if (needs_MemcpyPeer && src_device != dst_device) {
-      TORCH_MUSA_CHECK(musaMemcpyPeerAsync(
+      C10_MUSA_CHECK(musaMemcpyPeerAsync(
           dst, dst_device.index(), src, src_device.index(), size, copy_stream));
     } else if (
         src_device == dst_device && tensor_src.dim() <= 8 &&
@@ -229,7 +229,7 @@ void mtgpu_impl_copy_d2d(
       auto out = CreateMUTensor(tensor_self);
       CHECK_MUDNN_STATUS(op.Run(h, out, in), "Run Copy by Identity");
     } else {
-      TORCH_MUSA_CHECK(musaMemcpyAsync(
+      C10_MUSA_CHECK(musaMemcpyAsync(
           dst, src, size, musaMemcpyDeviceToDevice, copy_stream));
     }
   } else {
@@ -283,9 +283,16 @@ static bool maybe_enable_p2p_access(Device dst_device, Device src_device) {
   return at::musa::get_p2p_access(src_device.index(), dst_device.index());
 }
 
-Tensor MUSACopyFrom(const Tensor& src, const Tensor& self, bool non_blocking) {
+// copy src_origin to self, such as self.copy_(src_origin)
+Tensor MUSACopyFrom(
+    const Tensor& src_origin,
+    const Tensor& self,
+    bool non_blocking) {
   // At least one of src and dst should be MUSA, otherwise it is impossible
   // to fall into this function!
+  // Firstly, we expand the src_origin. as d2d/d2h/h2d/unary/permute will not
+  // handle the broadcast case
+  Tensor src = src_origin.expand_as(self);
   TORCH_INTERNAL_ASSERT(is_musa(self) || is_musa(src));
   maybe_enable_p2p_access(self.device(), src.device());
 
@@ -336,17 +343,15 @@ Tensor MUSACopyFrom(const Tensor& src, const Tensor& self, bool non_blocking) {
       dst_contig = dst.is_contiguous()
           ? dst
           : at::empty_like(dst, LEGACY_CONTIGUOUS_MEMORY_FORMAT);
-      src_contig = src.to(self.scalar_type()).expand_as(dst).contiguous();
+      src_contig = src.to(self.scalar_type()).contiguous();
     } else {
       bool same_type = self.scalar_type() == src.scalar_type();
       dst_contig = (dst.is_contiguous() && same_type)
           ? dst
           : at::empty_like(
                 dst, src.scalar_type(), LEGACY_CONTIGUOUS_MEMORY_FORMAT);
-      src_contig = src.expand_as(dst).contiguous();
+      src_contig = src.contiguous();
     }
-    // expand_as will change sizes hence assert is moved here
-    TORCH_INTERNAL_ASSERT(dst_contig.sizes() == src_contig.sizes());
     dst_contig._set_conj(dst.is_conj());
     src_contig._set_conj(self.is_conj());
 
@@ -367,7 +372,7 @@ Tensor MUSACopyFrom(const Tensor& src, const Tensor& self, bool non_blocking) {
     }
 
     MUSAStream stream = getCurrentMUSAStream();
-    TORCH_MUSA_CHECK(musaMemcpyAsync(
+    C10_MUSA_CHECK(musaMemcpyAsync(
         self.data_ptr(), src.data_ptr(), capacity, copy_type, stream));
     if (non_blocking) {
       const auto& host_tensor = is_musa(src) ? self : src;

@@ -361,8 +361,9 @@ class BenchmarkRunner:
             percentile=np.around(times_percentile, decimals=3).tolist(),
         )
 
-        # calc macs
-        test_case.set_macs(test_case.op_bench.calc_flops())
+        # calc flops and memory
+        test_case.set_flops(test_case.op_bench.calc_flops())
+        test_case.set_memory(test_case.op_bench.calc_memory())
         test_case.set_reported_time(reported_run_time_us)
         test_case.set_time_metric(time_metirc)
 
@@ -447,7 +448,6 @@ class BenchmarkRunner:
         benchmark_results = {}
         benchmark_results["musa_stack"] = {
             "musa": sw_stack_detection.get_musa_stack_version(),
-            "driver": sw_stack_detection.get_ddk_version(),
         }
         benchmark_results["benchmark_result"] = []
         for test_metainfo in BENCHMARK_TESTER:

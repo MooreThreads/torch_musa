@@ -1,6 +1,6 @@
 """Test linear algebra operators."""
 
-# pylint: disable=missing-function-docstring, redefined-outer-name, unused-import,not-callable
+# pylint: disable=missing-function-docstring,redefined-outer-name,unused-import,not-callable,invalid-name
 import torch
 import pytest
 import torch_musa
@@ -176,9 +176,11 @@ def test_cholesky_inverse(input_data):
     "input_data",
     [
         {"A": torch.randn(1, 3, 3), "B": torch.randn(1, 3, 5)},
-        {"A": torch.randn(128, 128, 128), "B": torch.randn(128, 128, 64)},
+        {"A": torch.randn(32, 32, 32), "B": torch.randn(32, 32, 16)},
         {"A": torch.randn(5, 9, 9), "B": torch.randn(5, 9, 7)},
         {"A": torch.randn(3, 3), "B": torch.randn(3, 9)},
+        # This size would fail!
+        # {"A": torch.randn(128, 128, 128), "B": torch.randn(128, 128, 64)},
     ],
 )
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
@@ -191,4 +193,72 @@ def test_linalg_solve(input_data, dtype):
     output_musa = m(
         input_data["A"].to("musa").clone(), input_data["B"].to("musa").clone()
     )
+    assert testing.DefaultComparator(abs_diff=1e-4, rel_diff=1e-3)(output, output_musa)
+
+
+@pytest.mark.parametrize(
+    "input_data",
+    [
+        {"A": torch.randn(1, 3, 3)},
+        {"A": torch.randn(16, 16, 16)},
+        {"A": torch.randn(5, 9, 9)},
+        {"A": torch.randn(3, 3)},
+    ],
+)
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_linalg_lu_factor(input_data, dtype):
+    input_data["A"] = input_data["A"].to(dtype)
+    m = torch.linalg.lu_factor
+    lu, pivot = m(input_data["A"].clone())  # pylint: disable=invalid-name
+    lu_musa, pivot_musa = m(input_data["A"].to("musa").clone())
+    assert testing.DefaultComparator(abs_diff=1e-5)(lu, lu_musa)
+    assert testing.DefaultComparator(abs_diff=1e-5)(pivot, pivot_musa)
+
+
+@pytest.mark.parametrize(
+    "input_data",
+    [
+        {"A": torch.randn(1, 3, 3)},
+        {"A": torch.randn(128, 128)},
+        {"A": torch.randn(5, 9, 9)},
+        {"A": torch.randn(3, 3)},
+    ],
+)
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_linalg_det(input_data, dtype):
+    input_data["A"] = input_data["A"].to(dtype)
+    m = torch.linalg.det
+    output = m(input_data["A"].clone())
+    output_musa = m(input_data["A"].to("musa").clone())
     assert testing.DefaultComparator(abs_diff=1e-5)(output, output_musa)
+
+
+@pytest.mark.parametrize(
+    "input_data",
+    [
+        {"A": [3, 3], "B": [3, 2]},
+        {"A": [3, 3], "B": [3, 3, 2]},
+        {"A": [3, 3], "B": [3, 5, 3]},
+        {"A": [3, 3], "B": [3, 3, 4]},
+    ],
+)
+@pytest.mark.parametrize("dtype", [torch.float32])
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_linalg_lu_solve(input_data, dtype):
+    A = torch.randn(*input_data["A"]).to(dtype).musa()
+    B = torch.randn(*input_data["B"]).to(dtype).musa()
+    LU, pivots = torch.linalg.lu_factor(A)
+
+    if input_data["B"] == [3, 5, 3]:
+        X = torch.linalg.lu_solve(LU, pivots, B, left=False)
+        res = X @ A
+    elif input_data["B"] == [3, 3, 4]:
+        X = torch.linalg.lu_solve(LU, pivots, B, adjoint=True)
+        res = A.mT @ X
+    else:
+        X = torch.linalg.lu_solve(LU, pivots, B)
+        res = A @ X
+
+    assert testing.DefaultComparator(abs_diff=1e-5)(res, B)

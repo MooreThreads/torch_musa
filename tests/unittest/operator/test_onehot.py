@@ -13,14 +13,14 @@ input_shapes = [
     [8, 32],
     [8, 16, 2],
     [16, 16, 2],
-    [8, 32, 8],
-    [16, 32, 32],
     [32, 32, 32],
+    [1024, 1024],
+    [1024, 4096],
 ]
 support_dtypes = [
     torch.int64,
 ]
-num_classes = [-1, 10, 20]
+num_classes = [-1, 20, 7]
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)

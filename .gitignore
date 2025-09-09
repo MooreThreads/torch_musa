@@ -158,3 +158,10 @@ torch_musa/version.py
 
 # integration data root
 tests/integration/data/
+
+# tools/ops_filter export files
+tools/ops_filter/*.csv
+
+# aoti generate files
+torch_musa/csrc/inductor/aoti_torch/generated/*
+torch_musa/_inductor/codegen/fallback_ops.py

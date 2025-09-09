@@ -8,6 +8,7 @@ from torch_musa import testing
 index_add_coverage_test_config = [
     # self_shape, source_shape, dim, alpha, permute
     # case 0
+    [(4, 1024 * 128), (0, 1024 * 128), 0, 2.0],
     [(4, 1024 * 128), (4, 1024 * 128), 0, 2.0],
     [(4, 1024, 127), (4, 1024, 127), 0, 2.0],
     [(1024, 4, 129), (1024, 4, 129), 1, 2.0],
