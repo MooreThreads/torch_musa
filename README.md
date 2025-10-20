@@ -41,7 +41,7 @@ During its initial startup, `Docker` performs a self-check.
 docker run -it --privileged \
   --pull always --network=host \
   --env MTHREADS_VISIBLE_DEVICES=all \
-  registry.mthreads.com/mcconline/musa-pytorch-release-public:rc4.2.0-v2.1.0-S80-py310 /bin/bash
+  registry.mthreads.com/mcconline/musa-pytorch-release-public:latest /bin/bash
 ```
 
 ### From Python wheels
@@ -69,12 +69,12 @@ bash build.sh -c  # clean cache then build PyTorch and torch_musa from scratch
 ```
 
 Some important building parameters are as follows:
- - --torch/-t  # build original PyTorch only
- - --musa/-m   # build torch_musa only
- - --debug  # build in debug mode
- - --asan   # build in asan mode
- - --clean/-c  # clean everything built and build
- - --wheel/-w  # generate wheels
+ - --torch/-t: build original PyTorch only
+ - --musa/-m: build torch_musa only
+ - --debug: build in debug mode
+ - --asan: build in asan mode
+ - --clean/-c: clean everything built and build
+ - --wheel/-w: generate wheels
 
 For example, if one has built PyTorch and only needs to build torch_musa with wheel, run:
 ```bash
