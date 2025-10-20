@@ -11,6 +11,7 @@
 #include <ATen/ops/reciprocal_cpu_dispatch.h>
 #endif
 
+#include <c10/core/Contiguity.h>
 #include <c10/util/Optional.h>
 
 #include "torch_musa/csrc/aten/utils/Utils.h"
@@ -68,37 +69,39 @@ ScalarType UnaryTrueDivSuggestInputType(
 }
 
 std::optional<Tensor> BinaryMayContigRHS(MusaTensorIterator& iter) {
-  const auto& orig_l = iter.original_input(0);
-  const auto& orig_r = iter.original_input(1);
-  if (orig_l.numel() <= orig_r.numel()) {
+  const auto r_shape = iter.shape();
+  const auto r_strides = iter.strides(2);
+  const size_t ndim = iter.ndim();
+
+  DimVector useful_shape, useful_strides, useful_ids;
+  for (const auto i : c10::irange(ndim)) {
+    const auto sp_i = r_shape[i];
+    const auto st_i = r_strides[i];
+    if (sp_i != 1 && st_i != 0) {
+      useful_shape.push_back(sp_i);
+      useful_strides.push_back(st_i);
+      useful_ids.push_back(i);
+    }
+  }
+
+  const size_t useful_ndim = useful_shape.size();
+  const bool is_contig = c10::_compute_contiguous(
+      IntArrayRef(useful_shape.data(), useful_ndim),
+      IntArrayRef(useful_strides.data(), useful_ndim),
+      static_cast<int64_t>(iter.original_input(1).numel()));
+  // Device scalar tensor is always contiguous.
+  if (is_contig) {
     return std::nullopt;
   }
 
-  auto rt_r_str = iter.strides(2);
-  if (rt_r_str.back() == 1) {
-    return std::nullopt;
+  Tensor r_contig =
+      at::as_strided(iter.tensor(2), useful_shape, useful_strides).contiguous();
+  DimVector tmp_strides(ndim, 0);
+  for (const auto i : c10::irange(useful_ndim)) {
+    tmp_strides[useful_ids[i]] = r_contig.stride(i);
   }
 
-  auto rt_shape = iter.shape();
-  const size_t rt_ndim = iter.ndim();
-  // fnbd -> first_not_broadcast_dim
-  size_t fnbd = 0;
-  while ((fnbd < rt_ndim) && (rt_r_str[fnbd] == 0)) {
-    ++fnbd;
-  }
-  if (fnbd == rt_ndim) {
-    return std::nullopt;
-  }
-
-  Tensor tmp_contig_rhs =
-      at::as_strided(iter.tensor(2), rt_shape.slice(fnbd), rt_r_str.slice(fnbd))
-          .contiguous();
-  auto tmp_str = tmp_contig_rhs.strides();
-
-  std::vector<int64_t> tmp_strides(rt_ndim, 0);
-  std::copy(tmp_str.begin(), tmp_str.end(), tmp_strides.begin() + fnbd);
-
-  auto res = at::as_strided(tmp_contig_rhs, rt_shape, tmp_strides);
+  auto res = at::as_strided(r_contig, r_shape, tmp_strides);
   return res;
 }
 

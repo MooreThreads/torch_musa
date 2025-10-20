@@ -11,6 +11,7 @@
 #include <ATen/core/ATenGeneral.h>
 
 #include "torch_musa/csrc/aten/musa/Exceptions.h"
+#include "torch_musa/csrc/aten/musa/MUSAContextLight.h"
 #include "torch_musa/csrc/core/MUSAFunctions.h"
 #include "torch_musa/csrc/core/MUSAHooksInterface.h"
 #include "torch_musa/csrc/core/MUSAStream.h"
@@ -61,17 +62,7 @@ size_t getChosenWorkspaceSize();
 
 at::DataPtr getNewWorkspace();
 
-musaDeviceProp* getCurrentDeviceProperties();
-
-musaDeviceProp* getDeviceProperties(int device);
-
-bool canDeviceAccessPeer(int device, int peer_device);
-
 int warp_size();
-
-Allocator* getMUSADeviceAllocator();
-
-mublasHandle_t getCurrentMUSABlasHandle();
 
 inline void lazyInitMUSA() {
   static c10::once_flag thm_init;
@@ -80,7 +71,7 @@ inline void lazyInitMUSA() {
 
 uint32_t getMUSAArch();
 
-uint32_t getMUSAArch(int device);
+uint32_t getMUSAArch(c10::DeviceIndex device);
 
 bool maybeDNNOpSupportBFloat16();
 

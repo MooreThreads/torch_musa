@@ -107,5 +107,6 @@
     "npps_statistics_functions.h": "mtpps_statistics_functions.h",
     "npps_support_functions.h": "mtpps_support_functions.h",
     "nvblas.h": "mtblas.h",
-    "nvfunctional": "mtfunctional"
+    "nvfunctional": "mtfunctional",
+    "SparseCUDAApplyUtils": "SparseMUSAApplyUtils"
 }

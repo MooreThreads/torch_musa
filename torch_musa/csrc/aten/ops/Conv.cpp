@@ -16,7 +16,6 @@
 #include <ATen/ops/_convolution_mode_native.h>
 #include <ATen/ops/_convolution_native.h>
 #include <ATen/ops/_unsafe_view.h>
-#include <ATen/ops/cat.h>
 #include <ATen/ops/constant_pad_nd.h>
 #include <ATen/ops/conv1d_native.h>
 #include <ATen/ops/conv2d_native.h>
@@ -49,6 +48,7 @@
 
 namespace at {
 namespace musa {
+namespace {
 void ConfigConv(
     ::musa::dnn::Convolution& c,
     const at::ScalarType& dtype,
@@ -92,6 +92,7 @@ void AddBias(Tensor& out, const Tensor& bias) {
   TORCH_CHECK(bias.dim() == 1, "Dimension of bias should be 1");
   out.add_(at::native::reshape_bias(out.dim(), bias));
 }
+} // anonymous namespace
 
 template <int N>
 Tensor ConvNd(
@@ -130,28 +131,33 @@ Tensor ConvNd(
   ::musa::dnn::Convolution::Algorithm algo;
   c.GetRecommendForwardAlgorithm(h, algo, out, in, ke);
 
-  if constexpr (N == 2) {
-    ::musa::dnn::Convolution::FusedActivationDesc act;
-    act.SetMode(::musa::dnn::Convolution::FusedActivationDesc::Mode::IDENTITY);
+  ::musa::dnn::Convolution::FusedActivationDesc act;
+  act.SetMode(::musa::dnn::Convolution::FusedActivationDesc::Mode::IDENTITY);
 
-    at::musa::muTensor bias;
-    if (bias_opt.has_value() && bias_opt.value().numel() != 0) {
-      // bias always contiguous ?
-      bias = CreateMUTensor(bias_opt.value());
-    } else {
-      bias = CreateEmptyMUTensor();
-    }
-    muTensor add = at::musa::CreateEmptyMUTensor();
+  muTensor add = CreateEmptyMUTensor();
+#if defined(MUDNN_VERSION) && MUDNN_VERSION >= 3100
+  muTensor bias = (bias_opt.has_value() && bias_opt.value().numel() > 0)
+      ? CreateMUTensor(bias_opt.value())
+      : CreateEmptyMUTensor();
+  CHECK_MUDNN_STATUS(
+      c.RunFusion(h, out, in, ke, bias, add, act, algo, InternalMemAlloc),
+      "RunFusion");
+#else
+  if constexpr (N == 2) {
+    // bias always contiguous ?
+    muTensor bias = (bias_opt.has_value() && bias_opt.value().numel() != 0)
+        ? CreateMUTensor(bias_opt.value())
+        : CreateEmptyMUTensor();
     CHECK_MUDNN_STATUS(
         c.RunFusion(h, out, in, ke, bias, add, act, algo, InternalMemAlloc),
         "RunFusion");
   } else {
-    // conv3d
     CHECK_MUDNN_STATUS(c.Run(h, out, in, ke, algo, InternalMemAlloc), "Run");
-    if (bias_opt.has_value()) {
+    if (bias_opt.has_value() && bias_opt.value().numel() > 0) {
       AddBias(output, *bias_opt);
     }
   }
+#endif
 
   return output;
 }

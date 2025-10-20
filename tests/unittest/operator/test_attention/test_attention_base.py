@@ -15,6 +15,32 @@ from torch.nn import functional as F
 MASK_TYPES = [-1, 0, 1, 2]
 
 
+def sdp_cases(part):
+    """
+    Return atten cases
+    """
+    assert part in [0, 1]
+    # [(bs, seq_len, embedding_dim), embedding_dim, q_head_num, kv_head_num]
+    cases = [
+        [(8, 32, 1024), 1024, 16, 16],
+        # gqa
+        [(64, 32, 1024), 1024, 16, 4],
+    ]
+
+    device_arch_name = torch.musa.get_device_properties(
+        torch.musa.current_device()
+    ).name
+    if device_arch_name != "MTT S80":
+        cases.extend(
+            [
+                [(2, 128, 2048), 2048, 32, 32],
+                [(2, 512, 2048), 2048, 32, 8],
+                [(1, 1024, 1024), 1024, 8, 8],
+            ]
+        )
+    return [case for i, case in enumerate(cases) if i % 2 == part]
+
+
 @lru_cache
 def get_musa_version():
     bin_file = "musa_toolkits_version"

@@ -146,6 +146,17 @@ ScalarType musa_infer_dtype_from_optional(
   }
 }
 
+ScalarType musa_get_result_or_self_value_dtype(
+    const Tensor& self,
+    const Tensor& result,
+    const std::optional<ScalarType>& dtype) {
+  if (result.defined()) {
+    return result.scalar_type();
+  } else {
+    return dtype.value_or(toRealValueType(self.scalar_type()));
+  }
+}
+
 void ResizeReduction(
     Tensor& output,
     const Tensor& self,
@@ -369,6 +380,26 @@ Tensor& MeanNamesDimOut(
   return output;
 }
 
+namespace {
+
+using Proxy = typename c10::MaybeOwned<Tensor>;
+
+enum class ProxyType { REF, CAST, VIEW };
+
+Proxy ExpectType(const Tensor& t, ScalarType dtype, ProxyType strategy) {
+  if (t.scalar_type() == dtype || strategy == ProxyType::REF) {
+    TORCH_INTERNAL_ASSERT(
+        t.scalar_type() == dtype && strategy == ProxyType::REF);
+    return Proxy::borrowed(t);
+  }
+  if (strategy == ProxyType::CAST) {
+    return Proxy::owned(t.to(dtype));
+  }
+  return Proxy::owned(t.view(dtype));
+}
+
+} // anonymous namespace
+
 Tensor& SumIntListOut(
     const Tensor& self,
     at::OptionalIntArrayRef dim,
@@ -396,24 +427,47 @@ Tensor& SumIntListOut(
 
   const auto self_orig_dtype = self.scalar_type();
   auto self_target_dtype = self_orig_dtype;
+  auto self_proxy_type = ProxyType::REF;
 
-  if (isFloatingType(output_dtype) && isIntegralType(self_orig_dtype, true)) {
+  const auto out_orig_dtype = output_dtype;
+  auto out_target_dtype = output_dtype;
+  auto out_proxy_type = ProxyType::REF;
+
+  if (isFloatingType(out_orig_dtype) && isIntegralType(self_orig_dtype, true)) {
     if (elementSize(self_orig_dtype) <= 1UL) {
       self_target_dtype = ScalarType::Half;
-    } else if (output_dtype == ScalarType::Float) {
+    } else if (out_orig_dtype == ScalarType::Float) {
       self_target_dtype = ScalarType::Int;
     } else {
       self_target_dtype = ScalarType::Float;
     }
+
+    if (self_orig_dtype != self_target_dtype) {
+      self_proxy_type = ProxyType::CAST;
+    }
   }
 
-  using Proxy = typename c10::MaybeOwned<Tensor>;
-  Proxy proxy_self = (self_orig_dtype != self_target_dtype)
-      ? Proxy::owned(self.to(self_target_dtype))
-      : Proxy::borrowed(self);
+  // It's now always exclusive with the previous condition.
+  if (out_orig_dtype == ScalarType::Long) {
+    TORCH_INTERNAL_ASSERT(self_orig_dtype == self_target_dtype);
+    if (self_target_dtype == ScalarType::Byte ||
+        self_target_dtype == ScalarType::UInt16 ||
+        self_target_dtype == ScalarType::UInt32 ||
+        self_target_dtype == ScalarType::UInt64) {
+      out_target_dtype = ScalarType::UInt64;
+      out_proxy_type = ProxyType::VIEW;
+    }
+  }
+
+  auto proxy_self = ExpectType(self, self_target_dtype, self_proxy_type);
+  auto proxy_out = ExpectType(output, out_target_dtype, out_proxy_type);
 
   auto dims = dim.value_or(IntArrayRef());
-  ReduceCall(output, *proxy_self, dims, ::musa::dnn::Reduce::Mode::ADD);
+  ReduceCall(
+      const_cast<Tensor&>(*proxy_out),
+      *proxy_self,
+      dims,
+      ::musa::dnn::Reduce::Mode::ADD);
   return output;
 }
 
@@ -443,6 +497,14 @@ Tensor Prod(const Tensor& self, c10::optional<ScalarType> dtype) {
       self, IntArrayRef{}, false, dtype, ::musa::dnn::Reduce::Mode::PROD);
 }
 
+at::Tensor ProdDimInt(
+    const Tensor& self,
+    int64_t dim,
+    bool keepdim,
+    c10::optional<at::ScalarType> dtype) {
+  return Reduction(self, dim, keepdim, dtype, ::musa::dnn::Reduce::Mode::PROD);
+}
+
 Tensor& ProdIntOut(
     const Tensor& self,
     long dim,
@@ -453,64 +515,96 @@ Tensor& ProdIntOut(
   return output;
 }
 
-Tensor& NormDtypeOut(
+namespace {
+
+void NormDtypeMeta(
     const Tensor& self,
-    const c10::optional<at::Scalar>& p,
-    at::IntArrayRef dim,
+    const std::optional<Scalar>& p,
+    IntArrayRef dim,
     bool keepdim,
-    at::ScalarType dtype,
-    at::Tensor& out) {
+    const std::optional<ScalarType>& dtype,
+    Tensor& out) {
+  const auto self_dtype = self.scalar_type();
   TORCH_CHECK(
-      self.scalar_type() == at::ScalarType::Float ||
-          self.scalar_type() == at::ScalarType::Half ||
-          self.scalar_type() == at::ScalarType::BFloat16,
-      "Dtype of input tensor of Norm.out only support Float32, Half, BFloat16. ",
-      "but now it is ",
-      self.scalar_type());
-  TORCH_CHECK(
-      dtype == at::ScalarType::Float || dtype == at::ScalarType::Half ||
-          dtype == at::ScalarType::BFloat16,
-      "Dtype of input tensor of Norm.out only support Float32, Half, BFloat16. ",
-      "but now it is ",
-      self.scalar_type());
-  auto out_dtype = out.scalar_type();
+      self_dtype == ScalarType::Float || self_dtype == ScalarType::Half ||
+          self_dtype == ScalarType::BFloat16,
+      "Norm only supports Float/Half/BFloat16 input, but now it is ",
+      self_dtype);
+
+  const auto out_dtype = musa_get_result_or_self_value_dtype(self, out, dtype);
+  ResizeReduction(out, self, dim, keepdim, out_dtype);
+}
+
+void NormDtypeImpl(
+    const Tensor& self,
+    const std::optional<Scalar>& p,
+    IntArrayRef dim,
+    Tensor& out) {
+  const auto inp_dtype = self.scalar_type();
+  const auto out_dtype = out.scalar_type();
 
   // special case for type promotion in mixed precision, improves computational
   // efficiency.
   const bool gpu_lowp_to_f32 =
-      (self.scalar_type() == kHalf || self.scalar_type() == kBFloat16) &&
-      out_dtype == kFloat;
+      (inp_dtype == kHalf || inp_dtype == kBFloat16) && out_dtype == kFloat;
 
-  Tensor out_temp = Reduction(
-      self,
-      dim,
-      keepdim,
-      gpu_lowp_to_f32 ? self.scalar_type() : out_dtype,
-      ::musa::dnn::Reduce::Mode::NORM,
-      p,
-      true);
-  out.copy_(out_temp);
+  using Proxy = typename c10::MaybeOwned<Tensor>;
+  Proxy proxy_o =
+      gpu_lowp_to_f32 ? Proxy::owned(out.to(inp_dtype)) : Proxy::borrowed(out);
+
+  auto& o = const_cast<Tensor&>(*proxy_o);
+  ReduceCall(o, self, dim, ::musa::dnn::Reduce::Mode::NORM, p, true);
+
+  if (gpu_lowp_to_f32) {
+    out.copy_(o);
+  }
+}
+
+} // anonymous namespace
+
+Tensor& NormDtypeOut(
+    const Tensor& self,
+    const std::optional<Scalar>& p,
+    IntArrayRef dim,
+    bool keepdim,
+    ScalarType dtype,
+    Tensor& out) {
+  NormDtypeMeta(self, p, dim, keepdim, dtype, out);
+  NormDtypeImpl(self, p, dim, out);
   return out;
 }
 
 Tensor NormScalarOptDimDtype(
     const Tensor& self,
-    const c10::optional<at::Scalar>& p,
-    at::IntArrayRef dim,
+    const std::optional<Scalar>& p,
+    IntArrayRef dim,
     bool keepdim,
-    at::ScalarType dtype) {
-  Tensor output = at::empty_like(self, self.options().dtype(dtype));
-  NormDtypeOut(self, p, dim, keepdim, dtype, output);
-  return output;
+    ScalarType dtype) {
+  Tensor out;
+  NormDtypeMeta(self, p, dim, keepdim, dtype, out);
+  NormDtypeImpl(self, p, dim, out);
+  return out;
 }
 
 Tensor& NormOut(
     const Tensor& self,
-    const c10::optional<at::Scalar>& p,
-    at::IntArrayRef dim,
+    const std::optional<Scalar>& p,
+    IntArrayRef dim,
     bool keepdim,
     Tensor& out) {
-  out = NormDtypeOut(self, p, dim, keepdim, self.scalar_type(), out);
+  NormDtypeMeta(self, p, dim, keepdim, std::nullopt, out);
+  NormDtypeImpl(self, p, dim, out);
+  return out;
+}
+
+Tensor Norm(
+    const Tensor& self,
+    const std::optional<Scalar>& p,
+    IntArrayRef dim,
+    bool keepdim) {
+  Tensor out;
+  NormDtypeMeta(self, p, dim, keepdim, std::nullopt, out);
+  NormDtypeImpl(self, p, dim, out);
   return out;
 }
 
@@ -774,7 +868,7 @@ void ReduceIndicesCall(
     ::musa::dnn::Reduce::Mode m) {
   TORCH_CHECK(
       self.scalar_type() == output.scalar_type(),
-      "scalar_type of in&out must be the same, bug got: ",
+      "scalar_type of in&out must be the same, but got: ",
       self.scalar_type(),
       " and: ",
       output.scalar_type());
@@ -845,6 +939,13 @@ std::tuple<Tensor, Tensor> ReductionIndices(
   namedinference::propagate_names_for_reduction(
       indices, self, dims_vec, keepdim);
 
+  if (C10_UNLIKELY(self.numel() == 0)) {
+    TORCH_CHECK(
+        self.size(dim) != 0,
+        "Expected reduction dim to have non-zero size for input.numel()==0.");
+    return std::make_tuple(output, indices);
+  }
+
   ReduceIndicesCall(output, indices, self, dim, m);
   return std::make_tuple(output, indices);
 }
@@ -894,6 +995,12 @@ std::tuple<Tensor&, Tensor&> MaxDimMax(
   }
   if (0 == indices.numel()) {
     at::native::resize_output(indices, shape);
+  }
+  if (C10_UNLIKELY(self.numel() == 0)) {
+    TORCH_CHECK(
+        self.size(dim) != 0,
+        "Expected reduction dim to have non-zero size for input.numel()==0.");
+    return std::tuple<Tensor&, Tensor&>(output, indices);
   }
   ReduceIndicesCall(output, indices, self, dim, ::musa::dnn::Reduce::Mode::MAX);
   return std::tuple<Tensor&, Tensor&>(output, indices);
@@ -995,9 +1102,27 @@ void ArgMinOrMaxOutTemplate(
     c10::optional<int64_t> dim,
     Tensor& result,
     ::musa::dnn::Reduce::Mode m) {
-  Tensor self_ = dim.has_value() ? self : self.flatten();
-  auto dim_ = dim.has_value() ? maybe_wrap_dim(dim.value(), self.dim()) : 0;
-  ReduceIndicesOnlyCall(result, self_, dim_, m);
+  if (self.numel() == 0) {
+    return;
+  }
+
+  using Proxy = c10::MaybeOwned<Tensor>;
+  Proxy in;
+  int64_t dim_ = 0;
+
+  if (dim.has_value()) {
+    dim_ = maybe_wrap_dim(dim.value(), self.dim());
+
+    if (self.size(dim_) == 1) {
+      result.fill_(0);
+      return;
+    }
+    in = Proxy::borrowed(self);
+  } else {
+    in = Proxy::owned(self.reshape({-1}));
+  }
+
+  ReduceIndicesOnlyCall(result, *in, dim_, m);
 }
 
 TORCH_IMPL_FUNC(argmax_out_musa)

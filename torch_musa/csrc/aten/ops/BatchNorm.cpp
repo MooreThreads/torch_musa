@@ -1,15 +1,22 @@
-#include <ATen/ATen.h>
+#include <ATen/AccumulateType.h>
 #include <ATen/Config.h>
+#include <ATen/TensorOperators.h>
+
+#ifndef AT_PER_OPERATOR_HEADERS
+#include <ATen/Functions.h>
 #include <ATen/NativeFunctions.h>
-#include <ATen/core/op_registration/adaption.h>
-#include <ATen/native/layer_norm.h>
-#include <torch/library.h>
-#include <iostream>
+#else
+#include <ATen/ops/_native_batch_norm_legit_native.h>
+#include <ATen/ops/_native_batch_norm_legit_no_training_native.h>
+#include <ATen/ops/batch_norm_update_stats_native.h>
+#include <ATen/ops/empty_like.h>
+#include <ATen/ops/native_batch_norm_backward_native.h>
+#include <ATen/ops/native_batch_norm_native.h>
+#include <ATen/ops/resize.h>
+#endif
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-
-#include <mudnn.h>
 
 namespace at {
 namespace musa {
@@ -38,19 +45,6 @@ static void copy_arg(const at::Tensor& dst, const at::Tensor& src) {
   dst.copy_(src);
 }
 
-void check_dims_match_num_input_features(
-    const char* arg_name,
-    int64_t expected,
-    int64_t actual) {
-  TORCH_CHECK(
-      actual == expected,
-      arg_name,
-      " should contain ",
-      expected,
-      " elements not ",
-      actual);
-}
-
 std::tuple<Tensor&, Tensor&, Tensor&> NativeBatchNormOut(
     const Tensor& input,
     const c10::optional<Tensor>& weight_opt,
@@ -63,85 +57,44 @@ std::tuple<Tensor&, Tensor&, Tensor&> NativeBatchNormOut(
     Tensor& output,
     Tensor& save_mean,
     Tensor& save_invstd) {
+  const auto inp_dtype = input.scalar_type();
   TORCH_CHECK(
-      input.scalar_type() == at::ScalarType::Float ||
-          input.scalar_type() == at::ScalarType::Half ||
-          input.scalar_type() == at::ScalarType::BFloat16,
-      "batch_norm supports Float or Half/BFloat16 tensor dtype, now got: ",
-      input.scalar_type());
-
+      inp_dtype == at::ScalarType::Float || inp_dtype == at::ScalarType::Half ||
+          inp_dtype == at::ScalarType::BFloat16,
+      "BatchNorm supports Float/Half/BFloat16 input dtype, now got: ",
+      inp_dtype);
   const c10::musa::MUSAGuard device_guard(input.device());
-  const Tensor& weight =
-      c10::value_or_else(weight_opt, [] { return Tensor(); });
-  const Tensor& bias = c10::value_or_else(bias_opt, [] { return Tensor(); });
+  const auto stat_dtype = save_mean.scalar_type();
 
-  // Copy from Normalization.cpp : _batch_norm_impl_index
-  auto num_features = input.size(1);
-  if (input.numel() == 0) {
-    if (weight.defined()) {
-      output = output * weight[0];
+  auto vector_to_mutensor = [](const std::optional<Tensor>& vec,
+                               const std::optional<ScalarType>& empty_dtype) {
+    if (vec.has_value() && vec->defined()) {
+      return CreateMUTensor(vec->view({-1}));
     }
-    if (bias.defined()) {
-      output = output + bias[0];
+    auto ret = CreateEmptyMUTensor();
+    if (empty_dtype) {
+      SetMUTensorDType(*empty_dtype, ret);
     }
-    return std::tuple<Tensor&, Tensor&, Tensor&>(
-        output, save_mean, save_invstd);
-  }
-  const Tensor& running_mean =
-      c10::value_or_else(running_mean_opt, [] { return Tensor(); });
-  const Tensor& running_var =
-      c10::value_or_else(running_var_opt, [] { return Tensor(); });
+    return ret;
+  };
+
+  auto w = vector_to_mutensor(weight_opt, std::nullopt);
+  auto b = vector_to_mutensor(bias_opt, std::nullopt);
+
+  auto rm = vector_to_mutensor(running_mean_opt, stat_dtype);
+  auto rv = vector_to_mutensor(running_var_opt, stat_dtype);
+
+  auto m = vector_to_mutensor(save_mean, stat_dtype);
+  auto v = vector_to_mutensor(save_invstd, stat_dtype);
 
   const auto input_memory_format = input.suggest_memory_format();
-  Tensor contiguous_input = FormatContiguous(input, input_memory_format);
-  auto options = input.options().dtype(input.scalar_type());
+  Tensor contig_input = FormatContiguous(input.alias(), input_memory_format);
+  auto in = CreateMUTensor(contig_input);
 
-  Tensor contiguous_weight;
-  Tensor contiguous_bias;
-  Tensor contiguous_running_mean;
-  Tensor contiguous_running_var;
+  auto proxy_out = output.expect_contiguous(input_memory_format);
+  auto out = CreateMUTensor(*proxy_out);
 
-  // Copy from Normalization.cpp : _batch_norm_impl_index
-  if (running_mean.defined()) {
-    check_dims_match_num_input_features(
-        "running_mean", num_features, running_mean.numel());
-    contiguous_running_mean = running_mean.contiguous();
-  } else if (!training) {
-    AT_ERROR("running_mean must be defined in evaluation mode");
-  }
-  if (running_var.defined()) {
-    check_dims_match_num_input_features(
-        "running_var", num_features, running_var.numel());
-    contiguous_running_var = running_var.contiguous();
-  } else if (!training) {
-    AT_ERROR("running_var must be defined in evaluation mode");
-  }
-  if (weight.defined()) {
-    check_dims_match_num_input_features("weight", num_features, weight.numel());
-  }
-  if (bias.defined()) {
-    check_dims_match_num_input_features("bias", num_features, bias.numel());
-  }
-
-  // computational muTensors
-  muTensor in = CreateMUTensor(contiguous_input);
-  muTensor out = CreateMUTensor(output);
-  muTensor scale;
-  muTensor bias_;
-  muTensor mean;
-  muTensor variance;
-
-  if (weight.defined()) {
-    scale = CreateMUTensor(ContiguousRef(weight, contiguous_weight));
-    bias_ = CreateMUTensor(ContiguousRef(bias, contiguous_bias));
-  }
-  // In case of track_running_stats is False
-  if (running_mean.defined()) {
-    mean = CreateMUTensor(contiguous_running_mean);
-    variance = CreateMUTensor(contiguous_running_var);
-  }
-
-  muHandle& h = GetMudnnHandle();
+  auto& h = GetMudnnHandle();
   ::musa::dnn::BatchNorm bn;
   CHECK_MUDNN_STATUS(bn.SetEpsilon(eps), "SetEpsilon");
   CHECK_MUDNN_STATUS(bn.SetTraining(training), "SetTraining");
@@ -153,34 +106,16 @@ std::tuple<Tensor&, Tensor&, Tensor&> NativeBatchNormOut(
       bn.SetMode(::musa::dnn::BatchNorm::Mode::PER_CHANNEL), "SetTraining");
 
   if (!training) {
-    CHECK_MUDNN_STATUS(
-        bn.RunPure(h, out, in, mean, variance, scale, bias_), "RunPure");
+    CHECK_MUDNN_STATUS(bn.RunPure(h, out, in, rm, rv, w, b), "RunPure");
   } else {
-    // mean/variance/cur_mean/cur_var dtype are consistent in mudnn.
-    if (running_mean.defined()) {
-      options = contiguous_running_mean.options();
-    }
-    save_mean =
-        at::empty({num_features}, options, at::MemoryFormat::Contiguous);
-    save_invstd =
-        at::empty({num_features}, options, at::MemoryFormat::Contiguous);
-    muTensor cur_mean = CreateMUTensor(save_mean);
-    muTensor cur_var = CreateMUTensor(save_invstd);
-
     CHECK_MUDNN_STATUS(
         bn.RunComposite(
-            h,
-            out,
-            in,
-            mean,
-            variance,
-            cur_mean,
-            cur_var,
-            scale,
-            bias_,
-            momentum,
-            InternalMemAlloc),
+            h, out, in, rm, rv, m, v, w, b, momentum, InternalMemAlloc),
         "RunComposite");
+  }
+
+  if (!(proxy_out->is_same(output))) {
+    output.copy_(*proxy_out);
   }
   return std::tuple<Tensor&, Tensor&, Tensor&>(output, save_mean, save_invstd);
 }
@@ -194,11 +129,16 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNorm(
     bool train,
     double momentum,
     double eps) {
-  auto tmp_output = at::empty_like(self);
+  auto output = at::empty_like(self);
   int64_t n_input = self.size(1);
-  auto options = self.options().dtype(self.scalar_type());
-  auto tmp_save_mean = at::empty({n_input}, options);
-  auto tmp_save_invstd = at::empty({n_input}, options);
+
+  auto save_mean_var_dtype =
+      (running_mean_opt.has_value() && running_mean_opt->defined())
+      ? running_mean_opt->scalar_type()
+      : at::toAccumulateType(self.scalar_type(), /*is_cuda=*/true);
+  auto options = self.options().dtype(save_mean_var_dtype);
+  auto save_mean = at::empty({n_input}, options);
+  auto save_invstd = at::empty({n_input}, options);
 
   NativeBatchNormOut(
       self,
@@ -209,11 +149,11 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNorm(
       train,
       momentum,
       eps,
-      tmp_output,
-      tmp_save_mean,
-      tmp_save_invstd);
+      output,
+      save_mean,
+      save_invstd);
 
-  return std::make_tuple(tmp_output, tmp_save_mean, tmp_save_invstd);
+  return std::make_tuple(output, save_mean, save_invstd);
 }
 
 std::tuple<at::Tensor, at::Tensor, at::Tensor, at::Tensor, at::Tensor>
@@ -382,15 +322,6 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
     std::array<bool, 3> output_mask) {
   // Copy from Normalization.cpp : _batch_norm_impl_index_backward
   TORCH_CHECK(
-      grad_out.device().type() == kMUSA,
-      "Device of grad_output tensor of BatchNormBackward must be MUSA, ",
-      "but now is ",
-      grad_out.device());
-  TORCH_CHECK(
-      input.device().type() == kMUSA,
-      "Device of input tensor of BatchNormBackward must be MUSA, but now is ",
-      input.device());
-  TORCH_CHECK(
       grad_out.scalar_type() == at::ScalarType::Float ||
           grad_out.scalar_type() == at::ScalarType::Half ||
           grad_out.scalar_type() == at::ScalarType::BFloat16,
@@ -464,11 +395,11 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
   grad_input = at::empty_like(input);
   auto grad_mean = at::empty_like(mean);
   auto grad_var = at::empty_like(invstd);
-  auto weight_options = weight.options().dtype(weight.scalar_type());
-  grad_weight =
-      at::empty({num_features}, weight_options, at::MemoryFormat::Contiguous);
-  grad_bias =
-      at::empty({num_features}, weight_options, at::MemoryFormat::Contiguous);
+
+  if (output_mask[1] || output_mask[2]) {
+    grad_weight = at::empty_like(weight);
+    grad_bias = at::empty_like(weight);
+  }
 
   auto dx = CreateMUTensor(grad_input);
   auto dm = CreateMUTensor(grad_mean);

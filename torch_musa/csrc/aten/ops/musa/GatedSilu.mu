@@ -72,6 +72,7 @@ void gated_silu_output(const at::Tensor& input, at::Tensor& out) {
             input.data_ptr<scalar_t>(),
             hidden_size,
             element_num);
+        C10_MUSA_KERNEL_LAUNCH_CHECK();
       });
 }
 

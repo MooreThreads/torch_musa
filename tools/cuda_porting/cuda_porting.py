@@ -210,8 +210,14 @@ def port_cuda(
 
             for f in files:
                 file_path = os.path.join(cur_dir, f)
+                print("file_path", file_path)
                 if port_file.need_filter_cpp:
-                    if ".h" in file_path or ".cu" in file_path:
+                    if (
+                        ".h" in file_path
+                        or ".cu" in file_path
+                        or "FakeQuantPerTensorAffine.cpp" in file_path
+                        or "FakeQuantPerChannelAffine.cpp" in file_path
+                    ):
                         shutil.copy(file_path, destination_folder)
                     else:
                         continue

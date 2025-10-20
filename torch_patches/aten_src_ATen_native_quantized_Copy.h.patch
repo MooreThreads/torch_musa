@@ -1,0 +1,13 @@
+diff --git a/aten/src/ATen/native/quantized/Copy.h b/aten/src/ATen/native/quantized/Copy.h
+index d52c8ff..a996862 100644
+--- a/aten/src/ATen/native/quantized/Copy.h
++++ b/aten/src/ATen/native/quantized/Copy.h
+@@ -5,6 +5,7 @@
+ namespace at {
+ namespace native {
+ 
+-Tensor& quantized_copy_from_float_(Tensor& self, const Tensor& src);
++TORCH_API Tensor& quantized_copy_from_float_(Tensor& self, const Tensor& src);
++
+ }
+ } // namespace at

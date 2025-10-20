@@ -46,6 +46,16 @@ def _musa(self, device=None, non_blocking=False, **kwargs):
         return untyped_storage
 
 
+def _edit_device(self, device):
+    """
+    edit device property of storage.
+
+    Args:
+        device (torch.device): the destination device
+    """
+    _MUSAC._edit_device_musa(self, device)
+
+
 @classmethod
 def _new_shared_musa(cls, *args, **kwargs):
     return _MUSAC._new_shared_musa(*args, **kwargs)
@@ -83,3 +93,5 @@ def set_storage_attributes():
 
     torch.UntypedStorage._release_ipc_counter_musa = _release_ipc_counter_musa
     torch.UntypedStorage._release_ipc_counter_cuda = _release_ipc_counter_musa
+
+    torch.UntypedStorage.edit_device = _edit_device

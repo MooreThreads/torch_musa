@@ -39,6 +39,15 @@ def glu_forward_inputs():
     ]
 
 
+def glu_backward_inputs():
+    return [
+        torch.randn((16, 32), requires_grad=False),
+        torch.randn((8, 64), requires_grad=False),
+        torch.randn((4, 128), requires_grad=False),
+        torch.randn((2, 256), requires_grad=False),
+    ]
+
+
 support_dtypes = [torch.float32]
 
 
@@ -59,3 +68,23 @@ def test_glu_fwdbwd(input_data, dtype):
         },
         train=True,
     )
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("x", glu_backward_inputs())
+@pytest.mark.parametrize("dtype", support_dtypes)
+def test_glu_backward_out(x, dtype):
+    x = x.to(dtype).to("musa")
+    x.requires_grad_(False)
+
+    y = torch.nn.functional.glu(x, dim=1)
+    grad_output = torch.ones_like(y)
+
+    ref_grad_input = torch.ops.aten.glu_backward(grad_output, x, 1)
+
+    # out variant
+    out = torch.empty_like(x)
+    with torch.no_grad():
+        torch.ops.aten.glu_backward.grad_input(grad_output, x, 1, grad_input=out)
+
+    torch.testing.assert_close(out, ref_grad_input, rtol=1e-6, atol=1e-6)

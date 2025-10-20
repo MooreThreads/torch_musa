@@ -1,0 +1,15 @@
+diff --git a/aten/src/ATen/core/TensorBase.h b/aten/src/ATen/core/TensorBase.h
+index 2d202a6..81186b1 100644
+--- a/aten/src/ATen/core/TensorBase.h
++++ b/aten/src/ATen/core/TensorBase.h
+@@ -483,6 +483,10 @@ class TORCH_API TensorBase {
+     return impl_->is_privateuseone();
+   }
+ 
++  bool is_musa() const {
++    return impl_->is_musa();
++  }
++
+   /// Returns if a `Tensor` has sparse backend.
+   bool is_sparse() const {
+     // NB: this is not a native function to avoid dispatching overhead.

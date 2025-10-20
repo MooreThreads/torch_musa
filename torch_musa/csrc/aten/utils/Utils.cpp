@@ -105,6 +105,9 @@ void SetMUTensorDType(ScalarType dtype, muTensor& m_t) {
     case ScalarType::Byte:
       m_t.SetType(muTensor::Type::UINT8);
       break;
+    case ScalarType::UInt64:
+      m_t.SetType(muTensor::Type::UINT64);
+      break;
     case ScalarType::QInt32:
       m_t.SetType(muTensor::Type::INT32);
       break;

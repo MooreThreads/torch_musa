@@ -50,7 +50,7 @@ reduce_dims_configs = [
     # input_shape, dims
     [
         (2, 4, 6, 128),
-        (0,1),
+        (0, 1),
     ],
     [
         (2, 4, 6, 128),
@@ -133,6 +133,13 @@ def test_std(input_data, dtype):
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
+@pytest.mark.parametrize("dtype", testing.get_float_types())
+def test_var(input_data, dtype):
+    function(input_data, dtype, torch.var)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_amax(input_data, dtype):
     function(input_data, dtype, torch.amax)
@@ -174,6 +181,7 @@ input_data = [
     {"input": torch.randn([2, 4, 2, 4, 2, 4]), "dim": 5},
     {"input": torch.randn([2, 4, 2, 4, 2, 4, 16]), "dim": 5},
     {"input": torch.randn([2, 4, 2, 4, 2, 4, 5, 2]), "dim": 7},
+    {"input": torch.randn([0, 10]), "dim": 1},
 ]
 
 
@@ -208,6 +216,21 @@ def test_sum_bool(config):
     }
     function(input_data, torch.bool, torch.sum)
     function(input_data, torch.bool, torch.sum, dtype=torch.float32)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize(
+    "config",
+    [
+        [(128, 128), (0)],
+    ],
+)
+def test_sum_u8(config):
+    input_data = {
+        "input": torch.randint(low=0, high=2, size=config[0]),
+        "dim": config[1],
+    }
+    function(input_data, torch.uint8, torch.sum)
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -249,7 +272,13 @@ def test_prod(input_data, dtype):
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@pytest.mark.parametrize("input_data", input_data)
+@pytest.mark.parametrize(
+    "input_data",
+    input_data
+    + [
+        {"input": torch.randn([100]), "p": 2, "dtype": torch.float32},
+    ],
+)
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_norm(input_data, dtype):
     function(input_data, dtype, torch.norm)
@@ -669,7 +698,13 @@ def test_all_dims_out(config, dtype):
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@pytest.mark.parametrize("input_data", input_data)
+@pytest.mark.parametrize(
+    "input_data",
+    input_data
+    + [
+        {"input": torch.randn([0, 1024]), "dim": -1},
+    ],
+)
 @pytest.mark.parametrize("dtype", reduce_with_indices_dtype)
 def test_argmax(input_data, dtype):
     function(input_data, dtype, torch.argmax)
@@ -694,7 +729,13 @@ def test_argmax_out(keepdim, resize, channels_last):
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@pytest.mark.parametrize("input_data", input_data)
+@pytest.mark.parametrize(
+    "input_data",
+    input_data
+    + [
+        {"input": torch.randn([0, 1024]), "dim": -1},
+    ],
+)
 @pytest.mark.parametrize("dtype", reduce_with_indices_dtype)
 def test_argmin(input_data, dtype):
     function(input_data, dtype, torch.argmin)

@@ -42,5 +42,35 @@ const char* _mublasGetErrorEnum(mublasStatus_t error) {
 }
 
 } // namespace blas
+
+#if defined(REAL_MUSA_VERSION) && (REAL_MUSA_VERSION >= 4030)
+namespace solver {
+
+const char* musolverGetErrorMessage(musolverStatus_t status) {
+  switch (status) {
+    case MUSOLVER_STATUS_SUCCESS:
+      return "MUSOLVER_STATUS_SUCCESS";
+    case MUSOLVER_STATUS_NOT_INITIALIZED:
+      return "MUSOLVER_STATUS_NOT_INITIALIZED";
+    case MUSOLVER_STATUS_ALLOC_FAILED:
+      return "MUSOLVER_STATUS_ALLOC_FAILED";
+    case MUSOLVER_STATUS_INVALID_VALUE:
+      return "MUSOLVER_STATUS_INVALID_VALUE";
+    case MUSOLVER_STATUS_ARCH_MISMATCH:
+      return "MUSOLVER_STATUS_ARCH_MISMATCH";
+    case MUSOLVER_STATUS_EXECUTION_FAILED:
+      return "MUSOLVER_STATUS_EXECUTION_FAILED";
+    case MUSOLVER_STATUS_INTERNAL_ERROR:
+      return "MUSOLVER_STATUS_INTERNAL_ERROR";
+    case MUSOLVER_STATUS_MATRIX_TYPE_NOT_SUPPORTED:
+      return "MUSOLVER_STATUS_MATRIX_TYPE_NOT_SUPPORTED";
+    default:
+      return "Unknown musolver error number";
+  }
+}
+
+} // namespace solver
+#endif
+
 } // namespace musa
 } // namespace at

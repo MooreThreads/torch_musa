@@ -15,6 +15,18 @@
 - func: bitwise_left_shift_.Tensor
 - func: bitwise_left_shift.Tensor_out
 
+- func: logit_backward
+- func: logit_backward.grad_input
+
+- func: amax
+- func: amax.out
+  dispatch:
+    PrivateUse1: AMaxOut
+
+- func: amin
+- func: amin.out
+  dispatch:
+    PrivateUse1: AMinOut
 
 - func: softplus_backward
 - func: softplus_backward.grad_input
@@ -112,11 +124,8 @@
 - func: avg_pool3d_backward.grad_input
 - func: avg_pool3d_backward
 
-- func: replication_pad1d
-- func: replication_pad1d.out
-
-- func: replication_pad2d
-- func: replication_pad2d.out
+- func: replication_pad1d_backward
+- func: replication_pad1d_backward.grad_input
 
 - func: smooth_l1_loss
 - func: smooth_l1_loss.out
@@ -176,14 +185,8 @@
 - func: bitwise_and_.Tensor
 - func: bitwise_and.Tensor_out
 
-- func: reflection_pad1d
-- func: reflection_pad1d.out
-
 - func: reflection_pad1d_backward
 - func: reflection_pad1d_backward.grad_input
-
-- func: reflection_pad3d
-- func: reflection_pad3d.out
 
 - func: reflection_pad3d_backward
 - func: reflection_pad3d_backward.grad_input
@@ -242,9 +245,6 @@
 
 - func: pow.Scalar
 - func: pow.Scalar_out
-
-- func: replication_pad3d
-- func: replication_pad3d.out
 
 - func: argmax
 - func: argmax.out
@@ -404,6 +404,45 @@
 - func: linalg_inv_ex
 - func: linalg_inv_ex.inverse
 
+- func: _convert_indices_from_coo_to_csr
+- func: _convert_indices_from_coo_to_csr.out
+
+- func: _convert_indices_from_csr_to_coo
+- func: _convert_indices_from_csr_to_coo.out
+
+- func: reflection_pad1d
+- func: reflection_pad1d.out
+  dispatch:
+    PrivateUse1: reflection_pad1d_out_musa
+
+- func: reflection_pad3d
+- func: reflection_pad3d.out
+  dispatch:
+    PrivateUse1: reflection_pad3d_out_musa
+
+- func: replication_pad1d
+- func: replication_pad1d.out
+  dispatch:
+    PrivateUse1: replication_pad1d_out_musa
+
+- func: replication_pad2d
+- func: replication_pad2d.out
+  dispatch:
+    PrivateUse1: replication_pad2d_out_musa
+
+- func: replication_pad3d
+- func: replication_pad3d.out
+  dispatch:
+    PrivateUse1: replication_pad3d_out_musa
+
+- func: cat
+  dispatch:
+    QuantizedPrivateUse1: CatQuantizedMusa
+
+- func: cat.out
+  dispatch:
+    PrivateUse1: CatOut
+    QuantizedPrivateUse1: CatOutQuantizedMusa
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 #
@@ -689,6 +728,7 @@
     PrivateUse1: MishOut
 - func: mish_backward
   device_guard: True
+  device_check: ExactSame
   dispatch:
     PrivateUse1: mish_backward
 
@@ -1000,6 +1040,12 @@
   dispatch:
     PrivateUse1: NativeBatchNormLegit
 
+- func: _native_batch_norm_legit.out
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: _batch_norm_legit_cuda_out
+
 - func: _native_batch_norm_legit_functional
   dispatch:
     PrivateUse1: NativeBatchNormLegitfunctional
@@ -1016,27 +1062,43 @@
   dispatch:
     PrivateUse1: NativeBatchNormLegitNoStats
 
+- func: _native_batch_norm_legit.no_stats_out
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: _batch_norm_legit_no_stats_cuda_out
+
 - func: native_batch_norm_backward
   dispatch:
     PrivateUse1: NativeBatchNormBwd
 
 - func: batch_norm_stats
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: batch_norm_stats_cuda
 
 - func: batch_norm_gather_stats_with_counts
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: batch_norm_gather_stats_with_counts_cuda
 
 - func: batch_norm_elemt
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: batch_norm_elemt_cuda
 
 - func: batch_norm_backward_reduce
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: batch_norm_backward_reduce_cuda
 
 - func: batch_norm_backward_elemt
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: batch_norm_backward_elemt_cuda
 
@@ -1233,6 +1295,22 @@
   dispatch:
     PrivateUse1: SigmoidBwdOut
 
+- func: logit
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: logit
+- func: logit_
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: logit_
+- func: logit.out
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: logit_out
+
 - func: tanh_backward
   dispatch:
     PrivateUse1: TanhBwd
@@ -1324,16 +1402,6 @@
   dispatch:
     PrivateUse1: Bucketize
 
-- func: cat
-  dispatch:
-    PrivateUse1: Cat
-    QuantizedPrivateUse1: CatQuantizedMusa
-- func: cat.out
-  structured: false
-  dispatch:
-    PrivateUse1: CatOut
-    QuantizedPrivateUse1: CatOutQuantizedMusa
-
 - func: _chunk_cat
   dispatch:
     PrivateUse1: ChunkCatMUSA
@@ -1359,25 +1427,21 @@
     PrivateUse1: BernoulliFloat
 
 - func: bernoulli_.Tensor
-  device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: bernoulli_
 
 - func: bernoulli.out
-  device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: bernoulli_out
 
 - func: normal_
-  device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: normal_
 
 - func: uniform_
-  device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: uniform_
@@ -1399,7 +1463,6 @@
     PrivateUse1: EmbeddingBag
 
 - func: exponential_
-  device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: exponential_
@@ -1439,10 +1502,12 @@
     PrivateUse1: foreach_tensor_mul_scalar_kernel_musa_
 
 - func: _foreach_mul_.Tensor
+  device_guard: True
   dispatch:
     PrivateUse1: foreach_tensor_mul_tensor_kernel_cuda_
 
 - func: _foreach_mul.Tensor
+  device_guard: True
   dispatch:
     PrivateUse1: foreach_tensor_mul_tensor_kernel_cuda
 
@@ -1627,6 +1692,7 @@
     PrivateUse1: foreach_tensor_reciprocal_musa_
 
 - func: _foreach_norm.Scalar
+  device_guard: True
   dispatch:
     PrivateUse1: foreach_tensor_norm_cuda
 
@@ -1685,10 +1751,14 @@
     PrivateUse1: LinalgLstsqOut
 
 - func: cholesky_inverse
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: cholesky_inverse
 
 - func: cholesky_inverse.out
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: cholesky_inverse_out
 
@@ -1739,6 +1809,14 @@
 - func: _ctc_loss_backward
   dispatch:
     PrivateUse1: CtcLossBackward
+
+- func: _ctc_loss.Tensor
+  dispatch:
+    PrivateUse1: CtcLossTensor
+
+- func: _ctc_loss_backward.Tensor
+  dispatch:
+    PrivateUse1: CtcLossBackwardTensor
 
 - func: masked_select
   dispatch:
@@ -1896,19 +1974,16 @@
     PrivateUse1: MaxPool3dIndicesBwdOut
 
 - func: random_.from
-  device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: random_
 
 - func: random_.to
-  device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: random_
 
 - func: random_
-  device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: random_
@@ -1926,6 +2001,12 @@
   device_guard: True
   dispatch:
     PrivateUse1: linspace_cuda_out
+
+- func: logspace.out
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: logspace_cuda_out
 
 - func: range.out
   device_check: ExactSame
@@ -1977,10 +2058,19 @@
   dispatch:
     PrivateUse1: Prod
 
+- func: prod.dim_int
+  structured: false
+  dispatch:
+    PrivateUse1: ProdDimInt
+
 - func: prod.int_out
   structured: false
   dispatch:
     PrivateUse1: ProdIntOut
+
+- func: norm.ScalarOpt_dim
+  dispatch:
+    PrivateUse1: Norm
 
 - func: norm.out
   structured: false
@@ -2117,34 +2207,29 @@
     PrivateUse1: AllDimsOut
 
 - func: var_mean.correction
-  device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: var_mean
 
 - func: var.correction
-  device_check: ExactSame
   device_guard: True
   dispatch:
-    PrivateUse1: var
+    PrivateUse1: Var
 
 - func: var.correction_out
-  device_check: ExactSame
   device_guard: True
   dispatch:
-    PrivateUse1: var_out
+    PrivateUse1: VarOut
 
 - func: std.correction
-  device_check: ExactSame
   device_guard: True
   dispatch:
-    PrivateUse1: std
+    PrivateUse1: Std
 
 - func: std.correction_out
-  device_check: ExactSame
   device_guard: True
   dispatch:
-    PrivateUse1: std_out
+    PrivateUse1: StdOut
 
 - func: logsumexp
   dispatch:
@@ -2153,16 +2238,6 @@
 - func: logsumexp.out
   dispatch:
     PrivateUse1: LogSumExpOut
-
-- func: amax.out
-  structured: false
-  dispatch:
-    PrivateUse1: AMaxOut
-
-- func: amin.out
-  structured: false
-  dispatch:
-    PrivateUse1: AMinOut
 
 - func: _aminmax
   dispatch:
@@ -2180,17 +2255,21 @@
 
 - func: reflection_pad2d
   dispatch:
-    PrivateUse1: reflection_pad2d_cuda
+    PrivateUse1: ReflectionPad2DMUSA
 
 - func: reflection_pad2d.out
   dispatch:
-    PrivateUse1: reflection_pad2d_out_cuda
+    PrivateUse1: ReflectionPad2DOutMUSA
 
 - func: reflection_pad2d_backward.grad_input
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: reflection_pad2d_backward_out_cuda
 
 - func: reflection_pad2d_backward
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: reflection_pad2d_backward_cuda
 
@@ -2264,10 +2343,12 @@
     PrivateUse1: LogSoftmaxDataOutBwd
 
 - func: log_sigmoid_forward.output
+  device_guard: True
   dispatch:
     PrivateUse1: log_sigmoid_forward_out_cuda
 
 - func: log_sigmoid_forward
+  device_guard: True
   dispatch:
     PrivateUse1: log_sigmoid_forward_cuda
 
@@ -2388,16 +2469,17 @@
     PrivateUse1: IndexSelectOut
     QuantizedPrivateUse1: IndexSelectOut
 
-
 - func: _index_put_impl_
   dispatch:
     PrivateUse1: IndexPut
 
 - func: index_fill_.int_Scalar
+  device_guard: True
   dispatch:
     PrivateUse1: index_fill_
 
 - func: index_fill_.int_Tensor
+  device_guard: True
   dispatch:
     PrivateUse1: index_fill_
 
@@ -2566,18 +2648,26 @@
     PrivateUse1: BaddbmmOut
 
 - func: quantize_per_tensor
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: quantize_per_tensor
 
 - func: quantize_per_tensor_dynamic
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: quantize_per_tensor_dynamic
 
 - func: quantize_per_channel
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: quantize_per_channel
 
 - func: quantize_per_tensor.tensor_qparams
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: quantize_per_tensor_tensor_qparams
 
@@ -2660,10 +2750,14 @@
     QuantizedPrivateUse1: as_strided_qtensorimpl
 
 - func: _make_per_tensor_quantized_tensor
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: make_per_tensor_quantized_tensor_cuda
 
 - func: _make_per_channel_quantized_tensor
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: make_per_channel_quantized_tensor_cuda
 
@@ -2688,10 +2782,14 @@
     PrivateUse1, QuantizedPrivateUse1: view
 
 - func: view_as_complex
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: view_as_complex
 
 - func: view_as_real
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: view_as_real
 
@@ -2704,6 +2802,8 @@
     PrivateUse1, QuantizedPrivateUse1: unfold
 
 - func: unfold_backward
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: unfold_backward
 
@@ -2744,6 +2844,8 @@
     PrivateUse1: AdaptiveAvgPool3dBackward
 
 - func: nan_to_num.out
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: nan_to_num_out
 
@@ -2768,18 +2870,22 @@
     PrivateUse1: FMaxOut
 
 - func: __lshift__.Scalar
+  device_guard: True
   dispatch:
     PrivateUse1: __lshift__
 
 - func: __lshift__.Tensor
+  device_guard: True
   dispatch:
     PrivateUse1: __lshift__
 
 - func: __rshift__.Scalar
+  device_guard: True
   dispatch:
     PrivateUse1: __rshift__
 
 - func: __rshift__.Tensor
+  device_guard: True
   dispatch:
     PrivateUse1: __rshift__
 
@@ -2824,52 +2930,74 @@
     PrivateUse1: RopeBackward
 
 - func: complex.out
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: complex_out
 
 - func: polar.out
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: polar_out
 
 - func: median
+  device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: median_cuda
 
 - func: median.dim_values
+  device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: median_out_cuda
 
 - func: _cdist_forward
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: _cdist_forward
 
 - func: _cdist_backward
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: _cdist_backward
 
 - func: _pdist_forward
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: _pdist_forward
 
 - func: _pdist_backward
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: _pdist_backward
 
 - func: im2col.out
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: im2col_out_cuda
 
 - func: im2col
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: im2col_cuda
 
 - func: col2im.out
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: col2im_out_cuda
 
 - func: col2im
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: col2im_cuda
 
@@ -2886,10 +3014,14 @@
     PrivateUse1: FusedCrossEntropyLoss2dBwd
 
 - func: _thnn_fused_lstm_cell
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: _thnn_fused_lstm_cell_cuda
 
 - func: _thnn_fused_lstm_cell_backward_impl
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: _thnn_fused_lstm_cell_backward_impl_cuda
 
@@ -2898,6 +3030,7 @@
     PrivateUse1: SplitWithSizesCopyOutMUSA
 
 - func: channel_shuffle
+  device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: channel_shuffle
@@ -2926,98 +3059,154 @@
     PrivateUse1: geometric_
 
 - func: nanmedian
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: nanmedian_cuda
 
 - func: nanmedian.dim_values
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: nanmedian_out_cuda
 
+- func: fractional_max_pool3d_backward.grad_input
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: fractional_max_pool3d_backward_out_cuda
+
+- func: fractional_max_pool3d_backward
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: fractional_max_pool3d_backward_cuda
+
+- func: glu_backward.grad_input
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: glu_backward_cuda_out
+
 - func: replication_pad2d_backward
+  device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: replication_pad2d_backward_cuda
 
+- func: replication_pad2d_backward.grad_input
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: replication_pad2d_backward_out_cuda
+
 - func: replication_pad3d_backward.grad_input
+  device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: replication_pad3d_backward_out_cuda
 
 - func: replication_pad3d_backward
+  device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: replication_pad3d_backward_cuda
 
 - func: normal.Tensor_float
+  device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: normal
 
 - func: normal.float_Tensor_out
+  device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: normal_out
 
 - func: normal.float_Tensor
+  device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: normal
 
 - func: normal.Tensor_Tensor_out
+  device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: normal_out
 
 - func: normal.Tensor_Tensor
+  device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: normal
 
 - func: huber_loss.out
+  device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: huber_loss_out
 
 - func: huber_loss
+  device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: huber_loss
 
 - func: huber_loss_backward.out
+  device_check: ExactSame
   device_guard: True
   dispatch:
     PrivateUse1: huber_loss_backward_out
+
 - func: _masked_softmax
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: masked_softmax_cuda
+
 - func: _masked_softmax_backward
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: masked_softmax_backward_cuda
 
 - func: tril_indices
   dispatch:
     PrivateUse1: tril_indices_musa
+
 - func: triu_indices
   dispatch:
     PrivateUse1: triu_indices_musa
 
 - func: trace
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: trace_cuda
 
 - func: max_unpool2d.out
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: max_unpooling2d_forward_out_cuda
 
 - func: max_unpool2d
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: max_unpooling2d_forward_cuda
 
 - func: max_unpool3d.out
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: max_unpooling3d_forward_out_cuda
 
 - func: max_unpool3d
+  device_check: ExactSame
+  device_guard: True
   dispatch:
     PrivateUse1: max_unpooling3d_forward_cuda
 
@@ -3050,3 +3239,189 @@
   device_guard: True
   dispatch:
     PrivateUse1: nansum_out
+
+- func: _sparse_coo_tensor_with_dims_and_tensors
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    SparsePrivateUse1: new_with_dims_and_tensor_sparse_symint
+
+- func: _to_sparse.sparse_dim
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    SparsePrivateUse1: sparse_coo_to_sparse
+    SparseCsrPrivateUse1: sparse_compressed_to_sparse
+
+- func: _to_sparse
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    SparsePrivateUse1: sparse_coo_to_sparse
+    SparseCsrPrivateUse1: sparse_compressed_to_sparse
+
+- func: _nnz
+  dispatch:
+    SparsePrivateUse1: _nnz_sparse
+    SparseCsrPrivateUse1: _nnz_sparse_csr
+
+- func: _indices
+  dispatch:
+    SparsePrivateUse1: _indices_sparse
+
+- func: _values
+  dispatch:
+    SparsePrivateUse1: _values_sparse
+
+- func: _to_sparse_csr
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    SparsePrivateUse1: coo_to_sparse_csr
+
+- func: sparse_dim
+  dispatch:
+    SparsePrivateUse1: sparse_dim_sparse
+
+- func: is_coalesced
+  dispatch:
+    SparsePrivateUse1: is_coalesced_sparse
+
+- func: _coalesce
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    SparsePrivateUse1: _coalesce_sparse_cuda
+
+- func: _coalesced_
+  dispatch:
+    SparsePrivateUse1: _coalesced_sparse_
+
+- func: indices
+  dispatch:
+    SparsePrivateUse1: indices_sparse
+
+- func: values
+  dispatch:
+    SparsePrivateUse1: values_sparse
+    SparseCsrPrivateUse1: values_sparse_csr
+
+- func: crow_indices
+  dispatch:
+    SparseCsrPrivateUse1: crow_indices_sparse_csr
+
+- func: col_indices
+  dispatch:
+    SparseCsrPrivateUse1: col_indices_sparse_csr
+
+- func: angle
+  device_guard: True
+  dispatch:
+    PrivateUse1: angle
+
+- func: angle.out
+  device_guard: True
+  dispatch:
+    PrivateUse1: angle_out
+
+- func: __ilshift__.Scalar
+  device_guard: True
+  dispatch:
+    PrivateUse1: __ilshift__
+
+- func: __ilshift__.Tensor
+  device_guard: True
+  dispatch:
+    PrivateUse1: __ilshift__
+
+- func: __irshift__.Scalar
+  device_guard: True
+  dispatch:
+    PrivateUse1: __irshift__
+
+- func: __irshift__.Tensor
+  device_guard: True
+  dispatch:
+    PrivateUse1: __irshift__
+
+- func: _fused_moving_avg_obs_fq_helper
+  device_guard: True
+  device_check: ExactSame
+  dispatch:
+    PrivateUse1: fused_moving_avg_obs_fake_quant_cuda
+
+- func: fake_quantize_per_channel_affine_cachemask
+  device_guard: True
+  device_check: ExactSame
+  dispatch:
+    PrivateUse1: fake_quantize_per_channel_affine_cachemask
+
+- func: _fake_quantize_per_tensor_affine_cachemask_tensor_qparams
+  device_guard: True
+  device_check: ExactSame
+  dispatch:
+    PrivateUse1: _fake_quantize_per_tensor_affine_cachemask_tensor_qparams
+
+- func: fft_fft.out
+  device_guard: True
+  dispatch:
+    PrivateUse1: FftFftMusaOut_symint
+
+- func: fft_fft
+  device_guard: True
+  dispatch:
+    PrivateUse1: FftFftMusa_symint
+
+- func: fft_ifft.out
+  device_guard: True
+  dispatch:
+    PrivateUse1: FftIfftMusaOut_symint
+
+- func: fft_ifft
+  device_guard: True
+  dispatch:
+    PrivateUse1: FftIfftMusa_symint
+
+- func: fft_rfft.out
+  device_guard: True
+  dispatch:
+    PrivateUse1: FftRfftMusaOut_symint
+
+- func: fft_rfft
+  device_guard: True
+  dispatch:
+    PrivateUse1: FftRfftMusa_symint
+
+- func: fft_irfft.out
+  device_guard: True
+  dispatch:
+    PrivateUse1: FftIrfftMusaOut_symint
+
+- func: fft_irfft
+  device_guard: True
+  dispatch:
+    PrivateUse1: FftIrfftMusa_symint
+
+- func: _fft_r2c
+  dispatch:
+    PrivateUse1: _fft_r2c_musa
+
+- func: _fft_r2c.out
+  dispatch:
+    PrivateUse1: _fft_r2c_musa_out
+
+- func: _fft_c2r
+  dispatch:
+    PrivateUse1: _fft_c2r_musa
+
+- func: _fft_c2r.out
+  dispatch:
+    PrivateUse1: _fft_c2r_musa_out
+
+- func: _fft_c2c
+  dispatch:
+    PrivateUse1: _fft_c2c_musa
+
+- func: _fft_c2c.out
+  dispatch:
+    PrivateUse1: _fft_c2c_musa_out

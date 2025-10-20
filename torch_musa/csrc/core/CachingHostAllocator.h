@@ -1,11 +1,11 @@
 #ifndef TORCH_MUSA_CSRC_CORE_CACHINGHOSTALLOCATOR_H_
 #define TORCH_MUSA_CSRC_CORE_CACHINGHOSTALLOCATOR_H_
 
-#include "torch_musa/csrc/core/MUSACachingAllocator.h"
+#include <ATen/core/CachingHostAllocator.h>
+
 #include "torch_musa/csrc/core/MUSAStream.h"
 
-namespace at {
-namespace musa {
+namespace at::musa {
 
 // A caching allocator for MUSA host allocations (pinned memory).
 c10::Allocator* getCachingHostAllocator();
@@ -21,6 +21,6 @@ inline at::DataPtr HostAlloc(size_t size) {
   return getCachingHostAllocator()->allocate(size);
 }
 
-} // namespace musa
-} // namespace at
+} // namespace at::musa
+
 #endif // TORCH_MUSA_CSRC_CORE_CACHINGHOSTALLOCATOR_H_

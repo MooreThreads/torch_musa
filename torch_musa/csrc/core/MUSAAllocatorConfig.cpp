@@ -199,9 +199,10 @@ size_t MUSAAllocatorConfig::parseAllocatorConfig(
   consumeToken(config, ++i, ':');
   if (++i < config.size()) {
     TORCH_CHECK(
-        ((config[i] == "native") || (config[i] == "musaMallocAsync")),
+        ((config[i] == "native") || (config[i] == "musaMallocAsync") ||
+         (config[i] == "unified")),
         "Unknown allocator backend, "
-        "options are native and musaMallocAsync");
+        "options are native and musaMallocAsync and unified");
     used_musaMallocAsync = (config[i] == "musaMallocAsync");
     if (used_musaMallocAsync) {
       TORCH_CHECK(
@@ -282,6 +283,9 @@ void MUSAAllocatorConfig::parseArgs(const char* env) {
     } else if (config_item_view == "pinned_num_register_threads") {
       i = parsePinnedNumRegisterThreads(config, i);
       used_native_specific_option = true;
+    } else if (config_item_view == "cpu") {
+      consumeToken(config, ++i, ':');
+      ++i;
     } else {
       TORCH_CHECK(
           false, "Unrecognized CachingAllocator option: ", config_item_view);

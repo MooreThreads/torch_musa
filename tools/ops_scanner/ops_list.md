@@ -1,4 +1,8 @@
-Total amount of ops: 948
+Total amount of ops: 1010
+- `__ilshift__.Scalar`
+- `__ilshift__.Tensor`
+- `__irshift__.Scalar`
+- `__irshift__.Tensor`
 - `__lshift__.Scalar`
 - `__lshift__.Tensor`
 - `__rshift__.Scalar`
@@ -17,7 +21,15 @@ Total amount of ops: 948
 - `_cdist_forward`
 - `_chunk_cat.out`
 - `_chunk_cat`
+- `_coalesce`
+- `_coalesced_`
+- `_convert_indices_from_coo_to_csr.out`
+- `_convert_indices_from_coo_to_csr`
+- `_convert_indices_from_csr_to_coo.out`
+- `_convert_indices_from_csr_to_coo`
 - `_copy_from`
+- `_ctc_loss.Tensor`
+- `_ctc_loss_backward.Tensor`
 - `_ctc_loss_backward`
 - `_ctc_loss`
 - `_cummax_helper`
@@ -25,6 +37,13 @@ Total amount of ops: 948
 - `_embedding_bag`
 - `_empty_affine_quantized`
 - `_empty_per_channel_affine_quantized`
+- `_fake_quantize_per_tensor_affine_cachemask_tensor_qparams`
+- `_fft_c2c.out`
+- `_fft_c2c`
+- `_fft_c2r.out`
+- `_fft_c2r`
+- `_fft_r2c.out`
+- `_fft_r2c`
 - `_foreach_add.List`
 - `_foreach_add.ScalarList`
 - `_foreach_add.Scalar`
@@ -81,6 +100,7 @@ Total amount of ops: 948
 - `_fused_adamw_`
 - `_fused_cross_entropy_loss_2d_backward`
 - `_fused_cross_entropy_loss_2d_forward`
+- `_fused_moving_avg_obs_fq_helper`
 - `_fused_rmsnorm_backward`
 - `_fused_rmsnorm_forward`
 - `_fused_rope_backward`
@@ -89,6 +109,7 @@ Total amount of ops: 948
 - `_fused_swiglu_backward`
 - `_fused_swiglu_forward`
 - `_index_put_impl_`
+- `_indices`
 - `_linalg_det.result`
 - `_linalg_det`
 - `_linalg_solve_ex.result`
@@ -102,11 +123,14 @@ Total amount of ops: 948
 - `_make_per_tensor_quantized_tensor`
 - `_masked_softmax_backward`
 - `_masked_softmax`
+- `_native_batch_norm_legit.no_stats_out`
 - `_native_batch_norm_legit.no_stats`
+- `_native_batch_norm_legit.out`
 - `_native_batch_norm_legit_functional`
 - `_native_batch_norm_legit_no_training.out`
 - `_native_batch_norm_legit_no_training`
 - `_native_batch_norm_legit`
+- `_nnz`
 - `_pdist_backward`
 - `_pdist_forward`
 - `_prelu_kernel_backward`
@@ -122,8 +146,12 @@ Total amount of ops: 948
 - `_softmax_backward_data.out`
 - `_softmax_backward_data`
 - `_softmax`
+- `_sparse_coo_tensor_with_dims_and_tensors`
 - `_thnn_fused_lstm_cell_backward_impl`
 - `_thnn_fused_lstm_cell`
+- `_to_sparse.sparse_dim`
+- `_to_sparse_csr`
+- `_to_sparse`
 - `_unique2`
 - `_unique`
 - `_upsample_bicubic2d_aa.out`
@@ -142,6 +170,7 @@ Total amount of ops: 948
 - `_upsample_nearest_exact3d_backward.grad_input`
 - `_upsample_nearest_exact3d_backward`
 - `_upsample_nearest_exact3d`
+- `_values`
 - `_weight_norm_interface_backward`
 - `_weight_norm_interface`
 - `abs.out`
@@ -187,9 +216,13 @@ Total amount of ops: 948
 - `all.out`
 - `all`
 - `amax.out`
+- `amax`
 - `amin.out`
+- `amin`
 - `aminmax.out`
 - `aminmax`
+- `angle.out`
+- `angle`
 - `any.all_out`
 - `any.dim`
 - `any.dims_out`
@@ -294,6 +327,7 @@ Total amount of ops: 948
 - `clone`
 - `col2im.out`
 - `col2im`
+- `col_indices`
 - `complex.out`
 - `convolution_backward_overrideable`
 - `convolution_overrideable`
@@ -308,6 +342,7 @@ Total amount of ops: 948
 - `cosh`
 - `count_nonzero.dim_IntList`
 - `cross_entropy_loss_2d_choice`
+- `crow_indices`
 - `cumprod.out`
 - `cumprod_`
 - `cumprod`
@@ -364,6 +399,15 @@ Total amount of ops: 948
 - `exponential_`
 - `eye.m_out`
 - `eye.out`
+- `fake_quantize_per_channel_affine_cachemask`
+- `fft_fft.out`
+- `fft_fft`
+- `fft_ifft.out`
+- `fft_ifft`
+- `fft_irfft.out`
+- `fft_irfft`
+- `fft_rfft.out`
+- `fft_rfft`
 - `fill_.Scalar`
 - `fill_.Tensor`
 - `flip`
@@ -388,6 +432,8 @@ Total amount of ops: 948
 - `fractional_max_pool2d_backward`
 - `fractional_max_pool2d`
 - `fractional_max_pool3d.output`
+- `fractional_max_pool3d_backward.grad_input`
+- `fractional_max_pool3d_backward`
 - `fractional_max_pool3d`
 - `gated_silu`
 - `gather.out`
@@ -409,6 +455,7 @@ Total amount of ops: 948
 - `gelu` (quantized op)
 - `geometric_`
 - `glu.out`
+- `glu_backward.grad_input`
 - `glu_backward`
 - `glu`
 - `grid_sampler_2d_backward`
@@ -476,7 +523,9 @@ Total amount of ops: 948
 - `index_reduce`
 - `index_select.out`
 - `index_select`
+- `indices`
 - `int_repr`
+- `is_coalesced`
 - `is_set_to`
 - `isin.Scalar_Tensor_out`
 - `isin.Scalar_Tensor`
@@ -564,6 +613,12 @@ Total amount of ops: 948
 - `logical_xor.out`
 - `logical_xor_`
 - `logical_xor`
+- `logit.out`
+- `logit_`
+- `logit_backward.grad_input`
+- `logit_backward`
+- `logit`
+- `logspace.out`
 - `logsumexp.out`
 - `logsumexp`
 - `lt.Scalar_out`
@@ -669,6 +724,7 @@ Total amount of ops: 948
 - `nonzero.out`
 - `nonzero`
 - `norm.ScalarOpt_dim_dtype`
+- `norm.ScalarOpt_dim`
 - `norm.dtype_out`
 - `norm.out`
 - `normal.Tensor_Tensor_out`
@@ -692,6 +748,7 @@ Total amount of ops: 948
 - `pow.Tensor_Tensor`
 - `pow_.Scalar`
 - `pow_.Tensor`
+- `prod.dim_int`
 - `prod.int_out`
 - `prod`
 - `put_`
@@ -756,8 +813,11 @@ Total amount of ops: 948
 - `renorm`
 - `repeat_interleave.Tensor`
 - `replication_pad1d.out`
+- `replication_pad1d_backward.grad_input`
+- `replication_pad1d_backward`
 - `replication_pad1d`
 - `replication_pad2d.out`
+- `replication_pad2d_backward.grad_input`
 - `replication_pad2d_backward`
 - `replication_pad2d`
 - `replication_pad3d.out`
@@ -847,6 +907,7 @@ Total amount of ops: 948
 - `sort.values_stable`
 - `sort.values`
 - `sort`
+- `sparse_dim`
 - `split_with_sizes_copy.out`
 - `sqrt.out`
 - `sqrt_`
@@ -935,6 +996,7 @@ Total amount of ops: 948
 - `upsample_trilinear3d_backward.grad_input`
 - `upsample_trilinear3d_backward`
 - `upsample_trilinear3d`
+- `values`
 - `var.correction_out`
 - `var.correction`
 - `var_mean.correction`

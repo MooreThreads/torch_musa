@@ -1,0 +1,13 @@
+diff --git a/torch/csrc/autograd/python_variable_indexing.cpp b/torch/csrc/autograd/python_variable_indexing.cpp
+index 308ca0d..915e170 100644
+--- a/torch/csrc/autograd/python_variable_indexing.cpp
++++ b/torch/csrc/autograd/python_variable_indexing.cpp
+@@ -452,7 +452,7 @@ int THPVariable_setitem(PyObject* self, PyObject* index, PyObject* py_value) {
+   if (isQIntType(self_.scalar_type())) {
+     value =
+         valueToTensor(device(kCPU).dtype(kFloat), py_value, at::Device(kCPU));
+-  } else if (self_device.is_cuda()) {
++  } else if (self_device.is_cuda() || self_device.is_musa()) {
+     value = valueToTensor(self_.options(), py_value, at::Device(kCPU));
+   } else {
+     value = valueToTensor(self_.options(), py_value, self_device);

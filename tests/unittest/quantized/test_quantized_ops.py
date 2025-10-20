@@ -432,3 +432,182 @@ def test_upsample_nearest2d(input_data, input_args):
         comparators=testing.QuantizedComparator(),
     )
     test.check_result(input_data)
+
+
+configs = [
+    ((2, 2), 0, 255, 1),
+    ((2, 3, 16), 0, 255, 1),
+    ((1, 4, 8, 8), 0, 127, 1),
+    ((2, 2, 32), 10, 240, 1),
+]
+
+
+def get_input_tensor(shape, dtype):
+    return torch.randn(shape, dtype=dtype)
+
+
+def get_scale_tensor(shape, axis, dtype):
+    channel_dim = shape[axis]
+    return torch.rand(channel_dim, dtype=dtype)
+
+
+def get_zero_point_tensor(shape, axis, dtype):
+    channel_dim = shape[axis]
+    return torch.randint(0, 10, (channel_dim,), dtype=dtype)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("config", configs)
+def test_fake_quantize_per_channel_affine_cachemask(config):
+    shape, qmin, qmax, axis = config
+
+    def fake_quant_cachemask(
+        input_tensor, scale, zero_point, axis, quant_min, quant_max
+    ):
+        return torch.ops.aten.fake_quantize_per_channel_affine_cachemask(
+            input_tensor, scale, zero_point, axis, quant_min, quant_max
+        )
+
+    input_tensor = get_input_tensor(shape, torch.float32)
+    scale_tensor = get_scale_tensor(shape, axis, torch.float32)
+    zero_point_tensor = get_zero_point_tensor(shape, axis, torch.float32)
+
+    test = testing.OpTest(
+        func=fake_quant_cachemask,
+        input_args={
+            "input_tensor": input_tensor,
+            "scale": scale_tensor,
+            "zero_point": zero_point_tensor,
+            "axis": axis,
+            "quant_min": qmin,
+            "quant_max": qmax,
+        },
+        comparators=testing.DefaultComparator(abs_diff=1e-6),
+    )
+    test.check_result()
+
+
+configs = [
+    ((2, 2), 0, 255),
+    ((2, 3, 16), 0, 255),
+    ((1, 4, 8, 8), 0, 127),
+    ((2, 2, 32), 10, 240),
+]
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("config", configs)
+def test_fake_quantize_per_tensor_affine_cachemask(config):
+    shape, qmin, qmax = config
+
+    def fake_quant_cachemask(
+        input_tensor, scale, zero_point, fake_quant_enabled, quant_min, quant_max
+    ):
+        return torch.ops.aten._fake_quantize_per_tensor_affine_cachemask_tensor_qparams(
+            input_tensor, scale, zero_point, fake_quant_enabled, quant_min, quant_max
+        )
+
+    input_tensor = get_input_tensor(shape, torch.float32)
+    scale_tensor = torch.tensor(0.1, dtype=torch.float32)
+    zero_point_tensor = torch.tensor(0, dtype=torch.int)
+    fake_quant_enabled_tensor = torch.tensor(1, dtype=torch.long)  #
+
+    test = testing.OpTest(
+        func=fake_quant_cachemask,
+        input_args={
+            "input_tensor": input_tensor,
+            "scale": scale_tensor,
+            "zero_point": zero_point_tensor,
+            "fake_quant_enabled": fake_quant_enabled_tensor,
+            "quant_min": qmin,
+            "quant_max": qmax,
+        },
+        comparators=testing.DefaultComparator(abs_diff=1e-6),
+    )
+
+    test.check_result()
+
+
+configs = [
+    ((4, 8), 0, 255, 0, True, False),  # shape, qmin, qmax, ch_axis, per_row, symmetric
+    ((2, 3, 16), -128, 127, 0, True, True),
+    ((10,), 0, 255, -1, False, False),
+]
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("config", configs)
+def test_fused_moving_avg_obs_fq_helper(config):
+    shape, qmin, qmax, ch_axis, per_row_fq, symmetric_quant = config
+
+    def fused_obs_fq_helper(
+        x,
+        observer_on,
+        fake_quant_on,
+        running_min,
+        running_max,
+        scale,
+        zero_point,
+        averaging_const,
+        quant_min,
+        quant_max,
+        ch_axis,
+        per_row_fq,
+        symmetric_quant,
+    ):
+        return torch._fused_moving_avg_obs_fq_helper(
+            x,
+            observer_on,
+            fake_quant_on,
+            running_min,
+            running_max,
+            scale,
+            zero_point,
+            averaging_const,
+            quant_min,
+            quant_max,
+            ch_axis,
+            per_row_fq,
+            symmetric_quant,
+        )
+
+    x = get_input_tensor(shape, torch.float32)
+
+    observer_on = torch.tensor(1, dtype=torch.long)
+    fake_quant_on = torch.tensor(1, dtype=torch.long)
+
+    if ch_axis >= 0:
+        num_channels = shape[ch_axis]
+        running_min = torch.zeros(num_channels, dtype=torch.float32)
+        running_max = torch.zeros(num_channels, dtype=torch.float32)
+        scale = torch.ones(num_channels, dtype=torch.float32) * 0.1
+        zero_point = torch.zeros(num_channels, dtype=torch.int)
+    else:
+        running_min = torch.tensor([0.0], dtype=torch.float32)
+        running_max = torch.tensor([0.0], dtype=torch.float32)
+        scale = torch.tensor([0.1], dtype=torch.float32)
+        zero_point = torch.tensor([0.0], dtype=torch.int)
+
+    averaging_const = 0.01
+
+    test = testing.OpTest(
+        func=fused_obs_fq_helper,
+        input_args={
+            "x": x,
+            "observer_on": observer_on,
+            "fake_quant_on": fake_quant_on,
+            "running_min": running_min,
+            "running_max": running_max,
+            "scale": scale,
+            "zero_point": zero_point,
+            "averaging_const": averaging_const,
+            "quant_min": qmin,
+            "quant_max": qmax,
+            "ch_axis": ch_axis,
+            "per_row_fq": per_row_fq,
+            "symmetric_quant": symmetric_quant,
+        },
+        comparators=testing.DefaultComparator(abs_diff=1e-6),
+    )
+
+    test.check_result()

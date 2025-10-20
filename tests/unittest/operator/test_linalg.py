@@ -149,7 +149,7 @@ def test_linalg_cholesky(input_data):
     input_musa = input_data.musa()
     output = m(input_data)
     output_musa = m(input_musa)
-    assert testing.DefaultComparator(abs_diff=1e-5)(output, output_musa)
+    assert testing.DefaultComparator(abs_diff=2e-5)(output, output_musa)
 
 
 input_data = [

@@ -1,0 +1,15 @@
+diff --git a/c10/core/Device.h b/c10/core/Device.h
+index cbe9129..c850117 100644
+--- a/c10/core/Device.h
++++ b/c10/core/Device.h
+@@ -87,6 +87,10 @@ struct C10_API Device final {
+     return type_ == DeviceType::PrivateUse1;
+   }
+ 
++  bool is_musa() const noexcept {
++    return is_privateuseone();
++  }
++
+   /// Return true if the device is of MPS type.
+   bool is_mps() const noexcept {
+     return type_ == DeviceType::MPS;

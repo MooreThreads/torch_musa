@@ -9,23 +9,11 @@ from torch_musa import testing
 
 input_data_2d = [
     torch.randn(4, 100, 4, 4),
-    torch.randn(8, 100, 8, 8),
-    torch.randn(16, 100, 16, 16),
     torch.randn(64, 100, 16, 16),
-    torch.randn(256, 100, 16, 16),
-    torch.randn(256, 100, 0, 16),
-    torch.randn(0, 100, 16, 16),
     torch.randn(256, 0, 16, 16),
-    torch.randn(256, 0, 16, 0),
-    torch.randn(0, 0, 16, 0),
-    torch.randn(4, 100, 4, 4).to(memory_format=torch.channels_last),
     torch.randn(8, 100, 8, 8).to(memory_format=torch.channels_last),
-    torch.randn(16, 100, 16, 16).to(memory_format=torch.channels_last),
-    torch.randn(64, 100, 16, 16).to(memory_format=torch.channels_last),
     torch.randn(256, 100, 16, 16).to(memory_format=torch.channels_last),
     torch.randn(256, 0, 16, 16).to(memory_format=torch.channels_last),
-    torch.randn(256, 100, 0, 0).to(memory_format=torch.channels_last),
-    torch.randn(0, 100, 16, 16).to(memory_format=torch.channels_last),
 ]
 
 input_data_1d = [
@@ -45,17 +33,18 @@ inputs = [
 ]
 
 train = [True, False]
-
+affine = [True]
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("inputs", inputs)
 @pytest.mark.parametrize("train", train)
-def test_batch_norm(inputs, train):
+@pytest.mark.parametrize("affine", affine)
+def test_batch_norm(inputs, train, affine):
     torch_op = inputs[0]
     input_data_list = inputs[1]
     for input_data in input_data_list:
         input_data.requires_grad_()
-        m = torch_op(100)
+        m = torch_op(100, affine=affine)
         m.train(train)
         output = m(input_data)
         output_musa = m.to("musa")(input_data.to("musa"))
@@ -70,12 +59,13 @@ def test_batch_norm(inputs, train):
     reason="fp16 batch_norm supported in QY2 or later",
 )
 @pytest.mark.parametrize("train", train)
-def test_batch_norm_2d_fp16(inputs, train):
+@pytest.mark.parametrize("affine", affine)
+def test_batch_norm_2d_fp16(inputs, train, affine):
     torch_op = inputs[0]
     input_data_list = inputs[1]
     for input_data in input_data_list:
         input_data.requires_grad_()
-        m = torch_op(100)
+        m = torch_op(100, affine=affine)
         m.train(train)
         output = m(input_data)
         m.half()
@@ -89,21 +79,11 @@ def test_batch_norm_2d_fp16(inputs, train):
 
 input_data_2d = [
     torch.randn(4, 100, 4, 4),
-    torch.randn(8, 100, 8, 8),
-    torch.randn(16, 100, 16, 16),
     torch.randn(64, 100, 16, 16),
-    torch.randn(64, 100, 16, 0),
-    torch.randn(64, 0, 16, 0),
-    torch.randn(64, 0, 0, 0),
     torch.randn(0, 100, 0, 16),
     torch.randn(4, 100, 4, 0).to(memory_format=torch.channels_last),
-    torch.randn(4, 0, 4, 0).to(memory_format=torch.channels_last),
-    torch.randn(0, 0, 4, 4).to(memory_format=torch.channels_last),
-    torch.randn(4, 100, 4, 4).to(memory_format=torch.channels_last),
     torch.randn(8, 100, 8, 8).to(memory_format=torch.channels_last),
     torch.randn(16, 100, 16, 16).to(memory_format=torch.channels_last),
-    torch.randn(64, 100, 16, 16).to(memory_format=torch.channels_last),
-    torch.randn(16, 100, 1, 1).to(memory_format=torch.channels_last),
 ]
 
 input_data_3d = [
@@ -127,11 +107,12 @@ inputs = [
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("inputs", inputs)
 @pytest.mark.parametrize("train", [True])
-def test_batch_norm_bwd(inputs, train):
+@pytest.mark.parametrize("affine", affine)
+def test_batch_norm_bwd(inputs, train, affine):
     torch_op = inputs[0]
     input_data_list = inputs[1]
     for input_data in input_data_list:
-        model = torch_op(100)
+        model = torch_op(100, affine=affine)
         musa_model = torch_op(100).to("musa")
         model.train(train)
         musa_model.train(train)

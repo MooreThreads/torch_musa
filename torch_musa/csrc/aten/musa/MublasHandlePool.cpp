@@ -29,6 +29,21 @@ void destroyMublasHandle(mublasHandle_t handle) {
   mublasDestroy(handle);
 }
 
+#if USE_MUBLASLT
+void createMuBlasLtHandle(mublasLtHandle_t* handle) {
+  TORCH_MUSABLAS_CHECK(mublasLtCreate(handle));
+}
+
+void destroyMublasLtHandle(mublasLtHandle_t handle) {
+  mublasLtDestroy(handle);
+}
+
+using MuBlasLtPoolType = DeviceThreadHandlePool<
+    mublasLtHandle_t,
+    createMuBlasLtHandle,
+    destroyMublasLtHandle>;
+#endif
+
 using MuBlasPoolType = DeviceThreadHandlePool<
     mublasHandle_t,
     createMublasHandle,
@@ -96,6 +111,23 @@ mublasHandle_t getCurrentMUSABlasHandle() {
   TORCH_MUSABLAS_CHECK(mublasSetMathMode(handle, MUBLAS_DEFAULT_MATH));
   return handle;
 }
+
+#if USE_MUBLASLT
+mublasLtHandle_t getCurrentMUSABlasLtHandle() {
+  c10::DeviceIndex device = 0;
+  AT_MUSA_CHECK(at::musa::GetDevice(&device));
+
+  static auto pool = std::shared_ptr<MuBlasLtPoolType>(
+      new MuBlasLtPoolType(), [](MuBlasLtPoolType* p) {
+        // leak the memory.
+      });
+  thread_local std::unique_ptr<MuBlasLtPoolType::PoolWindow> myPoolWindow(
+      pool->newPoolWindow());
+
+  auto handle = myPoolWindow->reserve(device);
+  return handle;
+}
+#endif
 
 } // namespace musa
 } // namespace at

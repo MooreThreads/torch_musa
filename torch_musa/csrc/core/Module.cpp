@@ -31,6 +31,7 @@
 #include "torch_musa/csrc/core/MUSAFunctions.h"
 #include "torch_musa/csrc/core/MUSAGraphsC10Utils.h"
 #include "torch_musa/csrc/core/MUSAPluggableAllocator.h"
+#include "torch_musa/csrc/core/PythonMCCL.h"
 #include "torch_musa/csrc/core/PythonTensor.h"
 #include "torch_musa/csrc/core/Sleep.h"
 #include "torch_musa/csrc/core/Stream.h"
@@ -43,8 +44,10 @@
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Context.h"
 #include "torch_musa/csrc/core/MUSAHooks.h"
+#include "torch_musa/csrc/core/MUSAUnifiedAllocator.h"
 #include "torch_musa/csrc/core/MusaIPCTypes.h"
 #include "torch_musa/csrc/core/StorageSharing.h"
+#include "torch_musa/csrc/core/UMACPUAllocator.h"
 #include "torch_musa/csrc/core/memory_snapshot.h"
 #include "torch_musa/csrc/inductor/aoti_runner/pybind.h"
 #include "torch_musa/csrc/utils/Logging.h"
@@ -515,10 +518,46 @@ static void BindGetDeviceProperties(PyObject* module) {
   auto m = py::handle(module).cast<py::module>();
   m.def(
       "_get_device_properties",
-      [](int64_t device) -> musaDeviceProp* {
+      [](c10::DeviceIndex device) -> musaDeviceProp* {
         return at::musa::getDeviceProperties(device);
       },
       py::return_value_policy::reference);
+}
+
+static PyObject* PyMusaRegisterUnifiedCPUAllocator(
+    PyObject* /*unused*/,
+    PyObject* /*args*/) {
+  HANDLE_TH_ERRORS
+  c10::uma_cpu_alloc_context.set_allocator();
+  Py_RETURN_NONE;
+  END_HANDLE_TH_ERRORS
+}
+
+static PyObject* PyMussResetUnifiedCPUAllocator(
+    PyObject* /*unused*/,
+    PyObject* /*args*/) {
+  HANDLE_TH_ERRORS
+  c10::uma_cpu_alloc_context.reset_allocator();
+  Py_RETURN_NONE;
+  END_HANDLE_TH_ERRORS
+}
+
+static PyObject* PyMusaGetMUSAPluggableAllocator(
+    PyObject* /*unused*/,
+    PyObject* /*args*/) {
+  HANDLE_TH_ERRORS
+  auto alloc = c10::get_pluggable_allocator();
+  return py::cast(alloc).release().ptr();
+  END_HANDLE_TH_ERRORS
+}
+
+static PyObject* PyMusaRegisterUnifiedAllocator(
+    PyObject* /*unused*/,
+    PyObject* /*args*/) {
+  HANDLE_TH_ERRORS
+  c10::register_unified_allocator();
+  Py_RETURN_NONE;
+  END_HANDLE_TH_ERRORS
 }
 
 static PyObject* PyMusaInitExtension(
@@ -684,6 +723,24 @@ PyObject* PyMusaGetDefaultStream(
       2,
       THPUtils_packInt64(static_cast<int64_t>(stream.device_type())));
   return output_tuple;
+  END_HANDLE_TH_ERRORS
+}
+
+PyObject* PyMUSAGetCurrentBlasHandle(PyObject* self, PyObject* noargs) {
+  HANDLE_TH_ERRORS
+  mublasHandle_t handle = at::musa::getCurrentMUSABlasHandle();
+  return PyLong_FromVoidPtr(handle);
+  END_HANDLE_TH_ERRORS
+}
+
+PyObject* PyMUSAGetCurrentBlasLtHandle(PyObject* self, PyObject* noargs) {
+  HANDLE_TH_ERRORS
+#if USE_MUBLASLT
+  mublasLtHandle_t handle = at::musa::getCurrentMUSABlasLtHandle();
+  return PyLong_FromVoidPtr(handle);
+#else
+  return PyLong_FromVoidPtr(nullptr);
+#endif
   END_HANDLE_TH_ERRORS
 }
 
@@ -935,6 +992,22 @@ static PyMethodDef MusaMemoryMethods[] = {
      PyMusaGetAllocatorBackend,
      METH_NOARGS,
      nullptr},
+    {"_musa_register_unified_allocator",
+     PyMusaRegisterUnifiedAllocator,
+     METH_NOARGS,
+     nullptr},
+    {"_musa_get_pluggable_allocator",
+     PyMusaGetMUSAPluggableAllocator,
+     METH_NOARGS,
+     nullptr},
+    {"_musa_register_unified_cpu_allocator",
+     PyMusaRegisterUnifiedCPUAllocator,
+     METH_NOARGS,
+     nullptr},
+    {"_musa_reset_unified_cpu_allocator",
+     PyMussResetUnifiedCPUAllocator,
+     METH_NOARGS,
+     nullptr},
     {nullptr}};
 
 static PyMethodDef MusaStreamMethods[] = {
@@ -987,6 +1060,25 @@ static PyMethodDef MusaDeviceMethods[] = {
 static PyMethodDef DynamoMethods[] = {
     {"_empty_strided_musa", PyMusaEmptyStridedMusa, METH_VARARGS, nullptr},
     {nullptr, nullptr, 0, nullptr}};
+
+static PyMethodDef MCCLMethods[] = {
+    {"_mccl_version", THMPModule_mccl_version, METH_NOARGS, nullptr},
+    {"_mccl_version_suffix",
+     THMPModule_mccl_version_suffix,
+     METH_NOARGS,
+     nullptr},
+    {nullptr, nullptr, 0, nullptr}};
+
+static PyMethodDef MUSAContextMethods[] = {
+    {"_musa_getCurrentBlasHandle",
+     PyMUSAGetCurrentBlasHandle,
+     METH_NOARGS,
+     nullptr},
+    {"_musa_getCurrentBlasLtHandle",
+     PyMUSAGetCurrentBlasLtHandle,
+     METH_NOARGS,
+     nullptr},
+    {nullptr}};
 
 // We choose to ignore certain blocks that are currently allocated
 // when we set the pool to its checkpoint. For those blocks, we need
@@ -1358,6 +1450,8 @@ PyObject* InitMusaModule() {
   AddPyMethodDefs(methods, at::autocast::musa::GetAutocastMethods());
   AddPyMethodDefs(methods, at::musa::GetContextMethods());
   AddPyMethodDefs(methods, DynamoMethods);
+  AddPyMethodDefs(methods, MCCLMethods);
+  AddPyMethodDefs(methods, MUSAContextMethods);
 
   static struct PyModuleDef musa_module = {
       PyModuleDef_HEAD_INIT, "torch_musa._MUSAC", nullptr, -1, methods.data()};

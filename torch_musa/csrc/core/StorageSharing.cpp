@@ -287,6 +287,26 @@ static PyObject* THMPStorageNewSharedMusa(PyObject* _unused, PyObject* args) {
   END_HANDLE_TH_ERRORS
 }
 
+static PyObject* THMPStorageEditDevice(PyObject* _self, PyObject* args) {
+  HANDLE_TH_ERRORS
+  static torch::PythonArgParser parser({
+      "edit_device(Storage self, Device device)",
+  });
+  torch::ParsedArgs<2> parsed_args;
+  auto r = parser.parse(args, nullptr, parsed_args);
+
+  const auto& storage = r.storage(0);
+  c10::Device device = r.device(1);
+  if (device.has_index() == false) {
+    device = c10::Device(device.type(), c10::musa::current_device());
+  }
+  at::StorageImpl* storage_impl = storage.unsafeGetStorageImpl();
+  at::DataPtr& dtr = storage_impl->_mutable_data_ptr_no_checks();
+  dtr.unsafe_set_device(device);
+  Py_RETURN_NONE;
+  END_HANDLE_TH_ERRORS
+}
+
 static PyMethodDef THMPStorageSharingMethods[] = {
     {"_share_musa_",
      castPyCFunctionWithKeywords(THMPStorageShareMusa),
@@ -297,6 +317,7 @@ static PyMethodDef THMPStorageSharingMethods[] = {
      THMPStorageReleaseIPCCounter,
      METH_VARARGS,
      nullptr},
+    {"_edit_device_musa", THMPStorageEditDevice, METH_VARARGS, nullptr},
     {nullptr}};
 
 PyMethodDef* GetStorageSharingMethods() {

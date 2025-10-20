@@ -10,6 +10,7 @@ from test_attention_base import (
     RawSDP,
     gen_input_data,
     MASK_TYPES,
+    sdp_cases,
     sdp_func,
     explicit_scales,
     make_causal_4d_mask_float,
@@ -17,31 +18,6 @@ from test_attention_base import (
 
 from torch_musa import testing
 from torch_musa.testing.base_test_tool import DefaultComparator
-
-
-def sdp_cases():
-    """
-    Return atten cases
-    """
-    # [(bs, seq_len, embedding_dim), embedding_dim, q_head_num, kv_head_num]
-    cases = [
-        [(128, 32, 1024), 1024, 16, 16],
-        # gqa
-        [(128, 32, 1024), 1024, 16, 4],
-    ]
-
-    device_arch_name = torch.musa.get_device_properties(
-        torch.musa.current_device()
-    ).name
-    if device_arch_name != "MTT S80":
-        cases.extend(
-            [
-                [(2, 512, 2048), 2048, 32, 32],
-                [(2, 4096, 4096), 4096, 32, 32],
-                [(1, 2048, 1024), 1024, 8, 8],
-            ]
-        )
-    return [case for i, case in enumerate(cases) if i % 2 == 1]
 
 
 def function(input_data, func, train=False):
@@ -80,7 +56,7 @@ def function(input_data, func, train=False):
 @pytest.mark.skipif(
     testing.get_musa_arch() < 22, reason="SKIP this test if in GPU with arch below 22."
 )
-@pytest.mark.parametrize("case", sdp_cases())
+@pytest.mark.parametrize("case", sdp_cases(1))
 @pytest.mark.parametrize("dtype", [torch.float32, torch.half])
 @pytest.mark.parametrize("func", [sdp_func])
 @pytest.mark.parametrize("mask_type", MASK_TYPES)
@@ -171,6 +147,6 @@ def test_math_sdp_grad_mask(dtype, mask_type):
 
     gold = args["attn_mask"].grad
     if is_pad_mask:
-        gold =  gold.detach().squeeze(1).squeeze(1)
+        gold = gold.detach().squeeze(1).squeeze(1)
     target = args_musa["attn_mask"].grad.cpu()
     assert comparator(target, gold)
