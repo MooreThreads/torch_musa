@@ -6,6 +6,7 @@
 #include <torch/torch.h>
 #include <limits>
 #include <numeric>
+#include <vector>
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
@@ -212,6 +213,62 @@ Tensor CtcLossBackward(
             targets,
             input_lengths,
             target_lengths,
+            neg_log_likelihood,
+            log_alpha,
+            blank,
+            zero_infinity);
+      });
+}
+
+::std::tuple<Tensor, Tensor> CtcLossTensor(
+    const Tensor& log_probs,
+    const Tensor& targets,
+    const Tensor& input_lengths,
+    const Tensor& target_lengths,
+    int64_t blank,
+    bool zero_infinity) {
+  TORCH_CHECK(
+      isIntegralType(input_lengths.scalar_type(), /*includeBool=*/false),
+      "input_lengths must be integral");
+  TORCH_CHECK(
+      isIntegralType(target_lengths.scalar_type(), /*includeBool=*/false),
+      "target_lengths must be integral");
+  Tensor ilc = input_lengths.to(Device(at::kCPU), at::kLong).contiguous();
+  Tensor tlc = target_lengths.to(Device(at::kCPU), at::kLong).contiguous();
+  IntArrayRef il(ilc.const_data_ptr<int64_t>(), ilc.numel());
+  IntArrayRef tl(tlc.const_data_ptr<int64_t>(), tlc.numel());
+  return CtcLoss(log_probs, targets, il, tl, blank, zero_infinity);
+}
+
+Tensor CtcLossBackwardTensor(
+    const Tensor& grad,
+    const Tensor& log_probs,
+    const Tensor& targets,
+    const Tensor& input_lengths,
+    const Tensor& target_lengths,
+    const Tensor& neg_log_likelihood,
+    const Tensor& log_alpha,
+    int64_t blank,
+    bool zero_infinity) {
+  TORCH_CHECK(
+      isIntegralType(input_lengths.scalar_type(), /*includeBool=*/false),
+      "input_lengths must be integral");
+  TORCH_CHECK(
+      isIntegralType(target_lengths.scalar_type(), /*includeBool=*/false),
+      "target_lengths must be integral");
+
+  Tensor ilc = input_lengths.to(Device(at::kCPU), at::kLong).contiguous();
+  Tensor tlc = target_lengths.to(Device(at::kCPU), at::kLong).contiguous();
+  IntArrayRef il(ilc.data_ptr<int64_t>(), ilc.numel());
+  IntArrayRef tl(tlc.data_ptr<int64_t>(), tlc.numel());
+  return AT_DISPATCH_FLOATING_TYPES(
+      log_probs.scalar_type(), "CtcLossBackward", [&] {
+        return CtcLossBackwardImpl<scalar_t>(
+            grad,
+            log_probs,
+            targets,
+            il,
+            tl,
             neg_log_likelihood,
             log_alpha,
             blank,

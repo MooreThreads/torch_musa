@@ -237,6 +237,9 @@ endif()
 list(APPEND CMAKE_MODULE_PATH "${MUSA_PATH}/cmake")
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/modules")
 
+# parse the version of MUSA, the version number is incorrect before MUSA 4.3.0
+parse_real_musa_version(REAL_MUSA_VERSION)
+
 find_package(MUSA REQUIRED)
 
 if(MUSA_FOUND)
@@ -256,17 +259,26 @@ if(MUSA_FOUND)
     endif()
   endforeach()
 
-  find_package(MUSAToolkit REQUIRED COMPONENTS musolver)
+  # MUSA support mublasLt since 4.3.0
+  if(REAL_MUSA_VERSION GREATER_EQUAL "4030")
+    find_package(MUSAToolkit REQUIRED COMPONENTS musolver mublas mublasLt)
+    list(
+      APPEND
+      DEPENDENT_LIBRARIES
+      MUSA::mufft
+      MUSA::mublas
+      MUSA::mublasLt
+      MUSA::musolver)
+  else()
+    find_package(MUSAToolkit REQUIRED COMPONENTS musolver mublas)
+    list(APPEND DEPENDENT_LIBRARIES MUSA::mublas MUSA::musolver)
+  endif()
+
   find_package(MUDNN REQUIRED)
 
   list(APPEND DEPENDENT_INCLUDE_DIRS ${MUSAToolkit_INCLUDE_DIR}
        ${MUDNN_INCLUDE_DIRS})
-  list(
-    APPEND
-    DEPENDENT_LIBRARIES
-    ${MUSA_LIBRARIES}
-    ${MUDNN_LIBRARIES}
-    MUSA::musolver)
+  list(APPEND DEPENDENT_LIBRARIES ${MUSA_LIBRARIES} ${MUDNN_LIBRARIES})
 
   if(USE_MCCL)
     if(NOT DEFINED ENV{MCCL_INCLUDE_DIR})
@@ -317,6 +329,8 @@ set(CODEGEN_TARGET "musa_codegen")
 set(GENERATED_MUSA_CSRCS
     "${CODE_GENERATED_DIR}/ATen/RegisterMUSA.cpp"
     "${CODE_GENERATED_DIR}/ATen/RegisterQuantizedMUSA.cpp"
+    "${CODE_GENERATED_DIR}/ATen/RegisterSparseMUSA.cpp"
+    "${CODE_GENERATED_DIR}/ATen/RegisterSparseCsrMUSA.cpp"
     "${PROJECT_SOURCE_DIR}/torch_musa/csrc/inductor/aoti_torch/generated/c_shim_musa.cpp"
 )
 add_custom_command(
@@ -361,7 +375,6 @@ if(USE_PER_OPERATOR_HEADERS)
   target_compile_definitions(${PLUGIN_NAME} PUBLIC AT_PER_OPERATOR_HEADERS)
 endif()
 
-parse_real_musa_version(REAL_MUSA_VERSION)
 target_compile_definitions(${MUSA_KERNELS_LIB}
                            PUBLIC -DREAL_MUSA_VERSION=${REAL_MUSA_VERSION})
 target_compile_definitions(${PLUGIN_NAME}

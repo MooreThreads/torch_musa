@@ -64,24 +64,51 @@ endfunction()
 # auto detect the arch of installed GPUs. Usage:
 # torch_musa_get_mcc_arch_list(output_var)
 macro(torch_musa_get_mcc_arch_list output_var)
+  set(_MUSA_GPU_ARCHS)
   if(DEFINED ENV{TORCH_MUSA_ARCH_LIST})
-    set(_TMP $ENV{TORCH_MUSA_ARCH_LIST})
+    set(_MUSA_GPU_ARCHS $ENV{TORCH_MUSA_ARCH_LIST})
   else()
     # Auto detect the arch of installed GPUs
-    execute_process(
-      COMMAND "musaInfo"
-      COMMAND
-        bash "-c"
-        "grep -E 'major|minor'  | awk '{print $2}' | paste -d \"\" - - | sort -u | paste -sd \";\" | tr -d '\n'"
-      RESULT_VARIABLE MUSA_INFO_RESULT
-      OUTPUT_VARIABLE MUSA_ARCH_INSTALLED)
-    if(NOT MUSA_INFO_RESULT EQUAL 0)
-      message(
-        FATAL_ERROR
-          "Could not detect MUSA arch of installed GPUs. try specifying the TORCH_MUSA_ARCH_LIST env manually"
-      )
+    set(_TMP_FILE "${PROJECT_BINARY_DIR}/get_musa_compute_capabilities.cpp")
+    file(
+      WRITE ${_TMP_FILE}
+      ""
+      "#include <musa_runtime.h>\n"
+      "#include <cstdio>\n"
+      "int main()\n"
+      "{\n"
+      "  int dev_count = 0;\n"
+      "  if (musaSuccess != musaGetDeviceCount(&dev_count)) return -1;\n"
+      "  if (dev_count == 0) return -1;\n"
+      "  for (int device = 0; device < dev_count; ++device)\n"
+      "  {\n"
+      "    musaDeviceProp prop;\n"
+      "    if (musaSuccess == musaGetDeviceProperties(&prop, device))\n"
+      "      std::printf(\"%d%d \", prop.major, prop.minor);\n"
+      "  }\n"
+      "  return 0;\n"
+      "}\n")
+
+    try_run(
+      RUN_RESULT COMPILE_RESULT ${PROJECT_BINARY_DIR} ${_TMP_FILE}
+      CMAKE_FLAGS "-DINCLUDE_DIRECTORIES=${MUSA_INCLUDE_DIRS}" LINK_LIBRARIES
+                  ${MUSA_LIBRARIES} RUN_OUTPUT_VARIABLE musa_cc)
+    if(RUN_RESULT EQUAL 0)
+      string(REPLACE " " ";" _tmp_musa_cc_list "${musa_cc}")
+      list(REMOVE_DUPLICATES _tmp_musa_cc_list)
+      set(_MUSA_GPU_ARCHS ${_tmp_musa_cc_list})
     endif()
-    set(_TMP ${MUSA_ARCH_INSTALLED})
+    unset(_TMP_FILE)
+    unset(_tmp_musa_cc_list)
+    unset(musa_cc)
   endif()
-  set(${output_var} "${_TMP}")
+
+  if(NOT _MUSA_GPU_ARCHS)
+    message(
+      FATAL_ERROR
+        "Could not detect MUSA arch of installed GPUs. try specifying the TORCH_MUSA_ARCH_LIST env manually"
+    )
+  endif()
+  set(${output_var} "${_MUSA_GPU_ARCHS}")
+  unset(_MUSA_GPU_ARCHS)
 endmacro()

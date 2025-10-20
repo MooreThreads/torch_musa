@@ -15,7 +15,7 @@ CUR_DIR=$(
 TORCH_MUSA_HOME=$CUR_DIR
 PYTORCH_PATH=${PYTORCH_REPO_PATH:-$(realpath ${TORCH_MUSA_HOME}/../pytorch)}
 TORCH_PATCHES_DIR=${TORCH_MUSA_HOME}/torch_patches/
-KINETO_URL=${KINETO_URL:-https://github.com/MooreThreads/kineto.git}
+KINETO_URL=${KINETO_URL:-https://sh-code.mthreads.com/ai/kineto.git}
 KINETO_TAG=v2.0.1
 
 BUILD_WHEEL=0
@@ -30,20 +30,13 @@ COMPILE_FP64=1
 PYTORCH_TAG=v2.5.0
 PYTORCH_BUILD_VERSION="${PYTORCH_TAG:1}"
 PYTORCH_BUILD_NUMBER=0 # This is used for official torch distribution.
-USE_MKL=${USE_MKL:-1}
-USE_STATIC_MKL=${USE_STATIC_MKL:-1}
 USE_MCCL=${USE_MCCL:-1}
-MUSA_DIR="/usr/local/musa"
-UPDATE_MUSA=0
-UPDATE_DAILY_MUSA=0
 
 usage() {
   echo -e "\033[1;32mThis script is used to build PyTorch and Torch_MUSA. \033[0m"
   echo -e "\033[1;32mParameters usage: \033[0m"
   echo -e "\033[32m    --all         : Means building both PyTorch and Torch_MUSA. \033[0m"
   echo -e "\033[32m    --fp64        : Means compiling fp64 data type in kernels using mcc in Torch_MUSA. \033[0m"
-  echo -e "\033[32m    --update_musa : Update latest RELEASED MUSA software stack. \033[0m"
-  echo -e "\033[32m    --update_daily_musa : Update latest DAILY MUSA software stack. \033[0m"
   echo -e "\033[32m    -m/--musa     : Means building Torch_MUSA only. \033[0m"
   echo -e "\033[32m    -t/--torch    : Means building original PyTorch only. \033[0m"
   echo -e "\033[32m    -d/--debug    : Means building in debug mode. \033[0m"
@@ -56,7 +49,7 @@ usage() {
 }
 
 # parse paremters
-parameters=$(getopt -o +mtdacpwnh --long all,fp64,update_musa,update_daily_musa,musa,torch,debug,asan,clean,patch,wheel,no_kineto,help, -n "$0" -- "$@")
+parameters=$(getopt -o +mtdacpwnh --long all,fp64,musa,torch,debug,asan,clean,patch,wheel,no_kineto,help, -n "$0" -- "$@")
 [ $? -ne 0 ] && {
   echo -e "\033[34mTry '$0 --help' for more information. \033[0m"
   exit 1
@@ -73,14 +66,6 @@ while true; do
     ;;
   --fp64)
     COMPILE_FP64=1
-    shift
-    ;;
-  --update_musa)
-    UPDATE_MUSA=1
-    shift
-    ;;
-  --update_daily_musa)
-    UPDATE_DAILY_MUSA=1
     shift
     ;;
   -m | --musa)
@@ -289,10 +274,6 @@ build_pytorch() {
       PYTORCH_BUILD_VERSION=${PYTORCH_BUILD_VERSION} \
       DEBUG=${DEBUG_MODE} \
       USE_ASAN=${ASAN_MODE} \
-      USE_STATIC_MKL=${USE_STATIC_MKL} \
-      USE_MKL=${USE_MKL} \
-      USE_MKLDNN=${USE_MKL} \
-      USE_MKLDNN_CBLAS=${USE_MKL} \
       USE_KINETO=${USE_KINETO} \
       BUILD_TEST=0 python setup.py bdist_wheel
     status=$?
@@ -303,10 +284,6 @@ build_pytorch() {
       PYTORCH_BUILD_VERSION=${PYTORCH_BUILD_VERSION} \
       DEBUG=${DEBUG_MODE} \
       USE_ASAN=${ASAN_MODE} \
-      USE_STATIC_MKL=${USE_STATIC_MKL} \
-      USE_MKL=${USE_MKL} \
-      USE_MKLDNN=${USE_MKL} \
-      USE_MKLDNN_CBLAS=${USE_MKL} \
       USE_KINETO=${USE_KINETO} \
       BUILD_TEST=0 python setup.py install
     status=$?
@@ -335,7 +312,7 @@ build_torch_musa() {
   status=0
   pushd ${TORCH_MUSA_HOME}
   if [ $BUILD_WHEEL -eq 1 ]; then
-    rm -rf dist build
+    rm -rf dist
     TORCH_DEVICE_BACKEND_AUTOLOAD=0 \
     PYTORCH_REPO_PATH=${PYTORCH_PATH} \
       DEBUG=${DEBUG_MODE} \
@@ -368,22 +345,6 @@ build_torch_musa() {
 }
 
 main() {
-  # ======== install MUSA ========
-  if [ ! -d ${MUSA_DIR} ] || [ -z "$(ls -A ${MUSA_DIR})" ]; then
-    echo -e "\033[34mStart installing MUSA software stack, including musatoolkits/mudnn/mccl/muThrust/muSparse/muAlg ... \033[0m"
-    . ${CUR_DIR}/docker/common/release/update_release_all.sh
-  fi
-  if [ ${UPDATE_MUSA} -eq 1 ]; then
-    echo -e "\033[34mStart updating MUSA software stack to latest released version ... \033[0m"
-    . ${CUR_DIR}/docker/common/release/update_release_all.sh
-    exit 0
-  fi
-  if [ ${UPDATE_DAILY_MUSA} -eq 1 ]; then
-    echo -e "\033[34mStart updating MUSA software stack to latest daily version ... \033[0m"
-    . ${CUR_DIR}/docker/common/daily/update_daily_all.sh
-    exit 0
-  fi
-  # ==============================
 
   if [[ ${CLEAN} -eq 1 ]] && [[ ${BUILD_TORCH} -ne 1 ]] && [[ ${BUILD_TORCH_MUSA} -ne 1 ]]; then
     clean_pytorch

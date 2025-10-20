@@ -1,5 +1,6 @@
 #include <torch/script.h>
 #include <torch_musa/csrc/core/Device.h>
+#include <cassert>
 #include <iostream>
 #include <memory>
 
@@ -19,6 +20,8 @@ int main(int argc, const char* argv[]) {
   std::vector<torch::jit::IValue> inputs;
   // Ready for input data.
   torch::Tensor input = torch::rand({1, 3, 224, 224}).to("musa");
+  assert(input.is_privateuseone() == input.is_musa());
+  assert(input.device().is_privateuseone() == input.device().is_musa());
   inputs.push_back(input);
 
   // Model execute.

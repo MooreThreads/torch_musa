@@ -1,5 +1,5 @@
 diff --git a/torch/distributed/pipelining/_backward.py b/torch/distributed/pipelining/_backward.py
-index a4c5516..a7c2f38 100644
+index a4c5516..0470d2e 100644
 --- a/torch/distributed/pipelining/_backward.py
 +++ b/torch/distributed/pipelining/_backward.py
 @@ -286,7 +286,7 @@ def stage_backward(
@@ -44,3 +44,18 @@ index a4c5516..a7c2f38 100644
  
          torch.autograd.backward(
              stage_output_tensors, grad_tensors=output_grad_tensors  # type: ignore[arg-type]
+@@ -326,6 +335,14 @@ def stage_backward(
+         for val in input_values:
+             if isinstance(val, torch.Tensor):
+                 grad_inputs.append(val.grad)
++                # picked from https://github.com/pytorch/pytorch/pull/164329
++                # Since gradients that will pass back to previous stages do not require gradient accumulation,
++                # by decrementing the gradients' reference count at this point, the memory of gradients will be
++                # returned to the allocator as soon as the next micro batch's get_bwd_send_ops comes and current
++                # asynchronous send completes.
++                # This prevents the gradients from persisting in GPU memory for the entire duration of step_microbatches
++                # until clear_runtime_states() is called.
++                val.grad = None
+             else:
+                 grad_inputs.append(None)
+ 

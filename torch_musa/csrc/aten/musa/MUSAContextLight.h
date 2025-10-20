@@ -17,7 +17,18 @@
 // #endif
 
 #include <c10/core/Allocator.h>
-#include "torch_musa/csrc/core/MUSAFunctions.h"
+// #include "torch_musa/csrc/core/MUSAFunctions.h"
+
+#include <mublas.h>
+
+#if defined(REAL_MUSA_VERSION) && (REAL_MUSA_VERSION >= 4030)
+#define USE_MUBLASLT 1
+#include <mublasLt.h>
+#else
+#define USE_MUBLASLT 0
+typedef struct {
+} * mublasLtHandle_t;
+#endif
 
 namespace c10 {
 struct Allocator;
@@ -39,9 +50,10 @@ TORCH_CUDA_CPP_API c10::Allocator* getMUSADeviceAllocator();
 
 /* Handles */
 TORCH_CUDA_CPP_API musparseHandle_t getCurrentCUDASparseHandle();
-TORCH_CUDA_CPP_API mublasHandle_t getCurrentCUDABlasHandle();
-// TORCH_CUDA_CPP_API mublasLtHandle_t getCurrentCUDABlasLtHandle();
-
+TORCH_CUDA_CPP_API mublasHandle_t getCurrentMUSABlasHandle();
+#if USE_MUBLASLT
+TORCH_CUDA_CPP_API mublasLtHandle_t getCurrentMUSABlasLtHandle();
+#endif
 TORCH_CUDA_CPP_API void clearCublasWorkspaces();
 
 // TODO(@sw-compute): musolverDn has not been developed

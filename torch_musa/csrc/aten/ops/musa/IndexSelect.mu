@@ -288,6 +288,7 @@ void IndexSelectRun(
       elements,
       tail,
       can_vector_load);
+  C10_MUSA_KERNEL_LAUNCH_CHECK();
 }
 
 REGISTER_MUSA_DISPATCH(indexselect_stub, &IndexSelectRun);

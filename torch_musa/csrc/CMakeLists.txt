@@ -44,6 +44,8 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Resize.cpp
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Sorting.cpp
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TensorModeKernel.cpp
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/FakeQuantPerChannelAffine.cpp
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/FakeQuantPerTensorAffine.cpp
   ${GENERATED_PORTING_DIR}/aten/src/ATen/musa/EmptyTensor.cpp
   ${GENERATED_PORTING_DIR}/torch/csrc/musa/comm.cpp
   ${GENERATED_PORTING_DIR}/torch/csrc/musa/Stream.cpp
@@ -95,6 +97,7 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistributionRandomKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DilatedMaxPool3d.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistributionExponentialKernel.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Dropout.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/FractionalMaxPool2d.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/FractionalMaxPool3d.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachBinaryOpList.mu
@@ -160,6 +163,10 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/Activation.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/IntReprQuant.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/MakePerTensorQuantizedTensor.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/FusedObsFakeQuant.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/musa/FakeQuantizeCore.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/sparse/musa/SparseMUSATensor.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/FlattenIndicesKernel.mu
   aten/quantized/musa/*.mu
   aten/ops/torchvision/*.mu
   aten/ops/musa/*.mu
@@ -214,8 +221,6 @@ musa_add_library(
   ${MU_SRCS}
   ${PORTING_CPP_CSRCS}
   ${ATEN_MUSA_CSRCS})
-
-musa_add_mublas_to_target(${MUSA_KERNELS_LIB})
 
 if(NOT MUSA_KERNELS_INSTALL_LIB_DIR)
   set(MUSA_KERNELS_INSTALL_LIB_DIR lib)

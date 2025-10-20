@@ -4,6 +4,7 @@
 #include <ATen/NativeFunctions.h>
 #include <ATen/TensorUtils.h>
 #include <ATen/Utils.h>
+#include <ATen/native/quantized/Copy.h>
 #include <c10/core/TensorOptions.h>
 #include <torch/library.h>
 
@@ -23,6 +24,9 @@
 #include <unordered_set>
 
 namespace at {
+
+extern void set_quantizer_(const Tensor&, ConstQuantizerPtr);
+
 namespace musa {
 namespace {
 
@@ -285,14 +289,47 @@ static bool maybe_enable_p2p_access(Device dst_device, Device src_device) {
 
 // copy src_origin to self, such as self.copy_(src_origin)
 Tensor MUSACopyFrom(
-    const Tensor& src_origin,
-    const Tensor& self,
+    const Tensor& _src,
+    const Tensor& _self,
     bool non_blocking) {
+  auto self = const_cast<Tensor&>(_self);
+  const bool self_is_qtensor = self.is_quantized();
+  const bool src_is_qtensor = _src.is_quantized();
+
+  // Quantized tensors need to be handled in different ways.
+  if (self_is_qtensor && !src_is_qtensor) {
+    return native::quantized_copy_from_float_(self, _src);
+  }
+
+  if (self_is_qtensor && src_is_qtensor) {
+    TORCH_CHECK(
+        self.qscheme() == _src.qscheme(),
+        "Quantized Copy only works with same qscheme");
+    TORCH_CHECK(self.scalar_type() == _src.scalar_type());
+    set_quantizer_(self, _src.quantizer());
+  }
+
+  if (!self_is_qtensor && src_is_qtensor) {
+    TORCH_CHECK(
+        false,
+        "Copying from quantized Tensor to non-quantized Tensor is not allowed",
+        ", please use dequantize to get a float Tensor from a quantized Tensor");
+  }
+
+  using Proxy = typename c10::MaybeOwned<Tensor>;
+  Proxy proxy_src;
+  if (!self_is_qtensor && !src_is_qtensor) {
+    proxy_src = Proxy::owned(_src.expand_as(self));
+  } else {
+    TORCH_CHECK(self.sizes().equals(_src.sizes()));
+    proxy_src = Proxy::borrowed(_src);
+  }
+
   // At least one of src and dst should be MUSA, otherwise it is impossible
   // to fall into this function!
   // Firstly, we expand the src_origin. as d2d/d2h/h2d/unary/permute will not
   // handle the broadcast case
-  Tensor src = src_origin.expand_as(self);
+  const auto& src = (*proxy_src);
   TORCH_INTERNAL_ASSERT(is_musa(self) || is_musa(src));
   maybe_enable_p2p_access(self.device(), src.device());
 
@@ -380,7 +417,7 @@ Tensor MUSACopyFrom(
       auto* ctx = host_tensor.storage().data_ptr().get_context();
       CachingHostAllocator_recordEvent(ptr, ctx, stream);
     } else {
-      musaStreamSynchronize(stream);
+      C10_MUSA_CHECK(musaStreamSynchronize(stream));
     }
 
     if (self.is_conj() != src.is_conj()) {

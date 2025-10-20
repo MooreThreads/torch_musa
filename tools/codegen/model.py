@@ -19,6 +19,7 @@ MUSA_DISPATCH_KEYS = [
     MUSA_STRUCTURED_DISPATCH_KEY,
     DispatchKey.QuantizedPrivateUse1,
     DispatchKey.SparsePrivateUse1,
+    DispatchKey.SparseCsrPrivateUse1,
     DispatchKey.NestedTensorPrivateUse1,
     DispatchKey.AutogradPrivateUse1,
     DispatchKey.CompositeExplicitAutograd,
@@ -51,6 +52,9 @@ def related_torch_dispatch_keys(dk: DispatchKey) -> Iterator[DispatchKey]:
     elif dk is DispatchKey.QuantizedPrivateUse1:
         yield DispatchKey.QuantizedCPU
         yield DispatchKey.QuantizedCUDA
+    elif dk is DispatchKey.SparseCsrPrivateUse1:
+        yield DispatchKey.SparseCsrCPU
+        yield DispatchKey.SparseCsrCUDA
     elif dk is DispatchKey.SparsePrivateUse1:
         yield DispatchKey.SparseCPU
         yield DispatchKey.SparseCUDA

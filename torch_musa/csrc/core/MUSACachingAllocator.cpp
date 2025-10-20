@@ -24,6 +24,7 @@
 #include "torch_musa/csrc/core/MUSAException.h"
 #include "torch_musa/csrc/core/MUSAFunctions.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
+#include "torch_musa/csrc/core/MUSAUnifiedAllocator.h"
 
 #include <sys/syscall.h>
 #include <sys/types.h>
@@ -3500,7 +3501,7 @@ struct BackendStaticInitializer {
   // runtime). Defers verbose exceptions and error checks, including Musa
   // version checks, to MUSAAllocatorConfig's runtime doublecheck. If this
   // works, maybe we should move all of MUSAAllocatorConfig here?
-  MUSAAllocator* parseEnvForBackend() {
+  void parseEnvForBackend(std::atomic<MUSAAllocator*>& allocator) {
     const char* val = getenv("PYTORCH_MUSA_ALLOC_CONF");
     if (val != nullptr) {
       const std::string config(val);
@@ -3517,26 +3518,32 @@ struct BackendStaticInitializer {
         std::vector<std::string> kv(it2, end2);
         if (kv.size() >= 2) {
           if (kv[0] == "backend") {
-            if (kv[1] == "musaMallocAsync")
+            if (kv[1] == "musaMallocAsync") {
               // TODO(MTAI): support Async Allocator
               /* return MusaMallocAsync::allocator(); */
-              if (kv[1] == "native")
-                return &Native::allocator;
+            }
+            if (kv[1] == "unified") {
+              c10::register_unified_allocator();
+              return;
+            }
+            if (kv[1] == "native") {
+              allocator.store(&Native::allocator);
+              return;
+            }
           }
         }
       }
     }
-    return &Native::allocator;
+    allocator.store(&Native::allocator);
   }
 
-  BackendStaticInitializer() {
-    auto r = parseEnvForBackend();
-    allocator.store(r);
+  BackendStaticInitializer(std::atomic<MUSAAllocator*>& allocator) {
+    parseEnvForBackend(allocator);
   }
 };
 
 std::atomic<MUSAAllocator*> allocator;
-BackendStaticInitializer backend_static_initializer;
+BackendStaticInitializer backend_static_initializer(allocator);
 } // namespace musa::MUSACachingAllocator
 } // namespace c10
 

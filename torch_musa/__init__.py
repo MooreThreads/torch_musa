@@ -5,7 +5,10 @@
 import sys
 import warnings
 import importlib
+import os
+import re
 from typing import Set, Type
+import contextlib
 
 from packaging.version import Version
 
@@ -61,6 +64,10 @@ setattr(
 
 from torch_musa.distributed import _apply_distributed_patch
 
+from .core import (
+    current_blas_handle,
+    current_blaslt_handle,
+)
 from .core.device import (
     Device as device,
     DeviceOf as device_of,
@@ -118,6 +125,8 @@ from .core.mudnn import *
 from .core.ops import *
 
 from .musa_graph import *
+
+from .core import mccl
 
 # A hack to get `torch.backends.mudnn` functions/attributes. This allows users to use cudnn
 # equivalent functions like `torch.backends.mudnn.allow_tf32 = True`
@@ -215,3 +224,42 @@ import torch._inductor.graph as orig_graph
 import torch_musa._inductor.graph as musa_graph
 
 setattr(orig_graph, "GraphLowering", musa_graph.MusaGraphLowering)
+
+
+# pylint: disable=missing-function-docstring
+def parseEnvForUMM():
+    val = os.getenv("PYTORCH_MUSA_ALLOC_CONF")
+    os.environ["CPU_UNIFIED_FLAG"] = "False"  # inner flag, not exposed to user
+    if val is not None:
+        config = val
+        options = re.split(r"[\s,]+", config.strip())
+        for option in options:
+            kv = re.split(r"[:]+", option.strip())
+            if len(kv) == 2:
+                if kv[0] == "cpu":
+                    if kv[1] == "unified":
+                        torch_musa._MUSAC._musa_register_unified_cpu_allocator()
+                        os.environ["CPU_UNIFIED_FLAG"] = "True"
+                        return
+
+
+parseEnvForUMM()
+
+
+@contextlib.contextmanager
+def use_unified_cpu_allocator():
+    r"""A context manager that use unified cpu allocator.
+
+    Args:
+      None
+
+    .. note::
+        unified cpu allocator works in context
+    """
+    torch_musa._MUSAC._musa_register_unified_cpu_allocator()
+    os.environ["CPU_UNIFIED_FLAG"] = "True"
+    try:
+        yield
+    finally:
+        torch_musa._MUSAC._musa_reset_unified_cpu_allocator()
+        os.environ["CPU_UNIFIED_FLAG"] = "False"

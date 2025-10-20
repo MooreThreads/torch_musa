@@ -309,7 +309,8 @@ def musa_override_native_function_info(
     ) and (musa_device_guard is None or musa_device_guard == torch_device_guard)
     for ds_str in new_musa_dispatch:
         dk = DispatchKey.parse(ds_str)
-        if dk is MUSA_STRUCTURED_DISPATCH_KEY:
+        # Structured legacy hits it
+        if dk is MUSA_STRUCTURED_DISPATCH_KEY and torch_part_of_structured_group:
             continue
         assert dk in impl_kinds
         assert (

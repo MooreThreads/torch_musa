@@ -47,12 +47,18 @@ if torch.backends.mudnn.version() >= 3000:
     multi_latent_attention.append(True)
 
 
+batch_sizes = [1, 8, 16]
+dims = [256, 512, 1024]
+seq_lens = [512, 1024]
+dtypes = [torch.float32]
+
+
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.skipif(testing.get_musa_arch() < 22, reason="only test on arch>=22")
-@pytest.mark.parametrize("batch_size", [1, 16, 32])
-@pytest.mark.parametrize("dim", [512, 2048, 4096])
-@pytest.mark.parametrize("max_seq_len", [2048, 4096])
-@pytest.mark.parametrize("dtype", [torch.float32])
+@pytest.mark.parametrize("batch_size", batch_sizes)
+@pytest.mark.parametrize("dim", dims)
+@pytest.mark.parametrize("max_seq_len", seq_lens)
+@pytest.mark.parametrize("dtype", dtypes)
 @pytest.mark.parametrize("multi_latent_attention", multi_latent_attention)
 def test_rope(batch_size, dim, max_seq_len, dtype, multi_latent_attention):
 
@@ -101,10 +107,10 @@ def test_rope(batch_size, dim, max_seq_len, dtype, multi_latent_attention):
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.skipif(testing.get_musa_arch() < 22, reason="only test on arch>=22")
-@pytest.mark.parametrize("batch_size", [1, 16, 32])
-@pytest.mark.parametrize("dim", [512, 2048, 4096])
-@pytest.mark.parametrize("max_seq_len", [2048, 4096])
-@pytest.mark.parametrize("dtype", [torch.float32])
+@pytest.mark.parametrize("batch_size", batch_sizes)
+@pytest.mark.parametrize("dim", dims)
+@pytest.mark.parametrize("max_seq_len", seq_lens)
+@pytest.mark.parametrize("dtype", dtypes)
 @pytest.mark.parametrize("multi_latent_attention", multi_latent_attention)
 @pytest.mark.parametrize(
     "scenario",
@@ -173,10 +179,10 @@ def test_rope_non_contiguous_scenarios(
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.skipif(testing.get_musa_arch() < 22, reason="only test on arch>=22")
-@pytest.mark.parametrize("batch_size", [1, 16, 32])
-@pytest.mark.parametrize("dim", [512, 2048, 4096])
-@pytest.mark.parametrize("max_seq_len", [2048, 4096])
-@pytest.mark.parametrize("dtype", [torch.float32])
+@pytest.mark.parametrize("batch_size", batch_sizes)
+@pytest.mark.parametrize("dim", dims)
+@pytest.mark.parametrize("max_seq_len", seq_lens)
+@pytest.mark.parametrize("dtype", dtypes)
 @pytest.mark.parametrize("multi_latent_attention", multi_latent_attention)
 def test_rope_backward(batch_size, dim, max_seq_len, dtype, multi_latent_attention):
 

@@ -43,7 +43,7 @@ musaDeviceProp* getCurrentDeviceProperties() {
   return getDeviceProperties(device);
 }
 
-musaDeviceProp* getDeviceProperties(int device) {
+musaDeviceProp* getDeviceProperties(c10::DeviceIndex device) {
   c10::call_once(init_flag, initMUSAContextVectors);
   if (device == -1)
     device = current_device();
@@ -52,7 +52,9 @@ musaDeviceProp* getDeviceProperties(int device) {
   return &device_properties[device];
 }
 
-bool canDeviceAccessPeer(int device, int peer_device) {
+bool canDeviceAccessPeer(
+    c10::DeviceIndex device,
+    c10::DeviceIndex peer_device) {
   c10::call_once(init_flag, initMUSAContextVectors);
   if (device == -1)
     device = current_device();
@@ -73,7 +75,7 @@ uint32_t getMUSAArch() {
   return device_prop->major * 100 + device_prop->minor * 10;
 }
 
-uint32_t getMUSAArch(int device) {
+uint32_t getMUSAArch(c10::DeviceIndex device) {
   const musaDeviceProp* device_prop = getDeviceProperties(device);
   return device_prop->major * 100 + device_prop->minor * 10;
 }
@@ -83,7 +85,7 @@ bool maybeDNNOpSupportBFloat16() {
   return getMUSAArch() >= 220;
 }
 
-bool maybeDNNOpSupportBFloat16(int device) {
+bool maybeDNNOpSupportBFloat16(c10::DeviceIndex device) {
   return getMUSAArch(device) >= 220;
 }
 

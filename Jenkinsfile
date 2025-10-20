@@ -4,8 +4,8 @@ def Pipeline(String DockerImg, String DockerRunArgs, String GpuType) {
             // add safe directory
             sh 'git config --global --add safe.directory \"*\"'
             // lint check
-            sh '/opt/conda/condabin/conda run -n py310 --no-capture-output /bin/bash tools/lint/pylint.sh'
-            sh '/opt/conda/condabin/conda run -n py310 --no-capture-output /bin/bash tools/lint/git-clang-format.sh --rev origin/main'
+            sh '/bin/bash tools/lint/pylint.sh'
+            sh '/bin/bash tools/lint/git-clang-format.sh --rev origin/main'
         }
         gitlabCommitStatus(name: "02-${GpuType}-env prepare", state: "running") {
             // update musa sdk
@@ -16,7 +16,7 @@ def Pipeline(String DockerImg, String DockerRunArgs, String GpuType) {
         }
         gitlabCommitStatus(name: "03-${GpuType}-build torch", state: "running") {
             // build
-            sh '/bin/bash --login -c "KINETO_URL=https://sh-code.mthreads.com/ai/kineto.git conda run -n py310 --no-capture-output /bin/bash build.sh -c"'
+            sh '/bin/bash --login -c "KINETO_URL=https://sh-code.mthreads.com/ai/kineto.git /bin/bash build.sh -c"'
         }
         gitlabCommitStatus(name: "04-${GpuType}-fsdp unit test", state: "running") {
             sh "MUSA_VISIBLE_DEVICES=0,1,2,3 GPU_TYPE=${GpuType} /bin/bash --login scripts/run_fsdp.sh"
@@ -52,8 +52,8 @@ pipeline {
   }
 
   environment {
-    S4000IMG = 'sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py310:rc4.0.0-v2.0.0-ci-qy2'
-    S5000IMG = 'sh-harbor.mthreads.com/mt-ai/musa-pytorch-dev-py310:rc4.0.0-v2.0.0-ci-ph1'
+    S4000IMG = 'sh-harbor.mthreads.com/mcctest/musa-compile-s4000:kuae2.1-20250921'
+    S5000IMG = 'sh-harbor.mthreads.com/mcctest/musa-train:4.3.0-rel-0924'
     DOCKER_RUN_ARGS = '--network=host ' +
       '--user root ' +
       '--privileged ' +

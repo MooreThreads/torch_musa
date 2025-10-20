@@ -146,7 +146,6 @@ void _EmbeddingBag1DRun(
     const int64_t mode,
     const int64_t padding_idx_) {
   TORCH_CHECK(offsets.data_ptr() != nullptr, "1D input must have offsets");
-  at::musa::muHandle& h = GetMudnnHandle();
   auto stream = at::musa::getCurrentMUSAStream();
 
   int tbl_w = t.sizes()[1];
@@ -203,6 +202,7 @@ void _EmbeddingBag1DRun(
       TORCH_CHECK(false, "EmbeddingBag doesn't support mode: ", mode);
   }
 #undef cb
+  C10_MUSA_KERNEL_LAUNCH_CHECK();
 }
 
 void _EmbeddingBag2DRun(
@@ -211,7 +211,6 @@ void _EmbeddingBag2DRun(
     const Tensor& i,
     const int64_t mode,
     const int64_t padding_idx_) {
-  at::musa::muHandle& h = GetMudnnHandle();
   auto stream = at::musa::getCurrentMUSAStream();
   int tbl_h = t.sizes()[0];
   int tbl_w = t.sizes()[1];
@@ -277,6 +276,7 @@ void _EmbeddingBag2DRun(
       TORCH_CHECK(false, "EmbeddingBag doesn't support mode: ", mode);
   }
 #undef cb
+  C10_MUSA_KERNEL_LAUNCH_CHECK();
 }
 
 void EmbeddingBagRun(

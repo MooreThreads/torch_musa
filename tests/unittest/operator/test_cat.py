@@ -113,6 +113,20 @@ inputdata = [
         ],
         "dim": 2,
     },
+    {
+        "input": [
+            torch.randn(1, 2, 3, 4)[:, :, :, :0],
+            torch.randn(1, 2, 3, 4),
+        ],
+        "dim": -1,
+    },
+    {
+        "input": [
+            torch.randn(1, 2, 3, 4).to(memory_format=torch.channels_last)[:, :0, :, :],
+            torch.randn(1, 2, 3, 4).to(memory_format=torch.channels_last),
+        ],
+        "dim": 1,
+    },
 ]
 
 

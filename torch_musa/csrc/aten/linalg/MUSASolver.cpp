@@ -7,6 +7,130 @@
 
 namespace at::musa::solver {
 
+#if defined(REAL_MUSA_VERSION) && (REAL_MUSA_VERSION < 4030)
+#define TORCH_MUSOLVER_CHECK TORCH_MUSABLAS_CHECK
+
+#define musolverDnDgetrf_bufferSize(handle, m, n, dA, ldda, lwork) \
+  musolverDgetrf_bufferSize((m), (n), true, reinterpret_cast<size_t*>((lwork)))
+#define musolverDnDgetrf(handle, m, n, dA, ldda, dataPtr, ipiv, info) \
+  musolverDgetrf(                                                     \
+      (handle),                                                       \
+      (m),                                                            \
+      (n),                                                            \
+      (dA),                                                           \
+      (ldda),                                                         \
+      (ipiv),                                                         \
+      (info),                                                         \
+      static_cast<void*>((dataPtr)))
+#define musolverDnSgetrf_bufferSize(handle, m, n, dA, ldda, lwork) \
+  musolverSgetrf_bufferSize((m), (n), true, reinterpret_cast<size_t*>((lwork)))
+#define musolverDnSgetrf(handle, m, n, dA, ldda, dataPtr, ipiv, info) \
+  musolverSgetrf(                                                     \
+      (handle),                                                       \
+      (m),                                                            \
+      (n),                                                            \
+      (dA),                                                           \
+      (ldda),                                                         \
+      (ipiv),                                                         \
+      (info),                                                         \
+      static_cast<void*>((dataPtr)))
+#define musolverDnZgetrf_bufferSize(handle, m, n, dA, ldda, lwork) \
+  musolverZgetrf_bufferSize((m), (n), true, reinterpret_cast<size_t*>((lwork)))
+#define musolverDnZgetrf(handle, m, n, dA, ldda, dataPtr, ipiv, info) \
+  musolverZgetrf(                                                     \
+      (handle),                                                       \
+      (m),                                                            \
+      (n),                                                            \
+      (dA),                                                           \
+      (ldda),                                                         \
+      (ipiv),                                                         \
+      (info),                                                         \
+      static_cast<void*>((dataPtr)))
+#define musolverDnCgetrf_bufferSize(handle, m, n, dA, ldda, lwork) \
+  musolverCgetrf_bufferSize((m), (n), true, reinterpret_cast<size_t*>((lwork)))
+#define musolverDnCgetrf(handle, m, n, dA, ldda, dataPtr, ipiv, info) \
+  musolverCgetrf(                                                     \
+      (handle),                                                       \
+      (m),                                                            \
+      (n),                                                            \
+      (dA),                                                           \
+      (ldda),                                                         \
+      (ipiv),                                                         \
+      (info),                                                         \
+      static_cast<void*>((dataPtr)))
+
+#define musolverDnSpotrs(handle, uplo, n, nrhs, A, lda, B, ldb, devInfo) \
+  musolverSpotrs((handle), (uplo), (n), (nrhs), (A), (lda), (B), (ldb))
+#define musolverDnDpotrs(handle, uplo, n, nrhs, A, lda, B, ldb, devInfo) \
+  musolverDpotrs((handle), (uplo), (n), (nrhs), (A), (lda), (B), (ldb))
+#define musolverDnCpotrs(handle, uplo, n, nrhs, A, lda, B, ldb, devInfo) \
+  musolverCpotrs((handle), (uplo), (n), (nrhs), (A), (lda), (B), (ldb))
+#define musolverDnZpotrs(handle, uplo, n, nrhs, A, lda, B, ldb, devInfo) \
+  musolverZpotrs((handle), (uplo), (n), (nrhs), (A), (lda), (B), (ldb))
+
+#define musolverDnDgetrs(                                  \
+    handle, trans, n, nrhs, dA, lda, ipiv, ret, ldb, info) \
+  musolverDgetrs(                                          \
+      (handle),                                            \
+      (trans),                                             \
+      (n),                                                 \
+      (nrhs),                                              \
+      (dA),                                                \
+      (lda),                                               \
+      (ipiv),                                              \
+      (ret),                                               \
+      (ldb),                                               \
+      (info))
+#define musolverDnSgetrs(                                  \
+    handle, trans, n, nrhs, dA, lda, ipiv, ret, ldb, info) \
+  musolverSgetrs(                                          \
+      (handle),                                            \
+      (trans),                                             \
+      (n),                                                 \
+      (nrhs),                                              \
+      (dA),                                                \
+      (lda),                                               \
+      (ipiv),                                              \
+      (ret),                                               \
+      (ldb),                                               \
+      (info))
+#define musolverDnZgetrs(                                  \
+    handle, trans, n, nrhs, dA, lda, ipiv, ret, ldb, info) \
+  musolverZgetrs(                                          \
+      (handle),                                            \
+      (trans),                                             \
+      (n),                                                 \
+      (nrhs),                                              \
+      (dA),                                                \
+      (lda),                                               \
+      (ipiv),                                              \
+      (ret),                                               \
+      (ldb),                                               \
+      (info))
+#define musolverDnCgetrs(                                  \
+    handle, trans, n, nrhs, dA, lda, ipiv, ret, ldb, info) \
+  musolverCgetrs(                                          \
+      (handle),                                            \
+      (trans),                                             \
+      (n),                                                 \
+      (nrhs),                                              \
+      (dA),                                                \
+      (lda),                                               \
+      (ipiv),                                              \
+      (ret),                                               \
+      (ldb),                                               \
+      (info))
+
+#define musolverDnSpotrfBatched(handle, uplo, n, A, lda, info, batchSize) \
+  musolverSpotrfBatched((handle), (uplo), (n), (A), (lda), (info), (batchSize))
+#define musolverDnDpotrfBatched(handle, uplo, n, A, lda, info, batchSize) \
+  musolverDpotrfBatched((handle), (uplo), (n), (A), (lda), (info), (batchSize))
+#define musolverDnCpotrfBatched(handle, uplo, n, A, lda, info, batchSize) \
+  musolverCpotrfBatched((handle), (uplo), (n), (A), (lda), (info), (batchSize))
+#define musolverDnZpotrfBatched(handle, uplo, n, A, lda, info, batchSize) \
+  musolverZpotrfBatched((handle), (uplo), (n), (A), (lda), (info), (batchSize))
+#endif
+
 template <>
 void getrf<double>(
     mublasHandle_t handle,
@@ -16,12 +140,13 @@ void getrf<double>(
     int ldda,
     int* ipiv,
     int* info) {
-  size_t lwork;
-  TORCH_MUSABLAS_CHECK(musolverDgetrf_bufferSize(m, n, true, &lwork));
+  int lwork;
+  TORCH_MUSOLVER_CHECK(
+      musolverDnDgetrf_bufferSize(handle, m, n, dA, ldda, &lwork));
   auto& allocator = *::c10::musa::MUSACachingAllocator::get();
   auto dataPtr = allocator.allocate(sizeof(double) * lwork);
-  TORCH_MUSABLAS_CHECK(musolverDgetrf(
-      handle, m, n, dA, ldda, ipiv, info, static_cast<void*>(dataPtr.get())));
+  TORCH_MUSOLVER_CHECK(musolverDnDgetrf(
+      handle, m, n, dA, ldda, static_cast<double*>(dataPtr.get()), ipiv, info));
 }
 
 template <>
@@ -33,12 +158,13 @@ void getrf<float>(
     int ldda,
     int* ipiv,
     int* info) {
-  size_t lwork;
-  TORCH_MUSABLAS_CHECK(musolverSgetrf_bufferSize(m, n, true, &lwork));
+  int lwork;
+  TORCH_MUSOLVER_CHECK(
+      musolverDnSgetrf_bufferSize(handle, m, n, dA, ldda, &lwork));
   auto& allocator = *::c10::musa::MUSACachingAllocator::get();
   auto dataPtr = allocator.allocate(sizeof(float) * lwork);
-  TORCH_MUSABLAS_CHECK(musolverSgetrf(
-      handle, m, n, dA, ldda, ipiv, info, static_cast<void*>(dataPtr.get())));
+  TORCH_MUSOLVER_CHECK(musolverDnSgetrf(
+      handle, m, n, dA, ldda, static_cast<float*>(dataPtr.get()), ipiv, info));
 }
 
 template <>
@@ -50,19 +176,20 @@ void getrf<c10::complex<double>>(
     int ldda,
     int* ipiv,
     int* info) {
-  size_t lwork;
-  TORCH_MUSABLAS_CHECK(musolverZgetrf_bufferSize(m, n, true, &lwork));
+  int lwork;
+  TORCH_MUSOLVER_CHECK(musolverDnZgetrf_bufferSize(
+      handle, m, n, reinterpret_cast<muDoubleComplex*>(dA), ldda, &lwork));
   auto& allocator = *::c10::musa::MUSACachingAllocator::get();
   auto dataPtr = allocator.allocate(sizeof(muDoubleComplex) * lwork);
-  TORCH_MUSABLAS_CHECK(musolverZgetrf(
+  TORCH_MUSOLVER_CHECK(musolverDnZgetrf(
       handle,
       m,
       n,
       reinterpret_cast<muDoubleComplex*>(dA),
       ldda,
+      reinterpret_cast<muDoubleComplex*>(dataPtr.get()),
       ipiv,
-      info,
-      static_cast<void*>(dataPtr.get())));
+      info));
 }
 
 template <>
@@ -74,19 +201,20 @@ void getrf<c10::complex<float>>(
     int ldda,
     int* ipiv,
     int* info) {
-  size_t lwork;
-  TORCH_MUSABLAS_CHECK(musolverCgetrf_bufferSize(m, n, true, &lwork));
+  int lwork;
+  TORCH_MUSOLVER_CHECK(musolverDnCgetrf_bufferSize(
+      handle, m, n, reinterpret_cast<muComplex*>(dA), ldda, &lwork));
   auto& allocator = *::c10::musa::MUSACachingAllocator::get();
   auto dataPtr = allocator.allocate(sizeof(muComplex) * lwork);
-  TORCH_MUSABLAS_CHECK(musolverCgetrf(
+  TORCH_MUSOLVER_CHECK(musolverDnCgetrf(
       handle,
       m,
       n,
       reinterpret_cast<muComplex*>(dA),
       ldda,
+      reinterpret_cast<muComplex*>(dataPtr.get()),
       ipiv,
-      info,
-      static_cast<void*>(dataPtr.get())));
+      info));
 }
 
 template <>
@@ -100,7 +228,8 @@ void potrs<float>(
     float* B,
     int ldb,
     int* devInfo) {
-  TORCH_MUSABLAS_CHECK(musolverSpotrs(handle, uplo, n, nrhs, A, lda, B, ldb));
+  TORCH_MUSOLVER_CHECK(
+      musolverDnSpotrs(handle, uplo, n, nrhs, A, lda, B, ldb, devInfo));
 }
 
 template <>
@@ -114,7 +243,8 @@ void potrs<double>(
     double* B,
     int ldb,
     int* devInfo) {
-  TORCH_MUSABLAS_CHECK(musolverDpotrs(handle, uplo, n, nrhs, A, lda, B, ldb));
+  TORCH_MUSOLVER_CHECK(
+      musolverDnDpotrs(handle, uplo, n, nrhs, A, lda, B, ldb, devInfo));
 }
 
 template <>
@@ -128,7 +258,7 @@ void potrs<c10::complex<float>>(
     c10::complex<float>* B,
     int ldb,
     int* devInfo) {
-  TORCH_MUSABLAS_CHECK(musolverCpotrs(
+  TORCH_MUSOLVER_CHECK(musolverDnCpotrs(
       handle,
       uplo,
       n,
@@ -136,7 +266,8 @@ void potrs<c10::complex<float>>(
       reinterpret_cast<muComplex*>(A),
       lda,
       reinterpret_cast<muComplex*>(B),
-      ldb));
+      ldb,
+      devInfo));
 }
 
 template <>
@@ -150,7 +281,7 @@ void potrs<c10::complex<double>>(
     c10::complex<double>* B,
     int ldb,
     int* devInfo) {
-  TORCH_MUSABLAS_CHECK(musolverZpotrs(
+  TORCH_MUSOLVER_CHECK(musolverDnZpotrs(
       handle,
       uplo,
       n,
@@ -158,7 +289,8 @@ void potrs<c10::complex<double>>(
       reinterpret_cast<muDoubleComplex*>(A),
       lda,
       reinterpret_cast<muDoubleComplex*>(B),
-      ldb));
+      ldb,
+      devInfo));
 }
 
 template <>
@@ -173,8 +305,8 @@ void getrs<double>(
     int ldb,
     int* info,
     mublasOperation_t trans) {
-  TORCH_MUSABLAS_CHECK(
-      musolverDgetrs(handle, trans, n, nrhs, dA, lda, ipiv, ret, ldb, info));
+  TORCH_MUSOLVER_CHECK(
+      musolverDnDgetrs(handle, trans, n, nrhs, dA, lda, ipiv, ret, ldb, info));
 }
 
 template <>
@@ -189,8 +321,8 @@ void getrs<float>(
     int ldb,
     int* info,
     mublasOperation_t trans) {
-  TORCH_MUSABLAS_CHECK(
-      musolverSgetrs(handle, trans, n, nrhs, dA, lda, ipiv, ret, ldb, info));
+  TORCH_MUSOLVER_CHECK(
+      musolverDnSgetrs(handle, trans, n, nrhs, dA, lda, ipiv, ret, ldb, info));
 }
 
 template <>
@@ -205,7 +337,7 @@ void getrs<c10::complex<double>>(
     int ldb,
     int* info,
     mublasOperation_t trans) {
-  TORCH_MUSABLAS_CHECK(musolverZgetrs(
+  TORCH_MUSOLVER_CHECK(musolverDnZgetrs(
       handle,
       trans,
       n,
@@ -230,7 +362,7 @@ void getrs<c10::complex<float>>(
     int ldb,
     int* info,
     mublasOperation_t trans) {
-  TORCH_MUSABLAS_CHECK(musolverCgetrs(
+  TORCH_MUSOLVER_CHECK(musolverDnCgetrs(
       handle,
       trans,
       n,
@@ -252,8 +384,8 @@ void potrfBatched<float>(
     int lda,
     int* info,
     int batchSize) {
-  TORCH_MUSABLAS_CHECK(
-      musolverSpotrfBatched(handle, uplo, n, A, lda, info, batchSize));
+  TORCH_MUSOLVER_CHECK(
+      musolverDnSpotrfBatched(handle, uplo, n, A, lda, info, batchSize));
 }
 
 template <>
@@ -265,8 +397,8 @@ void potrfBatched<double>(
     int lda,
     int* info,
     int batchSize) {
-  TORCH_MUSABLAS_CHECK(
-      musolverDpotrfBatched(handle, uplo, n, A, lda, info, batchSize));
+  TORCH_MUSOLVER_CHECK(
+      musolverDnDpotrfBatched(handle, uplo, n, A, lda, info, batchSize));
 }
 
 template <>
@@ -278,7 +410,7 @@ void potrfBatched<c10::complex<float>>(
     int lda,
     int* info,
     int batchSize) {
-  TORCH_MUSABLAS_CHECK(musolverCpotrfBatched(
+  TORCH_MUSOLVER_CHECK(musolverDnCpotrfBatched(
       handle, uplo, n, reinterpret_cast<muComplex**>(A), lda, info, batchSize));
 }
 
@@ -291,7 +423,7 @@ void potrfBatched<c10::complex<double>>(
     int lda,
     int* info,
     int batchSize) {
-  TORCH_MUSABLAS_CHECK(musolverZpotrfBatched(
+  TORCH_MUSOLVER_CHECK(musolverDnZpotrfBatched(
       handle,
       uplo,
       n,
@@ -300,5 +432,4 @@ void potrfBatched<c10::complex<double>>(
       info,
       batchSize));
 }
-
 } // namespace at::musa::solver

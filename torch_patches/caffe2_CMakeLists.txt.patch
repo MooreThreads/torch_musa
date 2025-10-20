@@ -1,20 +1,18 @@
 diff --git a/caffe2/CMakeLists.txt b/caffe2/CMakeLists.txt
-index 9be7f37..fb02532 100644
+index 9be7f37..7d6a0eb 100644
 --- a/caffe2/CMakeLists.txt
 +++ b/caffe2/CMakeLists.txt
-@@ -1192,6 +1192,15 @@ if(USE_KINETO)
+@@ -1190,6 +1190,13 @@ target_include_directories(torch_cpu PRIVATE
+ if(USE_KINETO)
+   target_include_directories(torch_cpu PRIVATE
      ${TORCH_ROOT}/third_party/kineto/libkineto/src)
++
++  list(APPEND CMAKE_MODULE_PATH "/usr/local/musa/cmake")
++  find_package(MUSAToolkit REQUIRED)
++  list(POP_BACK CMAKE_MODULE_PATH)
++  get_target_property(MUSA_RT_LIB MUSA::musart IMPORTED_LOCATION)
++  get_target_property(MUSA_DRV_LIB MUSA::musa_driver IMPORTED_LOCATION)
++  target_link_libraries(torch_cpu PUBLIC ${MUSA_RT_LIB} ${MUSA_DRV_LIB})
  endif()
  
-+if(DEFINED ENV{MUSA_HOME})
-+  set(MUSA_HOME $ENV{MUSA_HOME})
-+else()
-+  set(MUSA_HOME "/usr/local/musa")
-+endif()
-+target_link_libraries(torch_cpu PUBLIC ${MUSA_HOME}/lib/libmupti.so)
-+target_link_libraries(torch_cpu PUBLIC ${MUSA_HOME}/lib/libmusa.so)
-+target_link_libraries(torch_cpu PUBLIC ${MUSA_HOME}/lib/libmusart.so)
-+
  target_include_directories(torch_cpu PRIVATE
-   ${TORCH_ROOT}/third_party/cpp-httplib)
- 

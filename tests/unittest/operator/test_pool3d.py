@@ -1,4 +1,4 @@
-# pylint: disable=missing-function-docstring, missing-module-docstring redefined-outer-name
+# pylint: disable=missing-function-docstring, missing-module-docstring redefined-outer-name,not-callable
 import torch
 import pytest
 from torch_musa import testing
@@ -81,3 +81,60 @@ def test_fractional_max_pool3d(input_data, params, dtype):
     m = torch.nn.FractionalMaxPool3d(**params)
     test = testing.OpTest(func=m, input_args={"input": input_data})
     test.check_result()
+
+
+def fractional_pool3d_inputs():
+    return [
+        torch.randn(2, 3, 8, 8, 8, requires_grad=True),
+        torch.randn(1, 2, 6, 6, 6, requires_grad=True),
+    ]
+
+
+kernel_sizes = [(2, 2, 2), (2, 2, 2)]
+output_sizes = [(4, 4, 4), (2, 2, 2)]
+support_dtypes = [torch.float32]
+
+
+@pytest.mark.parametrize("x", fractional_pool3d_inputs())
+@pytest.mark.parametrize("kernel_size", kernel_sizes)
+@pytest.mark.parametrize("output_size", output_sizes)
+@pytest.mark.parametrize("dtype", support_dtypes)
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_fractional_max_pool3d_backward(x, kernel_size, output_size, dtype):
+    x = x.to(dtype).to("musa")
+    batch_size, channel = x.shape[:2]
+
+    _random_samples = torch.rand(batch_size, channel, 3, device=x.device, dtype=x.dtype)
+
+    pool = torch.nn.FractionalMaxPool3d(
+        kernel_size=kernel_size,
+        output_size=output_size,
+        return_indices=True,
+        _random_samples=_random_samples,
+    ).to(x.device, dtype=dtype)
+
+    y, indices = pool(x)
+
+    indices = indices.detach()
+    indices.requires_grad_(False)
+
+    grad_output = torch.ones_like(y)
+
+    grad_input1 = torch.ops.aten.fractional_max_pool3d_backward(
+        grad_output, x, kernel_size, output_size, indices
+    )
+
+    grad_input_tensor = torch.empty_like(x)
+    with torch.no_grad():
+        grad_input2 = torch.ops.aten.fractional_max_pool3d_backward.grad_input(
+            grad_output,
+            x,
+            kernel_size,
+            output_size,
+            indices,
+            grad_input=grad_input_tensor,
+        )
+
+    assert torch.allclose(
+        grad_input1, grad_input2, atol=1e-6
+    ), "Backward outputs mismatch"
