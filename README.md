@@ -18,6 +18,7 @@
   - [From Python wheels](#from-python-wheels)
   - [From Source](#from-source)
   - [torchvision and torchaudio](#torchvision-and-torchaudio)
+  - [MUSA supported repositories](#MUSA-supported-repositories)
 - [Getting Started](#getting-started)
   - [Key Changes](#key-changes)
   - [Codegen](#codegen)
@@ -98,6 +99,17 @@ cd visoin && python setup.py install
 git clone https://github.com/pytorch/audio.git -b v2.5.0 --depth 1
 cd audio && python setup.py install
 ```
+
+### MUSA supported repositories
+There are many widely used pytorch-related repositories, and we musified some of them and put them into our [GitHub](https://github.com/MooreThreads), here's the list:
+| Repo | Branch | Link |  Build command |
+| :-: | :-: | :-: | :-: |
+| pytorch3d | musa-dev | https://github.com/MooreThreads/pytorch3d | python setup.py install |
+| pytorch_sparse | master | https://github.com/MooreThreads/pytorch_sparse | python setup.py install |
+| pytorch_scatter | master | https://github.com/MooreThreads/pytorch_scatter | python setup.py install |
+
+If users find any question about these repos, please file issues in torch_musa, and if anyone has musified a repository, you can
+submit a Pull Request that helping us to expand this list.
 
 ## Getting Started
 ### Key Changes
