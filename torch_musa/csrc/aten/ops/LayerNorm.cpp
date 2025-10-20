@@ -19,16 +19,17 @@
 #include "torch_musa/csrc/aten/utils/Utils.h"
 namespace at::musa {
 
-using VarMode = ::musa::dnn::LayerNorm::VarMode;
 using Proxy = c10::MaybeOwned<Tensor>;
 
 namespace {
 void MaybeSetVarMode(const Tensor& input, ::musa::dnn::LayerNorm& op) {
 #if defined(MUDNN_VERSION) && (MUDNN_VERSION >= 3100)
   if (input.dtype() == at::ScalarType::Float) {
-    CHECK_MUDNN_STATUS(op.SetVarMode(VarMode::WELFORD), "SetMode");
+    CHECK_MUDNN_STATUS(
+        op.SetVarMode(::musa::dnn::LayerNorm::VarMode::WELFORD), "SetMode");
   } else {
-    CHECK_MUDNN_STATUS(op.SetVarMode(VarMode::DIRECT), "SetMode");
+    CHECK_MUDNN_STATUS(
+        op.SetVarMode(::musa::dnn::LayerNorm::VarMode::DIRECT), "SetMode");
   }
 #endif
 }
