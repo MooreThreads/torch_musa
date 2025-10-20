@@ -15,7 +15,7 @@ CUR_DIR=$(
 TORCH_MUSA_HOME=$CUR_DIR
 PYTORCH_PATH=${PYTORCH_REPO_PATH:-$(realpath ${TORCH_MUSA_HOME}/../pytorch)}
 TORCH_PATCHES_DIR=${TORCH_MUSA_HOME}/torch_patches/
-KINETO_URL=${KINETO_URL:-https://sh-code.mthreads.com/ai/kineto.git}
+KINETO_URL=${KINETO_URL:-https://github.com/MooreThreads/kineto.git}
 KINETO_TAG=v2.0.1
 
 BUILD_WHEEL=0
