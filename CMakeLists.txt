@@ -261,7 +261,7 @@ if(MUSA_FOUND)
 
   # MUSA support mublasLt since 4.3.0
   if(REAL_MUSA_VERSION GREATER_EQUAL "4030")
-    find_package(MUSAToolkit REQUIRED COMPONENTS musolver mublas mublasLt)
+    find_package(MUSAToolkit REQUIRED COMPONENTS musolver mublas mublasLt mufft)
     list(
       APPEND
       DEPENDENT_LIBRARIES
@@ -270,8 +270,8 @@ if(MUSA_FOUND)
       MUSA::mublasLt
       MUSA::musolver)
   else()
-    find_package(MUSAToolkit REQUIRED COMPONENTS musolver mublas)
-    list(APPEND DEPENDENT_LIBRARIES MUSA::mublas MUSA::musolver)
+    find_package(MUSAToolkit REQUIRED COMPONENTS musolver mublas mufft)
+    list(APPEND DEPENDENT_LIBRARIES MUSA::mublas MUSA::musolver MUSA::mufft)
   endif()
 
   find_package(MUDNN REQUIRED)
