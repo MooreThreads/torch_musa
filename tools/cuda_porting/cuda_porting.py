@@ -210,7 +210,6 @@ def port_cuda(
 
             for f in files:
                 file_path = os.path.join(cur_dir, f)
-                print("file_path", file_path)
                 if port_file.need_filter_cpp:
                     if (
                         ".h" in file_path
