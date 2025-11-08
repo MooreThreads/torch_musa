@@ -1,42 +1,47 @@
 ![Torch MUSA_Logo](docs/images/torch_musa.png)
 --------------------------------------------------------------------------------
 
-**torch_musa** is an extended Python package based on PyTorch. Developing **torch_musa** in a plug-in way allows **torch_musa** to be decoupled from PyTorch, which is convenient for code maintenance. Combined with PyTorch, users can take advantage of the strong power of Moore Threads graphics cards through **torch_musa**. In addition, **torch_musa** has two significant advantages:
-
-* CUDA compatibility could be achieved in **torch_musa**, which greatly reduces the workload of adapting new operators.
-* **torch_musa** API is consistent with PyTorch in format, which allows users accustomed to PyTorch to migrate smoothly to **torch_musa**.
-
-**torch_musa** also provides a bundle of tools for users to conduct cuda-porting, building musa extension and debugging. Please refer to [README.md](torch_musa/utils/README.md).
-
---------------------------------------------------------------------------------
-
 <!-- toc -->
 
+- [Overview](#overview)
 - [Installation](#installation)  
   - [Prerequisites](#prerequisites)
   - [Docker Image](#docker-image)
   - [From Python wheels](#from-python-wheels)
   - [From Source](#from-source)
+- [MUSA Supported Repositories](#musa-supported-repositories)
   - [torchvision and torchaudio](#torchvision-and-torchaudio)
-  - [MUSA supported repositories](#MUSA-supported-repositories)
-- [Getting Started](#getting-started)
+  - [Other Repositories](#other-repositories)
+- [Usage](#usage)
   - [Key Changes](#key-changes)
   - [Codegen](#codegen)
+- [License](#license)
 
 <!-- tocstop -->
+
+## Overview
+
+**torch_musa** is an extended Python package based on PyTorch. Combined with PyTorch, users can take advantage of the strong power of Moore Threads graphics cards through **torch_musa**. 
+
+**torch_musa**'s APIs are consistent with PyTorch in format, which allows users accustomed to PyTorch to migrate smoothly to **torch_musa**, so for the usage users can refer to [PyTorch Official Doc](https://docs.pytorch.org/docs/stable/index.html), all you need is just switch the backend string from "cpu" or "cuda" to "musa".
+
+**torch_musa** also provides a bundle of tools for users to conduct cuda-porting, building musa extension and debugging. Please refer to [README.md](torch_musa/utils/README.md).
+
+If you want to write your layers in C/C++, we provide a convenient extension API that is efficient and with minimal boilerplate. No wrapper code needs to be written. You can see [a ResNet50 example here](torch_musa/examples/cpp/README.md).
+
+--------------------------------------------------------------------------------
 
 ## Installation
 ### Prerequisites
 Before installing torch_musa, here are some software packages that need to be installed on your machine first:
-- *(For Docker users)* **KUAE Cloud Native Toolkits**, including Container-Toolkit, MTML, sGPU, [download link](https://developer.mthreads.com/sdk/download/CloudNative?equipment=&os=&driverVersion=&version=)
-- **MUSA-SDK**, including MUSA Driver, musa_toolkit, muDNN and MCCL(*S4000 only*), [download link](https://developer.mthreads.com/sdk/download/musa?equipment=&os=&driverVersion=&version=)
+- (For Docker users) **[KUAE Cloud Native Toolkits](https://developer.mthreads.com/sdk/download/CloudNative?equipment=&os=&driverVersion=&version=)**, including Container-Toolkit, MTML, sGPU;
+- **[MUSA-SDK](https://developer.mthreads.com/sdk/download/musa?equipment=&os=&driverVersion=&version=)**, including MUSA Driver, musa_toolkit, muDNN and MCCL(*S4000 only*);
 - **Other libraries**, including [muThrust](https://github.com/MooreThreads/muThrust) and [muAlg](https://github.com/MooreThreads/muAlg)
 
 ### Docker Image
-We provide several released docker images and they can be easily found [HERE](https://mcconline.mthreads.com/repo).
+We provide several released docker images and they can be easily found in [mcconline](https://mcconline.mthreads.com/repo).
 
-During its initial startup, `Docker` performs a self-check.
-
+Pull the docker image with `docker pull`, create a container with command below and there you go.
 ```bash
 # For example, start a S80 docker with Python3.10
 docker run -it --privileged \
@@ -44,10 +49,11 @@ docker run -it --privileged \
   --env MTHREADS_VISIBLE_DEVICES=all \
   registry.mthreads.com/mcconline/musa-pytorch-release-public:latest /bin/bash
 ```
+During its initial startup, it performs a self-check, so you can see the MUSA environment is ready or not.
 
 ### From Python wheels
-Download torch_musa & PyTorch wheel from our [release page](https://github.com/MooreThreads/torch_musa/releases) and make sure you have
-all prerequisites installed.
+Download torch & torch_musa wheels from our [Release Page](https://github.com/MooreThreads/torch_musa/releases),
+please make sure you have all prerequisites installed.
 
 ### From Source
 First, clone the torch_musa repository
@@ -86,6 +92,10 @@ For **S80/S3000** users, since the MCCL library is not provided for such archite
 USE_MCCL=0 bash build.sh -c
 ```
 
+## MUSA Supported Repositories
+We provide some widely used PyTorch environment repositories, which have all adapted with our MUSA platform. Besides, many repositories have supported MUSA backend upstream,
+like [Transformers](https://github.com/huggingface/transformers.git), [Accelerate](https://github.com/huggingface/accelerate.git), you can install them with `pip install [repo-name]`.
+
 ### torchvision and torchaudio
 PyTorch v2.5.0 needs `torchvision==0.20.0` and `torchaudio==2.5.0`, and for torch_musa users we
 shouldn't have them installed like `pip install torchvision==0.20.0`, instead, we should build
@@ -100,18 +110,19 @@ git clone https://github.com/pytorch/audio.git -b v2.5.0 --depth 1
 cd audio && python setup.py install
 ```
 
-### MUSA supported repositories
+### Other Repositories
 There are many widely used pytorch-related repositories, and we musified some of them and put them into our [GitHub](https://github.com/MooreThreads), here's the list:
 | Repo | Branch | Link |  Build command |
-| :-: | :-: | :-: | :-: |
+| :-- | :-: | :-: | :-: |
 | pytorch3d | musa-dev | https://github.com/MooreThreads/pytorch3d | python setup.py install |
 | pytorch_sparse | master | https://github.com/MooreThreads/pytorch_sparse | python setup.py install |
 | pytorch_scatter | master | https://github.com/MooreThreads/pytorch_scatter | python setup.py install |
+| More to come... | | | |
 
-If users find any question about these repos, please file issues in torch_musa, and if anyone has musified a repository, you can
+If users find any question about these repos, please file issues in torch_musa, and if anyone  musify a repository, you can
 submit a Pull Request that helping us to expand this list.
 
-## Getting Started
+## Usage
 ### Key Changes
 The following two key changes are required when using **torch_musa**:
  - Import **torch_musa** package
