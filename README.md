@@ -1,4 +1,4 @@
-![Torch MUSA_Logo](docs/images/torch_musa.png)
+![Torch MUSA_Logo](docs/pdf/images/torch_musa.png)
 --------------------------------------------------------------------------------
 
 <!-- toc -->
