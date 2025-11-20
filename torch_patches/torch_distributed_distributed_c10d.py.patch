@@ -1,63 +1,43 @@
 diff --git a/torch/distributed/distributed_c10d.py b/torch/distributed/distributed_c10d.py
-index 45e0969..bd2cba5 100644
+index 547030c..6a0c4ea 100644
 --- a/torch/distributed/distributed_c10d.py
 +++ b/torch/distributed/distributed_c10d.py
-@@ -85,6 +85,7 @@ __all__ = [
+@@ -89,6 +89,7 @@ __all__ = [
      "is_mpi_available",
      "is_backend_available",
      "is_nccl_available",
 +    "is_mccl_available",
      "is_torchelastic_launched",
      "is_ucc_available",
-     "isend",
-@@ -130,6 +131,7 @@ _MPI_AVAILABLE = True
- _NCCL_AVAILABLE = True
+     "is_xccl_available",
+@@ -136,6 +137,7 @@ _NCCL_AVAILABLE = True
  _GLOO_AVAILABLE = True
  _UCC_AVAILABLE = True
+ _XCCL_AVAILABLE = True
 +_MCCL_AVAILABLE = True
  
  _pickler = pickle.Pickler
  _unpickler = pickle.Unpickler
-@@ -323,6 +325,8 @@ class Backend(str):
-         setattr(Backend, name.upper(), name.lower())
-         Backend.backend_list.append(name.lower())
+@@ -338,6 +340,8 @@ class Backend(str):  # noqa: SLOT000
+             Backend.backend_list.append(name.lower())
+ 
          if devices is not None:
 +            if isinstance(devices, str):
 +                devices = [devices]
              for device in devices:
                  if device != "cpu" and device != "cuda":
                      Backend.default_device_backend_map[device] = name.lower()
-@@ -1088,6 +1092,11 @@ def is_nccl_available() -> bool:
+@@ -1230,6 +1234,9 @@ def is_nccl_available() -> bool:
+     """Check if the NCCL backend is available."""
      return _NCCL_AVAILABLE
- 
  
 +def is_mccl_available() -> bool:
 +    """Check if the MCCL backend is available."""
 +    return _MCCL_AVAILABLE
-+
-+
+ 
  def is_gloo_available() -> bool:
      """Check if the Gloo backend is available."""
-     return _GLOO_AVAILABLE
-@@ -1916,7 +1925,7 @@ def destroy_process_group(group: Optional[ProcessGroup] = None):
-     # alive until all works and hooks are done. The current implementation does the
-     # latter. Therefore, we explicitly call _wait_for_pending_works() here to wait
-     # for the pending hooks to finish.
--    if pg.name().lower() == "nccl" and pg._has_hooks():
-+    if (pg.name().lower() == "nccl" or pg.name().lower() == "mccl") and pg._has_hooks():
-         pg._wait_for_pending_works()
- 
-     if group is None or group == GroupMember.WORLD:
-@@ -2365,7 +2374,7 @@ def batch_isend_irecv(p2p_op_list):
-     _check_p2p_op_list(p2p_op_list)
-     group = p2p_op_list[0].group
-     device = p2p_op_list[0].tensor.device
--    if device.type == "cuda":
-+    if device.type == "cuda" or device.type == torch._C._get_privateuse1_backend_name():
-         # NCCL style coalescing
-         with _coalescing_manager(group, device, async_ops=True) as cm:
-             for p2p_op in p2p_op_list:
-@@ -2407,6 +2416,10 @@ def broadcast(tensor, src, group=None, async_op=False):
+@@ -2707,6 +2714,10 @@ def broadcast(
          _warn_not_in_group("broadcast")
          return
  
@@ -66,5 +46,5 @@ index 45e0969..bd2cba5 100644
 +        return
 +
      opts = BroadcastOptions()
-     opts.rootRank = src
+     opts.rootRank = group_src
      opts.rootTensor = 0

@@ -1,8 +1,8 @@
 diff --git a/torch/functional.py b/torch/functional.py
-index 9180262..6d7338a 100644
+index 26bea98..7455851 100644
 --- a/torch/functional.py
 +++ b/torch/functional.py
-@@ -1782,7 +1782,6 @@ def norm(  # noqa: F811
+@@ -1809,7 +1809,6 @@ def norm(  # noqa: F811
          "cpu",
          "cuda",
          "meta",

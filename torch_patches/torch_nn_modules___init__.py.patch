@@ -1,16 +1,16 @@
 diff --git a/torch/nn/modules/__init__.py b/torch/nn/modules/__init__.py
-index 99260ad43fc..b4d5814620d 100644
+index 99260ad..506c8e0 100644
 --- a/torch/nn/modules/__init__.py
 +++ b/torch/nn/modules/__init__.py
-@@ -13,6 +13,8 @@ from .activation import (
-     LogSigmoid,
-     LogSoftmax,
-     Mish,
+@@ -30,6 +30,8 @@ from .activation import (
+     Tanh,
+     Tanhshrink,
+     Threshold,
 +    RoPE,
 +    SwishGLU,
-     MultiheadAttention,
-     PReLU,
-     ReLU,
+ )
+ from .adaptive import AdaptiveLogSoftmaxWithLoss
+ from .batchnorm import (
 @@ -297,6 +299,7 @@ __all__ = [
      "ReplicationPad1d",
      "ReplicationPad2d",

@@ -1,23 +1,16 @@
 diff --git a/torch/_utils.py b/torch/_utils.py
-index f0d38da..1c009f3 100644
+index 449075a..d05ec7e 100644
 --- a/torch/_utils.py
 +++ b/torch/_utils.py
-@@ -85,9 +85,15 @@ def _to(self, device, non_blocking=False):
-             assert (
-                 not self.is_sparse
-             ), f"sparse storage is not supported for {device.type.upper()} tensors"
--            untyped_storage = torch.UntypedStorage(self.size(), device=device)
--            untyped_storage.copy_(self, non_blocking)
--            return untyped_storage
+@@ -98,6 +98,11 @@ def _to(self, device, non_blocking=False):
+             assert not self.is_sparse, (
+                 f"sparse storage is not supported for {device.type.upper()} tensors"
+             )
 +            import os
 +            cpu_unified_flag = os.getenv("CPU_UNIFIED_FLAG", "False") == "True"
 +            if(cpu_unified_flag):
 +                self.edit_device(device)
 +                return self
-+            else:
-+                untyped_storage = torch.UntypedStorage(self.size(), device=device)
-+                untyped_storage.copy_(self, non_blocking)
-+                return untyped_storage
- 
- 
- def _get_async_or_non_blocking(function_name, non_blocking, kwargs):
+             untyped_storage = torch.UntypedStorage(self.size(), device=device)
+             untyped_storage.copy_(self, non_blocking)
+             return untyped_storage

@@ -41,26 +41,13 @@ using c10::musa::memcpy_and_sync;
 /**
  * DEPRECATED: use device_count() instead
  */
-inline int64_t getNumGPUs() {
-  return c10::musa::device_count();
-}
-
+int64_t getNumGPUs();
 /**
  * MUSA is available if we compiled with MUSA, and there are one or more
  * devices.  If we compiled with MUSA but there is a driver problem, etc.,
  * this function will report MUSA is not available (rather than raise an error.)
  */
-inline bool is_available() {
-  return c10::musa::device_count() > 0;
-}
-
-void clearMublasWorkspaces();
-
-size_t parseChosenWorkspaceSize();
-
-size_t getChosenWorkspaceSize();
-
-at::DataPtr getNewWorkspace();
+bool is_available();
 
 int warp_size();
 
@@ -76,6 +63,14 @@ uint32_t getMUSAArch(c10::DeviceIndex device);
 bool maybeDNNOpSupportBFloat16();
 
 bool maybeDNNOpSupportBFloat16(int device);
+
+void clearMublasWorkspaces();
+
+size_t parseChosenWorkspaceSize();
+
+size_t getChosenWorkspaceSize();
+
+at::DataPtr getNewWorkspace();
 
 } // namespace musa
 } // namespace at

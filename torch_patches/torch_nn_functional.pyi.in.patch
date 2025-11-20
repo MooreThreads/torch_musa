@@ -1,11 +1,11 @@
 diff --git a/torch/nn/functional.pyi.in b/torch/nn/functional.pyi.in
-index ed68b8e..be33e43 100644
+index 1a72b0f..24a3eee 100644
 --- a/torch/nn/functional.pyi.in
 +++ b/torch/nn/functional.pyi.in
-@@ -602,6 +602,14 @@ def multi_head_attention_forward(
+@@ -599,6 +599,14 @@ def multi_head_attention_forward(
      average_attn_weights: bool = True,
      is_causal: bool = False,
- ) -> Tuple[Tensor, Optional[Tensor]]: ...
+ ) -> tuple[Tensor, Optional[Tensor]]: ...
 +def rope(
 +    input: Tensor,
 +    freq_cis: Tensor,

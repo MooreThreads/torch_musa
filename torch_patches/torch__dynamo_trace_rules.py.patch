@@ -1,20 +1,13 @@
 diff --git a/torch/_dynamo/trace_rules.py b/torch/_dynamo/trace_rules.py
-index 01cc4dc..38d9280 100644
+index da71649..b8cd1d0 100644
 --- a/torch/_dynamo/trace_rules.py
 +++ b/torch/_dynamo/trace_rules.py
-@@ -2089,6 +2089,7 @@ torch_c_binding_in_graph_functions = dict.fromkeys(
-         "torch.round",
-         "torch.row_indices_copy",
-         "torch.row_stack",
+@@ -2228,6 +2228,8 @@ torch_c_binding_in_graph_functions = dict.fromkeys(
+         "torch.slice_inverse",
+         "torch._assert_scalar",
+         "torch._functional_assert_scalar",
 +        "torch.rope",
-         "torch.rrelu_",
-         "torch.rrelu",
-         "torch.rsqrt_",
-@@ -2144,6 +2145,7 @@ torch_c_binding_in_graph_functions = dict.fromkeys(
-         "torch.svd",
-         "torch.swapaxes",
-         "torch.swapdims",
 +        "torch.swish_glu",
-         "torch.sym_constrain_range_for_size",
-         "torch.sym_constrain_range",
-         "torch.t_copy",
+     ],
+     TorchInGraphFunctionVariable,
+ )

@@ -38,33 +38,43 @@ def load_package(path: str, device: str) -> Callable:  # type: ignore[type-arg]
         ``outputs = optimized(*args, **kwargs)``.
 
     """
-    if path.endswith(".so"):
-        raise RuntimeError(
-            "Unable to load .so. It should be a .pt2 format or a directory."
-        )
 
-    elif path.endswith(".pt2"):
-        so_path = os.path.splitext(path)[0]
-        with PT2ArchiveReader(path) as archive_reader:
-            file_names = archive_reader.get_file_names()
+    def _get_aoti_file_with_suffix(suffix: str) -> str:
+        for file in path:
+            if file.endswith(suffix):
+                return file
+        raise RuntimeError(f"Unable to find file with suffix {suffix}")
 
-            with tempfile.TemporaryDirectory() as tmp_dir:
-                archive_reader.extractall(tmp_dir)
-                file_names = archive_reader.get_file_names()
-                aoti_files = [
-                    file for file in file_names if file.startswith(AOTINDUCTOR_DIR)
-                ]
-
-                so_path = compile_so(tmp_dir, aoti_files, so_path)
-
+    if isinstance(path, list):
+        so_path = _get_aoti_file_with_suffix(".so")
     else:
-        assert os.path.isdir(path), "Must specify a directory or a .pt2 file"
-        aoti_files = [
-            os.path.join(root, file)
-            for root, dirs, files in os.walk(path)
-            for file in files
-        ]
-        so_path = compile_so(path, aoti_files, path)
+        if path.endswith(".so"):
+            raise RuntimeError(
+                "Unable to load .so. It should be a .pt2 format or a directory."
+            )
+
+        elif path.endswith(".pt2"):
+            so_path = os.path.splitext(path)[0]
+            with PT2ArchiveReader(path) as archive_reader:
+                file_names = archive_reader.get_file_names()
+
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    archive_reader.extractall(tmp_dir)
+                    file_names = archive_reader.get_file_names()
+                    aoti_files = [
+                        file for file in file_names if file.startswith(AOTINDUCTOR_DIR)
+                    ]
+
+                    so_path = compile_so(tmp_dir, aoti_files, so_path)
+
+        else:
+            assert os.path.isdir(path), "Must specify a directory or a .pt2 file"
+            aoti_files = [
+                os.path.join(root, file)
+                for root, dirs, files in os.walk(path)
+                for file in files
+            ]
+            so_path = compile_so(path, aoti_files, path)
 
     if device == "cpu":
         runner = torch._C._aoti.AOTIModelContainerRunnerCpu(so_path, 1)  # type: ignore[call-arg]

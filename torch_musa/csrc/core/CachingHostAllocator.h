@@ -21,6 +21,11 @@ inline at::DataPtr HostAlloc(size_t size) {
   return getCachingHostAllocator()->allocate(size);
 }
 
+at::HostStats CachingHostAllocator_getStats();
+
+void CachingHostAllocator_resetAccumulatedStats();
+void CachingHostAllocator_resetPeakStats();
+
 } // namespace at::musa
 
 #endif // TORCH_MUSA_CSRC_CORE_CACHINGHOSTALLOCATOR_H_

@@ -16,6 +16,7 @@ MUSAAllocatorConfig::MUSAAllocatorConfig()
       m_expandable_segments(false),
       m_release_lock_on_musamalloc(false),
       m_pinned_use_musa_host_register(false),
+      m_pinned_use_background_threads(false),
       m_last_allocator_settings("") {
   m_roundup_power2_divisions.assign(kRoundUpPowerOfTwoIntervals, 0);
 }
@@ -283,6 +284,9 @@ void MUSAAllocatorConfig::parseArgs(const char* env) {
     } else if (config_item_view == "pinned_num_register_threads") {
       i = parsePinnedNumRegisterThreads(config, i);
       used_native_specific_option = true;
+    } else if (config_item_view == "pinned_use_background_threads") {
+      i = parsePinnedUseBackgroundThreads(config, i);
+      used_native_specific_option = true;
     } else if (config_item_view == "cpu") {
       consumeToken(config, ++i, ':');
       ++i;
@@ -339,6 +343,22 @@ size_t MUSAAllocatorConfig::parsePinnedNumRegisterThreads(
   } else {
     TORCH_CHECK(
         false, "Error, expecting pinned_num_register_threads value", "");
+  }
+  return i;
+}
+
+size_t MUSAAllocatorConfig::parsePinnedUseBackgroundThreads(
+    const std::vector<std::string>& config,
+    size_t i) {
+  consumeToken(config, ++i, ':');
+  if (++i < config.size()) {
+    TORCH_CHECK(
+        (config[i] == "True" || config[i] == "False"),
+        "Expected a single True/False argument for pinned_use_background_threads");
+    m_pinned_use_background_threads = (config[i] == "True");
+  } else {
+    TORCH_CHECK(
+        false, "Error, expecting pinned_use_background_threads value", "");
   }
   return i;
 }

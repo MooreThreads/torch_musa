@@ -43,10 +43,13 @@ class FSDPTest(unittest.TestCase):
             replica_group_size = 2
             sharding_group_size = self.world_size // 2
             device_mesh = init_device_mesh(
-                device, (replica_group_size, sharding_group_size)
+                device,
+                (replica_group_size, sharding_group_size),
+                mesh_dim_names=("dp_replicate", "dp_shard"),
             )
         else:
-            device_mesh = init_device_mesh(device, (self.world_size,))
+            device_mesh = init_device_mesh(
+                device, (self.world_size,), mesh_dim_names=("dp_replicate",))
         return device_mesh
 
     def _join_processes(self):

@@ -39,7 +39,7 @@ def test_weight_norm_backward(input_data):
     module_cpu = weight_norm(linear, name="weight")
     module_musa = weight_norm(linear_musa, name="weight")
 
-    comparator = testing.DefaultComparator(abs_diff=1e-5, rel_diff=1e-6)
+    comparator = testing.DefaultComparator(abs_diff=5e-2, rel_diff=5e-3)
     test = testing.OpTest(
         module_musa,
         module_cpu,

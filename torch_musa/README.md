@@ -29,3 +29,16 @@ with torch_musa.use_unified_cpu_allocator():
 
 ## Effect
 By using Unified Memory Management for the MUSA backend, torch.load(map_location="musa") eliminates the need for GPU memory allocation and memory copy between host and device.
+
+# torch_musa double cast float
+
+## Overview
+
+`torch_musa` employs an `autocast mechanism` that automatically converts input tensors of type `double` to `float` for computation, and subsequently casts the results back to `double` upon output.
+
+## Usage
+### Global Configuration via Environment Variable
+
+```bash
+export TORCH_USE_MUSA_DOUBLE_CAST="true"|"1"|"ON"|"on"
+```

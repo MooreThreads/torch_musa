@@ -1,4 +1,7 @@
+# pylint: disable=C0116
+
 """Implement MUSATritonWrapperCodeGen"""
+# pylint: disable=C0116
 
 import dataclasses
 from typing import Optional
@@ -10,7 +13,7 @@ from torch.utils._sympy.singleton_int import SingletonInt
 from torch._inductor.codegen.common import IndentedBuffer
 
 from torch._inductor.virtualized import V
-from torch._inductor.codegen.wrapper import WrapperCodeGen
+from torch._inductor.codegen.wrapper import PythonWrapperCodegen
 from torch._inductor.codegen.wrapper import EnterDeviceContextManagerLine
 
 
@@ -65,7 +68,7 @@ class EnterMUSADeviceContextManagerLine(EnterDeviceContextManagerLine):
             code.writeline(V.graph.device_ops.set_device(self.device_idx))
 
 
-class MUSATritonWrapperCodeGen(WrapperCodeGen):
+class MUSATritonWrapperCodeGen(PythonWrapperCodegen):
     """
     Generate outer wrapper in Python that calls the kernels.
     """
@@ -218,12 +221,26 @@ class MUSATritonWrapperCodeGen(WrapperCodeGen):
     #     """
     #     super().add_benchmark_harness(output)
 
-    def make_allocation(self, name, device, dtype, shape, stride):
+    def make_allocation(
+        self, name, device, dtype, shape, stride, allocation_shape=None
+    ):
         assert device.type == "musa", f"Unexcepted device type: {device.type}"
         # optimized path for faster allocations, saving ~2us versus the empty_strided
-        return (
-            f"{name} = empty_strided_musa("
-            f"{self.codegen_shape_tuple(shape)}, "
-            f"{self.codegen_shape_tuple(stride)}, "
+        if allocation_shape is None:
+            allocation_shape = shape
+
+        codegen_shape_tuple = self.codegen_python_shape_tuple(shape)
+        codegen_allocation_shape_tuple = self.codegen_python_shape_tuple(
+            allocation_shape
+        )
+        codegen_stride_tuple = self.codegen_python_shape_tuple(stride)
+        out = (
+            f"{name} = empty_strided_{device.type}("
+            f"{codegen_allocation_shape_tuple}, "
+            f"{codegen_stride_tuple}, "
             f"{dtype})"
         )
+        if codegen_shape_tuple != codegen_allocation_shape_tuple:
+            # need an extra as_strided call
+            out = out + f".as_strided({codegen_shape_tuple}, {codegen_stride_tuple})"
+        return out

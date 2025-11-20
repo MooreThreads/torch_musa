@@ -15,7 +15,7 @@ from torch.distributed._composable import (
     replicate,
     checkpoint,
 )
-from torch.distributed._composable.fsdp import (
+from torch.distributed.fsdp import (
     CPUOffloadPolicy,
     fully_shard,
     OffloadPolicy,

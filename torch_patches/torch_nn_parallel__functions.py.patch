@@ -1,14 +1,16 @@
 diff --git a/torch/nn/parallel/_functions.py b/torch/nn/parallel/_functions.py
-index d987ed2bc42..1a8b403ebf4 100644
+index ef232aa..05c3ef1 100644
 --- a/torch/nn/parallel/_functions.py
 +++ b/torch/nn/parallel/_functions.py
-@@ -101,6 +101,10 @@ class Scatter(Function):
+@@ -101,6 +101,12 @@ class Scatter(Function):
              streams = [
                  _get_stream(torch.device("cuda", device)) for device in target_gpus
              ]
-+        if torch.musa.is_available() and ctx.input_device == -1:
++        privateuse1_backend = torch._C._get_privateuse1_backend_name()
++        privateuse1_mod = getattr(torch, privateuse1_backend)
++        if privateuse1_mod and privateuse1_mod.is_available() and ctx.input_device == -1:
 +            streams = [
-+                _get_stream(torch.device("musa", device)) for device in target_gpus
++                _get_stream(torch.device(privateuse1_backend, device)) for device in target_gpus
 +            ]
          outputs = comm.scatter(input, target_gpus, chunk_sizes, ctx.dim, streams)
          # Synchronize with the copy stream

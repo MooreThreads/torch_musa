@@ -1,8 +1,8 @@
 diff --git a/torch/_inductor/codecache.py b/torch/_inductor/codecache.py
-index 59cc47a..a729c19 100644
+index dc9f5c2..43a86b7 100644
 --- a/torch/_inductor/codecache.py
 +++ b/torch/_inductor/codecache.py
-@@ -216,7 +216,7 @@ class CacheBase:
+@@ -187,7 +187,7 @@ class CacheBase:
              else:
                  system["device"]["name"] = device_properties.gcnArchName
                  system["version"]["hip"] = torch.version.hip

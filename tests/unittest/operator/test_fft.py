@@ -3,26 +3,22 @@
 import pytest
 import torch
 
-complex_types = [torch.complex64, torch.complex128]
-float_types = [torch.float32, torch.float64]
+real_dtypes = [torch.float32, torch.float64]
+complex_dtypes = [torch.complex64, torch.complex128]
 norm_modes = [None, "forward", "backward", "ortho"]
 
-fft_inputs_complex = [
-    torch.randn(8, dtype=torch.complex64),
-    torch.randn(4, 8, dtype=torch.complex64),
-    torch.randn(2, 4, 8, dtype=torch.complex64),
-]
-
-fft_inputs_real = [
+fft_inputs = [
     torch.randn(8),
+    torch.randn(3, 5),
     torch.randn(4, 8),
     torch.randn(2, 4, 8),
+    torch.randn(2, 4, 6, 8),
 ]
 
 
-@pytest.mark.parametrize("dtype", complex_types)
+@pytest.mark.parametrize("dtype", complex_dtypes+real_dtypes)
 @pytest.mark.parametrize("norm", norm_modes)
-@pytest.mark.parametrize("input_data", fft_inputs_complex + fft_inputs_real)
+@pytest.mark.parametrize("input_data", fft_inputs)
 def test_fft(dtype, norm, input_data):
     """Compare MUSA fft result with CPU reference."""
     cpu_input = input_data.to(dtype)
@@ -31,14 +27,12 @@ def test_fft(dtype, norm, input_data):
     musa_input = cpu_input.to("musa")
     musa_out = torch.fft.fft(musa_input, norm=norm).cpu()
 
-    assert torch.allclose(
-        ref, musa_out, atol=1e-4, rtol=1e-4
-    ), f"Mismatch in fft (norm={norm}, dtype={dtype})"
+    assert torch.allclose(ref, musa_out, atol=1e-4, rtol=1e-4)
 
 
-@pytest.mark.parametrize("dtype", complex_types)
+@pytest.mark.parametrize("dtype", complex_dtypes+real_dtypes)
 @pytest.mark.parametrize("norm", norm_modes)
-@pytest.mark.parametrize("input_data", fft_inputs_complex + fft_inputs_real)
+@pytest.mark.parametrize("input_data", fft_inputs)
 def test_ifft(dtype, norm, input_data):
     """Compare MUSA ifft result with CPU reference."""
     cpu_input = input_data.to(dtype)
@@ -50,9 +44,9 @@ def test_ifft(dtype, norm, input_data):
     assert torch.allclose(ref, musa_out, atol=1e-4, rtol=1e-4)
 
 
-@pytest.mark.parametrize("dtype", [torch.float32])
+@pytest.mark.parametrize("dtype", real_dtypes)
 @pytest.mark.parametrize("norm", norm_modes)
-@pytest.mark.parametrize("input_data", fft_inputs_real)
+@pytest.mark.parametrize("input_data", fft_inputs)
 def test_rfft(dtype, norm, input_data):
     """Compare MUSA rfft result with CPU reference."""
     cpu_input = input_data.to(dtype)
@@ -64,9 +58,9 @@ def test_rfft(dtype, norm, input_data):
     assert torch.allclose(ref, musa_out, atol=1e-4, rtol=1e-4)
 
 
-@pytest.mark.parametrize("dtype", [torch.float32])
+@pytest.mark.parametrize("dtype", real_dtypes)
 @pytest.mark.parametrize("norm", norm_modes)
-@pytest.mark.parametrize("input_data", fft_inputs_real)
+@pytest.mark.parametrize("input_data", fft_inputs)
 def test_irfft(dtype, norm, input_data):
     """Compare MUSA irfft result with CPU reference."""
     cpu_input = input_data.to(dtype)

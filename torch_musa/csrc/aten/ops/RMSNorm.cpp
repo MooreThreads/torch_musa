@@ -34,7 +34,9 @@ Tensor CreateRMSNormFwdInvvar(
 
   return at::empty(
       IntArrayRef(input_shape.data(), invvar_ndim),
-      input.options().dtype(invvar_dtype));
+      input.options()
+          .dtype(invvar_dtype)
+          .memory_format(MemoryFormat::Contiguous));
 }
 
 std::vector<int> CreateMuDNNNormAxes(
@@ -165,14 +167,18 @@ std::tuple<Tensor&, Tensor&> FusedRMSNormForwardOut(
   CheckDType("input", input_dtype, "output", output, "FusedRMSNormForwardOut");
 
   const c10::musa::MUSAGuard device_guard(input_device);
-  const auto contig_input = FormatContiguous(input, MemoryFormat::Contiguous);
+  const Tensor contig_input = (input.dim() == 2 && input.stride(1) == 1)
+      ? input
+      : FormatContiguous(input, MemoryFormat::Contiguous);
   const auto contig_gamma = weight.defined()
       ? FormatContiguous(weight, MemoryFormat::Contiguous)
       : Tensor();
 
   const auto input_shape = contig_input.sizes();
   if (!output.defined()) {
-    output = at::empty_like(contig_input);
+    output = at::empty_like(
+        contig_input,
+        contig_input.options().memory_format(MemoryFormat::Contiguous));
   } else {
     output = FormatContiguous(output, MemoryFormat::Contiguous);
   }
@@ -232,11 +238,15 @@ std::tuple<Tensor, Tensor> FusedRMSNormForward(
   CheckDType("input", input_dtype, "weight", weight, "FusedRMSNormForwardOut");
 
   const c10::musa::MUSAGuard device_guard(input_device);
-  const auto contig_input = FormatContiguous(input, MemoryFormat::Contiguous);
+  const Tensor contig_input = (input.dim() == 2 && input.stride(1) == 1)
+      ? input
+      : FormatContiguous(input, MemoryFormat::Contiguous);
   const auto contig_gamma = weight.defined()
       ? FormatContiguous(weight, MemoryFormat::Contiguous)
       : Tensor();
-  auto contig_output = at::empty_like(contig_input);
+  auto contig_output = at::empty_like(
+      contig_input,
+      contig_input.options().memory_format(MemoryFormat::Contiguous));
   auto contig_invvar = CreateRMSNormFwdInvvar(contig_input, normalized_shape);
 
   FusedRMSNormForwardCall(

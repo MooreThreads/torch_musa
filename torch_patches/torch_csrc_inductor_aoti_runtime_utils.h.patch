@@ -1,0 +1,19 @@
+diff --git a/torch/csrc/inductor/aoti_runtime/utils.h b/torch/csrc/inductor/aoti_runtime/utils.h
+index 2f23826..585970d 100644
+--- a/torch/csrc/inductor/aoti_runtime/utils.h
++++ b/torch/csrc/inductor/aoti_runtime/utils.h
+@@ -239,6 +239,14 @@ T& temporary_reference(T&& t) {
+   return t;
+ }
+ 
++#ifndef aoti_torch_device_type_musa
++#define aoti_torch_device_type_musa aoti_torch_device_type_privateuse1
++#endif
++
++#ifndef cached_torch_device_type_musa
++#define cached_torch_device_type_musa cached_torch_device_type_privateuse1
++#endif
++
+ #define CACHE_TORCH_DTYPE(typename) \
+   static auto cached_torch_dtype_##typename = aoti_torch_dtype_##typename()
+ 

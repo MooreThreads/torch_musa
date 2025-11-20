@@ -672,4 +672,175 @@ std::tuple<Tensor, Tensor, Tensor, Tensor> MuDNNFlashSDPABwd(
   return std::make_tuple(grad_q, grad_k, grad_v, Tensor());
 }
 
+// query shape: [total_seq_q, H, D]
+// key   shape: [total_seq_kv, H, D]
+// value shape: [total_seq_kv, H, D_v]
+std::tuple<at::Tensor, at::Tensor, at::Tensor> MuDNNFlashVarlenFwd(
+    const at::Tensor& query,
+    const at::Tensor& key,
+    const at::Tensor& value,
+    const at::Tensor& cu_seqlens_q,
+    const at::Tensor& cu_seqlens_k,
+    const int max_seqlen_q,
+    const int max_seqlen_k,
+    double dropout_p,
+    std::optional<double> scale,
+    bool is_causal) {
+  const c10::musa::MUSAGuard device_guard(query.device());
+
+  TORCH_CHECK(query.dim() == 3, "query's layout should be [total_seq_q, H, D]");
+  TORCH_CHECK(key.dim() == 3, "key's layout should be [total_seq_q, H, D]");
+  TORCH_CHECK(value.dim() == 3, "value's layout should be [total_seq_q, H, D]");
+
+  CheckScale(query, scale);
+  const auto query_opt = query.options();
+  if (is_causal) {
+    TORCH_CHECK(
+        !query.is_nested() && !key.is_nested(),
+        "MUSA SPDA: Nested tensors for query / key are not supported "
+        "when is_causal=True");
+  }
+
+  const int S_q = query.size(0);
+  const int H = query.size(1);
+  const int D = query.size(2);
+
+  const int S_kv = key.size(0);
+  const int D_v = value.size(2);
+  const int B = cu_seqlens_q.numel() - 1;
+
+  at::musa::muTensor musa_q = at::musa::CreateMUTensor(query);
+  at::musa::muTensor musa_k = at::musa::CreateMUTensor(key);
+  at::musa::muTensor musa_v = at::musa::CreateMUTensor(value);
+  at::musa::muTensor musa_cu_seqlens_q = at::musa::CreateMUTensor(cu_seqlens_q);
+  at::musa::muTensor musa_cu_seqlens_k = at::musa::CreateMUTensor(cu_seqlens_k);
+
+  at::Tensor output =
+      at::empty({S_q, H, D_v}, query_opt, at::MemoryFormat::Contiguous);
+  at::musa::muTensor musa_out = at::musa::CreateMUTensor(output);
+
+  at::Tensor contig_logsumexp = at::empty(
+      {B, H, max_seqlen_q},
+      query_opt.dtype(at::kFloat),
+      at::MemoryFormat::Contiguous);
+  at::musa::muTensor musa_lse = at::musa::CreateMUTensor(contig_logsumexp);
+
+  auto& h = at::GetMudnnHandle();
+  ::musa::dnn::ScaledDotProductAttention sdpa;
+
+  CHECK_MUDNN_STATUS(sdpa.SetEmbedDim(H * D_v), "SetEmbedDim");
+  CHECK_MUDNN_STATUS(sdpa.SetBatchSize(B), "SetBatchSize");
+  CHECK_MUDNN_STATUS(sdpa.SetHeadsNum(H), "SetHeadsNum");
+  CHECK_MUDNN_STATUS(sdpa.SetMaxSeqlenQ(max_seqlen_q), "SetMaxSeqlenQ");
+  CHECK_MUDNN_STATUS(sdpa.SetMaxSeqlenK(max_seqlen_k), "SetMaxSeqlenK");
+  CHECK_MUDNN_STATUS(sdpa.SetCausal(is_causal), "SetCausal");
+  MaybeSetScale(sdpa, scale);
+
+  at::Tensor contig_dropout_mask = at::empty({0}, query_opt.dtype(at::kBool));
+  if (dropout_p > 0.0) {
+    contig_dropout_mask.resize_({B, S_q, H, D});
+    CHECK_MUDNN_STATUS(sdpa.SetDropoutP(dropout_p), "SetDropoutP");
+    CHECK_MUDNN_STATUS(sdpa.SetTraining(true), "SetTraining");
+  }
+  at::musa::muTensor musa_dropout_mask =
+      at::musa::CreateMUTensor(contig_dropout_mask);
+
+  CHECK_MUDNN_STATUS(
+      sdpa.RunFlashVarlen(
+          h,
+          musa_out,
+          musa_lse,
+          musa_q,
+          musa_k,
+          musa_v,
+          /*attn_mask=*/at::musa::muTensor(),
+          musa_dropout_mask,
+          musa_cu_seqlens_q,
+          musa_cu_seqlens_k,
+          at::musa::InternalMemAlloc),
+      "Run SDPA Flash Varlen FWD.");
+
+  return std::make_tuple(output, contig_logsumexp, contig_dropout_mask);
+}
+
+std::tuple<at::Tensor&, at::Tensor&, at::Tensor&, at::Tensor>
+MuDNNFlashVarlenBwd(
+    at::Tensor& grad_output,
+    const at::Tensor& query,
+    const at::Tensor& key,
+    const at::Tensor& value,
+    const at::Tensor& output,
+    const at::Tensor& logsumexp,
+    at::Tensor& grad_q,
+    at::Tensor& grad_k,
+    at::Tensor& grad_v,
+    const at::Tensor& cu_seqlens_q,
+    const at::Tensor& cu_seqlens_k,
+    const int max_seqlen_q,
+    const int max_seqlen_k,
+    double dropout_p,
+    std::optional<double> scale,
+    bool is_causal) {
+  const c10::musa::MUSAGuard device_guard(query.device());
+
+  at::musa::muTensor musa_q = at::musa::CreateMUTensor(query);
+  at::musa::muTensor musa_k = at::musa::CreateMUTensor(key);
+  at::musa::muTensor musa_v = at::musa::CreateMUTensor(value);
+  at::musa::muTensor musa_grad_q = at::musa::CreateMUTensor(grad_q);
+  at::musa::muTensor musa_grad_k = at::musa::CreateMUTensor(grad_k);
+  at::musa::muTensor musa_grad_v = at::musa::CreateMUTensor(grad_v);
+  at::musa::muTensor musa_cu_seqlens_q = at::musa::CreateMUTensor(cu_seqlens_q);
+  at::musa::muTensor musa_cu_seqlens_k = at::musa::CreateMUTensor(cu_seqlens_k);
+
+  const at::Tensor reformatted_grad_output =
+      at::musa::ContiguousIfZeroInStrides(grad_output);
+  at::musa::muTensor musa_grad_output =
+      at::musa::CreateMUTensor(reformatted_grad_output);
+
+  const at::Tensor contig_logsumexp = logsumexp.contiguous();
+  at::musa::muTensor musa_logsumexp =
+      at::musa::CreateMUTensor(contig_logsumexp);
+
+  at::musa::muTensor musa_output = at::musa::CreateMUTensor(output);
+
+  auto& h = at::GetMudnnHandle();
+  ::musa::dnn::ScaledDotProductAttention sdpa;
+
+  const int S_q = query.size(0);
+  const int H = query.size(1);
+  const int D = query.size(2);
+  const int S_kv = key.size(0);
+  const int D_v = value.size(2);
+  const int B = cu_seqlens_q.numel() - 1;
+
+  CHECK_MUDNN_STATUS(sdpa.SetEmbedDim(H * D_v), "SetEmbedDim");
+  CHECK_MUDNN_STATUS(sdpa.SetBatchSize(B), "SetBatchSize");
+  CHECK_MUDNN_STATUS(sdpa.SetHeadsNum(H), "SetHeadsNum");
+  CHECK_MUDNN_STATUS(sdpa.SetMaxSeqlenQ(max_seqlen_q), "SetMaxSeqlenQ");
+  CHECK_MUDNN_STATUS(sdpa.SetMaxSeqlenK(max_seqlen_k), "SetMaxSeqlenK");
+  CHECK_MUDNN_STATUS(sdpa.SetCausal(is_causal), "SetCausal");
+  CHECK_MUDNN_STATUS(sdpa.SetTraining(true), "SetTraining");
+  MaybeSetScale(sdpa, scale);
+
+  CHECK_MUDNN_STATUS(
+      sdpa.RunFlashVarlenBwd(
+          h,
+          musa_grad_q,
+          musa_grad_k,
+          musa_grad_v,
+          musa_grad_output,
+          musa_q,
+          musa_k,
+          musa_v,
+          /*mask=*/at::musa::muTensor(),
+          musa_output,
+          musa_logsumexp,
+          /*dropout_mask=*/at::musa::muTensor(),
+          musa_cu_seqlens_q,
+          musa_cu_seqlens_k,
+          at::musa::InternalMemAlloc),
+      "Run SDPA Flash BWD.");
+
+  return {grad_q, grad_k, grad_v, at::Tensor()};
+}
 } // namespace at::musa

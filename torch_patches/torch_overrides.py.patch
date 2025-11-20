@@ -1,8 +1,8 @@
 diff --git a/torch/overrides.py b/torch/overrides.py
-index 7a568d7..01ae992 100644
+index e7cb75e..78c650d 100644
 --- a/torch/overrides.py
 +++ b/torch/overrides.py
-@@ -962,6 +962,7 @@ def get_testing_overrides() -> Dict[Callable, Callable]:
+@@ -964,6 +964,7 @@ def get_testing_overrides() -> dict[Callable, Callable]:
          torch.nn.functional.relu: lambda input, inplace=False: -1,
          torch.nn.functional.relu6: lambda input, inplace=False: -1,
          torch.nn.functional.rms_norm: lambda input, normalized_shape, weight=None, eps=1e-6: -1,
@@ -10,7 +10,7 @@ index 7a568d7..01ae992 100644
          torch.nn.functional.rrelu: lambda input, lower=0.125, upper=0.3333333333333333, training=False, inplace=False: -1,  # noqa: B950
          torch.nn.functional.selu: lambda input, inplace=False: -1,
          torch.nn.functional.silu: lambda input, inplace=False: -1,
-@@ -975,6 +976,7 @@ def get_testing_overrides() -> Dict[Callable, Callable]:
+@@ -977,6 +978,7 @@ def get_testing_overrides() -> dict[Callable, Callable]:
          torch.nn.functional.softplus: lambda input, beta=1, threshold=20: -1,
          torch.nn.functional.softshrink: lambda input, lambd=0.5: -1,
          torch.nn.functional.softsign: lambda input: -1,
@@ -18,15 +18,15 @@ index 7a568d7..01ae992 100644
          torch.nn.functional.tanhshrink: lambda input: -1,
          torch.nn.functional.threshold: lambda input, threshold, value, inplace=False: -1,
          torch.nn.functional.triplet_margin_loss: (
-@@ -1080,6 +1082,7 @@ def get_testing_overrides() -> Dict[Callable, Callable]:
+@@ -1082,6 +1084,7 @@ def get_testing_overrides() -> dict[Callable, Callable]:
          torch.repeat_interleave: lambda input, dim=None: -1,
          torch.reshape: lambda input, shape: -1,
          torch.rms_norm: lambda input, normalized_shape, weight=None, eps=1e-6: -1,
-+        torch.rope: lambda input, freq_cls, rotary_interleaved, batch_first, multi_latent_attention: -1,
++        torch.rope: lambda input, freq_cis, rotary_interleaved, batch_first, multi_latent_attention: -1,
          torch.rnn_relu: lambda input, hx, params, has_biases, num_layers, dropout, train, bidirectional, batch_first: -1,  # noqa: B950
          torch.rnn_relu_cell: lambda input, hx, w_ih, w_hh, b_ih=None, b_hh=None: -1,
          torch.rnn_tanh: lambda input, hx, params, has_biases, num_layers, dropout, train, bidirectional, batch_first: -1,  # noqa: B950
-@@ -1212,6 +1215,7 @@ def get_testing_overrides() -> Dict[Callable, Callable]:
+@@ -1215,6 +1218,7 @@ def get_testing_overrides() -> dict[Callable, Callable]:
          torch.special.xlog1py: lambda input, other, out=None: -1,
          torch.special.xlogy: lambda input, other, out=None: -1,
          torch.special.zeta: lambda self, other, out=None: -1,

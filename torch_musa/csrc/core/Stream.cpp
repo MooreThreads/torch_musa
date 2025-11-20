@@ -57,7 +57,6 @@ static PyObject* THMPStream_pynew(
     TORCH_CHECK(
         priority == 0, "Priority was explicitly set for a external stream")
   }
-
   c10::musa::MUSAStream stream = (stream_id || device_index || device_type)
       ? c10::musa::MUSAStream::unpack3(
             stream_id,
@@ -154,7 +153,7 @@ static PyMethodDef THMPStream_methods[] = {
 PyTypeObject THMPStreamType = {
     PyVarObject_HEAD_INIT(
         nullptr,
-        0) "c10::musa._MUSAC._MusaStreamBase", /* tp_name */
+        0) "torch_musa._MUSAC._MusaStreamBase", /* tp_name */
     sizeof(THMPStream), /* tp_basicsize */
     0, /* tp_itemsize */
     (destructor)THMPStream_dealloc, /* tp_dealloc */

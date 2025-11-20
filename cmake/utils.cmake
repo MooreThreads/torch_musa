@@ -34,28 +34,28 @@ endfunction()
 
 function(parse_real_musa_version outputvar)
   find_program(
-    MUSA_TOOLKIT_VERSION_EXECUTABLE
-    NAMES musa_toolkits_version
+    MUSA_RUNTIME_VERSION_EXECUTABLE
+    NAMES musa_runtime_version
     PATHS "$ENV{MUSA_HOME}"
     PATH_SUFFIXES bin bin64
     NO_DEFAULT_PATH)
-  mark_as_advanced(MUSA_TOOLKIT_VERSION_EXECUTABLE)
-  if(MUSA_TOOLKIT_VERSION_EXECUTABLE)
-    execute_process(COMMAND ${MUSA_TOOLKIT_VERSION_EXECUTABLE}
-                    OUTPUT_VARIABLE MUSA_TOOLKITS_VERSION)
+  mark_as_advanced(MUSA_RUNTIME_VERSION_EXECUTABLE)
+  if(MUSA_RUNTIME_VERSION_EXECUTABLE)
+    execute_process(COMMAND ${MUSA_RUNTIME_VERSION_EXECUTABLE}
+                    OUTPUT_VARIABLE MUSA_RUNTIME_VERSION)
     string(REGEX REPLACE ".*\"([0-9]+)\\.([0-9]+)\\.([0-9]+)\".*" "\\1"
-                         MUSA_TOOLKITS_VERSION_MAJOR ${MUSA_TOOLKITS_VERSION})
+                         MUSA_RUNTIME_VERSION_MAJOR ${MUSA_RUNTIME_VERSION})
     string(REGEX REPLACE ".*\"([0-9]+)\\.([0-9]+)\\.([0-9]+)\".*" "\\2"
-                         MUSA_TOOLKITS_VERSION_MINOR ${MUSA_TOOLKITS_VERSION})
+                         MUSA_RUNTIME_VERSION_MINOR ${MUSA_RUNTIME_VERSION})
     string(REGEX REPLACE ".*\"([0-9]+)\\.([0-9]+)\\.([0-9]+)\".*" "\\3"
-                         MUSA_TOOLKITS_VERSION_PATCH ${MUSA_TOOLKITS_VERSION})
+                         MUSA_RUNTIME_VERSION_PATCH ${MUSA_RUNTIME_VERSION})
 
     math(
       EXPR
-      MUSA_TOOLKITS_VERSION_INT
-      "${MUSA_TOOLKITS_VERSION_MAJOR} * 1000 + ${MUSA_TOOLKITS_VERSION_MINOR} * 10 + ${MUSA_TOOLKITS_VERSION_PATCH}"
+      MUSA_RUNTIME_VERSION_INT
+      "${MUSA_RUNTIME_VERSION_MAJOR} * 1000 + ${MUSA_RUNTIME_VERSION_MINOR} * 10 + ${MUSA_RUNTIME_VERSION_PATCH}"
     )
-    set(${outputvar} "${MUSA_TOOLKITS_VERSION_INT}" PARENT_SCOPE)
+    set(${outputvar} "${MUSA_RUNTIME_VERSION_INT}" PARENT_SCOPE)
     mark_as_advanced(${outputvar})
   endif()
 endfunction()

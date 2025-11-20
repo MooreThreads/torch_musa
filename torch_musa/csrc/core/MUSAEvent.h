@@ -13,6 +13,13 @@
 
 namespace at::musa {
 
+namespace detail {
+
+template <typename E, bool Lazy>
+class EventPoolBase;
+
+} // namespace detail
+
 /*
  * MUSAEvents are movable not copyable wrappers around MUSA's events.
  *
@@ -24,6 +31,9 @@ namespace at::musa {
  * Later streams that record the event must match this device.
  */
 struct MUSAEvent {
+  friend class detail::EventPoolBase<MUSAEvent, true>;
+  friend class detail::EventPoolBase<MUSAEvent, false>;
+
   MUSAEvent() noexcept = default;
 
   MUSAEvent(unsigned int flags) noexcept : flags_{flags} {}

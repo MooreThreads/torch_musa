@@ -41,39 +41,31 @@ __global__ void IndexSelectVectorKernel(
       at::musa::VecType<SrcDtype, vlen * sizeof(SrcDtype) * bits_of_byte>;
 
   int64_t index_idx = blockIdx.y * blockDim.y + threadIdx.y;
+  if (index_idx >= num_indices) {
+    return;
+  }
+
   int64_t index_selected = index_ptr[index_idx];
-  int64_t idx_x = (blockIdx.x * blockDim.x + threadIdx.x);
+  int64_t idx_x = (blockIdx.x * blockDim.x + threadIdx.x) * vlen;
+
+  const int64_t src_offset = (blockIdx.z * r0 + index_selected) * s0 + idx_x;
+  const int64_t dst_offset =
+      (blockIdx.z * num_indices + index_idx) * s0 + idx_x;
 
   if constexpr (Aligned) {
-    if (index_idx < num_indices && idx_x < (s0 / vlen)) {
-      idx_x *= vlen;
-      int64_t src_offset = (blockIdx.z * r0 + index_selected) * s0 + idx_x;
-      int64_t dst_offset = (blockIdx.z * num_indices + index_idx) * s0 + idx_x;
+    if (idx_x + vlen <= s0) {
       SrcVec vec_in = SrcVec::load(in_ptr, src_offset);
       SrcVec::store(out_ptr, dst_offset, vec_in);
     }
   } else {
-    if (index_idx < num_indices) {
-      int sv = s0 / vlen;
-      if (idx_x < sv) {
-        idx_x *= vlen;
-        int64_t src_offset = (blockIdx.z * r0 + index_selected) * s0 + idx_x;
-        int64_t dst_offset =
-            (blockIdx.z * num_indices + index_idx) * s0 + idx_x;
-        SrcVec vec_in = SrcVec::load(in_ptr, src_offset);
-        SrcVec::store(out_ptr, dst_offset, vec_in);
-      } else if (idx_x == sv && tail > 0) {
-        idx_x *= vlen;
-        int64_t src_offset = (blockIdx.z * r0 + index_selected) * s0 + idx_x;
-        int64_t dst_offset =
-            (blockIdx.z * num_indices + index_idx) * s0 + idx_x;
-
-        int current_tail = 0;
-        while (current_tail < tail) {
-          out_ptr[dst_offset + current_tail] =
-              in_ptr[src_offset + current_tail];
-          ++current_tail;
-        }
+    if (idx_x + vlen <= s0) {
+      SrcVec vec_in = SrcVec::load(in_ptr, src_offset);
+      SrcVec::store(out_ptr, dst_offset, vec_in);
+    } else if (idx_x < s0) {
+      int current_tail = 0;
+      while (current_tail < tail) {
+        out_ptr[dst_offset + current_tail] = in_ptr[src_offset + current_tail];
+        ++current_tail;
       }
     }
   }
@@ -91,10 +83,13 @@ __global__ void IndexSelectKernel(
     const uint32_t tail) {
   (void)tail;
   int64_t index_idx = blockIdx.y * blockDim.y + threadIdx.y;
+  if (index_idx >= num_indices) {
+    return;
+  }
   int64_t index_selected = index_ptr[index_idx];
   int64_t idx_x = blockIdx.x * blockDim.x + threadIdx.x;
 
-  if (index_idx < num_indices && idx_x < s0) {
+  if (idx_x < s0) {
     int64_t src_offset = (blockIdx.z * r0 + index_selected) * s0 + idx_x;
     int64_t dst_offset = (blockIdx.z * num_indices + index_idx) * s0 + idx_x;
     out_ptr[dst_offset] = in_ptr[src_offset];

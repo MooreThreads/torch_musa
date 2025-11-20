@@ -18,13 +18,22 @@ void initAOTIMUSARunnerBindings(PyObject* module) {
            int,
            const std::string&,
            const std::string&>())
-      .def("run", &AOTIModelContainerRunnerMusa::run)
+      .def(
+          "run",
+          &AOTIModelContainerRunnerMusa::run,
+          py::arg("inputs"),
+          py::arg("stream_handle") = nullptr)
       .def("get_call_spec", &AOTIModelContainerRunnerMusa::get_call_spec)
       .def(
           "get_constant_names_to_original_fqns",
           &AOTIModelContainerRunnerMusa::getConstantNamesToOriginalFQNs)
       .def(
           "get_constant_names_to_dtypes",
-          &AOTIModelContainerRunnerMusa::getConstantNamesToDtypes);
+          &AOTIModelContainerRunnerMusa::getConstantNamesToDtypes)
+      .def(
+          "update_constant_buffer",
+          static_cast<void (AOTIModelContainerRunnerMusa::*)(
+              std::unordered_map<std::string, at::Tensor>&, bool, bool)>(
+              &AOTIModelContainerRunnerMusa::update_constant_buffer));
 }
 } // namespace torch::inductor

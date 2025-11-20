@@ -1,6 +1,6 @@
 """Test quantized operators."""
 
-# pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
+# pylint: disable=missing-function-docstring, redefined-outer-name, unused-import, invalid-name, unexpected-keyword-arg
 import pytest
 import torch
 import torch.ao.nn.quantized as nnq
@@ -456,6 +456,10 @@ def get_zero_point_tensor(shape, axis, dtype):
     return torch.randint(0, 10, (channel_dim,), dtype=dtype)
 
 
+def get_intinput_tensor(shape, dtype):
+    return torch.randint(0, 10, shape, dtype=dtype)
+
+
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("config", configs)
 def test_fake_quantize_per_channel_affine_cachemask(config):
@@ -611,3 +615,212 @@ def test_fused_moving_avg_obs_fq_helper(config):
     )
 
     test.check_result()
+
+
+configs = [
+    ((1, 10), (10, 5)),
+    ((2, 3), (3, 4)),
+    ((10, 7), (7, 10)),
+]
+
+
+@pytest.mark.parametrize("config", configs)
+@pytest.mark.parametrize("dtype", [torch.uint8, torch.float32])
+def test_run_linear_vs_onednn(config, dtype):
+    shape1, shape2 = config
+    test = testing.OpTest(
+        func=torch.ops.quantized.linear_per_tensor,
+        refer_func=torch.ops.onednn.qlinear_pointwise.default,
+        input_args={},
+    )
+
+    act = get_intinput_tensor(shape1, torch.int8)
+    weight = get_intinput_tensor(shape2, torch.int8)
+
+    act_scale = 1.0
+    act_zero_point = 0
+    weight_scale = torch.randint(0, 10, [shape2[1]], dtype=torch.float32)
+    weight_zero_point = torch.zeros([shape2[1]], dtype=torch.int)
+
+    bias = torch.ones([shape2[1]], dtype=torch.float32)
+    output_scale = 1.0
+    output_zero_point = 0
+
+    input_args = {
+        "qx": act,
+        "x_scale": act_scale,
+        "x_zero_point": act_zero_point,
+        "qw": weight,
+        "w_scale": weight_scale,
+        "w_zero_point": weight_zero_point,
+        "bias": bias,
+        "output_scale": output_scale,
+        "output_zero_point": output_zero_point,
+        "output_dtype": dtype,
+        "post_op_name": "none",
+        "post_op_args": [],
+        "post_op_algorithm": "",
+    }
+
+    weight_mlknn = weight.to_mkldnn()
+
+    cpu_args = {**input_args, "qw": weight_mlknn}
+
+    out_musa = test._call_func(inputs=input_args, device="musa", refer=False)
+    out_cpu = test._call_func(
+        inputs=cpu_args, device="cpu", refer=True, onednn_flag=True
+    )
+    test.compare_res(out_musa, out_cpu)
+
+
+configs = [
+    ((1, 1, 5, 5), (1, 1, 3, 3)),
+    ((1, 3, 10, 10), (4, 3, 2, 2)),
+    ((10, 5, 6, 6), (8, 5, 2, 2)),
+]
+
+
+@pytest.mark.parametrize(
+    "dtype, attr",
+    [
+        (torch.float32, "none"),
+        (torch.float32, "relu"),
+    ],
+)
+@pytest.mark.parametrize("config", configs)
+def test_run_pointwise_vs_onednn(config, dtype, attr):
+    shape1, shape2 = config
+    act = get_intinput_tensor(shape1, dtype=torch.uint8)
+    weight = get_intinput_tensor(shape2, dtype=torch.int8)
+    stride = (1, 1)
+    padding = (0, 0)
+    dilation = (1, 1)
+    groups = 1
+
+    act_scale = 1.0
+    act_zero_point = 0
+
+    weight_scale = torch.randn([shape2[0]], dtype=torch.float)
+    weight_zero_point = torch.zeros([shape2[0]], dtype=torch.int)
+
+    output_scale = 1.0
+    output_zero_point = 0
+
+    bias = torch.randn([shape2[0]])
+
+    test = testing.OpTest(
+        func=torch.ops.quantized.conv,
+        refer_func=torch.ops.onednn.qconv2d_pointwise,
+        input_args={},
+        comparators=testing.AbsDiffComparator(1),
+    )
+
+    input_args = {
+        "qx": act,
+        "x_scale": act_scale,
+        "x_zero_point": act_zero_point,
+        "qw": weight,
+        "w_scale": weight_scale,
+        "w_zero_point": weight_zero_point,
+        "bias": bias,
+        "stride": stride,
+        "padding": padding,
+        "dilation": dilation,
+        "groups": groups,
+        "output_scale": output_scale,
+        "output_zero_point": output_zero_point,
+        "output_dtype": dtype,
+        "attr": attr,
+        "scalars": [],
+        "algorithm": "",
+    }
+    weight = weight.to_mkldnn()
+    cpu_input_args = {**input_args, "qw": weight}
+    torch.set_printoptions(threshold=10000)
+
+    out_musa = test._call_func(inputs=input_args, device="musa", refer=False)
+    out_cpu = test._call_func(
+        inputs=cpu_input_args, device="cpu", refer=True, onednn_flag=True
+    )
+    test.compare_res(out_musa, out_cpu)
+
+
+configs = [((1, 1, 5, 5), (1, 1, 2, 2)), ((1, 1, 6, 6), (1, 1, 2, 2))]
+
+
+@pytest.mark.parametrize(
+    "dtype, attr",
+    [
+        (torch.float32, "relu"),
+        (torch.uint8, "relu"),
+        (torch.uint8, "none"),
+        (torch.int8, "relu"),
+    ],
+)
+@pytest.mark.parametrize("config", configs)
+def test_run_pointwise_binary_vs_onednn(config, dtype, attr):
+    shape1, shape2 = config
+    act = get_intinput_tensor(shape1, dtype=torch.uint8)
+    weight = get_intinput_tensor(shape2, dtype=torch.int8)
+
+    act_scale = 3.0
+    act_zero_point = 0
+
+    weight_scale = torch.randn([shape2[0]], dtype=torch.float32)
+    weight_zero_point = torch.zeros([shape2[0]], dtype=torch.int)
+    H_out = shape1[2] - shape2[2] + 1
+    W_out = shape1[3] - shape2[3] + 1
+    accum = torch.randint(3, 10, (shape1[0], shape2[0], H_out, W_out), dtype=dtype)
+
+    accum_scale = 1.0
+    accum_zero_point = 0
+
+    output_scale = 1.0
+    output_zero_point = 0
+
+    bias = torch.ones([shape2[0]])
+
+    stride = (1, 1)
+    padding = (0, 0)
+    dilation = (1, 1)
+    groups = 1
+
+    test = testing.OpTest(
+        func=torch.ops.quantized.conv_binary,
+        refer_func=torch.ops.onednn.qconv2d_pointwise.binary,
+        input_args={},
+    )
+
+    input_args = {
+        "qx": act,
+        "x_scale": act_scale,
+        "x_zero_point": act_zero_point,
+        "qw": weight,
+        "w_scale": weight_scale,
+        "w_zero_point": weight_zero_point,
+        "qaccum": accum,
+        "bias": bias,
+        "stride": stride,
+        "padding": padding,
+        "dilation": dilation,
+        "groups": groups,
+        "output_scale": output_scale,
+        "output_zero_point": output_zero_point,
+        "output_dtype": dtype,
+        "accum_scale": accum_scale,
+        "accum_zero_point": accum_zero_point,
+        "binary_attr": "sum",
+        "alpha": 1.0,
+        "unary_attr": attr,
+        "unary_scalars": [],
+        "unary_algorithm": "",
+    }
+
+    weight = weight.to_mkldnn()
+    cpu_input_args = {**input_args, "qw": weight}
+
+    out_musa = test._call_func(inputs=input_args, device="musa", refer=False)
+    out_cpu = test._call_func(
+        inputs=cpu_input_args, device="cpu", refer=True, onednn_flag=True
+    )
+    test.compare_res(out_musa, out_cpu)

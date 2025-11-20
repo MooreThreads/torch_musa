@@ -90,7 +90,8 @@ Tensor StftCenter(
     c10::string_view mode,
     const bool normalized,
     const optional<bool> onesidedOpt,
-    const optional<bool> return_complexOpt) {
+    const optional<bool> return_complexOpt,
+    const std::optional<bool> align_to_windowOpt) {
   c10::MaybeOwned<Tensor> window_maybe_owned =
       at::borrow_from_optional_tensor(window_opt);
   const Tensor& window = *window_maybe_owned;
@@ -106,7 +107,8 @@ Tensor StftCenter(
   }                                                                       \
   SS << ", normalized=" << normalized << ", onesided=";                   \
   WriteOpt(SS, onesidedOpt) << ", return_complex=";                       \
-  WriteOpt(SS, return_complexOpt) << ") "
+  WriteOpt(SS, return_complexOpt) << ", align_to_window=";                \
+  WriteOpt(SS, align_to_windowOpt) << ") "
 
   TORCH_CHECK(
       !window.defined() || window.device() == self.device(),
@@ -114,6 +116,8 @@ Tensor StftCenter(
       self.device(),
       " and window on ",
       window.device())
+  TORCH_CHECK(!center || !align_to_windowOpt.has_value(),
+      "stft align_to_window should only be set when center = false.")
 
   // default_init hop_length and win_length
   auto hop_length = hop_lengthOpt.value_or(n_fft >> 2);
@@ -199,8 +203,17 @@ Tensor StftCenter(
       window_.narrow(0, left, win_length).fill_(1);
     }
   }
-  int64_t n_frames = 1 + (len - n_fft) / hop_length;
 
+  const bool align_to_window = align_to_windowOpt.value_or(false);
+  int64_t n_frames;
+  if (!center && align_to_window) {
+    // Calculate n_frames based on window length, since we are aligning start of window with t = 0.
+    n_frames = 1 + (len - win_length) / hop_length;
+    // Window-based padding.
+    input = at::pad(input, {(n_fft - win_length) / 2, (n_fft - win_length) / 2}, mode);
+  } else {
+    n_frames = 1 + (len - n_fft) / hop_length;
+  }
   // time2col
   input = input.as_strided(
       {batch, n_frames, n_fft},
@@ -253,7 +266,8 @@ Tensor Stft(
     const c10::optional<Tensor>& window_opt,
     const bool normalized,
     const optional<bool> onesidedOpt,
-    const optional<bool> return_complexOpt) {
+    const optional<bool> return_complexOpt,
+    const std::optional<bool> align_to_windowOpt) {
   return StftCenter(
       self,
       n_fft,
@@ -264,7 +278,8 @@ Tensor Stft(
       /*mode=*/"constant",
       normalized,
       onesidedOpt,
-      return_complexOpt);
+      return_complexOpt,
+      align_to_windowOpt);
 }
 
 namespace {
@@ -580,9 +595,8 @@ Tensor _fft_r2c_musa(
   TORCH_CHECK(
       self.is_floating_point() &&
           (self.scalar_type() == at::ScalarType::Float ||
-           self.scalar_type() == at::ScalarType::Half ||
-           self.scalar_type() == at::ScalarType::BFloat16),
-      "Expected dtype of input tensor is Float32, Half and BFloat16, but now it is ",
+           self.scalar_type() == at::ScalarType::Double),
+      "Expected dtype of input tensor is Float32 and Double, but now it is ",
       self.scalar_type());
 
   const auto input_sizes = self.sizes();
@@ -649,13 +663,16 @@ Tensor _fft_r2c_musa(
   auto out_slice = output_cpu.slice(last_dim, 0, last_dim_halfsize);
   _fft_apply_normalization(out_slice, normalization, input_sizes, dim);
 
+  // TODO: Support MUSA Complex Tensor
   if (!onesided) {
     if (output.sizes()[last_dim] != out_sizes[last_dim]) {
-      working_tensor.resize_(out_sizes, MemoryFormat::Contiguous);
-      working_tensor.slice(last_dim, 0, last_dim_halfsize).copy_(output);
-      output = std::move(working_tensor);
+      auto working_tensor_cpu = working_tensor.cpu();
+      working_tensor_cpu.resize_(out_sizes, MemoryFormat::Contiguous);
+      working_tensor_cpu.slice(last_dim, 0, last_dim_halfsize)
+          .copy_(output_cpu);
+      output_cpu = std::move(working_tensor_cpu);
     }
-    at::native::_fft_fill_with_conjugate_symmetry_(output, dim);
+    at::native::_fft_fill_with_conjugate_symmetry_(output_cpu, dim);
   }
   return output_cpu.to(self.device());
 }
@@ -889,7 +906,13 @@ Tensor fft_r2c_impl(
 
   if (!forward) {
     // FIXME: _fft_r2c doesn't support native r2c IFFT
-    return out.defined() ? at::conj_physical_out(out, ret) : ret.conj();
+    if (out.defined()) {
+      return at::conj_physical_out(out, ret);
+    } else {
+      Tensor ret_cpu;
+      ret_cpu = ret.cpu().conj();
+      return ret_cpu.to(input.device());
+    }
   } else {
     return ret;
   }

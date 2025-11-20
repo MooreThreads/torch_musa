@@ -1,0 +1,12 @@
+diff --git a/aten/src/ATen/functorch/BatchedTensorImpl.h b/aten/src/ATen/functorch/BatchedTensorImpl.h
+index e42f8dd..ce3d290 100644
+--- a/aten/src/ATen/functorch/BatchedTensorImpl.h
++++ b/aten/src/ATen/functorch/BatchedTensorImpl.h
+@@ -159,6 +159,7 @@ constexpr DispatchKeySet kKeysToPropagateToWrapper({
+   DispatchKey::XLA,
+   DispatchKey::CUDA,
+   DispatchKey::CPU,
++  DispatchKey::PrivateUse1,
+ });
+ 
+ inline DispatchKeySet getKeysToPropagateToWrapper(const Tensor& tensor, DispatchKeySet to_propagate=kKeysToPropagateToWrapper) {

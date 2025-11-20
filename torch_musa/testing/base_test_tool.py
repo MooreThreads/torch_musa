@@ -447,6 +447,7 @@ class OpTest:
         compute_dtype: torch.dtype = None,
         refer: bool = False,
         dtype_nocast_map: dict = None,
+        onednn_flag: bool = False,
     ):
         """Run op on specific device.
         Args:
@@ -461,6 +462,8 @@ class OpTest:
                 to get the correct dtype of tensor that will be tested, however, in some cases,
                 the input of some tensors is independent of the test dtype, thus we should ensure
                 that the dtypes of these tensors will not be casted.
+            onednn_flag (bool): whether to check the address of input and output. only when op from
+                onednn it's true
         Returns:
             Computing result in numpy format.
         """
@@ -613,9 +616,14 @@ class OpTest:
                         if any(p is not None for p in cur_func.parameters()):
                             assert self._test_dtype is not None
                 self.maybe_retain_and_zero_nn_modules_grad(cur_func, train)
-                prev_addr = self.get_addr_list_of_args(inputs_dict)
-                reduce = cur_func(**inputs_dict)
-                post_addr = self.get_addr_list_of_args(inputs_dict)
+                if onednn_flag:
+                    prev_addr = None
+                    reduce = cur_func(**inputs_dict)
+                    post_addr = None
+                else:
+                    prev_addr = self.get_addr_list_of_args(inputs_dict)
+                    reduce = cur_func(**inputs_dict)
+                    post_addr = self.get_addr_list_of_args(inputs_dict)
                 assert (
                     prev_addr == post_addr
                 ), "The position of tensor should not be changed"

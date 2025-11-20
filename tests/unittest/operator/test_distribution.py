@@ -9,6 +9,18 @@ from torch.utils._import_utils import _check_module_exists
 import pytest
 from torch_musa import testing
 
+torch.manual_seed(42)
+torch.musa.manual_seed(42)
+
+DEVICE = "musa"
+SHAPE = (8, 16)
+CPU_VAL = torch.rand(SHAPE, dtype=torch.float32, device="cpu") * 3.0 + 0.1
+CPU_VAL_OUTPUT = torch.rand(SHAPE, dtype=torch.float32, device="cpu")
+CPU_TOTAL = CPU_VAL.sum(dim=-1, keepdim=True)
+
+MUSA_VAL = CPU_VAL.to(DEVICE)
+MUSA_VAL_OUTPUT = CPU_VAL_OUTPUT.to(DEVICE)
+MUSA_TOTAL = CPU_TOTAL.to(DEVICE)
 
 float_dtypes = [torch.float32, torch.float16]
 if testing.get_musa_arch() >= 22:
@@ -213,3 +225,50 @@ def test_normal_float_tensor_out(dtype):
 
     assert out_cpu.shape == out_musa.shape
     assert abs(out_musa.mean().cpu() - out_cpu.mean()) < 0.5
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test__standard_gamma_grad():
+    cpu_grad = torch._standard_gamma_grad(CPU_VAL, CPU_VAL_OUTPUT)
+    dev_grad = torch._standard_gamma_grad(MUSA_VAL, MUSA_VAL_OUTPUT).cpu()
+    assert torch.allclose(cpu_grad, dev_grad, atol=1e-6, rtol=1e-5), \
+        "_standard_gamma_grad max diff too large"
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test__standard_gamma():
+    dev_out = torch._standard_gamma(MUSA_VAL)
+    assert torch.any(dev_out > 0), "musa _standard_gamma produced negative values"
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test__dirichlet_grad():
+    cpu_grad = torch._dirichlet_grad(CPU_VAL, CPU_VAL_OUTPUT, CPU_TOTAL)
+    dev_grad = torch._dirichlet_grad(MUSA_VAL, MUSA_VAL_OUTPUT, MUSA_TOTAL).cpu()
+
+    assert torch.allclose(cpu_grad, dev_grad, atol=1e-6, rtol=1e-5), \
+        "torch._dirichlet_grad failed on musa"
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test__sample_dirichlet():
+    dev_out = torch._standard_gamma(MUSA_VAL)
+    assert torch.any(dev_out > 0), "musa _sample_dirichlet produced negative values"
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_poisson():
+    dev_out = torch.poisson(MUSA_VAL)
+    assert torch.any(dev_out > 0), "musa poisson produced negative values"
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_binomial():
+    total_cpu = torch.randint(1, 10, SHAPE, dtype=torch.float, device="cpu")
+    probs_cpu = torch.rand(SHAPE, dtype=torch.float, device="cpu")
+
+    total_dev = total_cpu.to(DEVICE)
+    probs_dev = probs_cpu.to(DEVICE)
+
+    dev_out = torch.binomial(total_dev, probs_dev)
+    assert torch.any(dev_out > 0), "musa binomial produced negative values"

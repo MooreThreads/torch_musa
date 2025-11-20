@@ -118,3 +118,45 @@ def test_rms_norm_backward(embedding_dim, batch, sequence_length, dtype):
         test.check_musafp16_vs_musafp32(train=True)
     elif dtype == torch.float32:
         test.check_result(train=True)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("embedding_dim", [128, 512, 768])
+@pytest.mark.parametrize("stride_sequence_length", [2112])
+@pytest.mark.parametrize("sequence_length", [7, 32])
+@pytest.mark.parametrize("dtype", [torch.half, torch.bfloat16, torch.float32])
+def test_rms_norm_2d_noncontiguous(
+    embedding_dim, stride_sequence_length, sequence_length, dtype
+):
+    input_shape = (sequence_length, embedding_dim)
+    normalized_shape = (embedding_dim,)
+
+    storage_size = sequence_length * stride_sequence_length
+    base_tensor = torch.randn(storage_size).musa()
+
+    input_tensor = base_tensor.as_strided(
+        size=input_shape, stride=(stride_sequence_length, 1), storage_offset=0
+    )
+
+    input_data = {
+        "input": input_tensor,
+        "normalized_shape": normalized_shape,
+        "weight": torch.randn(normalized_shape, dtype=dtype, requires_grad=True),
+        "eps": 1e-6,
+    }
+    if dtype in (torch.half, torch.bfloat16):
+        atol, rtol = 5e-2, 1e-3
+    elif dtype == torch.float32:
+        atol, rtol = 1e-4, 1e-5  # grad has bigger float pointing error.
+    test = testing.OpTest(
+        func=torch.rms_norm,
+        refer_func=ref_rms_norm,
+        input_args=input_data,
+        comparators=testing.DefaultComparator(rel_diff=rtol, abs_diff=atol),
+    )
+    if dtype == torch.half:
+        test.check_musafp16_vs_musafp32()
+    if dtype == torch.bfloat16:
+        test.check_musabf16_vs_musafp16()
+    elif dtype == torch.float32:
+        test.check_result()

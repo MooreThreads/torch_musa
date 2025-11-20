@@ -1,4 +1,7 @@
+# pylint: disable=W0223
+
 """MUSA Template Buffer"""
+# pylint: disable=abstract-method
 
 from torch._inductor.ir import TemplateBuffer
 

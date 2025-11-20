@@ -1,13 +1,14 @@
 diff --git a/torch/csrc/inductor/aoti_runtime/device_utils.h b/torch/csrc/inductor/aoti_runtime/device_utils.h
-index 7673199..7144d38 100644
+index 7b48f49..23e4b4a 100644
 --- a/torch/csrc/inductor/aoti_runtime/device_utils.h
 +++ b/torch/csrc/inductor/aoti_runtime/device_utils.h
-@@ -5,45 +5,25 @@
+@@ -5,28 +5,28 @@
  // C ABI defined in torch/csrc/inductor/aoti_torch/c/shim.h. The same rule
  // applies to other files under torch/csrc/inductor/aoti_runtime/.
  
 -#ifdef USE_CUDA
--
++#if 1
+ 
 -// FIXME: Currently, CPU and CUDA backend are mutually exclusive.
 +// FIXME: Currently, CPU and MUSA backend are mutually exclusive.
  // This is a temporary workaround. We need a better way to support
@@ -38,21 +39,4 @@ index 7673199..7144d38 100644
 +using DeviceStreamType = musaStream_t;
  
  } // namespace torch::aot_inductor
--
--#else // !USE_CUDA
--
--#define AOTI_RUNTIME_DEVICE_CHECK(EXPR)            \
--  bool ok = EXPR;                                  \
--  if (!ok) {                                       \
--    throw std::runtime_error("CPU runtime error"); \
--  }
--
--namespace torch {
--namespace aot_inductor {
--
--using DeviceStreamType = void*;
--
--} // namespace aot_inductor
--} // namespace torch
--
--#endif // USE_CUDA
+ 

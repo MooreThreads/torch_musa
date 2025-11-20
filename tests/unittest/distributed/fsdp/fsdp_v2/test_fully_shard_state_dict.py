@@ -1,8 +1,9 @@
 """Test save and load FSDP model's state_dict"""
 
-# pylint: disable=invalid-name,missing-function-docstring
+# pylint: disable=invalid-name,missing-function-docstring,C0301
 
 from typing import Dict
+from contextlib import nullcontext
 import copy
 
 import torch
@@ -49,39 +50,64 @@ class TestFullyShardStateDict(FSDPTest):
         )
 
     def test_dp_state_dict_cpu_offload(self):
+        self.run_subtests(
+            {
+                "offload_policy": [
+                    CPUOffloadPolicy(pin_memory=True),
+                    CPUOffloadPolicy(pin_memory=False),
+                ],
+                "cpu_state_dict": [True, False],
+            },
+            self._test_dp_state_dict_cpu_offload,
+        )
+
+    def _test_dp_state_dict_cpu_offload(
+        self, offload_policy: CPUOffloadPolicy, cpu_state_dict: bool
+    ):
         mlp_dim = 4
-        offload_policy = CPUOffloadPolicy(pin_memory=True)
         torch.manual_seed(42)
         with torch.device("meta"):
             model = nn.Sequential(
                 nn.Linear(mlp_dim, mlp_dim, bias=False),
                 nn.Linear(mlp_dim, mlp_dim, bias=False),
             )
-        # mesh is not explicitly specified, so it is possible to check whether the
-        # DeviceMesh on mccl backend can be initialized correctly
-        for m in model:
-            fully_shard(m, offload_policy=offload_policy)
+        for module in model:
+            fully_shard(module, offload_policy=offload_policy)
         fully_shard(model, offload_policy=offload_policy)
 
+        # split full sd into multiple pieces
+        # to test loading with `strict=False`
         state_dicts = []
         for name, dtensor in model.named_parameters():
             full_tensor = torch.randn(dtensor.size())
             sharded_tensor = distribute_tensor(
                 full_tensor, dtensor.device_mesh, dtensor.placements
             )
+            if cpu_state_dict:
+                sharded_tensor = sharded_tensor.cpu()
             state_dicts.append({name: sharded_tensor})
-            assert dtensor.device.type == "meta"
 
-        # model still on meta device
-        for sd_ in state_dicts:
-            model.load_state_dict(sd_, strict=False, assign=True)
+        # check that we can load with some parameters still on meta device
+        for sd in state_dicts:
+            model.load_state_dict(sd, assign=True, strict=False)
 
-        inp = torch.randn((mlp_dim, mlp_dim), device="musa")
-        model(inp)
+        # lazy init without error
+        inp = torch.rand((mlp_dim, mlp_dim), device="musa")
 
-        state_dict = model.state_dict()
-        for name, dtensor in state_dict.items():
-            assert dtensor.device.type == "cpu"
+        context = (
+            self.assertRaisesRegex(
+                RuntimeError,
+                "Found following parameters on non-CPU device: "
+                r"\[\('0.weight', device\(type='musa'",
+            )
+            if not cpu_state_dict
+            else nullcontext()
+        )
+        with context:
+            model(inp).sum()
+            state_dict = model.state_dict()
+            for name, dtensor in state_dict.items():
+                self.assertEqual(dtensor.device.type, "cpu")
 
     def _test_dp_state_dict_save_load(self, mesh: DeviceMesh):
         torch.manual_seed(42)

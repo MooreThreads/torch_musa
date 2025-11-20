@@ -12,7 +12,7 @@ struct MUSAHooksInterface : PrivateUse1HooksInterface {
   virtual void initMUSA() const {
     TORCH_CHECK(false, "Cannot initialize MUSA without torch_musa library.");
   }
-  void initPrivateUse1() const override {
+  void init() const override {
     initMUSA();
   }
 
@@ -32,6 +32,11 @@ struct MUSAHooksInterface : PrivateUse1HooksInterface {
   const Generator& getDefaultGenerator(
       DeviceIndex device_index) const override {
     return getDefaultMUSAGenerator(device_index);
+  }
+
+  Generator getNewGenerator(
+      [[maybe_unused]] DeviceIndex device_index = -1) const override {
+    TORCH_CHECK(false, "getNewGenerator requires MUSA.");
   }
 
   Device getDeviceFromPtr(void* data) const override {

@@ -1,6 +1,7 @@
 #ifndef TORCH_MUSA_CSRC_ATEN_UTILS_UTILS_H_
 #define TORCH_MUSA_CSRC_ATEN_UTILS_UTILS_H_
 
+#include <ATen/core/TensorBase.h>
 #include <ATen/Dispatch.h>
 #include <c10/core/Backend.h>
 
@@ -71,7 +72,40 @@ constexpr c10::DispatchKey kMUSAKey = c10::DispatchKey::PrivateUse1;
 
 muTensor CreateMUTensor(const Tensor& t, bool permute_if_not_contiguous = true);
 
-muTensor CreateMUTensorByCompressDim(const Tensor& t);
+/**
+ * @brief Compresses two tensors' dimensions for mudnn compatibility (max 8
+ * dimensions).
+ *
+ * Processes dimensions from inner to outer using shape and stride patterns to
+ * merge dimensions while preserving memory access. Handles broadcast dimensions
+ * correctly.
+ *
+ * @param t1/t2 Two input tensors. Must have identical shape.
+ *
+ * @return std::pair<muTensor, muTensor> Pair of compressed tensors with
+ * identical shapes but potentially different strides reflecting original memory
+ * layouts.
+ *
+ * @example
+ *   // Specific example with known input and output
+ *   // Input tensors:
+ *   //   shape: [1, 1, 6, 1, 1, 4, 1, 1, 4, 4] (10 dimensions)
+ *   //   t1 strides: [384, 96, 16, 16, 4, 96, 96, 16, 4, 1]
+ *   //   t2 strides: [0, 0, 0, 64, 64, 16, 16, 16, 4, 1]
+ *   //
+ *   // Output tensors:
+ *   //   shape: [6, 4, 16] (3 dimensions)
+ *   //   t1 strides: [16, 96, 1]
+ *   //   t2 strides: [0, 16, 1]
+ *   // If we only consider continuity, t2 can be compressed to shape:[6,64]
+ * strd:[0,1](2 dims)
+ *   // Algorithm behavior:
+ *   // 1. Remove dimensions of size 1 (broadcast dimensions)
+ *   // 2. Merge adjacent dimensions when stride patterns allow
+ */
+std::pair<muTensor, muTensor> CreateMUTensorsCompression(
+    const Tensor& t1,
+    const Tensor& t2);
 
 inline muTensor CreateEmptyMUTensor() {
   return muTensor();

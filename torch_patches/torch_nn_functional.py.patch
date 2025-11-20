@@ -1,11 +1,13 @@
 diff --git a/torch/nn/functional.py b/torch/nn/functional.py
-index 3072ac0..837129f 100644
+index 2a51e4f..a0f28b8 100644
 --- a/torch/nn/functional.py
 +++ b/torch/nn/functional.py
-@@ -1742,6 +1742,18 @@ def glu(input: Tensor, dim: int = -1) -> Tensor:  # noqa: D400,D402
-     return torch._C._nn.glu(input, dim)
- 
- 
+@@ -6420,3 +6420,31 @@ def multi_head_attention_forward(
+             # squeeze the output if input was unbatched
+             attn_output = attn_output.squeeze(1)
+         return attn_output, None
++
++
 +def swish_glu(input: Tensor) -> Tensor:  # noqa: D400,D402
 +    r"""swish_glu(input, inplace=False) -> Tensor
 +
@@ -18,13 +20,6 @@ index 3072ac0..837129f 100644
 +    return result
 +
 +
- def hardtanh(
-     input: Tensor,
-     min_val: float = -1.0,
-@@ -2957,6 +2969,22 @@ def group_norm(
-     )
- 
- 
 +def rope(
 +    input: Tensor,
 +    freq_cis: Tensor,
@@ -32,15 +27,10 @@ index 3072ac0..837129f 100644
 +    batch_first: bool = False,
 +    multi_latent_attention: bool = False,
 +) -> Tensor:
-+    r"""Rotary position embedding  forward""
++    r"""Rotary position embedding forward""
 +    """
 +    if has_torch_function_variadic(input, freq_cis):
 +        return handle_torch_function(
 +            rope, (input, freq_cis), input, rotary_interleaved, batch_first, multi_latent_attention
 +        )
 +    return torch.rope(input, freq_cis, rotary_interleaved, batch_first, multi_latent_attention)
-+
-+
- def local_response_norm(
-     input: Tensor,
-     size: int,

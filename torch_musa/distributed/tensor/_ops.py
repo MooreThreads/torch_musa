@@ -1,9 +1,10 @@
+# pylint: disable=W0611
+
 """Register Sharding rules or strategies for PyTorch DTensor operators"""
 
 from typing import List, Optional, Sequence
 
 import torch
-from torch.distributed.device_mesh import DeviceMesh
 from torch.distributed.tensor._dtensor_spec import DTensorSpec
 from torch.distributed.tensor._op_schema import (
     OpSchema,
@@ -27,7 +28,7 @@ from torch.distributed.tensor._ops._math_ops import (
     [torch.ops.aten._fused_rmsnorm_forward.default],
     schema_info=RuntimeSchemaInfo(1),
 )
-def fused_rmsnorm_strategy(mesh: DeviceMesh, op_schema: OpSchema) -> OpStrategy:
+def fused_rmsnorm_strategy(op_schema: OpSchema) -> OpStrategy:
     """DTensor sharding strategy of fused_rmsnorm_forward"""
     # args: input, normalized_shape, eps, weight (optional)
     assert len(op_schema.args_schema) == 4
@@ -48,7 +49,7 @@ def fused_rmsnorm_strategy(mesh: DeviceMesh, op_schema: OpSchema) -> OpStrategy:
         input_src_spec = input_placement_strategy.output_spec
 
         input_target_spec = DTensorSpec(
-            mesh=mesh,
+            mesh=input_strategy.mesh,
             placements=_replicate_dims_start_at(input_src_spec.placements, axis),
             tensor_meta=input_src_spec.tensor_meta,
         )
@@ -61,7 +62,7 @@ def fused_rmsnorm_strategy(mesh: DeviceMesh, op_schema: OpSchema) -> OpStrategy:
             assert isinstance(weight_strategy, OpStrategy)
             weight_src_spec = weight_strategy.strategies[idx].output_spec
             weight_target_spec = DTensorSpec(
-                mesh=mesh,
+                mesh=weight_strategy.mesh,
                 placements=_replicate_dims_start_at(weight_src_spec.placements),
                 tensor_meta=weight_src_spec.tensor_meta,
             )
@@ -86,7 +87,7 @@ def fused_rmsnorm_strategy(mesh: DeviceMesh, op_schema: OpSchema) -> OpStrategy:
     [torch.ops.aten._fused_rmsnorm_backward.default],
     schema_info=RuntimeSchemaInfo(3),
 )
-def fused_rmsnorm_bwd_strategy(mesh: DeviceMesh, op_schema: OpSchema) -> OpStrategy:
+def fused_rmsnorm_bwd_strategy(op_schema: OpSchema) -> OpStrategy:
     """DTensor sharding strategy of fused_rmsnorm_backward"""
     # args: grad_out, invvar, input, normalized_shape, eps, weight
     assert len(op_schema.args_schema) == 6
@@ -119,7 +120,7 @@ def fused_rmsnorm_bwd_strategy(mesh: DeviceMesh, op_schema: OpSchema) -> OpStrat
         input_src_spec = input_placement_strategy.output_spec
 
         grad_out_target_spec = DTensorSpec(
-            mesh=mesh,
+            mesh=grad_out_strategy.mesh,
             placements=_replicate_dims_start_at(input_src_spec.placements, axis),
             tensor_meta=input_src_spec.tensor_meta,
         )
@@ -136,7 +137,7 @@ def fused_rmsnorm_bwd_strategy(mesh: DeviceMesh, op_schema: OpSchema) -> OpStrat
 
         # arg: input
         input_target_spec = DTensorSpec(
-            mesh=mesh,
+            mesh=input_strategy.mesh,
             placements=_replicate_dims_start_at(input_src_spec.placements, axis),
             tensor_meta=input_src_spec.tensor_meta,
         )
@@ -154,7 +155,7 @@ def fused_rmsnorm_bwd_strategy(mesh: DeviceMesh, op_schema: OpSchema) -> OpStrat
 
             weight_src_spec = weight_strategy.strategies[idx].output_spec
             weight_target_spec = DTensorSpec(
-                mesh=mesh,
+                mesh=weight_strategy.mesh,
                 placements=_replicate_dims_start_at(weight_src_spec.placements),
                 tensor_meta=weight_src_spec.tensor_meta,
             )
@@ -171,7 +172,7 @@ def fused_rmsnorm_bwd_strategy(mesh: DeviceMesh, op_schema: OpSchema) -> OpStrat
                 inp_placements, outer_dims, reduce_dims_map, "sum"
             )
             weight_out_spec = DTensorSpec(
-                mesh=mesh,
+                mesh=weight_strategy.mesh,
                 placements=out_placements,
                 tensor_meta=weight_src_spec.tensor_meta,
             )

@@ -1,7 +1,6 @@
 """Test the codecache"""
 
 # pylint: disable=C0115, C0116
-import os
 import pytest
 
 import torch
@@ -87,17 +86,14 @@ class TestFXGraphCache:
                 assert torch.allclose(func(a, b), compiled_func(a, b))
                 assert counters["inductor"]["fxgraph_cache_miss"] == 1
                 assert counters["inductor"]["fxgraph_cache_hit"] == 0
-                assert counters["inductor"]["fxgraph_lookup_write_file"] == 0
 
                 # A second call should hit. (First reset so in-memory guards
                 # don't prevent compilation).
-                for m in torch._inductor.codecache.PyCodeCache.cache.values():
-                    os.remove(m.__file__)
+                torch._inductor.codecache.PyCodeCache.cache_clear()
                 self.reset()
                 assert torch.allclose(func(a, b), compiled_func(a, b))
                 assert counters["inductor"]["fxgraph_cache_miss"] == 1
                 assert counters["inductor"]["fxgraph_cache_hit"] == 1
-                assert counters["inductor"]["fxgraph_lookup_write_file"] == 1
 
     @pytest.mark.parametrize(
         "device",

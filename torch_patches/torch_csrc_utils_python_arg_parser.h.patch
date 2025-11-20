@@ -1,0 +1,31 @@
+diff --git a/torch/csrc/utils/python_arg_parser.h b/torch/csrc/utils/python_arg_parser.h
+index 1531c78..03159a8 100644
+--- a/torch/csrc/utils/python_arg_parser.h
++++ b/torch/csrc/utils/python_arg_parser.h
+@@ -1187,7 +1187,7 @@ inline PyObject* PythonArgs::pyobject(int i) {
+  *
+  */
+ // Used for Tensor methods with arguments.
+-auto handle_torch_function(
++TORCH_PYTHON_API auto handle_torch_function(
+     PythonArgs& r,
+     PyObject* self,
+     PyObject* args,
+@@ -1197,7 +1197,7 @@ auto handle_torch_function(
+     const char* func_name_override = nullptr) -> PyObject*;
+ 
+ // Used for functions which needs to parse python args.
+-auto handle_torch_function(
++TORCH_PYTHON_API auto handle_torch_function(
+     PythonArgs& r,
+     PyObject* args,
+     PyObject* kwargs,
+@@ -1206,7 +1206,7 @@ auto handle_torch_function(
+     const char* func_name_override = nullptr) -> PyObject*;
+ 
+ // Used for functions that have no argument parsing.
+-auto handle_torch_function(
++TORCH_PYTHON_API auto handle_torch_function(
+     PyObject* self,
+     const std::string& func_name,
+     PyObject* args = nullptr,

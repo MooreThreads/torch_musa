@@ -10,12 +10,12 @@ index c7533e4..8b8d119 100644
 +- func: gated_silu(Tensor input) -> Tensor
 +  variants: function
 +
-+- func: _fused_rmsnorm_forward(Tensor input, int[] normalized_shape, float eps, Tensor? weight=None) -> (Tensor output, Tensor invvar)
++- func: _fused_rmsnorm_forward(Tensor input, SymInt[] normalized_shape, float eps, Tensor? weight=None) -> (Tensor output, Tensor invvar)
 +  variants: function
 +  dispatch:
 +    CPU: _fused_rmsnorm_forward
 +
-+- func: _fused_rmsnorm_backward(Tensor grad_out, Tensor invvar, Tensor input, int[] normalized_shape, float eps, Tensor? weight=None) -> (Tensor grad_input, Tensor grad_weight)
++- func: _fused_rmsnorm_backward(Tensor grad_out, Tensor invvar, Tensor input, SymInt[] normalized_shape, float eps, Tensor? weight=None) -> (Tensor grad_input, Tensor grad_weight)
 +  variants: function
 +  dispatch:
 +    CPU: _fused_rmsnorm_backward

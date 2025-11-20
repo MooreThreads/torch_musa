@@ -1,8 +1,8 @@
 diff --git a/aten/src/ATen/native/layer_norm.cpp b/aten/src/ATen/native/layer_norm.cpp
-index b11bcab..42855a3 100644
+index 0972978..c20182c 100644
 --- a/aten/src/ATen/native/layer_norm.cpp
 +++ b/aten/src/ATen/native/layer_norm.cpp
-@@ -14,6 +14,7 @@
+@@ -15,6 +15,7 @@
  #include <ATen/ops/empty.h>
  #include <ATen/ops/empty_like.h>
  #include <ATen/ops/empty_like_native.h>
@@ -10,9 +10,9 @@ index b11bcab..42855a3 100644
  #include <ATen/ops/layer_norm_native.h>
  #include <ATen/ops/native_batch_norm.h>
  #include <ATen/ops/native_layer_norm.h>
-@@ -276,6 +277,26 @@ Tensor rms_norm(
-   const Tensor& bias = *at::borrow_from_optional_tensor(bias_opt);
-   (void) _check_layer_norm_inputs(input, normalized_shape, weight, bias);
+@@ -286,6 +287,21 @@ Tensor rms_norm_symint(
+   }
+ #endif
  
 +  if (input.is_privateuseone()) {
 +    auto result = AT_DISPATCH_FLOATING_TYPES_AND2(
@@ -21,15 +21,10 @@ index b11bcab..42855a3 100644
 +        input.scalar_type(),
 +        "rms_norm",
 +        [&] {
-+      double eps_val;
-+      if (!eps.has_value()) {
-+          eps_val = std::numeric_limits<at::scalar_value_type<double>::type>::epsilon();
-+      } else {
-+          eps_val = eps.value();
-+      }
-+      auto outputs_and_invvar =
-+          at::_fused_rmsnorm_forward(input, normalized_shape, eps_val, weight_opt);
-+      return std::get<0>(outputs_and_invvar);
++      using limits = std::numeric_limits<double>;
++      double eps_val = eps.value_or(limits::epsilon());
++      auto output_and_invvar = at::_fused_rmsnorm_forward_symint(input, normalized_shape, eps_val, weight_opt);
++      return std::get<0>(output_and_invvar);
 +    });
 +    return result;
 +  }

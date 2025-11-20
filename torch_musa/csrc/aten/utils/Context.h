@@ -34,8 +34,8 @@ class Context {
   void SetAllowTF32(bool allow_tf32);
 
  private:
-  // TF32 is disabled by default to keep consistent to official PyTorch.
-  bool allow_tf32_ = false;
+  // TF32 is enabled by default to keep consistent to official PyTorch.
+  bool allow_tf32_ = true;
   c10::once_flag musa_init_;
 };
 

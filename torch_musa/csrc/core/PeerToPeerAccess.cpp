@@ -31,7 +31,7 @@ void init_p2p_access_cache(int64_t num_devices) {
 } // namespace detail
 
 bool get_p2p_access(int dev, int dev_to_access) {
-  at::globalContext().lazyInitPrivateUse1();
+  at::globalContext().lazyInitDevice(at::kPrivateUse1);
 
   TORCH_INTERNAL_ASSERT(num_devices_ > 0, "p2p access cache not initialized");
   TORCH_CHECK(dev >= 0 && dev < num_devices_, dev, " is not a device");

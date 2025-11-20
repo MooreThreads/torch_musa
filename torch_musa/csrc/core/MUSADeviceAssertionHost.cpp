@@ -7,6 +7,7 @@
 #include "torch_musa/csrc/core/MUSAException.h"
 
 #include <algorithm>
+#include <cstring>
 #include <memory>
 #include <sstream>
 #include <stdexcept>

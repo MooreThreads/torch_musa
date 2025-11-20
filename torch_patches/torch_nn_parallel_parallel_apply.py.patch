@@ -1,8 +1,8 @@
 diff --git a/torch/nn/parallel/parallel_apply.py b/torch/nn/parallel/parallel_apply.py
-index 6a90f897fa8..c4e9293cc15 100644
+index eb6c8ec..c8df66e 100644
 --- a/torch/nn/parallel/parallel_apply.py
 +++ b/torch/nn/parallel/parallel_apply.py
-@@ -57,7 +57,7 @@ def parallel_apply(
+@@ -58,7 +58,7 @@ def parallel_apply(
      else:
          devices = [None] * len(modules)
      devices = [_get_device_index(x, True) for x in devices]
@@ -11,7 +11,7 @@ index 6a90f897fa8..c4e9293cc15 100644
      lock = threading.Lock()
      results = {}
      grad_enabled, autocast_enabled = (
-@@ -85,11 +85,11 @@ def parallel_apply(
+@@ -86,11 +86,11 @@ def parallel_apply(
                  return
              device = t.get_device()
          if stream is None:

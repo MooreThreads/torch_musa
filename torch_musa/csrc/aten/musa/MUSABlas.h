@@ -58,6 +58,19 @@ void bgemm<at::Half>(MUSABLAS_BGEMM_ARGTYPES(at::Half));
 template <>
 void bgemm<at::BFloat16>(MUSABLAS_BGEMM_ARGTYPES(at::BFloat16));
 
+#define MUSABLAS_VDOT_ARGTYPES(Dtype) \
+  int n, const Dtype *x, int incx, const Dtype *y, int incy, Dtype *result
+
+template <typename Dtype>
+inline void vdot(MUSABLAS_VDOT_ARGTYPES(Dtype)) {
+  AT_ERROR("at::musa::blas::vdot: not implemented for ", typeid(Dtype).name());
+}
+
+template <>
+void vdot<c10::complex<float>>(MUSABLAS_VDOT_ARGTYPES(c10::complex<float>));
+template <>
+void vdot<c10::complex<double>>(MUSABLAS_VDOT_ARGTYPES(c10::complex<double>));
+
 } // namespace blas
 } // namespace musa
 } // namespace at

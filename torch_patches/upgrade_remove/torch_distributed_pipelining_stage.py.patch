@@ -1,0 +1,34 @@
+diff --git a/torch/distributed/pipelining/stage.py b/torch/distributed/pipelining/stage.py
+index 71260fc..8953370 100644
+--- a/torch/distributed/pipelining/stage.py
++++ b/torch/distributed/pipelining/stage.py
+@@ -433,10 +433,7 @@ class _PipelineStageBase(ABC):
+         """
+         Get the activation send ops for current stage's forward.
+         """
+-        output = self.output_chunks[fwd_chunk_id]
+-        # Unify output form to tuple for easy correspondance with
+-        # `act_send_info`
+-        output_tuple = output if type(output) is tuple else (output,)
++        output_tuple, _ = self.fwd_cache[fwd_chunk_id]
+ 
+         ops: list[dist.P2POp] = []
+ 
+@@ -681,6 +678,7 @@ class _PipelineStageBase(ABC):
+         fwd_chunk_id: int,
+         args: tuple[Any, ...],
+         kwargs: Optional[dict[str, Any]] = None,
++        save_forward_output: bool = True,
+     ):
+         """
+         Perform forward pass on the stage with one microbatch.
+@@ -719,7 +717,8 @@ class _PipelineStageBase(ABC):
+         output_tuple = _normalize_model_output_as_tuple(output)
+ 
+         # Prepare for final output merge or reduction
+-        self.output_chunks.append(output)
++        if self.is_last and save_forward_output:
++            self.output_chunks.append(output)
+ 
+         # Save activations and inputs for backward
+         flat_args = flatten_args(composite_args)

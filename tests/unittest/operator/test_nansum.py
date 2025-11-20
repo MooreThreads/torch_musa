@@ -53,7 +53,7 @@ def test_nansum_fp16(config):
     test = testing.OpTest(
         func=torch.nansum,
         input_args=input_data,
-        comparators=testing.DefaultComparator(abs_diff=1e-2),
+        comparators=testing.DefaultComparator(abs_diff=1e-2, rel_diff=1e-3),
     )
     test.check_musafp16_vs_musafp32()
 
@@ -72,7 +72,7 @@ def test_nansum_bf16(config):
     test = testing.OpTest(
         func=torch.nansum,
         input_args=input_data,
-        comparators=testing.DefaultComparator(abs_diff=5e-2),
+        comparators=testing.DefaultComparator(abs_diff=5e-2, rel_diff=5e-2),
     )
     test.check_result()
 

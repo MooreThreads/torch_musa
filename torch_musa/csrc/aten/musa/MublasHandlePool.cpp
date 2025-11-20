@@ -69,7 +69,6 @@ at::DataPtr getNewWorkspace() {
   return c10::musa::MUSACachingAllocator::get()->allocate(
       getChosenWorkspaceSize());
 }
-// TODO(MTAI):END
 
 mublasHandle_t getCurrentMUSABlasHandle() {
   DeviceIndex device = 0;

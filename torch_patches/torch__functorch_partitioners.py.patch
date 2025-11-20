@@ -1,31 +1,35 @@
 diff --git a/torch/_functorch/partitioners.py b/torch/_functorch/partitioners.py
-index b0f609d..4d6b805 100644
+index 14b2961..9793fe9 100644
 --- a/torch/_functorch/partitioners.py
 +++ b/torch/_functorch/partitioners.py
-@@ -639,6 +639,9 @@ def functionalize_rng_ops(
+@@ -744,6 +744,9 @@ def functionalize_rng_ops(
      # Unique id to generate name
      uid = itertools.count()
  
-+    # for external backend
-+    custom_backend_name = torch._C._get_privateuse1_backend_name()
++    custom_backend = torch._C._get_privateuse1_backend_name()
++    custom_backend_mod = getattr(torch, custom_backend)
 +
      def get_rng_ops(gmod):
          random_nodes = {}
          for node in gmod.graph.nodes:
-@@ -665,12 +668,16 @@ def functionalize_rng_ops(
+@@ -768,14 +771,17 @@ def functionalize_rng_ops(
+ 
+         for candidate in candidates:
              if isinstance(candidate, torch.Tensor):
-                 if candidate.device.type == "cuda":
-                     return "cuda"
-+                elif candidate.device.type == custom_backend_name:
-+                    return custom_backend_name
+-                if candidate.device.type == "cuda":
++                if candidate.device.type in ["cuda", custom_backend]:
+                     return candidate.device
  
-         return "cpu"
+         return torch.device("cpu")
  
-     def get_sample_rng_state(device):
-         if device == "cuda":
-             return torch.cuda.get_rng_state()
-+        elif device == custom_backend_name:
-+            return getattr(torch, custom_backend_name).get_rng_state()
+     def get_sample_rng_state(device: Optional[torch.device]):
+-        if device is not None and device.type == "cuda":
+-            return torch.cuda.get_rng_state()
++        if device is not None:
++            if device.type == "cuda":
++                return torch.cuda.get_rng_state()
++            if device.type == custom_backend:
++                return custom_backend_mod.get_rng_state()
          return torch.get_rng_state()
  
      # Step 1 - Construct a mapping of rng node between the fwd and its counterpart in bwd.

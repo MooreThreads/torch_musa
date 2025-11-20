@@ -979,7 +979,7 @@ inline void launch_jitted_reduce_kernel(
     *fn_ptr = at::musa::jit::jit_pwise_function(code, "reduction_" + desc.name);
   }
   constexpr int kernel_args = 1;
-  void* args[kernel_args];
+  const void* args[kernel_args];
   args[0] = reduction;
   at::musa::jit::launch_jitted_pwise_function(
       *fn_ptr, args, grid, block, shared_memory);

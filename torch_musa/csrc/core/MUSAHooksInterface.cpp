@@ -1,6 +1,7 @@
 #include "torch_musa/csrc/core/MUSAHooksInterface.h"
 
 #include <c10/util/CallOnce.h>
+#include <c10/util/overflows.h>
 
 namespace at::musa {
 // defined in torch_musa/csrc/aten/ops/TensorFactory.cpp

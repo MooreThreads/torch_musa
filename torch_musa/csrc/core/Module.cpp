@@ -11,6 +11,7 @@
 #include <torch/csrc/Generator.h>
 #include <torch/csrc/THP.h>
 #include <torch/csrc/profiler/python/combined_traceback.h>
+#include <torch/csrc/utils.h>
 #include <torch/csrc/utils/device_lazy_init.h>
 #include <torch/csrc/utils/invalid_arguments.h>
 #include <torch/csrc/utils/pybind.h>
@@ -20,7 +21,6 @@
 #include <torch/csrc/utils/python_strings.h>
 #include <vector>
 
-#include "torch_musa/csrc/amp/autocast_mode.h"
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/aten/musa/MUSAGeneratorImpl.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
@@ -84,29 +84,6 @@ void AddPyMethodDefs(std::vector<PyMethodDef>& vector, PyMethodDef* methods) {
     }
     methods++;
   }
-}
-
-// yang.zhao: copied from torch/csrc/utils.cpp to avoid including other things.
-void THPUtils_invalidArguments(
-    PyObject* given_args,
-    PyObject* given_kwargs,
-    const char* function_name,
-    size_t num_options,
-    ...) {
-  std::vector<std::string> option_strings;
-  va_list option_list;
-  va_start(option_list, num_options);
-  std::generate_n(
-      std::back_inserter(option_strings), num_options, [&option_list] {
-        return va_arg(option_list, const char*);
-      });
-  va_end(option_list);
-
-  PyErr_SetString(
-      PyExc_TypeError,
-      torch::format_invalid_args(
-          given_args, given_kwargs, function_name, option_strings)
-          .c_str());
 }
 
 PyObject* PyMusaEmptyCache(PyObject* unused0, PyObject* unused1) {
@@ -1218,17 +1195,6 @@ static void RegisterMUSAPluggableAllocator(PyObject* module) {
                 reinterpret_cast<FuncType*>(func_ptr);
             self.set_release_pool_fn(func);
           });
-  m.def("_musa_customAllocator", [](uint64_t malloc_ptr, uint64_t free_ptr) {
-    using torch::musa::MUSAPluggableAllocator::MallocFuncType;
-    using torch::musa::MUSAPluggableAllocator::FreeFuncType;
-    std::function<MallocFuncType> malloc_fn =
-        reinterpret_cast<MallocFuncType*>(malloc_ptr);
-    std::function<FreeFuncType> free_fn =
-        reinterpret_cast<FreeFuncType*>(free_ptr);
-
-    return torch::musa::MUSAPluggableAllocator::createCustomAllocator(
-        malloc_fn, free_fn);
-  });
 
   // NOLINTNEXTLINE(bugprone-unused-raii)
   py::class_<
@@ -1276,6 +1242,18 @@ static void RegisterMUSAPluggableAllocator(PyObject* module) {
 
   m.def("_musa_isHistoryEnabled", []() {
     return c10::musa::MUSACachingAllocator::isHistoryEnabled();
+  });
+
+  m.def("_musa_customAllocator", [](uint64_t malloc_ptr, uint64_t free_ptr) {
+    using torch::musa::MUSAPluggableAllocator::MallocFuncType;
+    using torch::musa::MUSAPluggableAllocator::FreeFuncType;
+    std::function<MallocFuncType> malloc_fn =
+        reinterpret_cast<MallocFuncType*>(malloc_ptr);
+    std::function<FreeFuncType> free_fn =
+        reinterpret_cast<FreeFuncType*>(free_ptr);
+
+    return torch::musa::MUSAPluggableAllocator::createCustomAllocator(
+        malloc_fn, free_fn);
   });
 
   m.def(
@@ -1405,6 +1383,7 @@ static void RegisterMUSAPluggableAllocator(PyObject* module) {
     TORCH_CHECK(succeeded, "Expected standard deleter");
     c10::musa::MUSACachingAllocator::raw_delete(data_ptr);
   });
+
   // The interfaces above is a minimum set that enables Pluggable Allocator.
   // There are some other "cuda_graph_tree" related interfaces in the
   // torch/csrc/cuda/Module.cpp file that we should adapt in the future.
@@ -1447,7 +1426,6 @@ PyObject* InitMusaModule() {
   AddPyMethodDefs(methods, MusaDeviceMethods);
   AddPyMethodDefs(methods, MusaStreamMethods);
   AddPyMethodDefs(methods, MusaMemoryMethods);
-  AddPyMethodDefs(methods, at::autocast::musa::GetAutocastMethods());
   AddPyMethodDefs(methods, at::musa::GetContextMethods());
   AddPyMethodDefs(methods, DynamoMethods);
   AddPyMethodDefs(methods, MCCLMethods);

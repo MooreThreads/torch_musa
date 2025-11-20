@@ -16,7 +16,7 @@ TORCH_MUSA_HOME=$CUR_DIR
 PYTORCH_PATH=${PYTORCH_REPO_PATH:-$(realpath ${TORCH_MUSA_HOME}/../pytorch)}
 TORCH_PATCHES_DIR=${TORCH_MUSA_HOME}/torch_patches/
 KINETO_URL=${KINETO_URL:-https://github.com/MooreThreads/kineto.git}
-KINETO_TAG=v2.0.1
+KINETO_TAG=v2.7.0
 
 BUILD_WHEEL=0
 DEBUG_MODE=0
@@ -27,7 +27,7 @@ USE_KINETO=${USE_KINETO:-1}
 ONLY_PATCH=0
 CLEAN=0
 COMPILE_FP64=1
-PYTORCH_TAG=v2.5.0
+PYTORCH_TAG=v2.7.1
 PYTORCH_BUILD_VERSION="${PYTORCH_TAG:1}"
 PYTORCH_BUILD_NUMBER=0 # This is used for official torch distribution.
 USE_MCCL=${USE_MCCL:-1}
@@ -119,7 +119,7 @@ done
 
 cmd_check(){
   cmd="$1"
-  if command -v ${cmd} >/dev/null 2>&1; then 
+  if command -v ${cmd} >/dev/null 2>&1; then
     echo "- cmd exist  : ${cmd}"
   else
     echo -e "\033[34m- cmd does not exist, automatically install \"${cmd}\"\033[0m"
@@ -132,7 +132,7 @@ precommit_install(){
   root_dir="$(dirname "$(realpath "${BASH_SOURCE:-$0}" )")"
   if [ ! -f ${root_dir}/.git/hooks/pre-commit ]; then
     pushd $root_dir
-    pre-commit install 
+    pre-commit install
     popd
   fi
 }
@@ -174,7 +174,7 @@ apply_torch_patches() {
     popd
   fi
 
-  for file in $(find ${TORCH_PATCHES_DIR} -type f -print); do
+  for file in $(find ${TORCH_PATCHES_DIR} -type f -not -path "*/kineto/*" -print); do
     if [ "${file##*.}"x = "patch"x ]; then
       echo -e "\033[34mapplying patch: $file \033[0m"
       pushd $PYTORCH_PATH
@@ -183,13 +183,27 @@ apply_torch_patches() {
       popd
     fi
   done
+
+  if [ ${USE_KINETO} -eq 1 ]; then
+    for file in $(find ${TORCH_PATCHES_DIR}/kineto -type f -print); do
+      if [ "${file##*.}"x = "patch"x ]; then
+        echo -e "\033[34mapplying patch: $file \033[0m"
+        pushd $PYTORCH_PATH
+        git apply --check $file
+        git apply $file
+        popd
+      fi
+    done
+  fi
 }
 
 update_kineto_source() {
   echo -e "\033[34mUpdating Kineto...\033[0m"
   pushd ${PYTORCH_PATH}
+  # remove the current kineto
   rm -rf ${PYTORCH_PATH}/third_party/kineto
   git submodule update --init --recursive --depth 1
+  # remove the official kineto
   rm -rf ${PYTORCH_PATH}/third_party/kineto
   popd
   echo -e "\033[34mUpdating KINETO_URL, might take a while...\033[0m"
@@ -230,7 +244,7 @@ update_submodule() {
       pushd ${PYTORCH_PATH}
       git submodule update --init --recursive --depth 1
       popd
-    elif [ "${remote_url}" = "${KINETO_URL}" ] && [ "${current_tag}" = "${KINETO_TAG}" ]; then
+    elif [ "${remote_url}" = "${KINETO_URL}" ]; then
       pushd ${PYTORCH_PATH}/third_party/kineto
       echo  -e "\033[34mUpdating KINETO submodule, might take a while...\033[0m"
       git submodule update --init --recursive
@@ -244,6 +258,13 @@ update_submodule() {
       popd
       rm -rf ${PYTORCH_PATH}/third_party/kineto
       mv /tmp/kineto ${PYTORCH_PATH}/third_party
+      if [ "${current_tag}" != "${KINETO_TAG}" ]; then
+        echo  -e "\033[34mUpdate the kineto to the [${KINETO_TAG}]\033[0m"
+        pushd ${PYTORCH_PATH}/third_party/kineto
+        git fetch origin tag ${KINETO_TAG}
+        git checkout ${KINETO_TAG}
+        popd
+      fi
     else
       update_kineto_source
     fi

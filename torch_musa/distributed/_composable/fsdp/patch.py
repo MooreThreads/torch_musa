@@ -12,18 +12,18 @@ import torch
 import torch.distributed as dist
 from torch.profiler import record_function
 from torch.distributed.device_mesh import init_device_mesh, DeviceMesh
-from torch.distributed._composable.fsdp import fully_shard
-from torch.distributed._composable.fsdp._fsdp_param_group import (
+from torch.distributed.fsdp import fully_shard
+from torch.distributed.fsdp._fully_shard._fsdp_param_group import (
     FSDPCommContext,
     FSDPParamGroup,
 )
-from torch.distributed._composable.fsdp._fsdp_collectives import (
+from torch.distributed.fsdp._fully_shard._fsdp_collectives import (
     foreach_all_gather_copy_out,
     _get_param_all_gather_inputs,
     _get_all_gather_input_metadatas,
     AllGatherResult,
 )
-from torch.distributed._composable.fsdp._fsdp_param import FSDPParam
+from torch.distributed.fsdp._fully_shard._fsdp_param import FSDPParam
 
 __all__ = ["_apply_fsdp2_patches"]
 
@@ -46,10 +46,11 @@ def _init_default_fully_shard_mesh() -> DeviceMesh:
     return mesh
 
 
-def comm_context_lazy_init(self):
+def comm_context_lazy_init(self, device: torch.device):
     """set streams used by all-gather-copy-in, all-gather, reduce_scatter
     and all_reduce to current_stream.
     """
+    assert device.type == torch._C._get_privateuse1_backend_name()
     if not torch.musa.is_available():
         raise RuntimeError("FSDP requires MUSA for streams")
 
@@ -104,7 +105,7 @@ def unshard(self, async_op: bool = False):
             self.fsdp_params,
             self._all_gather_process_group,
             async_op,
-            *self.comm_ctx.get_all_gather_streams(self._training_state),
+            *self.comm_ctx.get_all_gather_streams(async_op, self._training_state),
             self.device,
         )
 
@@ -218,7 +219,7 @@ def _setup_fsdp2_patches():
             os.environ.get("TORCH_MUSA_FSDP2_DISABLE_OVERLAP", "0") == "1"
         )
     if _TORCH_MUSA_FSDP2_DISABLE_OVERLAP:
-        torch.distributed._composable.fsdp._fsdp_collectives.foreach_all_gather.__code__ = (
+        torch.distributed.fsdp._fully_shard._fsdp_collectives.foreach_all_gather.__code__ = (
             foreach_all_gather.__code__
         )
         FSDPParamGroup.unshard = unshard
@@ -229,7 +230,7 @@ def _setup_fsdp2_patches():
     FSDPCommContext.lazy_init = comm_context_lazy_init
 
     # _init_default_fully_shard_mesh is referenced by `fully_shard()`, so just replace __code__ here
-    torch.distributed._composable.fsdp._fsdp_init._init_default_fully_shard_mesh.__code__ = (
+    torch.distributed.fsdp._fully_shard._fsdp_init._init_default_fully_shard_mesh.__code__ = (
         _init_default_fully_shard_mesh.__code__
     )
 
@@ -256,6 +257,6 @@ def _apply_fsdp2_patches():
     torch.cuda.set_stream = torch.musa.set_stream
     torch.cuda.Event = torch.musa.Event
 
-    torch.distributed._composable.fsdp.fully_shard = monkey_patched_fully_shard(
+    torch.distributed.fsdp.fully_shard = monkey_patched_fully_shard(
         fully_shard
     )

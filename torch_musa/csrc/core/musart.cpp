@@ -29,6 +29,16 @@ void initMusartBindings(PyObject* module) {
     return C10_MUSA_ERROR_HANDLED(musaHostUnregister((void*)ptr));
   });
 
+  musart.def("musaStreamCreate", [](uintptr_t ptr) -> musaError_t {
+    py::gil_scoped_release no_gil;
+    return C10_MUSA_ERROR_HANDLED(musaStreamCreate((musaStream_t*)ptr));
+  });
+
+  musart.def("musaStreamDestroy", [](uintptr_t ptr) -> musaError_t {
+    py::gil_scoped_release no_gil;
+    return C10_MUSA_ERROR_HANDLED(musaStreamDestroy((musaStream_t)ptr));
+  });
+
   musart.def(
       "musaMemGetInfo",
       [](c10::DeviceIndex device) -> std::pair<size_t, size_t> {

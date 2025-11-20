@@ -161,8 +161,8 @@ void permute_to_contiguous(const Tensor& self, const Tensor& src) {
     contiguous_out = CreateMUTensor(self, is_channels_last);
     contiguous_in = CreateMUTensor(channels_last_src, is_channels_last);
   } else {
-    contiguous_out = CreateMUTensorByCompressDim(self);
-    contiguous_in = CreateMUTensorByCompressDim(channels_last_src);
+    std::tie(contiguous_out, contiguous_in) =
+        CreateMUTensorsCompression(self, channels_last_src);
   }
   CHECK_MUDNN_STATUS(op.Run(h, contiguous_out, contiguous_in), "Run");
 }
@@ -356,6 +356,7 @@ Tensor MUSACopyFrom(
     return self;
   }
 
+  // Copy between CPU and GPU
   c10::musa::OptionalMUSAGuard device_guard;
   musaMemcpyKind copy_type;
   if (!is_musa(src) && is_musa(self)) {

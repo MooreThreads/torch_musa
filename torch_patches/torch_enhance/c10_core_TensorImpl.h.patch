@@ -1,0 +1,25 @@
+diff --git a/c10/core/TensorImpl.h b/c10/core/TensorImpl.h
+index ae600a9..00e4c34 100644
+--- a/c10/core/TensorImpl.h
++++ b/c10/core/TensorImpl.h
+@@ -1189,6 +1189,10 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
+     return device_opt_.has_value() && device_opt_->type() == kPrivateUse1;
+   }
+ 
++  bool is_musa() const {
++    return is_privateuseone();
++  }
++
+   bool is_mkldnn() const {
+     return key_set_.has_all(c10::mkldnn_ks);
+   }
+@@ -2042,7 +2046,8 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
+            BackendComponent::HIPBit,
+            BackendComponent::XPUBit,
+            BackendComponent::HPUBit,
+-           BackendComponent::MTIABit});
++           BackendComponent::MTIABit,
++           BackendComponent::PrivateUse1Bit});
+       constexpr auto dense_k = DispatchKeySet(DispatchKey::Dense);
+       return ts.has_any(dense_k) && ts.has_any(dense_backends);
+     };

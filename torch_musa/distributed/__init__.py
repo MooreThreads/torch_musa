@@ -15,10 +15,6 @@ def _apply_distributed_patch():
 
     _apply_init_utils_patch()
 
-    from .fsdp.fully_sharded_data_parallel import _apply_fsdp_patch
-
-    _apply_fsdp_patch()
-
     from .fsdp._runtime_utils import _apply_runtime_utils_patch
 
     _apply_runtime_utils_patch()
@@ -30,3 +26,7 @@ def _apply_distributed_patch():
     from ._composable.fsdp.patch import _apply_fsdp2_patches
 
     _apply_fsdp2_patches()
+
+    from ._state_dict_utils import _apply_state_dict_utils_patch
+
+    _apply_state_dict_utils_patch()

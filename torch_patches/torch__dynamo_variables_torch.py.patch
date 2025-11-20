@@ -1,22 +1,23 @@
 diff --git a/torch/_dynamo/variables/torch.py b/torch/_dynamo/variables/torch.py
-index 3dfda1c..0503ea3 100644
+index 6f380ba..7c7b1e9 100644
 --- a/torch/_dynamo/variables/torch.py
 +++ b/torch/_dynamo/variables/torch.py
-@@ -229,6 +229,8 @@ class TorchCtxManagerClassVariable(BaseTorchVariable):
+@@ -290,6 +290,9 @@ class TorchCtxManagerClassVariable(BaseTorchVariable):
              VmapIncrementNestingCtxManagerVariable,
          )
  
-+        custom_backend_mod = getattr(torch, torch._C._get_privateuse1_backend_name(), None)
++        custom_backend = torch._C._get_privateuse1_backend_name()
++        custom_backend_mod = getattr(torch, custom_backend, None)
 +
          if self.value is torch.no_grad:
              if len(args) == 1 and isinstance(
                  args[0], variables.functions.BaseUserFunctionVariable
-@@ -269,7 +271,7 @@ class TorchCtxManagerClassVariable(BaseTorchVariable):
+@@ -330,7 +333,7 @@ class TorchCtxManagerClassVariable(BaseTorchVariable):
              torch.amp.autocast_mode.autocast,
              torch.cuda.amp.autocast,
              torch.cpu.amp.autocast,
 -        ):
-+        ) + tuple(([custom_backend_mod.amp.autocast,] if custom_backend_mod else [])):
++        ) + tuple([custom_backend_mod.amp.autocast] if custom_backend_mod else []):
              return AutocastModeVariable.create(self.value, args, kwargs)
          elif self.value in (
-             torch.profiler.profile,
+             # NOTE any class added here must align with the semantic

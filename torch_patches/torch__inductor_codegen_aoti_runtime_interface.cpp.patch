@@ -1,174 +1,21 @@
 diff --git a/torch/_inductor/codegen/aoti_runtime/interface.cpp b/torch/_inductor/codegen/aoti_runtime/interface.cpp
-index 7e52dc8..ddf944c 100644
+index 1da5b45..2bd22ef 100644
 --- a/torch/_inductor/codegen/aoti_runtime/interface.cpp
 +++ b/torch/_inductor/codegen/aoti_runtime/interface.cpp
-@@ -52,30 +52,27 @@ AOTIRuntimeError AOTInductorModelContainerCreate(
-     AOTInductorModelContainerHandle* container_handle,
-     size_t num_models,
-     bool is_cpu,
--    const char* cubin_dir) {
--      return AOTInductorModelContainerCreateWithDevice(
--        container_handle,
--        num_models,
+@@ -5,6 +5,7 @@
+ 
+ #include <iostream>
+ #include <sstream>
++#include <filesystem>
+ #include <stdexcept>
+ #include <vector>
+ 
+@@ -55,7 +56,7 @@ AOTIRuntimeError AOTInductorModelContainerCreate(
+       return AOTInductorModelContainerCreateWithDevice(
+         container_handle,
+         num_models,
 -        is_cpu ? "cpu" : "cuda",
--        cubin_dir);
-+    const char* mubin_dir) {
-+  return AOTInductorModelContainerCreateWithDevice(
-+      container_handle, num_models, is_cpu ? "cpu" : "musa", mubin_dir);
++        is_cpu ? "cpu" : "musa",
+         cubin_dir);
  }
  
- AOTIRuntimeError AOTInductorModelContainerCreateWithDevice(
-     AOTInductorModelContainerHandle* container_handle,
-     size_t num_models,
-     const char* device_str,
--    const char* cubin_dir) {
-+    const char* mubin_dir) {
-   if (num_models == 0) {
-     std::cerr << "Error: num_models must be positive, but got 0" << std::endl;
-     return AOTI_RUNTIME_FAILURE;
-   }
-   CONVERT_EXCEPTION_TO_ERROR_CODE({
--    std::optional<std::string> cubin_dir_opt;
--    if (cubin_dir != nullptr) {
--      cubin_dir_opt.emplace(cubin_dir);
-+    std::optional<std::string> mubin_dir_opt;
-+    if (mubin_dir != nullptr) {
-+      mubin_dir_opt.emplace(mubin_dir);
-     }
-     auto* container = new torch::aot_inductor::AOTInductorModelContainer(
--        num_models, std::string(device_str), cubin_dir_opt);
-+        num_models, std::string(device_str), mubin_dir_opt);
-     *container_handle =
-         reinterpret_cast<AOTInductorModelContainerHandle>(container);
-   })
-@@ -125,7 +122,7 @@ AOTIRuntimeError AOTInductorModelContainerGetNumConstants(
-       reinterpret_cast<torch::aot_inductor::AOTInductorModelContainer*>(
-           container_handle);
-   CONVERT_EXCEPTION_TO_ERROR_CODE(
--    { *num_constants = container->num_constants(); })
-+      { *num_constants = container->num_constants(); })
- }
- 
- AOTIRuntimeError AOTInductorModelContainerGetConstantName(
-@@ -135,8 +132,7 @@ AOTIRuntimeError AOTInductorModelContainerGetConstantName(
-   auto* container =
-       reinterpret_cast<torch::aot_inductor::AOTInductorModelContainer*>(
-           container_handle);
--  CONVERT_EXCEPTION_TO_ERROR_CODE(
--    { *name = container->constant_name(idx); })
-+  CONVERT_EXCEPTION_TO_ERROR_CODE({ *name = container->constant_name(idx); })
- }
- 
- AOTIRuntimeError AOTInductorModelContainerGetConstantOriginalFQN(
-@@ -147,7 +143,7 @@ AOTIRuntimeError AOTInductorModelContainerGetConstantOriginalFQN(
-       reinterpret_cast<torch::aot_inductor::AOTInductorModelContainer*>(
-           container_handle);
-   CONVERT_EXCEPTION_TO_ERROR_CODE(
--    { *original_fqn = container->constant_original_fqn(idx); })
-+      { *original_fqn = container->constant_original_fqn(idx); })
- }
- 
- AOTIRuntimeError AOTInductorModelContainerGetConstantFromFolded(
-@@ -155,8 +151,10 @@ AOTIRuntimeError AOTInductorModelContainerGetConstantFromFolded(
-     size_t idx,
-     bool* from_folded) {
-   auto* container =
--      reinterpret_cast<torch::aot_inductor::AOTInductorModelContainer*>(container_handle);
--  CONVERT_EXCEPTION_TO_ERROR_CODE({ *from_folded = container->constant_from_folded(idx); })
-+      reinterpret_cast<torch::aot_inductor::AOTInductorModelContainer*>(
-+          container_handle);
-+  CONVERT_EXCEPTION_TO_ERROR_CODE(
-+      { *from_folded = container->constant_from_folded(idx); })
- }
- 
- AOTIRuntimeError AOTInductorModelContainerGetConstantDtype(
-@@ -166,8 +164,7 @@ AOTIRuntimeError AOTInductorModelContainerGetConstantDtype(
-   auto* container =
-       reinterpret_cast<torch::aot_inductor::AOTInductorModelContainer*>(
-           container_handle);
--  CONVERT_EXCEPTION_TO_ERROR_CODE(
--    { *dtype = container->constant_dtype(idx); })
-+  CONVERT_EXCEPTION_TO_ERROR_CODE({ *dtype = container->constant_dtype(idx); })
- }
- 
- AOTIRuntimeError AOTInductorModelContainerUpdateConstantBuffer(
-@@ -178,7 +175,9 @@ AOTIRuntimeError AOTInductorModelContainerUpdateConstantBuffer(
-   auto* container =
-       reinterpret_cast<torch::aot_inductor::AOTInductorModelContainer*>(
-           container_handle);
--  auto input_map = reinterpret_cast<std::unordered_map<std::string, AtenTensorHandle>*>(constant_map_handle);
-+  auto input_map =
-+      reinterpret_cast<std::unordered_map<std::string, AtenTensorHandle>*>(
-+          constant_map_handle);
-   CONVERT_EXCEPTION_TO_ERROR_CODE({
-     container->update_constant_buffer(
-         *input_map, use_inactive, validate_full_update);
-@@ -188,10 +187,11 @@ AOTIRuntimeError AOTInductorModelContainerUpdateConstantBuffer(
- AOTIRuntimeError AOTInductorModelContainerUpdateInactiveConstantBuffer(
-     AOTInductorModelContainerHandle container_handle,
-     AOTInductorConstantMapHandle constant_map_handle) {
--  return AOTInductorModelContainerUpdateConstantBuffer(container_handle,
--          constant_map_handle,
--          /*use_inactive*/ true,
--          /*validate_full_update*/ true);
-+  return AOTInductorModelContainerUpdateConstantBuffer(
-+      container_handle,
-+      constant_map_handle,
-+      /*use_inactive*/ true,
-+      /*validate_full_update*/ true);
- }
- 
- AOTIRuntimeError AOTInductorModelContainerRunConstantFolding(
-@@ -215,9 +215,7 @@ AOTIRuntimeError AOTInductorModelContainerSwapConstantBuffer(
-   auto* container =
-       reinterpret_cast<torch::aot_inductor::AOTInductorModelContainer*>(
-           container_handle);
--  CONVERT_EXCEPTION_TO_ERROR_CODE({
--    container->swap_constant_buffer();
--  })
-+  CONVERT_EXCEPTION_TO_ERROR_CODE({ container->swap_constant_buffer(); })
- }
- 
- AOTIRuntimeError AOTInductorModelContainerGetNumInputs(
-@@ -280,15 +278,18 @@ AOTIRuntimeError AOTInductorModelCreate(
-     AOTInductorConstantMapHandle constant_map_handle){
-     CONVERT_EXCEPTION_TO_ERROR_CODE({
-       auto constant_map = std::make_shared<torch::aot_inductor::ConstantMap>();
--      auto constant_array = std::make_shared<std::vector<torch::aot_inductor::ConstantHandle>>();
--      auto input_map = reinterpret_cast<std::unordered_map<std::string, AtenTensorHandle>*>(constant_map_handle);
-+      auto constant_array =
-+          std::make_shared<std::vector<torch::aot_inductor::ConstantHandle>>();
-+      auto input_map =
-+          reinterpret_cast<std::unordered_map<std::string, AtenTensorHandle>*>(
-+              constant_map_handle);
- 
-       auto model = new torch::aot_inductor::AOTInductorModel(
-           constant_map,
-           constant_array,
--          "cpu", // device_str is hardcoded, as AOTInductorModelCreate is only use for CPU models
--          ""
--      );
-+          "cpu", // device_str is hardcoded, as AOTInductorModelCreate is only
-+                 // use for CPU models
-+          "");
- 
-       if (input_map) {
-         for (auto const& kv : *input_map) {
-@@ -326,12 +327,11 @@ AOTIRuntimeError AOTInductorModelDelete(AOTInductorModelHandle model_handle){
- 
- AOTIRuntimeError AOTInductorModelGetNumOutputs(
-     AOTInductorModelHandle model_handle,
--    size_t* ret_num_outputs) {
--  CONVERT_EXCEPTION_TO_ERROR_CODE({
--      auto model = reinterpret_cast<torch::aot_inductor::AOTInductorModel*>(model_handle);
--      *ret_num_outputs = model->num_outputs();
--  })
--}
-+    size_t* ret_num_outputs){CONVERT_EXCEPTION_TO_ERROR_CODE({
-+  auto model =
-+      reinterpret_cast<torch::aot_inductor::AOTInductorModel*>(model_handle);
-+  *ret_num_outputs = model->num_outputs();
-+})}
- 
- AOTIRuntimeError AOTInductorModelUpdateConstantsMap(
-     AOTInductorModelHandle model_handle,

@@ -494,30 +494,6 @@ def parse_native_yaml_struct(
             BackendIndex.grow_index(bs, processed_m)
             musa_add_func_extra_info(func, extra_info)
 
-    # add pytorch native_funcitonal.yaml convolution ops for aoti
-    keep = {
-        "convolution",
-    }
-    for func_name in keep:
-        if func_name in torch_ops_map:
-            torch_op = torch_ops_map[func_name]
-
-            func, m = NativeFunction.from_yaml(torch_op, loc, torch_valid_tags)
-            rs.append(func)
-
-            extra_info = FunctionExtraInfo(
-                impl_kinds={
-                    DispatchKey.CompositeExplicitAutograd: FunctionImplKind.Legacy
-                },
-                torch_part_of_structured_group=False,
-            )
-
-            musa_add_func_extra_info(func, extra_info)
-
-            m_musa_only = {k: v for k, v in m.items() if is_musa_dispatch_key(k)}
-            processed_m = musa_override_native_function_backend(m_musa_only, extra_info)
-            BackendIndex.grow_index(bs, processed_m)
-
     del torch_ops_map
 
     error_check_native_functions(rs)
@@ -574,6 +550,30 @@ def parse_native_yaml(
         _GLOBAL_PARSE_MUSA_YAML_CACHE[musa_yaml_path] = parsed_yaml
 
     return _GLOBAL_PARSE_MUSA_YAML_CACHE[musa_yaml_path]
+
+
+def build_structured_delegate_map(
+    structured_native_functions: Sequence[NativeFunctionsGroup],
+) -> Dict[OperatorName, NativeFunctionsGroup]:
+    structured_func_group_dict: Dict[OperatorName, NativeFunctionsGroup] = {}
+    for func_group in structured_native_functions:
+        for func in func_group.functions():
+            if func.structured_delegate is not None:
+                structured_func_group_dict[func.structured_delegate] = func_group
+                break
+    return structured_func_group_dict
+
+
+def collect_aoti_fallbacks(
+    native_functions: Sequence[NativeFunction],
+) -> Tuple[NativeFunction, ...]:
+    fallbacks: Dict[str, NativeFunction] = {}
+    for func in native_functions:
+        op_name = get_fallback_op_name(func)
+        if op_name in inductor_fallback_ops:
+            fallbacks[op_name] = func
+    # keep the order stable
+    return tuple(value for _, value in sorted(fallbacks.items()))
 
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
@@ -784,28 +784,6 @@ def gen_source_files(
                     fallbacks[op_name] = func
             fallback_native_functions = tuple(
                 value for _, value in sorted(fallbacks.items())
-            )
-
-            header_file_name = "c_shim_musa.h"
-            new_header = gen_aoti_c_shim(
-                fallback_native_functions,
-                structured_func_group_dict,
-                dispatch_key,
-                backend_indices,
-                header=True,
-                includes="#include <torch_musa/csrc/inductor/aoti_torch/c/shim.h>",
-            )
-
-            aoti_fm.write(
-                header_file_name,
-                lambda: gen_aoti_c_shim(
-                    fallback_native_functions,
-                    structured_func_group_dict,
-                    dispatch_key,
-                    backend_indices,
-                    header=True,
-                    includes="#include <torch_musa/csrc/inductor/aoti_torch/c/shim.h>",
-                ),
             )
 
             # cpp files are always generated on-the-fly
@@ -1053,10 +1031,12 @@ def gen_headers(
     *,
     native_functions: Sequence[NativeFunction],
     grouped_native_functions: Sequence[Union[NativeFunction, NativeFunctionsGroup]],
+    structured_native_functions: Sequence[NativeFunctionsGroup],
     selector: SelectiveBuilder,
     backend_indices: Dict[DispatchKey, BackendIndex],
     musa_fm: FileManager,
     ops_fm: FileManager,
+    aoti_fm: FileManager,
     dispatch_keys: List[DispatchKey],
     functions_keys: Set[DispatchKey],
 ) -> None:
@@ -1070,6 +1050,26 @@ def gen_headers(
         dispatch_keys=dispatch_keys,
         functions_keys=functions_keys,
     )
+    if DispatchKey.PrivateUse1 in dispatch_keys:
+        dispatch_key = DispatchKey.PrivateUse1
+        header_file_name = "c_shim_musa.h"
+
+        structured_func_group_dict = build_structured_delegate_map(
+            structured_native_functions
+        )
+        fallback_native_functions = collect_aoti_fallbacks(native_functions)
+
+        aoti_fm.write(
+            header_file_name,
+            lambda: gen_aoti_c_shim(
+                fallback_native_functions,
+                structured_func_group_dict,
+                dispatch_key,
+                backend_indices,
+                header=True,
+                includes="#include <torch_musa/csrc/inductor/aoti_torch/c/shim.h>",
+            ),
+        )
 
 
 def codegen() -> None:
@@ -1148,10 +1148,12 @@ def codegen() -> None:
     gen_headers(
         native_functions=native_functions,
         grouped_native_functions=grouped_native_functions,
+        structured_native_functions=structured_native_functions,
         selector=selector,
         backend_indices=backend_indices,
         musa_fm=musa_fm,
         ops_fm=ops_fm,
+        aoti_fm=aoti_fm,
         dispatch_keys=MUSA_DISPATCH_KEYS,
         functions_keys=functions_keys,
     )

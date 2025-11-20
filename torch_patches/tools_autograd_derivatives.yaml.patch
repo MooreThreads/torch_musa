@@ -2,14 +2,14 @@ diff --git a/tools/autograd/derivatives.yaml b/tools/autograd/derivatives.yaml
 index 9f7ea3f..8418573 100644
 --- a/tools/autograd/derivatives.yaml
 +++ b/tools/autograd/derivatives.yaml
-@@ -3204,3 +3204,25 @@
+@@ -3227,3 +3227,25 @@
  - name: _foreach_norm.Scalar(Tensor[] self, Scalar ord=2, ScalarType? dtype=None) -> Tensor[]
    self: norm_backward(grads[i], self[i], ord, result[i])
    result: norm_jvp(self_p, self_t, ord, result[i])
 +
-+- name: _fused_rmsnorm_forward(Tensor input, int[] normalized_shape, float eps, Tensor? weight=None) -> (Tensor output, Tensor invvar)
++- name: _fused_rmsnorm_forward(Tensor input, SymInt[] normalized_shape, float eps, Tensor? weight=None) -> (Tensor output, Tensor invvar)
 +  output_differentiability: [True, False]
-+  input, weight: _fused_rmsnorm_backward(grad, invvar, input, normalized_shape, eps, weight)
++  input, weight: _fused_rmsnorm_backward_symint(grad, invvar, input, normalized_shape, eps, weight)
 +
 +- name: _scaled_dot_product_attention_math_musa(Tensor query, Tensor key, Tensor value, Tensor? attn_mask=None, float dropout_p=0.0, bool is_causal=False, *, float? scale=None) -> (Tensor output, Tensor attn_weights, Tensor dropout_mask)
 +  output_differentiability: [True, False, False]

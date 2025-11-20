@@ -1,16 +1,11 @@
-# pylint: disable=missing-function-docstring, missing-module-docstring, redefined-outer-name, unused-import
+# pylint: disable=missing-function-docstring, missing-module-docstring, redefined-outer-name, unused-import, import-outside-toplevel
 from importlib.util import find_spec
 import torch
 import torch_musa
-from torch_musa.core._utils import _get_musa_arch
 
 __all__ = [
     "amp_definitely_not_available",
     "get_amp_supported_dtype",
-    "is_autocast_enabled",
-    "set_autocast_enabled",
-    "set_autocast_dtype",
-    "get_autocast_dtype",
 ]
 
 
@@ -18,28 +13,36 @@ def amp_definitely_not_available():
     return not (torch.musa.is_available() or find_spec("torch_musa"))
 
 
+_musa_device = torch._C._get_privateuse1_backend_name()
+
+
+_torch_is_autocast_enabled = torch.is_autocast_enabled
+
+
+def _musa_is_autocast_enabled(*args, **kwargs) -> bool:
+    if len(args) == 0 and len(kwargs) == 0:
+        return _torch_is_autocast_enabled(_musa_device)
+    return _torch_is_autocast_enabled(*args, **kwargs)
+
+
+_torch_set_autocast_enabled = torch.set_autocast_enabled
+
+
+def _musa_set_autocast_enabled(*args, **kwargs) -> None:
+    if len(args) + len(kwargs) == 1:
+        return _torch_set_autocast_enabled(_musa_device, *args, **kwargs)
+    return _torch_set_autocast_enabled(*args, **kwargs)
+
+
 def get_amp_supported_dtype():
-    return [torch.float16, torch.bfloat16, torch.float32]
+    from torch_musa.core.device import is_bf16_supported
+
+    choices = [torch.float16]
+    if is_bf16_supported():
+        choices.append(torch.bfloat16)
+    return choices
 
 
-def is_autocast_enabled():
-    return torch_musa._MUSAC._is_autocast_musa_enabled()
-
-
-def set_autocast_enabled(enable):
-    return torch_musa._MUSAC._set_autocast_musa_enabled(enable)
-
-
-def set_autocast_dtype(dtype):
-    if dtype == torch.bfloat16:
-        assert (
-            _get_musa_arch() > 21
-        ), 'autocast detects that the current GPU is MTT S80, please install \
-        the GPU Driver and MUSA SDK for "CHUNXIAO" GPU arch. For more \
-        information, please refer to \
-        https://docs.mthreads.com/musa-sdk/musa-sdk-doc-online/install_guide/'
-    return torch_musa._MUSAC._set_autocast_musa_dtype(dtype)
-
-
-def get_autocast_dtype():
-    return torch_musa._MUSAC._get_autocast_musa_dtype()
+def _hook_autocast_common():
+    torch.is_autocast_enabled = _musa_is_autocast_enabled
+    torch.set_autocast_enabled = _musa_set_autocast_enabled

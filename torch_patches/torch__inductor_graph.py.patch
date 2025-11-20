@@ -1,0 +1,30 @@
+diff --git a/torch/_inductor/graph.py b/torch/_inductor/graph.py
+index 399a8c0..2472cbb 100644
+--- a/torch/_inductor/graph.py
++++ b/torch/_inductor/graph.py
+@@ -1242,10 +1242,12 @@ class GraphLowering(torch.fx.Interpreter):
+             return self.add_tensor_constant(value, target)
+ 
+         with no_dispatch():
+-            if value.shape == ():
+-                return Constant(
+-                    value=value.item(), dtype=value.dtype, device=value.device
+-                )
++            # fix torch.compile constant has no attr get_name
++            # url: https://github.com/pytorch/pytorch/pull/141226/files
++            # if value.shape == ():
++            #     return Constant(
++            #         value=value.item(), dtype=value.dtype, device=value.device
++            #     )
+             if self.can_inline_constant(value):
+                 log.debug("Inlining constant: %s ", str(target))
+                 # tensor lowering has constant inlining logic
+@@ -1885,7 +1887,7 @@ class GraphLowering(torch.fx.Interpreter):
+         """
+         For GPU, Triton kernels are autotuned and stored as cubin files
+         """
+-        if any(device in self.device_types for device in ["cuda", "xpu"]):
++        if any(device in self.device_types for device in ["cuda", "xpu", "musa"]):
+             if config.triton.autotune_at_compile_time:
+                 # If autotune_at_compile_time is True, we can do the codegen in one-pass
+                 # TODO: once autotune_at_compile_time is stable, we should delete the else branch

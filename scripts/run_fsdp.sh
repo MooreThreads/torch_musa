@@ -1,6 +1,7 @@
 #!/bin/bash --login
 set -exo pipefail
 export MUSA_LAUNCH_BLOCKING=1
+export TORCH_MUSA_TESTING_NO_TF32=1
 
 TEST_REPORT_DIR=build/reports/unit_test
 mkdir -p ${TEST_REPORT_DIR}
