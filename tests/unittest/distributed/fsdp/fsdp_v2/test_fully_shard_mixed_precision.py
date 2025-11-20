@@ -13,8 +13,8 @@ import torch
 from torch import nn
 import torch.distributed as dist
 import torch.distributed._functional_collectives as funcol
-from torch.distributed._composable.fsdp import fully_shard, MixedPrecisionPolicy
-from torch.distributed._composable.fsdp._fsdp_collectives import (
+from torch.distributed.fsdp import fully_shard, MixedPrecisionPolicy
+from torch.distributed.fsdp._fully_shard._fsdp_collectives import (
     _get_gradient_divide_factors,
 )
 from torch.testing._internal.common_fsdp import (

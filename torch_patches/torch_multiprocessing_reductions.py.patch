@@ -1,5 +1,5 @@
 diff --git a/torch/multiprocessing/reductions.py b/torch/multiprocessing/reductions.py
-index f5eb0a6abd..4d46a6201a 100644
+index 4e45393..cfd68a2 100644
 --- a/torch/multiprocessing/reductions.py
 +++ b/torch/multiprocessing/reductions.py
 @@ -341,7 +341,7 @@ def reduce_tensor(tensor):

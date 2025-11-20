@@ -1,6 +1,7 @@
 #define TORCH_ASSERT_NO_OPERATORS
 #include <ATen/Config.h>
 #include <ATen/Dispatch.h>
+#include <ATen/core/Array.h>
 #include <ATen/musa/MUSAContext.h>
 #include <ATen/musa/detail/KernelUtils.h>
 #include <ATen/native/SpectralOpsUtils.h>

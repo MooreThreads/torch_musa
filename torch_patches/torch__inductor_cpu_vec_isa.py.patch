@@ -1,0 +1,18 @@
+diff --git a/torch/_inductor/cpu_vec_isa.py b/torch/_inductor/cpu_vec_isa.py
+index 0c8c315..9b3f5af 100644
+--- a/torch/_inductor/cpu_vec_isa.py
++++ b/torch/_inductor/cpu_vec_isa.py
+@@ -403,9 +403,10 @@ def valid_vec_isa_list() -> list[VecISA]:
+         """
+         _cpu_supported_x86_isa = x86_isa_checker()
+         isa_list.extend(
+-            isa
+-            for isa in supported_vec_isa_list
+-            if all(flag in _cpu_supported_x86_isa for flag in str(isa).split()) and isa
++            (lambda cpu_flags=set(_cpu_supported_x86_isa):
++                [isa for isa in supported_vec_isa_list
++                if set(str(isa).split()).issubset(cpu_flags)]
++            )()
+         )
+ 
+     return isa_list

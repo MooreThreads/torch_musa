@@ -1,27 +1,19 @@
 diff --git a/torch/csrc/inductor/aoti_torch/c/shim.h b/torch/csrc/inductor/aoti_torch/c/shim.h
-index 49b1650..95a4b35 100644
+index f56f6ec..ea7b2ba 100644
 --- a/torch/csrc/inductor/aoti_torch/c/shim.h
 +++ b/torch/csrc/inductor/aoti_torch/c/shim.h
-@@ -93,7 +93,7 @@ using AOTITorchError = int32_t;
- // these, so we probably could later switch to having these in the ABI, if
- // desired for perf reasons.)
- AOTI_TORCH_EXPORT int32_t aoti_torch_device_type_cpu();
--AOTI_TORCH_EXPORT int32_t aoti_torch_device_type_cuda();
-+AOTI_TORCH_EXPORT int32_t aoti_torch_device_type_musa();
- 
- AOTI_TORCH_EXPORT int32_t aoti_torch_dtype_float8_e5m2();
- AOTI_TORCH_EXPORT int32_t aoti_torch_dtype_float8_e4m3fn();
-@@ -581,38 +581,34 @@ AOTI_TORCH_EXPORT void aoti_torch_save_tensor_handle(
-     const char* launch_prefix,
-     const char* kernel_name);
+@@ -686,36 +686,36 @@ AOTI_TORCH_EXPORT AOTITorchError aoti_torch_call_dispatcher(
+     const char* overloadName,
+     StableIValue* stack);
  
 -#ifdef USE_CUDA
-+struct MUSAGuardOpaque;
-+using MUSAGuardHandle = MUSAGuardOpaque*;
++#if 1
  
 -struct CUDAGuardOpaque;
 -using CUDAGuardHandle = CUDAGuardOpaque*;
--
++struct MUSAGuardOpaque;
++using MUSAGuardHandle = MUSAGuardOpaque*;
+ 
 -AOTI_TORCH_EXPORT AOTITorchError aoti_torch_create_cuda_guard(
 +AOTI_TORCH_EXPORT AOTITorchError aoti_torch_create_musa_guard(
      int32_t device_index,
@@ -56,9 +48,7 @@ index 49b1650..95a4b35 100644
  
  AOTI_TORCH_EXPORT AOTITorchError
 -aoti_torch_get_current_cuda_stream(int32_t device_index, void** ret_stream);
--
--#endif
 +aoti_torch_get_current_musa_stream(int32_t device_index, void** ret_stream);
  
- // See `ProxyExecutor Design Note` in ir.py for more details
- AOTI_TORCH_EXPORT AOTITorchError aoti_torch_proxy_executor_call_function(
+ #endif // USE_CUDA
+ 

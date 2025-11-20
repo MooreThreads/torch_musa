@@ -104,8 +104,8 @@ class AOTInductorTestsTemplate:
                 return x + y
 
         example_inputs = (
-            torch.randn(10, 10, device=self.device),
-            torch.randn(10, 10, device=self.device),
+            torch.randn(16, 16, device=self.device),
+            torch.randn(16, 16, device=self.device),
         )
         self.check_model(Model(), example_inputs)
 
@@ -114,14 +114,14 @@ class AOTInductorTestsTemplate:
         class Model(torch.nn.Module):
             def __init__(self) -> None:
                 super().__init__()
-                self.linear = torch.nn.Linear(10, 10)
+                self.linear = torch.nn.Linear(16, 16)
 
             def forward(self, x, y):
                 return x + self.linear(y)
 
         example_inputs = (
-            torch.randn(10, 10, device=self.device),
-            torch.randn(10, 10, device=self.device),
+            torch.randn(16, 16, device=self.device),
+            torch.randn(16, 16, device=self.device),
         )
         self.check_model(Model(), example_inputs)
 

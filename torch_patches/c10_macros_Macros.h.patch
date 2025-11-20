@@ -1,8 +1,8 @@
 diff --git a/c10/macros/Macros.h b/c10/macros/Macros.h
-index ab6f2b3..2b48a66 100644
+index 919eb6c..7cd40ea 100644
 --- a/c10/macros/Macros.h
 +++ b/c10/macros/Macros.h
-@@ -422,7 +422,7 @@ __host__ __device__
+@@ -404,7 +404,7 @@ __host__ __device__
  }
  #endif // NDEBUG
  // ROCm disable kernel assert by default

@@ -1,0 +1,274 @@
+diff --git a/torch/distributed/pipelining/schedules.py b/torch/distributed/pipelining/schedules.py
+index e431e29..cdaf11a 100644
+--- a/torch/distributed/pipelining/schedules.py
++++ b/torch/distributed/pipelining/schedules.py
+@@ -297,6 +297,7 @@ class _PipelineSchedule(ABC):
+         kwarg_mbs: Optional[list] = None,
+         target_mbs: Optional[list] = None,
+         losses: Optional[list] = None,
++        return_outputs: bool = True,
+     ):
+         """
+         Run one iteration of the pipeline schedule with list of microbatches.
+@@ -305,11 +306,19 @@ class _PipelineSchedule(ABC):
+ 
+         Args:
+             microbatches: list of microbatch args.
++            return_outputs: whether to return the outputs from the last stage.
+         """
+         raise NotImplementedError
+ 
+     @abstractmethod
+-    def step(self, *args, target=None, losses: Optional[list] = None, **kwargs):
++    def step(
++        self,
++        *args,
++        target=None,
++        losses: Optional[list] = None,
++        return_outputs=True,
++        **kwargs,
++    ):
+         """
+         Run one iteration of the pipeline schedule with *whole-batch* input.
+         Will chunk the input into microbatches automatically, and go through the
+@@ -319,6 +328,7 @@ class _PipelineSchedule(ABC):
+         kwargs: keyword arguments to the model (as in non-pipeline case).
+         target: target for the loss function.
+         losses: a list to store the losses for each microbatch.
++        return_outputs: whether to return the outputs from the last stage.
+         """
+         raise NotImplementedError
+ 
+@@ -484,7 +494,14 @@ or equal to the number of stages ({self._num_stages})."
+             self._stage._prepare_backward_infra(self._n_microbatches)
+         self._stage_initialized = True
+ 
+-    def step(self, *args, target=None, losses: Optional[list] = None, **kwargs):
++    def step(
++        self,
++        *args,
++        target=None,
++        losses: Optional[list] = None,
++        return_outputs: bool = True,
++        **kwargs
++    ):
+         """
+         Run one iteration of the pipeline schedule with *whole-batch* input.
+         Will chunk the input into microbatches automatically, and go through the
+@@ -494,6 +511,7 @@ or equal to the number of stages ({self._num_stages})."
+         kwargs: keyword arguments to the model (as in non-pipeline case).
+         target: target for the loss function.
+         losses: a list to store the losses for each microbatch.
++        return_outputs: whether to return the outputs from the last stage.
+         """
+ 
+         # Clean per iteration
+@@ -509,10 +527,12 @@ or equal to the number of stages ({self._num_stages})."
+             targets_split = None
+ 
+         # Run microbatches
+-        self._step_microbatches(args_split, kwargs_split, targets_split, losses)
++        self._step_microbatches(
++            args_split, kwargs_split, targets_split, losses, return_outputs
++        )
+ 
+         # Return merged results per original format
+-        if self._stage.is_last:
++        if self._stage.is_last and return_outputs:
+             return self._merge_outputs(self._stage.output_chunks)
+         else:
+             return None
+@@ -530,6 +550,7 @@ class _ScheduleForwardOnly(PipelineScheduleSingle):
+         kwarg_mbs: Optional[list] = None,
+         target_mbs: Optional[list] = None,
+         losses: Optional[list] = None,
++        return_outputs: bool = True,
+     ):
+         """
+         Run one iteration of the pipeline schedule
+@@ -554,7 +575,9 @@ class _ScheduleForwardOnly(PipelineScheduleSingle):
+                 for work in works.values():
+                     work.wait()
+ 
+-                self._stage.forward_one_chunk(i, arg_mbs[i], kwarg_mbs[i])  # type: ignore[index]
++                self._stage.forward_one_chunk(
++                    i, arg_mbs[i], kwarg_mbs[i], save_forward_output=return_outputs
++                )  # type: ignore[index]
+ 
+                 ops = self._stage.get_fwd_send_ops(i)
+                 works = _sorted_batch_p2p(ops, desc="fwd_send")
+@@ -581,6 +604,7 @@ class ScheduleGPipe(PipelineScheduleSingle):
+         kwarg_mbs: Optional[list] = None,
+         target_mbs: Optional[list] = None,
+         losses: Optional[list] = None,
++        return_outputs: bool = True,
+     ):
+         """
+         Run one iteration of the pipeline schedule with list of microbatches.
+@@ -588,6 +612,7 @@ class ScheduleGPipe(PipelineScheduleSingle):
+ 
+         Args:
+             microbatches: list of microbatch args.
++            return_outputs: whether to return the outputs from the last stage.
+         """
+         arg_mbs, kwarg_mbs = self._check_inputs(arg_mbs, kwarg_mbs, target_mbs, losses)
+ 
+@@ -605,7 +630,9 @@ class ScheduleGPipe(PipelineScheduleSingle):
+                 for work in works.values():
+                     work.wait()
+ 
+-                output = self._stage.forward_one_chunk(i, arg_mbs[i], kwarg_mbs[i])  # type: ignore[index]
++                output = self._stage.forward_one_chunk(
++                    i, arg_mbs[i], kwarg_mbs[i], save_forward_output=return_outputs
++                )  # type: ignore[index]
+ 
+                 ops = self._stage.get_fwd_send_ops(i)
+                 works = _sorted_batch_p2p(ops, desc="fwd_send")
+@@ -672,6 +699,7 @@ class Schedule1F1B(PipelineScheduleSingle):
+         kwarg_mbs: Optional[list] = None,
+         target_mbs: Optional[list] = None,
+         losses: Optional[list] = None,
++        return_outputs: bool = True,
+     ):
+         """
+         Run one iteration of the pipeline schedule with list of microbatches.
+@@ -679,6 +707,7 @@ class Schedule1F1B(PipelineScheduleSingle):
+ 
+         Args:
+             microbatches: list of microbatch args.
++            return_outputs: whether to return the outputs from the last stage.
+         """
+         arg_mbs, kwarg_mbs = self._check_inputs(arg_mbs, kwarg_mbs, target_mbs, losses)
+ 
+@@ -707,7 +736,10 @@ class Schedule1F1B(PipelineScheduleSingle):
+ 
+             # Compute
+             output = self._stage.forward_one_chunk(
+-                fwd_mb_index, arg_mbs[fwd_mb_index], kwarg_mbs[fwd_mb_index]
++                fwd_mb_index,
++                arg_mbs[fwd_mb_index],
++                kwarg_mbs[fwd_mb_index],
++                save_forward_output=return_outputs,
+             )  # type: ignore[index]
+ 
+             # Clear previous chunk's forward sends (hopefully they have well
+@@ -727,6 +759,14 @@ class Schedule1F1B(PipelineScheduleSingle):
+ 
+             # Compute loss
+             self._maybe_compute_loss(self._stage, output, target_mbs, fwd_mb_index)
++            if self._stage.is_last and self._stage.has_backward:
++                # NOTE [decref last stage's output early]
++                # decref the output of last_stage before backward computation will
++                # makes more steady memory allocation.
++                # it's safe cause autograd engine holds another reference of output,
++                # once the gradient calculations dependent on the output is completed,
++                # the memory occupied by the output could be returned to the Allocator.
++                del output
+             fwd_mb_index += 1
+ 
+         # Now we should have send ops left over, to be fused with first 1B of 1B1F phase below.
+@@ -765,12 +805,17 @@ class Schedule1F1B(PipelineScheduleSingle):
+ 
+             # Now do the fwd
+             output = self._stage.forward_one_chunk(
+-                fwd_mb_index, arg_mbs[fwd_mb_index], kwarg_mbs[fwd_mb_index]
++                fwd_mb_index,
++                arg_mbs[fwd_mb_index],
++                kwarg_mbs[fwd_mb_index],
++                save_forward_output=return_outputs,
+             )  # type: ignore[index]
+ 
+             # Compute loss
+             self._maybe_compute_loss(self._stage, output, target_mbs, fwd_mb_index)
+-
++            if self._stage.is_last and self._stage.has_backward:
++                # see note [decref last stage's output early]
++                del output
+             # Get the fwd send ops, but don't fire, leave it for the next iter (wrap-around)
+             fwd_sends = self._stage.get_fwd_send_ops(fwd_mb_index)
+             fwd_mb_index += 1
+@@ -1216,7 +1261,14 @@ class PipelineScheduleMulti(_PipelineSchedule):
+         # This will overwrite the default stage_to_rank_mapping created in the constructor
+         self._validate_and_set_stage_mapping(self.pipeline_order)
+ 
+-    def step(self, *args, target=None, losses: Optional[list] = None, **kwargs):
++    def step(
++        self,
++        *args,
++        target=None,
++        losses: Optional[list] = None,
++        return_outputs: bool = True,
++        **kwargs,
++    ):
+         """
+         Run one iteration of the pipeline schedule with *whole-batch* input.
+         Will chunk the input into microbatches automatically, and go through the
+@@ -1226,6 +1278,7 @@ class PipelineScheduleMulti(_PipelineSchedule):
+         kwargs: keyword arguments to the model (as in non-pipeline case).
+         target: target for the loss function.
+         losses: a list to store the losses for each microbatch.
++        return_outputs: whether to return the outputs from the last stage.
+         """
+         # Clean per iteration
+         for stage in self._stages:
+@@ -1241,11 +1294,13 @@ class PipelineScheduleMulti(_PipelineSchedule):
+             targets_split = None
+ 
+         # Run microbatches
+-        self._step_microbatches(args_split, kwargs_split, targets_split, losses)
++        self._step_microbatches(
++            args_split, kwargs_split, targets_split, losses, return_outputs
++        )
+ 
+         # Return merged results per original format
+         for stage in self._stages:
+-            if stage.is_last:
++            if stage.is_last and return_outputs:
+                 return self._merge_outputs(stage.output_chunks)
+         # Does not contain the last stage
+         return None
+@@ -1256,6 +1311,7 @@ class PipelineScheduleMulti(_PipelineSchedule):
+         kwarg_mbs: Optional[list] = None,
+         target_mbs: Optional[list] = None,
+         losses: Optional[list] = None,
++        return_outputs: bool = True,
+     ):
+         """
+         Operate on the microbatches for looped schedules (multiple stages on each rank).
+@@ -1300,9 +1356,15 @@ class PipelineScheduleMulti(_PipelineSchedule):
+                         # perform forward computation
+                         stage = stage_index_to_stage[stage_index]
+                         output = stage.forward_one_chunk(
+-                            mb_index, arg_mbs[mb_index], kwarg_mbs[mb_index]
++                            mb_index,
++                            arg_mbs[mb_index],
++                            kwarg_mbs[mb_index],
++                            save_forward_output=return_outputs,
+                         )
+                         self._maybe_compute_loss(stage, output, target_mbs, mb_index)
++                        if stage.is_last and stage.has_backward:
++                            # see note [decref last stage's output early]
++                            del output
+                         ops.extend(stage.get_fwd_send_ops(mb_index))
+                     elif computation_type == _ComputationType.FULL_BACKWARD:
+                         # perform backward computation
+@@ -1528,6 +1590,7 @@ class _PipelineScheduleRuntime(PipelineScheduleMulti):
+         kwarg_mbs: Optional[list] = None,
+         target_mbs: Optional[list] = None,
+         losses: Optional[list] = None,
++        return_outputs: bool = True,
+     ):
+         """
+         Operate on the microbatches for looped schedules (multiple stages on each rank).
+@@ -1658,7 +1721,10 @@ class _PipelineScheduleRuntime(PipelineScheduleMulti):
+                         fwd_recv_ops.pop((stage_idx, mb_index)).wait()
+ 
+                     output = stage.forward_one_chunk(
+-                        mb_index, arg_mbs[mb_index], kwarg_mbs[mb_index]
++                        mb_index,
++                        arg_mbs[mb_index],
++                        kwarg_mbs[mb_index],
++                        save_forward_output=return_outputs,
+                     )
+                     self._maybe_compute_loss(stage, output, target_mbs, mb_index)
+ 

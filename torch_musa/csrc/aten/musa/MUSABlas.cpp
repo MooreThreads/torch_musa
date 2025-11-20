@@ -270,6 +270,32 @@ void gemm<at::BFloat16>(MUSABLAS_GEMM_ARGTYPES(at::BFloat16)) {
       NotImplementedError, "gemm for BFloat16 in MUBLAS is not supported now!");
 }
 
+template <>
+void vdot<c10::complex<float>>(MUSABLAS_VDOT_ARGTYPES(c10::complex<float>)) {
+  mublasHandle_t handle = at::musa::getCurrentMUSABlasHandle();
+  TORCH_MUSABLAS_CHECK(mublasCdotc(
+      handle,
+      n,
+      reinterpret_cast<const muComplex*>(x),
+      incx,
+      reinterpret_cast<const muComplex*>(y),
+      incy,
+      reinterpret_cast<muComplex*>(result)));
+}
+
+template <>
+void vdot<c10::complex<double>>(MUSABLAS_VDOT_ARGTYPES(c10::complex<double>)) {
+  mublasHandle_t handle = at::musa::getCurrentMUSABlasHandle();
+  TORCH_MUSABLAS_CHECK(mublasZdotc(
+      handle,
+      n,
+      reinterpret_cast<const muDoubleComplex*>(x),
+      incx,
+      reinterpret_cast<const muDoubleComplex*>(y),
+      incy,
+      reinterpret_cast<muDoubleComplex*>(result)));
+}
+
 } // namespace blas
 } // namespace musa
 } // namespace at

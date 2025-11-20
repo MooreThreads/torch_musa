@@ -1,5 +1,7 @@
 """The musa extension file"""
 
+# pylint: disable=E1120,W0613,C0103,W9015,W9016
+
 import copy
 import multiprocessing
 import os
@@ -10,7 +12,7 @@ import sysconfig
 import warnings
 import platform
 from os.path import dirname, realpath, join
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 import setuptools
 from setuptools.command.build_ext import build_ext
 
@@ -80,11 +82,15 @@ def _write_ninja_file(
     musa_cflags,
     musa_post_cflags,
     musa_dlink_post_cflags,
+    sycl_cflags,
+    sycl_post_cflags,
+    sycl_dlink_post_cflags,
     sources,
     objects,
     ldflags,
     library_target,
     with_musa,
+    with_sycl,
     force_mcc,
 ) -> None:
     r"""Write a ninja file that does the desired compiling and linking.
@@ -217,9 +223,13 @@ def _write_ninja_file_and_compile_objects(
     musa_cflags,
     musa_post_cflags,
     musa_dlink_post_cflags,
+    sycl_cflags,
+    sycl_post_cflags,
+    sycl_dlink_post_cflags,
     build_directory: str,
     verbose: bool,
     with_musa: Optional[bool],
+    with_sycl: Optional[bool],
     force_mcc: Optional[bool],
 ) -> None:
     verify_ninja_availability()
@@ -239,11 +249,15 @@ def _write_ninja_file_and_compile_objects(
         musa_cflags=musa_cflags,
         musa_post_cflags=musa_post_cflags,
         musa_dlink_post_cflags=musa_dlink_post_cflags,
+        sycl_cflags=sycl_cflags,
+        sycl_post_cflags=sycl_post_cflags,
+        sycl_dlink_post_cflags=sycl_dlink_post_cflags,
         sources=sources,
         objects=objects,
         ldflags=None,
         library_target=None,
         with_musa=with_musa,
+        with_sycl=with_sycl,
         force_mcc=force_mcc,
     )
     if verbose:
@@ -351,8 +365,29 @@ def library_paths(musa: bool = False) -> List[str]:
     return paths
 
 
-# pylint: disable=C0103, C0116
 def MUSAExtension(name, sources, *args, **kwargs):
+    """
+    Create a :class:`setuptools.Extension` for CUDA/C++.
+
+    Example:
+        >>> # xdoctest: +SKIP
+        >>> # xdoctest: +REQUIRES(env:TORCH_DOCTEST_CPP_EXT)
+        >>> from setuptools import setup
+        >>> from torch_musa.utils.musa_extension import BuildExtension, MUSAExtension
+        >>> setup(
+        ...     name='musa_extension',
+        ...     ext_modules=[
+        ...         MUSAExtension(
+        ...                 name='musa_extension',
+        ...                 sources=['extension.cpp', 'extension_kernel.mu'],
+        ...                 extra_compile_args={'cxx': ['-g'],
+        ...                                     'mcc': ['-O2']},
+        ...                 extra_link_args=['-Wl,--no-as-needed'])
+        ...     ],
+        ...     cmdclass={
+        ...         'build_ext': BuildExtension
+        ...     })
+    """
     library_dirs = kwargs.get("library_dirs", [])
     library_dirs += library_paths(musa=True)
     kwargs["library_dirs"] = library_dirs
@@ -417,6 +452,7 @@ def MUSAExtension(name, sources, *args, **kwargs):
     if _get_cpu_arch() != "arm":
         kwargs["extra_compile_args"]["mcc"].append("-march=native")
         kwargs["extra_compile_args"]["cxx"].append("-march=native")
+
     return setuptools.Extension(name, sources, *args, **kwargs)
 
 
@@ -514,15 +550,26 @@ class BuildExtension(build_ext):
         compiler_name, compiler_version = self._check_abi()
 
         musa_ext = False
+        sycl_ext = False
         extension_iter = iter(self.extensions)
         extension = next(extension_iter, None)
-        while not musa_ext and extension:
+        while not [musa_ext, sycl_ext] and extension:
             for source in extension.sources:
                 _, ext = os.path.splitext(source)
                 if ext == ".mu":
                     musa_ext = True
+                elif ext == ".sycl":
+                    sycl_ext = True
+                # This check accounts on a case when musa and sycl sources
+                # are mixed in the same extension. We can stop checking
+                # sources if both are found or there is no more sources.
+                if musa_ext and sycl_ext:
                     break
+
             extension = next(extension_iter, None)
+
+        if sycl_ext:
+            raise RuntimeError("SYCL extension is not supported on MUSA yet.")
 
         for extension in self.extensions:
             # Ensure at least an empty list of flags for 'cxx' and 'mcc' when
@@ -672,9 +719,13 @@ class BuildExtension(build_ext):
                 musa_cflags=musa_cflags,
                 musa_post_cflags=musa_post_cflags,
                 musa_dlink_post_cflags=musa_dlink_post_cflags,
+                sycl_cflags=[],
+                sycl_post_cflags=[],
+                sycl_dlink_post_cflags=[],
                 build_directory=output_dir,
                 verbose=True,
                 with_musa=with_musa,
+                with_sycl=False,
                 force_mcc=force_mcc,
             )
 
@@ -866,13 +917,16 @@ def _write_ninja_file_to_build_library(
     sources,
     extra_cflags,
     extra_musa_cflags,
+    extra_sycl_cflags,
     extra_ldflags,
     extra_include_paths,
     with_musa,
+    with_sycl,
     is_standalone,
 ) -> None:
     extra_cflags = [flag.strip() for flag in extra_cflags]
     extra_musa_cflags = [flag.strip() for flag in extra_musa_cflags]
+    extra_sycl_cflags = [flag.strip() for flag in extra_sycl_cflags]
     extra_ldflags = [flag.strip() for flag in extra_ldflags]
     extra_include_paths = [flag.strip() for flag in extra_include_paths]
 
@@ -903,7 +957,7 @@ def _write_ninja_file_to_build_library(
 
     if with_musa:
         musa_flags = common_cflags + COMMON_MCC_FLAGS  # TODO: 添加musa_flag
-        musa_flags += ["--compiler-options", "'-fPIC'"]
+        musa_flags += ["-fPIC"]  # TODO(@fan.mo): check --compiler-options flag
         musa_flags += extra_musa_cflags
         if not any(flag.startswith("-std=") for flag in musa_flags):
             musa_flags.append("-std=c++17")
@@ -913,11 +967,14 @@ def _write_ninja_file_to_build_library(
     else:
         musa_flags = None
 
+    sycl_cflags = None
+    sycl_dlink_post_cflags = None
+
     def object_file_path(source_file: str) -> str:
         # '/path/to/file.cpp' -> 'file'
         file_name = os.path.splitext(os.path.basename(source_file))[0]
         if _is_musa_file(source_file) and with_musa:
-            # Use a different object filename in case a C++ and CUDA file have
+            # Use a different object filename in case a C++ and MUSA file have
             # the same filename but different extension (.cpp vs. .cu).
             target = f"{file_name}.musa.o"
         else:
@@ -937,11 +994,15 @@ def _write_ninja_file_to_build_library(
         musa_cflags=musa_flags,
         musa_post_cflags=None,
         musa_dlink_post_cflags=None,
+        sycl_cflags=sycl_cflags,
+        sycl_post_cflags=[],
+        sycl_dlink_post_cflags=sycl_dlink_post_cflags,
         sources=sources,
         objects=objects,
         ldflags=ldflags,
         library_target=library_target,
         with_musa=with_musa,
+        with_sycl=with_sycl,
         force_mcc=None,
     )
 
@@ -951,11 +1012,13 @@ def _write_ninja_file_and_build_library(
     sources: List[str],
     extra_cflags,
     extra_musa_cflags,
+    extra_sycl_cflags,
     extra_ldflags,
     extra_include_paths,
     build_directory: str,
     verbose: bool,
     with_musa: Optional[bool],
+    with_sycl: Optional[bool],
     is_standalone: bool = False,
 ) -> None:
     verify_ninja_availability()
@@ -971,6 +1034,12 @@ def _write_ninja_file_and_build_library(
     build_file_path = os.path.join(build_directory, "build.ninja")
     if verbose:
         print(f"Emitting ninja build file {build_file_path}...", file=sys.stderr)
+    # Create build_directory if it does not exist
+    if not os.path.exists(build_directory):
+        if verbose:
+            print(f"Creating directory {build_directory}...", file=sys.stderr)
+        os.makedirs(build_directory, exist_ok=True)
+
     # NOTE: Emitting a new ninja build file does not cause re-compilation if
     # the sources did not change, so it's ok to re-emit (and it's fast).
     _write_ninja_file_to_build_library(
@@ -979,9 +1048,11 @@ def _write_ninja_file_and_build_library(
         sources=sources,
         extra_cflags=extra_cflags or [],
         extra_musa_cflags=extra_musa_cflags or [],
+        extra_sycl_cflags=extra_sycl_cflags or [],
         extra_ldflags=extra_ldflags or [],
         extra_include_paths=extra_include_paths or [],
         with_musa=with_musa,
+        with_sycl=with_sycl,
         is_standalone=is_standalone,
     )
 
@@ -996,14 +1067,17 @@ def load_inline(
     name,
     cpp_sources,
     musa_sources=None,
+    sycl_sources=None,
     functions=None,
     extra_cflags=None,
     extra_musa_cflags=None,
+    extra_sycl_cflags=None,
     extra_ldflags=None,
     extra_include_paths=None,
     build_directory=None,
     verbose=False,
     with_musa=None,
+    with_sycl=None,
     is_python_module=True,
     with_pytorch_error_handling=True,
     keep_intermediates=True,
@@ -1037,7 +1111,7 @@ def load_inline(
     file and  prepended with ``torch/types.h``, ``musa.h`` and
     ``musa_runtime.h`` includes. The ``.cpp`` and ``.mu`` files are compiled
     separately, but ultimately linked into a single library. Note that no
-    bindings are generated for functions in ``cuda_sources`` per  se. To bind
+    bindings are generated for functions in ``musa_sources`` per  se. To bind
     to a MUSA kernel, you must create a C++ function that calls it, and either
     declare or define this C++ function in one of the ``cpp_sources`` (and
     include its name in ``functions``).
@@ -1155,16 +1229,21 @@ def load_inline(
 
         sources.append(musa_source_path)
 
+    if sycl_sources:
+        raise RuntimeError("SYCL extension is not supported on MUSA yet.")
+
     return _jit_compile(
         name,
         sources,
         extra_cflags,
         extra_musa_cflags,
+        extra_sycl_cflags,
         extra_ldflags,
         extra_include_paths,
         build_directory,
         verbose,
         with_musa,
+        with_sycl,
         is_python_module,
         is_standalone=False,
         keep_intermediates=keep_intermediates,
@@ -1176,11 +1255,13 @@ def _jit_compile(
     sources,
     extra_cflags,
     extra_musa_cflags,
+    extra_sycl_cflags,
     extra_ldflags,
     extra_include_paths,
     build_directory: str,
     verbose: bool,
     with_musa: Optional[bool],
+    with_sycl: Optional[bool],
     is_python_module,
     is_standalone,
     keep_intermediates=True,
@@ -1193,6 +1274,8 @@ def _jit_compile(
     if with_musa is None:
         with_musa = any(map(_is_musa_file, sources))
     with_mudnn = any("mudnn" in f for f in extra_ldflags or [])
+    if with_sycl is not None:
+        raise RuntimeError("SYCL extension is not supported on MUSA yet.")
     old_version = JIT_EXTENSION_VERSIONER.get_version(name)
     version = JIT_EXTENSION_VERSIONER.bump_version_if_changed(
         name,
@@ -1204,7 +1287,8 @@ def _jit_compile(
             extra_include_paths,
         ],
         build_directory=build_directory,
-        with_cuda=with_musa,  # TODO: 这里需要更新为musa吗？
+        with_cuda=with_musa,  # TODO: needs to updated to musa
+        with_sycl=with_sycl,
         is_python_module=is_python_module,
         is_standalone=is_standalone,
     )
@@ -1230,11 +1314,13 @@ def _jit_compile(
                         sources=sources,
                         extra_cflags=extra_cflags or [],
                         extra_musa_cflags=extra_musa_cflags or [],
+                        extra_sycl_cflags=extra_sycl_cflags or [],
                         extra_ldflags=extra_ldflags or [],
                         extra_include_paths=extra_include_paths or [],
                         build_directory=build_directory,
                         verbose=verbose,
                         with_musa=with_musa,
+                        with_sycl=with_sycl,
                         is_standalone=is_standalone,
                     )
             elif verbose:
@@ -1255,3 +1341,49 @@ def _jit_compile(
         return _get_exec_path(name, build_directory)
 
     return _import_module_from_library(name, build_directory, is_python_module)
+
+
+def load(
+    name,
+    sources: Union[str, list[str]],
+    extra_cflags=None,
+    extra_musa_cflags=None,
+    extra_sycl_cflags=None,
+    extra_ldflags=None,
+    extra_include_paths=None,
+    build_directory=None,
+    verbose=False,
+    with_musa: Optional[bool] = None,
+    with_sycl: Optional[bool] = None,
+    is_python_module=True,
+    is_standalone=False,
+    keep_intermediates=True,
+):
+    """
+    Load a PyTorch C++ extension just-in-time (JIT).
+
+    Example:
+        >>> # xdoctest: +SKIP
+        >>> from torch_musa.utils.musa_extension import load
+        >>> module = load(
+        ...     name='extension',
+        ...     sources=['extension.cpp', 'extension_kernel.mu'],
+        ...     extra_cflags=['-O2'],
+        ...     verbose=True)
+    """
+    return _jit_compile(
+        name,
+        [sources] if isinstance(sources, str) else sources,
+        extra_cflags,
+        extra_musa_cflags,
+        extra_sycl_cflags,
+        extra_ldflags,
+        extra_include_paths,
+        build_directory or _get_build_directory(name, verbose),
+        verbose,
+        with_musa,
+        with_sycl,
+        is_python_module,
+        is_standalone,
+        keep_intermediates=keep_intermediates,
+    )

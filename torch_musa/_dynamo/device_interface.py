@@ -1,6 +1,6 @@
 """MusaInterface implementation"""
 
-# pylint: disable=unused-import
+# pylint: disable=unused-import, abstract-method
 import torch
 from torch._dynamo.device_interface import (
     DeviceInterface,

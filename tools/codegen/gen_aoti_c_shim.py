@@ -20,6 +20,12 @@ from torchgen.gen_aoti_c_shim import (
     gen_declaration_and_definition,
 )
 
+# AOTI kernel rename map
+RENAME_MAP = {
+    "convolution_overrideable": "convolution",
+    "convolution_backward_overrideable": "convolution_backward",
+}
+
 
 def gen_static_dispatch_backend_call(
     f: NativeFunction,
@@ -39,7 +45,7 @@ def get_header_for_aoti(
     backend_indices: dict[DispatchKey, BackendIndex],
 ) -> str | None:
     backend_index = get_backend_index_for_aoti(
-        func, func_group_mapping, dispatch_key, backend_indices
+        func, func_group_mapping, dispatch_key, backend_indices, True
     )
     if backend_index is None:
         return None
@@ -66,7 +72,7 @@ def gen_c_shim(
     header: bool,
 ) -> str | None:
     backend_index = get_backend_index_for_aoti(
-        func, func_group_mapping, dispatch_key, backend_indices
+        func, func_group_mapping, dispatch_key, backend_indices, True
     )
     if backend_index is None:
         return None
@@ -78,15 +84,25 @@ def gen_c_shim(
         backend_index,
     )
 
+    def _rewirte_kernel(op_name: str) -> str:
+        for k, v in RENAME_MAP.items():
+            if k in op_name:
+                return op_name.replace(k, v, 1)
+        return op_name
+
+    try:
+        schema.name.name.base = _rewirte_kernel(schema.name.unambiguous_name())
+    except:
+        pass
     try:
         if header:
             declaration, _ = gen_declaration_and_definition(
                 schema, device, backend_call
             )
-            return f"AOTI_TORCH_EXPORT {declaration};"
+            return f"AOTI_TORCH_EXPORT {_rewirte_kernel(declaration)};"
         else:
             _, definition = gen_declaration_and_definition(schema, device, backend_call)
-            return definition
+            return _rewirte_kernel(definition)
 
     except NotImplementedError:
         return None

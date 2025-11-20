@@ -12,11 +12,12 @@ from typing_extensions import (
 )
 import torch
 from torch._inductor.runtime.benchmarking import (
-    maybe_time,
-    count,
+    time_and_count,
     Benchmarker,
 )
 from torch.utils._triton import has_triton_package
+
+GPU_TYPES = ["cuda", "mps", "xpu", "musa"]
 
 
 def is_gpu(device: str):
@@ -57,8 +58,7 @@ class TritonBenchmarker(Benchmarker):
     """
 
     @cached_property
-    @maybe_time
-    @count
+    @time_and_count
     def triton_do_bench(self: Self) -> Callable[..., Any]:
         """Lazily import Triton's `do_bench`."""
         try:
@@ -68,8 +68,7 @@ class TritonBenchmarker(Benchmarker):
             raise NotImplementedError("requires Triton") from e
         return do_bench
 
-    @maybe_time
-    @count
+    @time_and_count
     def benchmark_gpu(self: Self, _callable: Callable[[], Any], **kwargs: Any) -> float:
         """Benchmark the GPU callable, `_callable`, and return the runtime, in milliseconds.
 
@@ -131,3 +130,4 @@ def _apply_util_patches():
     torch._inductor.utils.is_gpu = is_gpu
     torch._inductor.runtime.benchmarking.benchmarker = TritonBenchmarker()
     torch.utils._triton.has_triton = has_triton
+    torch._inductor.utils.GPU_TYPES = GPU_TYPES

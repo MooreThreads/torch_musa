@@ -236,6 +236,9 @@ PyTypeObject THMPEventType = {
 };
 
 void THMPEvent_init(PyObject* module) {
+  TORCH_CHECK(THPEventClass, "THPEvent has not been initialized yet.");
+  Py_INCREF(THPEventClass);
+  THMPEventType.tp_base = THPEventClass;
   THMPEventClass = (PyObject*)&THMPEventType;
   if (PyType_Ready(&THMPEventType) < 0) {
     throw python_error();

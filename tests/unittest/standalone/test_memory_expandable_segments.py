@@ -11,12 +11,13 @@ if torch.musa.is_available():
 
 # DO NOT delete this non op test, otherwise pytest will return non zero ret code
 # when torch.version.musa < 4000
-@pytest.mark.skipif(True, reason="")
+# @pytest.mark.skipif(True, reason="")
 def test_nonop():
     pass
 
+
 # 0408 daily core dumped
-@pytest.mark.skipif(True, reason="")
+# @pytest.mark.skipif(True, reason="")
 def test_expandable_segments():
     if float(torch.version.musa) >= 4000:
         current_dir = os.path.dirname(os.path.abspath(__file__))

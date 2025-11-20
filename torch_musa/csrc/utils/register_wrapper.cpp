@@ -173,6 +173,103 @@ bool Config::IsOpEnabled(const char* yaml, const char* func) {
   return false;
 }
 
+bool Config::UseDoubleCast() {
+  char* use_double_cast = std::getenv("TORCH_USE_MUSA_DOUBLE_CAST");
+  if (use_double_cast == nullptr) {
+    return false;
+  }
+  if (strcmp(use_double_cast, "ON") == 0 || strcmp(use_double_cast, "1") == 0 ||
+      strcmp(use_double_cast, "on") == 0 ||
+      strcmp(use_double_cast, "true") == 0) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
+/*
+ * skip_cast_ops is a whitelist of operators for MUSA/double type testing.
+ *
+ * Purpose:
+ *  During automated double type casting tests, some operators do not need dtype
+ * casting, either because they do not depend on the data type, or the cast is
+ * automatically skipped. The skip_cast_ops set records these operator names to
+ * avoid redundant or invalid casting tests.
+ *
+ * Categories:
+ *  1. Factory Operators
+ *      - empty, zeros, ones, full, rand, arange, linspace, logspace, eye,
+ * scalar_tensor
+ *      - Function: Directly create tensors. The dtype can be specified by the
+ * user, usually no double cast needed.
+ *
+ *  2. Memory Operators
+ *      - copy, clone, detach
+ *      - Function: Only involve data copying or slicing, do not change the data
+ * type.
+ *
+ *  3. View Operators
+ *      - reshape, view, as_strided, expand, expand_as, narrow, slice, select,
+ * transpose, permute, contiguous
+ *      - Function: Only modify tensor shape or layout, without affecting the
+ * data type.
+ *
+ *  4. Indexing Operators
+ *      - index, index_put, index_add, gather, scatter, scatter_add,
+ * masked_select, masked_fill, nonzero, where
+ *      - Function: Operate on tensors via indexing; usually the dtype remains
+ * unchanged.
+ *
+ * Some operators, such as `empty`, `stride`, `index`, etc., are manually placed
+ * in the whitelist for testing. The remaining operators were categorized and
+ * filtered using GPT based on similar operators. In the future, the whitelist
+ * may need to be updated, with operators added or removed as necessary.
+ *
+ */
+
+const std::unordered_set<std::string> skip_cast_ops = {
+    // Factory
+    "empty",
+    "zeros",
+    "ones",
+    "full",
+    "rand",
+    "arange",
+    "linspace",
+    "logspace",
+    "eye",
+    "scalar_tensor",
+
+    // Memory
+    "copy",
+    "clone",
+    "detach",
+
+    // View
+    "reshape",
+    "view",
+    "as_strided",
+    "expand",
+    "expand_as",
+    "narrow",
+    "slice",
+    "select",
+    "transpose",
+    "permute",
+    "contiguous",
+
+    // Indexing
+    "index",
+    "index_put",
+    "index_add",
+    "gather",
+    "scatter",
+    "scatter_add",
+    "masked_select",
+    "masked_fill",
+    "nonzero",
+    "where"};
+
 /*
 Calculate the signature of tensor.
 The input Tensor must be a CPU Tensor with available data type.

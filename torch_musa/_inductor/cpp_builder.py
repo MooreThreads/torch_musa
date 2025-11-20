@@ -1,3 +1,5 @@
+# pylint: disable=E1123
+
 """MUSA CPP Builder"""
 
 import os
@@ -92,46 +94,48 @@ class CppTorchMusaOptions(CppTorchOptions):
         self,
         vec_isa: VecISA = invalid_vec_isa,
         include_pytorch: bool = False,
-        musa: bool = True,
+        device_type: str = "musa",
         aot_mode: bool = False,
         compile_only: bool = False,
-        use_absolute_path: bool = False,
+        use_relative_path: bool = False,
         use_mmap_weights: bool = False,
         shared: bool = True,
         extra_flags: Sequence[str] = (),
+        min_optimize: bool = False,
     ) -> None:
         super().__init__(
             vec_isa=vec_isa,
             include_pytorch=include_pytorch,
             aot_mode=aot_mode,
             compile_only=compile_only,
-            use_absolute_path=use_absolute_path,
+            use_relative_path=use_relative_path,
             use_mmap_weights=use_mmap_weights,
             extra_flags=extra_flags,
+            min_optimize=min_optimize,
         )
 
-        musa_definations: List[str] = []
+        musa_definitions: List[str] = []
         musa_include_dirs: List[str] = []
         musa_cflags: List[str] = []
         musa_ldflags: List[str] = []
         musa_libraries_dirs: List[str] = []
         musa_libraries: List[str] = []
-        musa_passthough_args: List[str] = []
+        musa_passthrough_args: List[str] = []
 
         (
-            musa_definations,
+            musa_definitions,
             musa_include_dirs,
             musa_cflags,
             musa_ldflags,
             musa_libraries_dirs,
             musa_libraries,
-            musa_passthough_args,
-        ) = get_cpp_torch_musa_options(musa=musa, aot_mode=aot_mode)
-        _append_list(self._definations, musa_definations)
+            musa_passthrough_args,
+        ) = get_cpp_torch_musa_options(musa=device_type == "musa", aot_mode=aot_mode)
+        _append_list(self._definitions, musa_definitions)
         _append_list(self._include_dirs, musa_include_dirs)
         _append_list(self._cflags, musa_cflags)
         _append_list(self._ldflags, musa_ldflags)
         _append_list(self._libraries_dirs, musa_libraries_dirs)
         _append_list(self._libraries, musa_libraries)
-        _append_list(self._passthough_args, musa_passthough_args)
+        _append_list(self._passthrough_args, musa_passthrough_args)
         self._finalize_options()

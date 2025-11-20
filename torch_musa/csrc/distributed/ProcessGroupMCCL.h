@@ -377,6 +377,10 @@ class TORCH_API ProcessGroupMCCL : public Backend {
     return std::string(MCCL_BACKEND_NAME);
   }
 
+  bool supportsCoalescing() const override {
+    return true;
+  }
+
   void startCoalescing() override;
 
   c10::intrusive_ptr<Work> endCoalescing() override;

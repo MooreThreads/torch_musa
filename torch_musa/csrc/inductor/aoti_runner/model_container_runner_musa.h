@@ -15,15 +15,18 @@ class TORCH_API AOTIModelContainerRunnerMusa : public AOTIModelContainerRunner {
       const std::string& model_so_path,
       size_t num_models = 1,
       const std::string& device_str = "musa",
-      const std::string& mubin_dir = "");
+      const std::string& mubin_dir = "",
+      const bool run_single_threaded = false);
 
-  ~AOTIModelContainerRunnerMusa();
+  ~AOTIModelContainerRunnerMusa() override;
 
-  std::vector<at::Tensor> run(std::vector<at::Tensor>& inputs);
+  std::vector<at::Tensor> run_impl(
+      std::vector<AtenTensorHandle>& input_handles,
+      void* stream_handle) override;
 
   std::vector<at::Tensor> run_with_musa_stream(
-      std::vector<at::Tensor>& inputs,
-      c10::musa::MUSAStream musa_stream);
+      const std::vector<at::Tensor>& inputs,
+      const c10::musa::MUSAStream& musa_stream);
 };
 
 } // namespace torch::inductor

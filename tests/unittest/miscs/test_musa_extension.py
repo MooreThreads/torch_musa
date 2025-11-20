@@ -64,11 +64,11 @@ at::Tensor musa_add(at::Tensor& a, at::Tensor& b) {
     int numel = a.numel();
     const int block_size = 1024;
     int block_num = std::min(ceil_div(numel, block_size), 16);
-    AT_DISPATCH_FLOATING_TYPES(a.type(), "musa_add_kernel", ([&] {
+    AT_DISPATCH_FLOATING_TYPES(a.scalar_type(), "musa_add_kernel", ([&] {
         musa_add_kernel<scalar_t> <<<block_num, block_size, 0>>>(
-            a.data<scalar_t>(),
-            b.data<scalar_t>(),
-            out.data<scalar_t>(),
+            a.const_data_ptr<scalar_t>(),
+            b.const_data_ptr<scalar_t>(),
+            out.mutable_data_ptr<scalar_t>(),
             numel
         );
     }));
@@ -93,6 +93,7 @@ setup(
                 "add.cpp",
                 "add_kernel.mu",
             ],
+            libraries=["musart", "musa"],
         ),
     ],
     cmdclass={"build_ext": BuildExtension, "install": Install},
@@ -123,6 +124,26 @@ setup(
 
         shutil.rmtree(self.work_dir)
 
+    def load(self):
+        self.generate_tensor_add_source_code()
+        musa_ext = importlib.import_module("torch_musa.utils.musa_extension")
+        musa_extension_example = musa_ext.load(
+            name="musa_extension_example",
+            sources=[f"{self.work_dir}/add.cpp", f"{self.work_dir}/add_kernel.mu"],
+            extra_cflags=[],
+            extra_musa_cflags=[],
+            verbose=True,
+        )
+
+        x = torch.randn((4, 32, 32), device="musa")
+        y = torch.randn((4, 32, 32), device="musa")
+        res = musa_extension_example.musa_add(x, y)
+        golden = x + y
+        assert torch.allclose(res, golden)
+
+        shutil.rmtree(self.work_dir)
+
 
 def test_musa_extension():
     TestMUSAExtension().run()
+    TestMUSAExtension().load()

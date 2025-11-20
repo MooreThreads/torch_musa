@@ -12,6 +12,82 @@
 
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
 
+namespace at::musa {
+std::tuple<at::Tensor, at::Tensor, at::Tensor> MuDNNFlashVarlenFwd(
+    const at::Tensor& query,
+    const at::Tensor& key,
+    const at::Tensor& value,
+    const at::Tensor& cu_seqlens_q,
+    const at::Tensor& cu_seqlens_k,
+    const int max_seqlen_q,
+    const int max_seqlen_k,
+    double dropout_p,
+    std::optional<double> scale,
+    bool is_causal);
+
+std::tuple<at::Tensor&, at::Tensor&, at::Tensor&, at::Tensor>
+MuDNNFlashVarlenBwd(
+    at::Tensor& grad_output,
+    const at::Tensor& query,
+    const at::Tensor& key,
+    const at::Tensor& value,
+    const at::Tensor& output,
+    const at::Tensor& logsumexp,
+    at::Tensor& grad_q,
+    at::Tensor& grad_k,
+    at::Tensor& grad_v,
+    const at::Tensor& cu_seqlens_q,
+    const at::Tensor& cu_seqlens_k,
+    const int max_seqlen_q,
+    const int max_seqlen_k,
+    double dropout_p,
+    std::optional<double> scale,
+    bool is_causal);
+
+std::tuple<Tensor, Tensor, Tensor> MuDNNMathSDPAFwd(
+    const Tensor& _query,
+    const Tensor& _key,
+    const Tensor& _value,
+    const std::optional<Tensor>& attn_mask,
+    double dropout_p,
+    bool is_causal,
+    std::optional<double> scale);
+
+std::tuple<Tensor, Tensor, Tensor, Tensor> MuDNNMathSDPABwd(
+    const Tensor& _grad_output,
+    const Tensor& _query,
+    const Tensor& _key,
+    const Tensor& _value,
+    const Tensor& _output,
+    const Tensor& _attn_weights,
+    const Tensor& _dropout_mask,
+    bool is_causal,
+    const std::optional<Tensor>& attn_mask,
+    std::optional<double> scale);
+
+std::tuple<Tensor, Tensor, Tensor> MuDNNFlashSDPAFwd(
+    const Tensor& _query,
+    const Tensor& _key,
+    const Tensor& _value,
+    const std::optional<Tensor>& attn_mask,
+    double dropout_p,
+    bool is_causal,
+    std::optional<double> scale);
+
+std::tuple<Tensor, Tensor, Tensor, Tensor> MuDNNFlashSDPABwd(
+    const Tensor& _grad_output,
+    const Tensor& _query,
+    const Tensor& _key,
+    const Tensor& _value,
+    const Tensor& _output,
+    const Tensor& _logsumexp,
+    const Tensor& _dropout_mask,
+    bool is_causal,
+    const std::optional<Tensor>& attn_mask,
+    std::optional<double> scale);
+
+} // namespace at::musa
+
 namespace sdp {
 
 inline bool check_musa_arch(const sdp_params& params, bool is_debug) {

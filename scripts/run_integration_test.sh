@@ -1,5 +1,6 @@
 #!/bin/bash --login
 set -exo pipefail
+export TORCH_MUSA_TESTING_NO_TF32=1
 
 LOCAL_DATA_ROOT="/data/torch_musa_integration/local"
 SHARED_DATA_ROOT="/data/torch_musa_integration/shared"

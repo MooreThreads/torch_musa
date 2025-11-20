@@ -3,64 +3,15 @@
 #include <future>
 
 #include <ATen/DeviceGuard.h>
-#include <c10/core/thread_pool.h>
 
 #include "torch_musa/csrc/aten/musa/Exceptions.h"
-
 #include "torch_musa/csrc/core/MUSAAllocatorConfig.h"
-#include "torch_musa/csrc/core/MUSAEvent.h"
-#include "torch_musa/csrc/core/MUSAFunctions.h"
-#include "torch_musa/csrc/core/MUSAStream.h"
+#include "torch_musa/csrc/core/Pool.h"
 
 namespace at::musa {
 namespace {
 
-class EventPool {
- public:
-  using Event = std::unique_ptr<
-      at::musa::MUSAEvent,
-      std::function<void(at::musa::MUSAEvent*)>>;
-  EventPool() : pools_(at::musa::device_count()) {}
-
-  Event get(DeviceIndex device) {
-    TORCH_INTERNAL_ASSERT(0 <= device);
-    TORCH_INTERNAL_ASSERT(device < static_cast<DeviceIndex>(pools_.size()));
-    auto& pool = pools_[device];
-    auto destructor = [&pool](at::musa::MUSAEvent* event) {
-      std::lock_guard<std::mutex> g(pool.mutex_);
-      pool.event_pool_.push_back(std::unique_ptr<at::musa::MUSAEvent>(event));
-    };
-
-    // Try to acquire an event from the per-device pool.
-    {
-      std::lock_guard<std::mutex> g(pool.mutex_);
-      if (!pool.event_pool_.empty()) {
-        auto* event = pool.event_pool_.back().release();
-        pool.event_pool_.pop_back();
-        return Event(event, destructor);
-      }
-    }
-    // otherwise, allocate a new event that will be returned to the pool on
-    // destruction.
-    return Event(
-        std::make_unique<at::musa::MUSAEvent>(musaEventDisableTiming).release(),
-        destructor);
-  }
-
-  void empty_cache() {
-    for (auto& pool : pools_) {
-      std::lock_guard<std::mutex> g(pool.mutex_);
-      pool.event_pool_.clear();
-    }
-  }
-
- private:
-  struct PerDevicePool {
-    alignas(64) std::mutex mutex_;
-    std::vector<std::unique_ptr<at::musa::MUSAEvent>> event_pool_;
-  };
-  std::vector<PerDevicePool> pools_;
-};
+using EventPool = detail::EventPool<MUSAEvent, true>;
 
 using Block = HostBlock<MUSAStream>;
 
@@ -80,9 +31,11 @@ struct MUSACachingHostAllocatorImpl
     auto primary_ctx_device_index =
         c10::musa::getDeviceIndexWithPrimaryContext();
     if (primary_ctx_device_index.has_value()) {
-      device_guard.reset_device(at::Device(kMUSA, *primary_ctx_device_index));
+      device_guard.reset_device(
+          at::Device(kMUSA, *primary_ctx_device_index));
     }
 
+    auto start = std::chrono::system_clock::now();
     if (c10::musa::MUSACachingAllocator::MUSAAllocatorConfig::
             pinned_use_musa_host_register()) {
       allocWithMusaHostRegister(ptr, size);
@@ -90,9 +43,18 @@ struct MUSACachingHostAllocatorImpl
       // Use musaHostAlloc for allocating pinned memory (global lock in driver)
       C10_MUSA_CHECK(musaHostAlloc(ptr, size, musaHostAllocDefault));
     }
+    auto end = std::chrono::system_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+
+    // Update the statistics on the time spent on musaHostAlloc/hostRegister
+    {
+      std::lock_guard<std::mutex> g(stats_.timing_mutex_);
+      stats_.host_alloc_time.increase(duration.count());
+    }
   }
 
   void free_block(Block* block) override {
+    auto start = std::chrono::system_clock::now();
     if (c10::musa::MUSACachingAllocator::MUSAAllocatorConfig::
             pinned_use_musa_host_register()) {
       void* ptr = block->ptr_;
@@ -100,6 +62,14 @@ struct MUSACachingHostAllocatorImpl
       std::free(ptr);
     } else {
       AT_MUSA_CHECK(musaFreeHost(block->ptr_));
+    }
+    auto end = std::chrono::system_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+
+    // Update the statistics on the time spent on musaFreeHost/hostUnregister
+    {
+      std::lock_guard<std::mutex> g(stats_.timing_mutex_);
+      stats_.host_free_time.increase(duration.count());
     }
   }
 
@@ -122,6 +92,11 @@ struct MUSACachingHostAllocatorImpl
     return true;
   }
 
+  bool pinned_use_background_threads() override {
+    return c10::musa::MUSACachingAllocator::MUSAAllocatorConfig::
+        pinned_use_background_threads();
+  }
+
   EventPool::Event create_event_internal(DeviceIndex idx) {
     // Leak the event pool to avoid shutdown issue.
     static auto* event_pool = new EventPool();
@@ -131,7 +106,7 @@ struct MUSACachingHostAllocatorImpl
   TaskThreadPool* getThreadPool() {
     static TaskThreadPool* pool = new TaskThreadPool(
         static_cast<int>(c10::musa::MUSACachingAllocator::MUSAAllocatorConfig::
-                             pinned_max_register_threads()));
+            pinned_max_register_threads()));
     return pool;
   }
 
@@ -259,6 +234,18 @@ void CachingHostAllocator_emptyCache() {
 
 at::Allocator* getCachingHostAllocator() {
   return &getMUSACachingHostAllocator();
+}
+
+at::HostStats CachingHostAllocator_getStats() {
+  return getMUSACachingHostAllocator().getStats();
+}
+
+void CachingHostAllocator_resetAccumulatedStats() {
+  return getMUSACachingHostAllocator().resetAccumulatedStats();
+}
+
+void CachingHostAllocator_resetPeakStats() {
+  return getMUSACachingHostAllocator().resetPeakStats();
 }
 
 } // namespace at::musa

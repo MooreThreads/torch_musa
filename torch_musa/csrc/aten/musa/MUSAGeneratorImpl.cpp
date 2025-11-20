@@ -523,6 +523,4 @@ at::Generator MakeGeneratorForPrivateuse1(c10::DeviceIndex id) {
   return at::make_generator<MUSAGeneratorImpl>(id);
 }
 
-REGISTER_GENERATOR_PRIVATEUSE1(MakeGeneratorForPrivateuse1);
-
 } // namespace at

@@ -30,6 +30,29 @@ input_data = [
     },
 ]
 
+complex_input_data = [
+    {
+        "input": torch.randn(0, dtype=torch.complex64),
+        "tensor": torch.randn(0, dtype=torch.complex64),
+    },
+    {
+        "input": torch.zeros(1, dtype=torch.complex64),
+        "tensor": torch.zeros(1, dtype=torch.complex64),
+    },
+    {
+        "input": torch.randn(4, dtype=torch.complex64),
+        "tensor": torch.randn(4, dtype=torch.complex64),
+    },
+    {
+        "input": torch.randn(256, dtype=torch.complex128),
+        "tensor": torch.randn(256, dtype=torch.complex128),
+    },
+    {
+        "input": torch.randn(256, dtype=torch.complex64)[1:20:2],
+        "tensor": torch.randn(256, dtype=torch.complex64)[1:20:2],
+    },
+]
+
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
@@ -53,3 +76,19 @@ def test_dot_fp16(input_data):
     )
     test.check_musafp16_vs_musafp32()
     test.check_grad_fn(fp16=True)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_data + complex_input_data)
+def test_vdot(input_data):
+    inp0_cpu = input_data["input"]
+    inp1_cpu = input_data["tensor"]
+
+    inp0_musa = inp0_cpu.musa()
+    inp1_musa = inp1_cpu.musa()
+
+    out_cpu = torch.vdot(inp0_cpu, inp1_cpu)
+    out_musa = torch.vdot(inp0_musa, inp1_musa).cpu()
+
+    assert torch.allclose(out_cpu, out_musa, rtol=1e-3, atol=1e-3), \
+        "vdot fail"

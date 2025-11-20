@@ -1,8 +1,8 @@
 diff --git a/aten/src/ATen/core/TensorBase.h b/aten/src/ATen/core/TensorBase.h
-index 2d202a6..81186b1 100644
+index 8d300de..b92d834 100644
 --- a/aten/src/ATen/core/TensorBase.h
 +++ b/aten/src/ATen/core/TensorBase.h
-@@ -483,6 +483,10 @@ class TORCH_API TensorBase {
+@@ -484,6 +484,10 @@ class TORCH_API TensorBase {
      return impl_->is_privateuseone();
    }
  

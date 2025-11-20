@@ -380,6 +380,12 @@ target_compile_definitions(${MUSA_KERNELS_LIB}
 target_compile_definitions(${PLUGIN_NAME}
                            PUBLIC -DREAL_MUSA_VERSION=${REAL_MUSA_VERSION})
 
+set(MUSA_COMP_VERSION "10400")
+target_compile_definitions(${MUSA_KERNELS_LIB}
+                           PUBLIC -DMUSA_COMP_VERSION=${MUSA_COMP_VERSION})
+target_compile_definitions(${PLUGIN_NAME}
+                           PUBLIC -DMUSA_COMP_VERSION=${MUSA_COMP_VERSION})
+
 add_dependencies(${MUSA_KERNELS_LIB} ${CODEGEN_TARGET})
 
 string(REPLACE ";" " " PYTORCH_MUSA_ARCH_readable "${TORCH_MUSA_ARCH_LIST}")

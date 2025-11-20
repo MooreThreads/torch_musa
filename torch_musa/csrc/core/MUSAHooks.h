@@ -12,6 +12,10 @@ struct MUSAHooks : MUSAHooksInterface {
 
   void initMUSA() const override;
 
+  bool isBuilt() const override {
+    return true;
+  }
+
   bool hasPrimaryContext(DeviceIndex device_index) const override;
 
   int getNumGPUs() const override;
@@ -31,11 +35,18 @@ struct MUSAHooks : MUSAHooksInterface {
   const Generator& getDefaultMUSAGenerator(
       DeviceIndex device_index) const override;
 
+  Generator getNewGenerator(
+      DeviceIndex device_index = -1) const override;
+
   Device getDeviceFromPtr(void* data) const override;
 
   void resizeMUSABytes(const Storage& storage, size_t newsize) const override;
 
   bool hasMUSA() const override;
+
+  bool isAvailable() const override {
+    return hasMUSA();
+  }
 
   void deviceSynchronize(DeviceIndex device_index) const override;
 };

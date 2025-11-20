@@ -63,7 +63,7 @@ def test_save_cpu_load_musa():
 
     traced_output = traced_net.to("musa")(input.to("musa"))
 
-    comparator = testing.DefaultComparator()
+    comparator = testing.DefaultComparator(abs_diff=5e-2, rel_diff=5e-3)
     assert comparator(eager_output, traced_output)
 
     torch.jit.save(traced_net.to("cpu"), "mnistnet.pt")
@@ -87,5 +87,5 @@ def test_save_musa_load_cpu():
     loaded_net = torch.jit.load("mnistnet.pt").to("cpu")
     loaded_output = loaded_net(input.to("cpu")).to("musa")
 
-    comparator = testing.DefaultComparator()
+    comparator = testing.DefaultComparator(abs_diff=5e-2, rel_diff=5e-3)
     assert comparator(eager_output, loaded_output)

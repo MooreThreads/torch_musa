@@ -7,6 +7,10 @@
 #include <ATen/NativeFunctions.h>
 #else
 #include <ATen/ops/_addmm_activation_native.h>
+#include <ATen/ops/_efficientzerotensor.h>
+#include <ATen/ops/vdot_native.h>
+#include <ATen/ops/view_as_complex.h>
+#include <ATen/ops/zeros.h>
 #include "ATen/ops/gelu_native.h"
 #include "ATen/ops/relu_native.h"
 #endif
@@ -74,6 +78,86 @@ at::Tensor Dot(const at::Tensor& l, const at::Tensor& r) {
   DotOut(l, r, out);
   return out;
 }
+
+namespace {
+
+void DotCheck(const Tensor& self, const Tensor& other) {
+  TORCH_CHECK(
+      self.dim() == 1 && other.dim() == 1,
+      "1D tensors expected, but got ",
+      self.dim(),
+      "D and ",
+      other.dim(),
+      "D tensors");
+  TORCH_CHECK(
+      self.scalar_type() == other.scalar_type(),
+      "dot : expected both vectors to have same dtype, but found ",
+      self.scalar_type(),
+      " and ",
+      other.scalar_type());
+  TORCH_CHECK(
+      self.numel() == other.numel(),
+      "inconsistent tensor size, expected tensor [",
+      self.numel(),
+      "] and src [",
+      other.numel(),
+      "] to have the same number of elements, but got ",
+      self.numel(),
+      " and ",
+      other.numel(),
+      " elements respectively");
+  TORCH_CHECK(
+      (self.numel() <= INT_MAX) && (self.stride(0) <= INT_MAX) &&
+          (other.stride(0) <= INT_MAX),
+      "dot only supports n, incx, incy with the bound [val] <= %d",
+      INT_MAX);
+}
+
+} // anonymous namespace
+
+at::Tensor VDot(const Tensor& l, const Tensor& r) {
+  DotCheck(l, r);
+
+  if (!l.is_complex()) {
+    return Dot(l, r);
+  }
+
+  if (l._is_zerotensor() || r._is_zerotensor()) {
+    return at::_efficientzerotensor({}, l.options());
+  }
+
+  at::ScalarType real_dtype = c10::toRealValueType(l.scalar_type());
+
+  if (l.numel() == 0) {
+    Tensor x_real = at::zeros({2}, l.options().dtype(real_dtype));
+    return at::view_as_complex(x_real);
+  }
+
+  const c10::musa::MUSAGuard device_guard(l.device());
+
+  const int n = static_cast<int>(l.numel());
+  int incx = static_cast<int>(l.stride(0));
+  int incy = static_cast<int>(r.stride(0));
+  if (n == 1) {
+    incx = 1;
+    incy = 1;
+  }
+
+  return AT_DISPATCH_COMPLEX_TYPES(l.scalar_type(), "vdot", [&] {
+    Tensor result = at::empty({}, l.options());
+
+    at::musa::blas::vdot<scalar_t>(
+        n,
+        l.const_data_ptr<scalar_t>(),
+        incx,
+        r.const_data_ptr<scalar_t>(),
+        incy,
+        result.mutable_data_ptr<scalar_t>());
+
+    return result;
+  });
+}
+// TODO: support vdot.out ops
 
 void BlasGEMM(
     const Tensor& l,

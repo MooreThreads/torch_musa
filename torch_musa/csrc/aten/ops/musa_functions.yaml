@@ -130,49 +130,6 @@
 - func: smooth_l1_loss
 - func: smooth_l1_loss.out
 
-- func: upsample_bicubic2d
-- func: upsample_bicubic2d.out
-
-- func: _upsample_bicubic2d_aa
-- func: _upsample_bicubic2d_aa.out
-  dispatch:
-    PrivateUse1: _upsample_bicubic2d_aa_out_musa
-
-- func: _upsample_bicubic2d_aa_backward
-- func: _upsample_bicubic2d_aa_backward.grad_input
-  dispatch:
-    PrivateUse1: _upsample_bicubic2d_aa_backward_out_musa
-
-- func: upsample_linear1d
-- func: upsample_linear1d.out
-
-- func: upsample_nearest1d
-- func: upsample_nearest1d.out
-
-- func: upsample_bicubic2d_backward
-- func: upsample_bicubic2d_backward.grad_input
-
-- func: upsample_trilinear3d
-- func: upsample_trilinear3d.out
-
-- func: upsample_trilinear3d_backward
-- func: upsample_trilinear3d_backward.grad_input
-
-- func: _upsample_nearest_exact1d
-- func: _upsample_nearest_exact1d.out
-- func: _upsample_nearest_exact1d_backward
-- func: _upsample_nearest_exact1d_backward.grad_input
-
-- func: _upsample_nearest_exact2d
-- func: _upsample_nearest_exact2d.out
-- func: _upsample_nearest_exact2d_backward
-- func: _upsample_nearest_exact2d_backward.grad_input
-
-- func: _upsample_nearest_exact3d
-- func: _upsample_nearest_exact3d.out
-- func: _upsample_nearest_exact3d_backward
-- func: _upsample_nearest_exact3d_backward.grad_input
-
 - func: bitwise_xor.Tensor
 - func: bitwise_xor_.Tensor
 - func: bitwise_xor.Tensor_out
@@ -453,6 +410,20 @@
 - func: _fused_sdp_choice
   dispatch:
     PrivateUse1: _fused_sdp_choice_musa
+
+- func: _transformer_encoder_layer_fwd
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: transformer_encoder_layer_forward
+
+- func: _flash_attention_forward
+  dispatch:
+    PrivateUse1: _FlashAttnForward
+
+- func: _flash_attention_backward
+  dispatch:
+    PrivateUse1: _FlashAttnBackward
 
 - func: _scaled_dot_product_attention_flash_musa
   dispatch:
@@ -1846,6 +1817,10 @@
   dispatch:
     PrivateUse1: DotOut
 
+- func: vdot
+  dispatch:
+    PrivateUse1: VDot
+
 - func: addmv
   dispatch:
     PrivateUse1: AddMv
@@ -2575,54 +2550,127 @@
   dispatch:
     PrivateUse1: UniqueDimConsecutive
 
+- func: upsample_nearest1d
+- func: upsample_nearest1d.out
+  dispatch:
+    PrivateUse1: upsample_nearest1d_out_musa
+
+- func: upsample_nearest1d_backward
+- func: upsample_nearest1d_backward.grad_input
+  dispatch:
+    PrivateUse1: upsample_nearest1d_backward_out_musa
+
+- func: upsample_linear1d
+- func: upsample_linear1d.out
+  dispatch:
+    PrivateUse1: upsample_linear1d_out_musa
+
+- func: upsample_linear1d_backward
+- func: upsample_linear1d_backward.grad_input
+  dispatch:
+    PrivateUse1: upsample_linear1d_backward_out_musa
+
 - func: upsample_nearest2d
   dispatch:
-    PrivateUse1: UpSampleNearest2d
     QuantizedPrivateUse1: UpsampleNearest2dQuantized
 - func: upsample_nearest2d.out
-  structured: false
   dispatch:
-    PrivateUse1: UpSampleNearest2dOut
+    PrivateUse1: upsample_nearest2d_out_musa
 
 - func: upsample_nearest2d_backward
-  dispatch:
-    PrivateUse1: UpSampleNearest2dBwd
 - func: upsample_nearest2d_backward.grad_input
-  structured: false
   dispatch:
-    PrivateUse1: UpSampleNearest2dBwdOut
+    PrivateUse1: upsample_nearest2d_backward_out_musa
 
 - func: upsample_bilinear2d
-  dispatch:
-    PrivateUse1: UpSampleBilinear2d
 - func: upsample_bilinear2d.out
-  structured: false
   dispatch:
-    PrivateUse1: UpSampleBilinear2dOut
+    PrivateUse1: upsample_bilinear2d_out_musa
 
 - func: upsample_bilinear2d_backward
-  dispatch:
-    PrivateUse1: UpSampleBilinear2dBwd
 - func: upsample_bilinear2d_backward.grad_input
-  structured: false
   dispatch:
-    PrivateUse1: UpSampleBilinear2dBwdOut
+    PrivateUse1: upsample_bilinear2d_backward_out_musa
+
+- func: _upsample_bilinear2d_aa_backward
+- func: _upsample_bilinear2d_aa_backward.grad_input
+  dispatch:
+    PrivateUse1: _upsample_bilinear2d_aa_backward_out_musa
 
 - func: upsample_nearest3d
-  dispatch:
-    PrivateUse1: UpSampleNearest3d
 - func: upsample_nearest3d.out
-  structured: false
   dispatch:
-    PrivateUse1: UpSampleNearest3dOut
+    PrivateUse1: upsample_nearest3d_out_musa
 
 - func: upsample_nearest3d_backward
-  dispatch:
-    PrivateUse1: UpSampleNearest3dBwd
 - func: upsample_nearest3d_backward.grad_input
-  structured: false
   dispatch:
-    PrivateUse1: UpSampleNearest3dBwdOut
+    PrivateUse1: upsample_nearest3d_backward_out_musa
+
+- func: upsample_trilinear3d
+- func: upsample_trilinear3d.out
+  dispatch:
+    PrivateUse1: upsample_trilinear3d_out_musa
+
+- func: upsample_trilinear3d_backward
+- func: upsample_trilinear3d_backward.grad_input
+  dispatch:
+    PrivateUse1: upsample_trilinear3d_backward_out_musa
+
+- func: upsample_bicubic2d
+- func: upsample_bicubic2d.out
+  dispatch:
+    PrivateUse1: upsample_bicubic2d_out_musa
+
+- func: upsample_bicubic2d_backward
+- func: upsample_bicubic2d_backward.grad_input
+  dispatch:
+    PrivateUse1: upsample_bicubic2d_backward_out_musa
+
+- func: _upsample_nearest_exact1d
+- func: _upsample_nearest_exact1d.out
+  dispatch:
+    PrivateUse1: _upsample_nearest_exact1d_out_musa
+
+- func: _upsample_nearest_exact1d_backward
+- func: _upsample_nearest_exact1d_backward.grad_input
+  dispatch:
+    PrivateUse1: _upsample_nearest_exact1d_backward_out_musa
+
+- func: _upsample_nearest_exact2d
+- func: _upsample_nearest_exact2d.out
+  dispatch:
+    PrivateUse1: _upsample_nearest_exact2d_out_musa
+
+- func: _upsample_nearest_exact2d_backward
+- func: _upsample_nearest_exact2d_backward.grad_input
+  dispatch:
+    PrivateUse1: _upsample_nearest_exact2d_backward_out_musa
+
+- func: _upsample_nearest_exact3d
+- func: _upsample_nearest_exact3d.out
+  dispatch:
+    PrivateUse1: _upsample_nearest_exact3d_out_musa
+
+- func: _upsample_nearest_exact3d_backward
+- func: _upsample_nearest_exact3d_backward.grad_input
+  dispatch:
+    PrivateUse1: _upsample_nearest_exact3d_backward_out_musa
+
+- func: _upsample_bicubic2d_aa
+- func: _upsample_bicubic2d_aa.out
+  dispatch:
+    PrivateUse1: _upsample_bicubic2d_aa_out_musa
+
+- func: _upsample_bicubic2d_aa_backward
+- func: _upsample_bicubic2d_aa_backward.grad_input
+  dispatch:
+    PrivateUse1: _upsample_bicubic2d_aa_backward_out_musa
+
+- func: _upsample_bilinear2d_aa
+- func: _upsample_bilinear2d_aa.out
+  dispatch:
+    PrivateUse1: _upsample_bilinear2d_aa_out_musa
 
 - func: _weight_norm_interface
   device_check: ExactSame
@@ -3210,14 +3258,21 @@
   dispatch:
     PrivateUse1: max_unpooling3d_forward_cuda
 
+- func: rrelu_with_noise_functional
+  tags: nondeterministic_seeded
+  dispatch:
+    PrivateUse1: RReluWithNoiseFunctional
+
 - func: rrelu_with_noise
   device_check: ExactSame
   device_guard: True
+  tags: nondeterministic_seeded
   dispatch:
     PrivateUse1: rrelu_with_noise_cuda
 
 - func: rrelu_with_noise_
   device_check: ExactSame
+  tags: nondeterministic_seeded
   device_guard: True
   dispatch:
     PrivateUse1: rrelu_with_noise_cuda_
@@ -3225,6 +3280,7 @@
 - func: rrelu_with_noise.out
   device_check: ExactSame
   device_guard: True
+  tags: nondeterministic_seeded
   dispatch:
     PrivateUse1: rrelu_with_noise_out_cuda
 
@@ -3425,3 +3481,37 @@
 - func: _fft_c2c.out
   dispatch:
     PrivateUse1: _fft_c2c_musa_out
+
+- func: _standard_gamma_grad
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: _standard_gamma_grad_cuda
+
+- func: _standard_gamma
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: _s_gamma_cuda
+
+- func: _dirichlet_grad
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: _dirichlet_grad_cuda
+
+- func: _sample_dirichlet
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: _s_dirichlet_cuda
+
+- func: poisson
+  device_guard: True
+  dispatch:
+    PrivateUse1: _s_poisson_cuda
+
+- func: binomial
+  device_guard: True
+  dispatch:
+    PrivateUse1: _s_binomial_cuda

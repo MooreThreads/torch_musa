@@ -1,4 +1,4 @@
-Total amount of ops: 1010
+Total amount of ops: 1018
 - `__ilshift__.Scalar`
 - `__ilshift__.Tensor`
 - `__irshift__.Scalar`
@@ -34,6 +34,7 @@ Total amount of ops: 1010
 - `_ctc_loss`
 - `_cummax_helper`
 - `_cummin_helper`
+- `_dirichlet_grad`
 - `_embedding_bag`
 - `_empty_affine_quantized`
 - `_empty_per_channel_affine_quantized`
@@ -44,6 +45,8 @@ Total amount of ops: 1010
 - `_fft_c2r`
 - `_fft_r2c.out`
 - `_fft_r2c`
+- `_flash_attention_backward`
+- `_flash_attention_forward`
 - `_foreach_add.List`
 - `_foreach_add.ScalarList`
 - `_foreach_add.Scalar`
@@ -136,6 +139,7 @@ Total amount of ops: 1010
 - `_prelu_kernel_backward`
 - `_prelu_kernel`
 - `_reshape_alias`
+- `_sample_dirichlet`
 - `_scaled_dot_product_attention_flash_musa_backward`
 - `_scaled_dot_product_attention_flash_musa`
 - `_scaled_dot_product_attention_math_musa_backward`
@@ -147,17 +151,24 @@ Total amount of ops: 1010
 - `_softmax_backward_data`
 - `_softmax`
 - `_sparse_coo_tensor_with_dims_and_tensors`
+- `_standard_gamma_grad`
+- `_standard_gamma`
 - `_thnn_fused_lstm_cell_backward_impl`
 - `_thnn_fused_lstm_cell`
 - `_to_sparse.sparse_dim`
 - `_to_sparse_csr`
 - `_to_sparse`
+- `_transformer_encoder_layer_fwd`
 - `_unique2`
 - `_unique`
 - `_upsample_bicubic2d_aa.out`
 - `_upsample_bicubic2d_aa_backward.grad_input`
 - `_upsample_bicubic2d_aa_backward`
 - `_upsample_bicubic2d_aa`
+- `_upsample_bilinear2d_aa.out`
+- `_upsample_bilinear2d_aa_backward.grad_input`
+- `_upsample_bilinear2d_aa_backward`
+- `_upsample_bilinear2d_aa`
 - `_upsample_nearest_exact1d.out`
 - `_upsample_nearest_exact1d_backward.grad_input`
 - `_upsample_nearest_exact1d_backward`
@@ -276,6 +287,7 @@ Total amount of ops: 1010
 - `binary_cross_entropy_backward`
 - `binary_cross_entropy`
 - `bincount`
+- `binomial`
 - `bitwise_and.Tensor_out`
 - `bitwise_and.Tensor`
 - `bitwise_and_.Tensor`
@@ -737,6 +749,7 @@ Total amount of ops: 1010
 - `not_equal.Tensor`
 - `not_equal_.Tensor`
 - `one_hot`
+- `poisson`
 - `polar.out`
 - `polygamma.out`
 - `polygamma`
@@ -834,6 +847,7 @@ Total amount of ops: 1010
 - `round`
 - `rrelu_with_noise.out`
 - `rrelu_with_noise_`
+- `rrelu_with_noise_functional`
 - `rrelu_with_noise`
 - `rsqrt.out`
 - `rsqrt_`
@@ -942,17 +956,6 @@ Total amount of ops: 1010
 - `threshold`
 - `topk.values`
 - `topk`
-- `torchvision::_deform_conv2d_backward` (torchvision op)
-- `torchvision::_ps_roi_align_backward` (torchvision op)
-- `torchvision::_ps_roi_pool_backward` (torchvision op)
-- `torchvision::_roi_align_backward` (torchvision op)
-- `torchvision::_roi_pool_backward` (torchvision op)
-- `torchvision::deform_conv2d` (torchvision op)
-- `torchvision::nms` (torchvision op)
-- `torchvision::ps_roi_align` (torchvision op)
-- `torchvision::ps_roi_pool` (torchvision op)
-- `torchvision::roi_align` (torchvision op)
-- `torchvision::roi_pool` (torchvision op)
 - `trace`
 - `tril.out`
 - `tril_`
@@ -981,8 +984,12 @@ Total amount of ops: 1010
 - `upsample_bilinear2d_backward`
 - `upsample_bilinear2d`
 - `upsample_linear1d.out`
+- `upsample_linear1d_backward.grad_input`
+- `upsample_linear1d_backward`
 - `upsample_linear1d`
 - `upsample_nearest1d.out`
+- `upsample_nearest1d_backward.grad_input`
+- `upsample_nearest1d_backward`
 - `upsample_nearest1d`
 - `upsample_nearest2d.out`
 - `upsample_nearest2d_backward.grad_input`
@@ -1000,6 +1007,7 @@ Total amount of ops: 1010
 - `var.correction_out`
 - `var.correction`
 - `var_mean.correction`
+- `vdot`
 - `view_as_complex`
 - `view_as_real`
 - `view`

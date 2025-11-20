@@ -1,24 +1,24 @@
 diff --git a/aten/src/ATen/native/transformers/attention.cpp b/aten/src/ATen/native/transformers/attention.cpp
-index 1ebc3e2..c2175ea 100644
+index 27397bf..50b2078 100644
 --- a/aten/src/ATen/native/transformers/attention.cpp
 +++ b/aten/src/ATen/native/transformers/attention.cpp
 @@ -35,6 +35,8 @@
+ #include <ATen/ops/_scaled_dot_product_attention_math.h>
  #include <ATen/ops/_scaled_dot_product_attention_math_for_mps.h>
  #include <ATen/ops/_scaled_dot_product_attention_math_for_mps_native.h>
- #include <ATen/ops/_scaled_dot_product_attention_math_native.h>
 +#include <ATen/ops/_scaled_dot_product_attention_flash_musa.h>
 +#include <ATen/ops/_scaled_dot_product_attention_math_musa.h>
+ #include <ATen/ops/_scaled_dot_product_attention_math_native.h>
  #include <ATen/ops/_scaled_dot_product_efficient_attention.h>
  #include <ATen/ops/_scaled_dot_product_flash_attention.h>
- #include <ATen/ops/_scaled_dot_product_flash_attention_backward_native.h>
-@@ -716,6 +718,38 @@ Tensor scaled_dot_product_attention(
-           query_, key, value, attn_mask_, dropout_p, is_causal, scale, enable_gqa);
+@@ -711,6 +713,38 @@ Tensor scaled_dot_product_attention(
    }
-   sdp::SDPBackend backend = static_cast<sdp::SDPBackend>(choice_int);
+   const auto query_device_type = query_.device().type();
+   const auto backend = static_cast<SDPBackend>(choice_int);
 +
-+  if (query_.is_privateuseone()) {
++  if (query_device_type == DeviceType::PrivateUse1) {
 +    switch (backend) {
-+      case sdp::SDPBackend::flash_attention: {
++      case SDPBackend::flash_attention: {
 +        return std::get<0>(at::_scaled_dot_product_attention_flash_musa(
 +            query_,
 +            key,
@@ -28,7 +28,7 @@ index 1ebc3e2..c2175ea 100644
 +            is_causal,
 +            scale));
 +      }
-+      case sdp::SDPBackend::math: {
++      case SDPBackend::math: {
 +        auto [key_expanded, value_expanded] = pre_process_group_query_attention_input(query_, key, value, true);
 +        return std::get<0>(at::_scaled_dot_product_attention_math_musa(
 +            query_,
@@ -47,6 +47,6 @@ index 1ebc3e2..c2175ea 100644
 +    }
 +  }
 +
+   const auto convert_attn_func = backend != SDPBackend::cudnn_attention ? convert_boolean_attn_mask : convert_boolean_attn_mask_cudnn;
+   auto attn_mask = convert_attn_func(attn_mask_, query_.dtype());
    switch (backend) {
-     case sdp::SDPBackend::cudnn_attention: {
-       std::optional<Tensor> attn_mask = convert_boolean_attn_mask_cudnn(attn_mask_, query_.dtype());

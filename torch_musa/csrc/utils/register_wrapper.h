@@ -5,6 +5,7 @@ A wrapper of TORCH_LIBRARY_IMPL, with templated wrapper function.
 Use config files or Environment to Enable/Disable print of operator info.
 */
 
+#include <ATen/autocast_mode.h>
 #include <ATen/core/Formatting.h>
 #include <c10/core/QScheme.h>
 #include <c10/core/Scalar.h>
@@ -67,46 +68,64 @@ at_native_unfold)
 REGISTER_IMPL will register a wrapper named as wrapper_{name}.
 */
 
-#define REGISTER_IMPL(lib, key, yaml, func, name)               \
-  using namespace at::musa;                                     \
-  template <class F, F f>                                       \
-  struct wrapper_##name;                                        \
-  template <class R, class... Args, R (*f)(Args...)>            \
-  struct wrapper_##name<R (*)(Args...), f> {                    \
-    static R wrap(Args... args) {                               \
-      if (!GlobalConfig.IsOpEnabled(yaml, #func)) {             \
-        return f(args...);                                      \
-      }                                                         \
-      GlobalConfig.CreateKernelStream(yaml, #func);             \
-      GlobalConfig.enabled_ = false;                            \
-      TraversalItems(args...);                                  \
-      GlobalConfig.enabled_ = true;                             \
-      GlobalConfig.SplitKernelIO();                             \
-      R&& result = f(args...);                                  \
-      GlobalConfig.enabled_ = false;                            \
-      TraversalItems(result);                                   \
-      GlobalConfig.enabled_ = true;                             \
-      GlobalConfig.CloseKernelStream();                         \
-      return std::forward<R>(result);                           \
-    }                                                           \
-  };                                                            \
-  template <class... Args, void (*f)(Args...)>                  \
-  struct wrapper_##name<void (*)(Args...), f> {                 \
-    static void wrap(Args... args) {                            \
-      if (!GlobalConfig.IsOpEnabled(yaml, #func)) {             \
-        return f(args...);                                      \
-      }                                                         \
-      GlobalConfig.CreateKernelStream(yaml, #func);             \
-      GlobalConfig.enabled_ = false;                            \
-      TraversalItems(args...);                                  \
-      GlobalConfig.enabled_ = true;                             \
-      GlobalConfig.SplitKernelIO();                             \
-      f(args...);                                               \
-      GlobalConfig.CloseKernelStream();                         \
-    }                                                           \
-  };                                                            \
-  TORCH_LIBRARY_IMPL(lib, key, m) {                             \
-    m.impl(yaml, &wrapper_##name<decltype(&func), func>::wrap); \
+#define REGISTER_IMPL(lib, key, yaml, func, name)                           \
+  using namespace at::musa;                                                 \
+  template <class F, F f>                                                   \
+  struct wrapper_##name;                                                    \
+  template <class R, class... Args, R (*f)(Args...)>                        \
+  struct wrapper_##name<R (*)(Args...), f> {                                \
+    static R wrap(Args... args) {                                           \
+      if (!GlobalConfig.UseDoubleCast()) {                                  \
+        if (!GlobalConfig.IsOpEnabled(yaml, #func)) {                       \
+          return f(args...);                                                \
+        }                                                                   \
+        GlobalConfig.CreateKernelStream(yaml, #func);                       \
+        GlobalConfig.enabled_ = false;                                      \
+        TraversalItems(args...);                                            \
+        GlobalConfig.enabled_ = true;                                       \
+        GlobalConfig.SplitKernelIO();                                       \
+        R&& result = f(args...);                                            \
+        GlobalConfig.enabled_ = false;                                      \
+        TraversalItems(result);                                             \
+        GlobalConfig.enabled_ = true;                                       \
+        GlobalConfig.CloseKernelStream();                                   \
+        return std::forward<R>(result);                                     \
+      } else {                                                              \
+        if (!should_cast(yaml)) {                                           \
+          return f(args...);                                                \
+        }                                                                   \
+        R result = [&]() -> R {                                             \
+          if constexpr (std::is_reference_v<R>) {                           \
+            return f(args...);                                              \
+          } else {                                                          \
+            return f(cast_arg(args, at::kFloat)...);                        \
+          }                                                                 \
+        }();                                                                \
+        if constexpr (!std::is_reference_v<R>) {                            \
+          return std::forward<R>(cast_arg(std::move(result), at::kDouble)); \
+        } else {                                                            \
+          return result;                                                    \
+        }                                                                   \
+      }                                                                     \
+    }                                                                       \
+  };                                                                        \
+  template <class... Args, void (*f)(Args...)>                              \
+  struct wrapper_##name<void (*)(Args...), f> {                             \
+    static void wrap(Args... args) {                                        \
+      if (!GlobalConfig.IsOpEnabled(yaml, #func)) {                         \
+        return f(args...);                                                  \
+      }                                                                     \
+      GlobalConfig.CreateKernelStream(yaml, #func);                         \
+      GlobalConfig.enabled_ = false;                                        \
+      TraversalItems(args...);                                              \
+      GlobalConfig.enabled_ = true;                                         \
+      GlobalConfig.SplitKernelIO();                                         \
+      f(args...);                                                           \
+      GlobalConfig.CloseKernelStream();                                     \
+    }                                                                       \
+  };                                                                        \
+  TORCH_LIBRARY_IMPL(lib, key, m) {                                         \
+    m.impl(yaml, &wrapper_##name<decltype(&func), func>::wrap);             \
   }
 
 // lib = aten, key = PrivateUse1, yaml = torch op yaml name, func = kernel.
@@ -140,6 +159,7 @@ class Config {
  public:
   Config(); // done.
   bool IsOpEnabled(const char* yaml, const char* func); // done.
+  bool UseDoubleCast();
   void set_enabled(bool flag);
   void set_dir(const std::string& dir);
   void CreateKernelStream(
@@ -185,6 +205,7 @@ class Config {
 
 // Only init once in reigster_wrapper.cpp
 extern Config GlobalConfig;
+extern const std::unordered_set<std::string> skip_cast_ops;
 
 struct TensorSignature {
   bool is_bool_tensor;
@@ -373,6 +394,25 @@ template <typename A, typename... Args>
 inline void TraversalItems(A arg1, Args... args) {
   ProcessArgs(arg1);
   TraversalItems(args...);
+}
+
+inline Tensor& cast_arg(Tensor& arg, at::ScalarType) {
+  return arg;
+}
+
+template <typename T>
+auto cast_arg(T&& arg, at::ScalarType to_type) {
+  return at::autocast::cached_cast(
+      to_type, std::forward<T>(arg), c10::DeviceType::PrivateUse1);
+}
+
+inline bool should_cast(const std::string& op_name) {
+  for (const auto& key : skip_cast_ops) {
+    if (op_name.find(key) != std::string::npos) {
+      return false;
+    }
+  }
+  return true;
 }
 
 // A hack used to suppress warnings when overriding operators for CPU backend

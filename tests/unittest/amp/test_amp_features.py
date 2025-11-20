@@ -92,12 +92,13 @@ def test_autocast_bf16_device():
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 def test_get_amp_supported_dtype():
     support_dtype = torch.musa.get_amp_supported_dtype()
-    assert support_dtype == [torch.float16, torch.bfloat16, torch.float32]
+    assert support_dtype == [torch.float16, torch.bfloat16]
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("enabled", [True, False])
 def test_set_autocast_musa_enabled(enabled):
-    torch.musa.set_autocast_enabled(enabled)
-    res = torch.musa.is_autocast_enabled()
+    torch.set_autocast_enabled(enabled)
+    res = torch.is_autocast_enabled()
+    res = torch.is_autocast_enabled("musa")
     assert res == enabled

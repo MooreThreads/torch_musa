@@ -1,4 +1,6 @@
 """Python utility functions for musa testing"""
+import os
+import torch
 
 from .base_test_tool import (
     DefaultComparator,
@@ -30,3 +32,8 @@ from .common_utils import (
     needs_musa,
     assert_equal,
 )
+
+# This is only used for testing purpose!
+no_tf32 = os.environ.get("TORCH_MUSA_TESTING_NO_TF32", None)
+if no_tf32:
+    torch.backends.mudnn.set_flags(False)

@@ -1,9 +1,9 @@
 diff --git a/aten/src/ATen/native/musa_unique.cpp b/aten/src/ATen/native/musa_unique.cpp
 new file mode 100644
-index 0000000..2eea280
+index 0000000..82e4ec4
 --- /dev/null
 +++ b/aten/src/ATen/native/musa_unique.cpp
-@@ -0,0 +1,199 @@
+@@ -0,0 +1,200 @@
 +#include <ATen/Dispatch.h>
 +
 +#ifndef AT_PER_OPERATOR_HEADERS
@@ -132,15 +132,16 @@ index 0000000..2eea280
 +  NYI("_fused_rope_backward");
 +}
 +
-+Tensor rope(const Tensor& input, const Tensor& freq_cls, bool rotary_interleaved, bool batch_first, bool multi_latent_attention) {
++Tensor rope(const Tensor& input, const Tensor& freq_cis, bool rotary_interleaved, bool batch_first, bool multi_latent_attention) {
 +  if (input.is_privateuseone()) {
 +    auto result = AT_DISPATCH_FLOATING_TYPES_AND2(
 +        at::ScalarType::Half,
 +        at::ScalarType::BFloat16,
 +        input.scalar_type(),
-+        "rope",[&]{
-+            auto output = at::_fused_rope_forward(input, freq_cls, rotary_interleaved, batch_first, multi_latent_attention);
-+            return output;
++        "rope",
++        [&] {
++          auto output = at::_fused_rope_forward(input, freq_cis, rotary_interleaved, batch_first, multi_latent_attention);
++          return output;
 +        });
 +    return result;
 +  }

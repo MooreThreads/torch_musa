@@ -1,16 +1,12 @@
 diff --git a/c10/util/C++17.h b/c10/util/C++17.h
-index 0597544ffba..397f756baff 100644
+index 359774b..b9aca70 100644
 --- a/c10/util/C++17.h
 +++ b/c10/util/C++17.h
-@@ -54,7 +54,11 @@ make_unique_base(Args&&... args) {
-   return std::unique_ptr<Base>(new Child(std::forward<Args>(args)...));
- }
+@@ -45,7 +45,7 @@ constexpr bool is_pod_v = is_pod<T>::value;
+ 
+ namespace guts {
  
 -#if defined(__cpp_lib_apply) && !defined(__CUDA_ARCH__) && !defined(__HIP__)
-+// #if defined(__cpp_lib_apply) && !defined(__CUDA_ARCH__) && !defined(__HIP__)
-+// As porting we should define __MUSA_ARCH__ = sth like cuda.
-+// However, when torch-musa is available, MUSA must be enabled,
-+// thus, just set to 0 and use fully implementation of apply.
 +#if 0
  
  template <class F, class Tuple>

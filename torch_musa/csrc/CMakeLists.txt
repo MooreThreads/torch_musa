@@ -41,6 +41,7 @@ file(
   PORTING_CPP_CSRCS
   aten/ops/musa/*.cpp
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Activation.cpp
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Distributions.cpp
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Resize.cpp
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Sorting.cpp
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TensorModeKernel.cpp
@@ -88,6 +89,7 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/CrossKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/CumminmaxKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/CopysignKernel.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Distributions.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistributionUniform.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistributionNormal.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistributionBernoulli.mu
@@ -135,7 +137,6 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TriangularOps.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryFractionKernels.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnarySignKernels.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnarySpecialOpsKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryGammaKernels.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryGeometricAsinKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryGeometricAsinhKernel.mu
@@ -145,12 +146,6 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryGeometricCoshKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryLogKernels.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnfoldBackwardKernel.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleBicubic2d.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleTrilinear3d.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleLinear1d.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleNearest1d.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleNearest2d.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UpSampleNearest3d.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryOpsKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/WeightNorm.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistanceKernel.mu
@@ -168,7 +163,6 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/sparse/musa/SparseMUSATensor.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/FlattenIndicesKernel.mu
   aten/quantized/musa/*.mu
-  aten/ops/torchvision/*.mu
   aten/ops/musa/*.mu
   aten/ops/attention/mudnn/*.mu
   core/*.mu)
@@ -212,8 +206,7 @@ else()
 endif()
 
 musa_include_directories(${OpenMP_CXX_INCLUDE_DIRS})
-musa_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/aten/ops/musa
-                         aten/ops/torchvision)
+musa_include_directories(${CMAKE_CURRENT_SOURCE_DIR}/aten/ops/musa)
 
 musa_add_library(
   ${MUSA_KERNELS_LIB}

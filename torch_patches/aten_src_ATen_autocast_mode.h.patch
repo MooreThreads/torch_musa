@@ -1,0 +1,16 @@
+diff --git a/aten/src/ATen/autocast_mode.h b/aten/src/ATen/autocast_mode.h
+index ec30eb6..34ddb38 100644
+--- a/aten/src/ATen/autocast_mode.h
++++ b/aten/src/ATen/autocast_mode.h
+@@ -308,7 +308,10 @@ inline bool is_eligible(
+     c10::DeviceType device_type = c10::DeviceType::CUDA) {
+   return (
+       arg.defined() && is_autocast_eligible(arg, device_type) &&
+-      (arg.scalar_type() != at::kDouble));
++      ((device_type != c10::DeviceType::PrivateUse1) ? 
++        (arg.scalar_type() != at::kDouble) : 
++          true)
++  );
+ }
+ 
+ // Overload to catch Tensor args

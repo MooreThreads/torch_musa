@@ -4,7 +4,7 @@
 <!-- toc -->
 
 - [Overview](#overview)
-- [Installation](#installation)  
+- [Installation](#installation)
   - [Prerequisites](#prerequisites)
   - [Docker Image](#docker-image)
   - [From Python wheels](#from-python-wheels)
@@ -21,11 +21,13 @@
 
 ## Overview
 
-**torch_musa** is an extended Python package based on PyTorch. Combined with PyTorch, users can take advantage of the strong power of Moore Threads graphics cards through **torch_musa**. 
+**torch_musa** is an extended Python package based on PyTorch. Combined with PyTorch, users can take advantage of the strong power of Moore Threads graphics cards through **torch_musa**.
 
 **torch_musa**'s APIs are consistent with PyTorch in format, which allows users accustomed to PyTorch to migrate smoothly to **torch_musa**, so for the usage users can refer to [PyTorch Official Doc](https://docs.pytorch.org/docs/stable/index.html), all you need is just switch the backend string from "cpu" or "cuda" to "musa".
 
 **torch_musa** also provides a bundle of tools for users to conduct cuda-porting, building musa extension and debugging. Please refer to [README.md](torch_musa/utils/README.md).
+
+For some customize optimizations, like **Dynamic Double Casting** and **Unified Memory Management**, please refer to [README.md](torch_musa/README.md).
 
 If you want to write your layers in C/C++, we provide a convenient extension API that is efficient and with minimal boilerplate. No wrapper code needs to be written. You can see [a ResNet50 example here](torch_musa/examples/cpp/README.md).
 
@@ -94,21 +96,32 @@ USE_MCCL=0 bash build.sh -c
 
 ## MUSA Supported Repositories
 We provide some widely used PyTorch environment repositories, which have all adapted with our MUSA platform. Besides, many repositories have supported MUSA backend upstream,
-like [Transformers](https://github.com/huggingface/transformers.git), [Accelerate](https://github.com/huggingface/accelerate.git), you can install them with `pip install [repo-name]`.
+like [Transformers](https://github.com/huggingface/transformers.git), [Accelerate](https://github.com/huggingface/accelerate.git),
+you can install them from PyPi with `pip install [repo-name]`.
 
-### torchvision and torchaudio
-PyTorch v2.5.0 needs `torchvision==0.20.0` and `torchaudio==2.5.0`, and for torch_musa users we
-shouldn't have them installed like `pip install torchvision==0.20.0`, instead, we should build
+### torchvision
+For torch_musa v2.7.0 and later, install torchvision from our musified one:
+```shell
+git clone https://github.com/MooreThreads/vision -b v0.22.1-musa --depth 1
+cd vision && python setup.py install
+```
+
+
+For torch_musa v2.5.0 and earlier, install torchvision from source with:
+```shell
+git clone https://github.com/pytorch/vision -b ${version} --depth 1
+cd vision && python setup.py install
+```
+the `version` is depend on torch version, for example you have torch_musa v2.5.0 with torch v2.5.0, install `torchvision==0.20.0`.
+
+### torchaudio
+Install torchaudio from source:
 them from source:
 ```shell
-# build & install torchvision
-git clone https://github.com/pytorch/vision.git -b v0.20.0 --depth 1
-cd visoin && python setup.py install
-
-# build & install torchaudio
-git clone https://github.com/pytorch/audio.git -b v2.5.0 --depth 1
+git clone https://github.com/pytorch/audio.git -b ${version} --depth 1
 cd audio && python setup.py install
 ```
+the `version` is same as the torch version.
 
 ### Other Repositories
 There are many widely used pytorch-related repositories, and we musified some of them and put them into our [GitHub](https://github.com/MooreThreads), here's the list:
@@ -117,6 +130,7 @@ There are many widely used pytorch-related repositories, and we musified some of
 | pytorch3d | musa-dev | https://github.com/MooreThreads/pytorch3d | python setup.py install |
 | pytorch_sparse | master | https://github.com/MooreThreads/pytorch_sparse | python setup.py install |
 | pytorch_scatter | master | https://github.com/MooreThreads/pytorch_scatter | python setup.py install |
+| torchvision | v0.22.1-musa | https://github.com/MooreThreads/vision | python setup.py install |
 | More to come... | | | |
 
 If users find any question about these repos, please file issues in torch_musa, and if anyone  musify a repository, you can
@@ -145,7 +159,7 @@ The following two key changes are required when using **torch_musa**:
   ```
   # ensure torchvision is not installed
   pip uninstall torchvision
-  
+
   git clone https://github.com/pytorch/vision.git
   cd vision
   python setup.py install

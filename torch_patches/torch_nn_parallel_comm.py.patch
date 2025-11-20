@@ -1,8 +1,8 @@
 diff --git a/torch/nn/parallel/comm.py b/torch/nn/parallel/comm.py
-index 764775587d6..20e66ed3bd3 100644
+index 42b3dbd..4cceda4 100644
 --- a/torch/nn/parallel/comm.py
 +++ b/torch/nn/parallel/comm.py
-@@ -42,9 +42,9 @@ def broadcast(tensor, devices=None, *, out=None):
+@@ -41,9 +41,9 @@ def broadcast(tensor, devices=None, *, out=None):
          )
      if devices is not None:
          devices = [_get_device_index(d) for d in devices]
@@ -14,7 +14,7 @@ index 764775587d6..20e66ed3bd3 100644
  
  
  def broadcast_coalesced(tensors, devices, buffer_size=10485760):
-@@ -64,7 +64,7 @@ def broadcast_coalesced(tensors, devices, buffer_size=10485760):
+@@ -63,7 +63,7 @@ def broadcast_coalesced(tensors, devices, buffer_size=10485760):
      """
      devices = [_get_device_index(d) for d in devices]
      tensors = [_handle_complex(t) for t in tensors]
@@ -23,7 +23,7 @@ index 764775587d6..20e66ed3bd3 100644
  
  
  def reduce_add(inputs, destination=None):
-@@ -202,7 +202,7 @@ def scatter(tensor, devices=None, chunk_sizes=None, dim=0, streams=None, *, out=
+@@ -201,7 +201,7 @@ def scatter(tensor, devices=None, chunk_sizes=None, dim=0, streams=None, *, out=
      tensor = _handle_complex(tensor)
      if out is None:
          devices = [_get_device_index(d) for d in devices]
@@ -32,7 +32,7 @@ index 764775587d6..20e66ed3bd3 100644
      else:
          if devices is not None:
              raise RuntimeError(
-@@ -212,7 +212,7 @@ def scatter(tensor, devices=None, chunk_sizes=None, dim=0, streams=None, *, out=
+@@ -211,7 +211,7 @@ def scatter(tensor, devices=None, chunk_sizes=None, dim=0, streams=None, *, out=
              raise RuntimeError(
                  f"'chunk_sizes' must not be specified when 'out' is specified, but got chunk_sizes={chunk_sizes}"
              )
@@ -41,7 +41,7 @@ index 764775587d6..20e66ed3bd3 100644
  
  
  def gather(tensors, dim=0, destination=None, *, out=None):
-@@ -251,10 +251,10 @@ def gather(tensors, dim=0, destination=None, *, out=None):
+@@ -250,10 +250,10 @@ def gather(tensors, dim=0, destination=None, *, out=None):
                  stacklevel=2,
              )
          destination = _get_device_index(destination, allow_cpu=True, optional=True)

@@ -1,6 +1,7 @@
 #include "torch_musa/csrc/distributed/MCCLUtils.h"
 #include <c10/util/CallOnce.h>
 
+#include <fstream>
 #include <mutex>
 namespace c10d {
 mcclComm_t MCCLComm::getMcclComm() {

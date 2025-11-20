@@ -1,6 +1,9 @@
 #include "UMACPUAllocator.h"
 #include <c10/core/Allocator.h>
 #include <c10/core/DeviceType.h>
+
+#include <cstring>
+
 #include <musa_runtime_api.h>
 #include "torch_musa/csrc/core/MUSAException.h"
 namespace c10 {

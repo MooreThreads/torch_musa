@@ -57,6 +57,10 @@ const Generator& MUSAHooks::getDefaultMUSAGenerator(
   return at::musa::detail::getDefaultMUSAGenerator(device_index);
 }
 
+Generator MUSAHooks::getNewGenerator(DeviceIndex device_index) const {
+  return make_generator<at::MUSAGeneratorImpl>(device_index);
+}
+
 Device MUSAHooks::getDeviceFromPtr(void* data) const {
   return c10::musa::getDeviceFromPtr(data);
 }

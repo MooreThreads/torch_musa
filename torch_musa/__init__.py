@@ -30,17 +30,17 @@ def _autoload():
 
 import torch
 
-TORCH_MIN_VERSION = Version("2.5.0")
+TORCH_MIN_VERSION = Version("2.7.1")
 TORCH_VERSION = Version(torch.__version__).base_version
 if Version(TORCH_VERSION) < TORCH_MIN_VERSION:
     raise RuntimeError(
-        "torch version must not be less than v2.5.0 when using torch_musa,",
+        "torch version must not be less than v2.7.1 when using torch_musa,",
         " but now torch version is " + torch.__version__,
     )
 
-if "2.5.0" not in torch.__version__:
+if "2.7.1" not in torch.__version__:
     warnings.warn(
-        "torch version should be v2.5.0 when using torch_musa, but now torch version is "
+        "torch version should be v2.7.1 when using torch_musa, but now torch version is "
         + torch.__version__,
         UserWarning,
     )
@@ -104,10 +104,6 @@ from .core import amp
 from .core.amp.common import (
     amp_definitely_not_available,
     get_amp_supported_dtype,
-    is_autocast_enabled,
-    set_autocast_enabled,
-    set_autocast_dtype,
-    get_autocast_dtype,
 )
 
 from .core.serialization import register_deserialization
@@ -115,7 +111,13 @@ from .core.serialization import register_deserialization
 from .core import memory
 from .core.memory import *
 
-from .core._lazy_init import _lazy_init, _initialized, _is_in_bad_fork, is_initialized
+from .core._lazy_init import (
+    _lazy_init,
+    _initialized,
+    _is_in_bad_fork,
+    is_initialized,
+    musart,
+)
 
 from .core.random import *
 
@@ -219,11 +221,9 @@ setattr(
 
 OutOfMemoryError = torch._C.OutOfMemoryError
 
-# pylint: disable=C0411, C0412
-import torch._inductor.graph as orig_graph
-import torch_musa._inductor.graph as musa_graph
+from .core.lowering import apply_lowering_patch
 
-setattr(orig_graph, "GraphLowering", musa_graph.MusaGraphLowering)
+apply_lowering_patch()
 
 
 # pylint: disable=missing-function-docstring

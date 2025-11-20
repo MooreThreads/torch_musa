@@ -5,7 +5,7 @@ import copy
 
 import torch
 from torch import nn
-from torch.distributed._composable.fsdp import fully_shard
+from torch.distributed.fsdp import fully_shard
 
 from torch_musa.core.amp.grad_scaler import GradScaler, OptState
 from torch_musa.testing.common_fsdp import FSDPTest, skip_if_lt_x_gpu

@@ -152,52 +152,76 @@ void SetMudnnQuantizationInfo(
   CHECK_MUDNN_STATUS(self.SetQuantizationInfo(scales_), "SetQuantizationInfo");
 }
 
-muTensor CreateMUTensorByCompressDim(const Tensor& t) {
-  // mudnn only support dim <= 8, need to compress the shapes
-  TORCH_CHECK(t.dim() > 8, "Now only compress the tensor whose dim > 8");
-  muTensor rst;
-  SetMUTensorDType(t.scalar_type(), rst);
-  SetMUTensorAddr(t.data_ptr(), rst);
-  // init reverse shapes and strides, easier to compress.
-  DimVector shape(t.sizes().rbegin(), t.sizes().rend());
-  DimVector stride(t.strides().rbegin(), t.strides().rend());
+std::pair<muTensor, muTensor> CreateMUTensorsCompression(
+    const Tensor& t1,
+    const Tensor& t2) {
+  TORCH_CHECK(
+      t1.sizes().equals(t2.sizes()), "Input tensors must have the same shape");
+  TORCH_CHECK(t1.dim() > 8, "Now only compress tensors whose dim > 8");
 
-  auto can_compress = [&](int dim0, int dim1) {
-    auto shape0 = shape[dim0];
-    auto shape1 = shape[dim1];
-    if (shape0 == 1 || shape1 == 1) {
-      return true;
-    }
-    if (shape0 * stride[dim0] != stride[dim1]) {
-      return false;
-    }
-    return true;
-  };
+  // init reverse shapes and strides, easier to compress.
+  DimVector shape1(t1.sizes().rbegin(), t1.sizes().rend());
+  DimVector stride1(t1.strides().rbegin(), t1.strides().rend());
+  DimVector shape2(t2.sizes().rbegin(), t2.sizes().rend());
+  DimVector stride2(t2.strides().rbegin(), t2.strides().rend());
 
   int prev_dim = 0;
-  for (const auto dim : c10::irange(1, t.dim())) {
-    if (can_compress(prev_dim, dim)) {
-      if (shape[prev_dim] == 1) {
-        stride[prev_dim] = stride[dim];
-      }
-      shape[prev_dim] *= shape[dim];
+  const int total_dims = t1.dim();
+
+  for (int dim = 1; dim < total_dims; ++dim) {
+    const auto& shape0 = shape1[prev_dim];
+    const auto& shape1_val = shape1[dim];
+
+    bool can_compress = false;
+    if (shape0 == 1 || shape1_val == 1) {
+      can_compress = true;
     } else {
-      prev_dim++;
+      // both tensors satisfy the compression condition
+      can_compress = (shape0 * stride1[prev_dim] == stride1[dim]) &&
+          (shape0 * stride2[prev_dim] == stride2[dim]);
+    }
+
+    if (can_compress) {
+      if (shape1[prev_dim] == 1) {
+        stride1[prev_dim] = stride1[dim];
+        stride2[prev_dim] = stride2[dim];
+      }
+      shape1[prev_dim] *= shape1[dim];
+      shape2[prev_dim] *= shape2[dim];
+    } else {
+      ++prev_dim;
       if (prev_dim != dim) {
-        stride[prev_dim] = stride[dim];
-        shape[prev_dim] = shape[dim];
+        stride1[prev_dim] = stride1[dim];
+        shape1[prev_dim] = shape1[dim];
+        stride2[prev_dim] = stride2[dim];
+        shape2[prev_dim] = shape2[dim];
       }
     }
   }
-  int ndim = prev_dim + 1;
-  TORCH_CHECK(ndim <= 8, "mudnn only support dim <= 8, but it is ", ndim);
-  shape.resize(ndim);
-  stride.resize(ndim);
-  // reverse back
-  std::reverse(shape.begin(), shape.end());
-  std::reverse(stride.begin(), stride.end());
-  rst.SetNdInfo(ndim, shape.data(), stride.data());
-  return rst;
+
+  const int ndim = prev_dim + 1;
+  TORCH_CHECK(ndim <= 8, "mudnn only supports dim <= 8, but it is ", ndim);
+  // adjust to the compressed dim.
+  shape1.resize(ndim);
+  stride1.resize(ndim);
+  shape2.resize(ndim);
+  stride2.resize(ndim);
+
+  std::reverse(shape1.begin(), shape1.end());
+  std::reverse(stride1.begin(), stride1.end());
+  std::reverse(shape2.begin(), shape2.end());
+  std::reverse(stride2.begin(), stride2.end());
+
+  muTensor rst1, rst2;
+  SetMUTensorDType(t1.scalar_type(), rst1);
+  SetMUTensorAddr(t1.data_ptr(), rst1);
+  rst1.SetNdInfo(ndim, shape1.data(), stride1.data());
+
+  SetMUTensorDType(t2.scalar_type(), rst2);
+  SetMUTensorAddr(t2.data_ptr(), rst2);
+  rst2.SetNdInfo(ndim, shape2.data(), stride2.data());
+
+  return {rst1, rst2};
 }
 
 muTensor CreateMUTensor(const Tensor& t, bool permute_if_not_contiguous) {

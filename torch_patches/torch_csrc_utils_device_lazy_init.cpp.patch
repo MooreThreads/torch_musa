@@ -1,8 +1,8 @@
 diff --git a/torch/csrc/utils/device_lazy_init.cpp b/torch/csrc/utils/device_lazy_init.cpp
-index d032071..eeff5cb 100644
+index 74adb6b..702a4d2 100644
 --- a/torch/csrc/utils/device_lazy_init.cpp
 +++ b/torch/csrc/utils/device_lazy_init.cpp
-@@ -33,7 +33,10 @@ void device_lazy_init(at::DeviceType device_type) {
+@@ -32,7 +32,10 @@ void device_lazy_init(at::DeviceType device_type) {
      return;
    }
  

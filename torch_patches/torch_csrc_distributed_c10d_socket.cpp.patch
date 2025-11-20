@@ -1,8 +1,8 @@
 diff --git a/torch/csrc/distributed/c10d/socket.cpp b/torch/csrc/distributed/c10d/socket.cpp
-index f155f825284..6ff2263e3c3 100644
+index 52e4b9f..3dc1a62 100644
 --- a/torch/csrc/distributed/c10d/socket.cpp
 +++ b/torch/csrc/distributed/c10d/socket.cpp
-@@ -531,11 +531,12 @@ SocketListenOp::SocketListenOp(std::uint16_t port, const SocketOptions& opts)
+@@ -529,11 +529,12 @@ SocketListenOp::SocketListenOp(std::uint16_t port, const SocketOptions& opts)
  
  std::unique_ptr<SocketImpl> SocketListenOp::run() {
    if (opts_->prefer_ipv6()) {
@@ -19,7 +19,7 @@ index f155f825284..6ff2263e3c3 100644
      C10D_DEBUG("The server socket will attempt to listen on an IPv4 address.");
      if (tryListen(AF_INET)) {
        return std::move(socket_);
-@@ -770,20 +771,21 @@ SocketConnectOp::SocketConnectOp(
+@@ -773,20 +774,21 @@ SocketConnectOp::SocketConnectOp(
  
  std::unique_ptr<SocketImpl> SocketConnectOp::run() {
    if (opts_->prefer_ipv6()) {

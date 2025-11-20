@@ -1,0 +1,17 @@
+diff --git a/third_party/kineto.buck.bzl b/third_party/kineto.buck.bzl
+index 96e1fb3..01d8e88 100644
+--- a/third_party/kineto.buck.bzl
++++ b/third_party/kineto.buck.bzl
+@@ -15,9 +15,9 @@ def define_kineto():
+         srcs = [
+             "kineto/libkineto/src/ActivityProfilerController.cpp",
+             "kineto/libkineto/src/ActivityProfilerProxy.cpp",
+-            "kineto/libkineto/src/CuptiActivityApi.cpp",
+-            "kineto/libkineto/src/CuptiActivityProfiler.cpp",
+-            "kineto/libkineto/src/CuptiRangeProfilerApi.cpp",
++            "kineto/libkineto/src/MuptiActivityApi.cpp",
++            "kineto/libkineto/src/MuptiActivityProfiler.cpp",
++            "kineto/libkineto/src/MuptiRangeProfilerApi.cpp",
+             "kineto/libkineto/src/Demangle.cpp",
+             "kineto/libkineto/src/init.cpp",
+             "kineto/libkineto/src/output_csv.cpp",
