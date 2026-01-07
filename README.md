@@ -10,11 +10,10 @@
   - [From Python wheels](#from-python-wheels)
   - [From Source](#from-source)
 - [MUSA Supported Repositories](#musa-supported-repositories)
-  - [torchvision and torchaudio](#torchvision-and-torchaudio)
+  - [torchvision](#torchvision)
+  - [torchaudio](#torchaudio)
   - [Other Repositories](#other-repositories)
 - [Usage](#usage)
-  - [Key Changes](#key-changes)
-  - [Codegen](#codegen)
 - [License](#license)
 
 <!-- tocstop -->
@@ -23,13 +22,13 @@
 
 **torch_musa** is an extended Python package based on PyTorch. Combined with PyTorch, users can take advantage of the strong power of Moore Threads graphics cards through **torch_musa**.
 
-**torch_musa**'s APIs are consistent with PyTorch in format, which allows users accustomed to PyTorch to migrate smoothly to **torch_musa**, so for the usage users can refer to [PyTorch Official Doc](https://docs.pytorch.org/docs/stable/index.html), all you need is just switch the backend string from "cpu" or "cuda" to "musa".
+**torch_musa**'s APIs are consistent with PyTorch in format, which allows users accustomed to PyTorch to migrate smoothly to **torch_musa**, so for the usage users can refer to [PyTorch Official Doc](https://docs.pytorch.org/docs/stable/index.html), all you need is just switch the backend string from `cpu` or `cuda` to `musa`.
 
 **torch_musa** also provides a bundle of tools for users to conduct cuda-porting, building musa extension and debugging. Please refer to [README.md](torch_musa/utils/README.md).
 
 For some customize optimizations, like **Dynamic Double Casting** and **Unified Memory Management**, please refer to [README.md](torch_musa/README.md).
 
-If you want to write your layers in C/C++, we provide a convenient extension API that is efficient and with minimal boilerplate. No wrapper code needs to be written. You can see [a ResNet50 example here](torch_musa/examples/cpp/README.md).
+If you want to write your layers in C/C++, we provide a convenient extension API that is efficient and with minimal boilerplate. No wrapper code needs to be written. Refer to [ResNet50 example](torch_musa/examples/cpp/README.md).
 
 --------------------------------------------------------------------------------
 
@@ -58,7 +57,7 @@ Download torch & torch_musa wheels from our [Release Page](https://github.com/Mo
 please make sure you have all prerequisites installed.
 
 ### From Source
-First, clone the torch_musa repository
+Firstly, clone the torch_musa repository
 ```bash
 git clone https://github.com/MooreThreads/torch_musa.git
 cd torch_musa
@@ -85,7 +84,7 @@ Some important building parameters are as follows:
  - --clean/-c: clean everything built and build
  - --wheel/-w: generate wheels
 
-For example, if one has built PyTorch and only needs to build torch_musa with wheel, run:
+For example, if one has built PyTorch and only needs to build torch_musa and generate wheel, run:
 ```bash
 bash build.sh -m -w
 ```
@@ -95,28 +94,24 @@ USE_MCCL=0 bash build.sh -c
 ```
 
 ## MUSA Supported Repositories
-We provide some widely used PyTorch environment repositories, which have all adapted with our MUSA platform. Besides, many repositories have supported MUSA backend upstream,
-like [Transformers](https://github.com/huggingface/transformers.git), [Accelerate](https://github.com/huggingface/accelerate.git),
-you can install them from PyPi with `pip install [repo-name]`.
+
 
 ### torchvision
-For torch_musa v2.7.0 and later, install torchvision from our musified one:
+For torch_musa v2.7.0 and later, install torchvision from [our repository](https://gitub.com/MooreThreads/vision):
 ```shell
 git clone https://github.com/MooreThreads/vision -b v0.22.1-musa --depth 1
 cd vision && python setup.py install
 ```
 
-
-For torch_musa v2.5.0 and earlier, install torchvision from source with:
+Otherwise, install torchvision from [torch repository](https://github.com/pytorch/vision):
 ```shell
 git clone https://github.com/pytorch/vision -b ${version} --depth 1
 cd vision && python setup.py install
 ```
-the `version` is depend on torch version, for example you have torch_musa v2.5.0 with torch v2.5.0, install `torchvision==0.20.0`.
+the `version` depends on torch version, for example you have torch v2.5.0, `${version}` should be `0.20.0`.
 
 ### torchaudio
-Install torchaudio from source:
-them from source:
+Install torchaudio from [torch source](https://github.com/pytorch/audio):
 ```shell
 git clone https://github.com/pytorch/audio.git -b ${version} --depth 1
 cd audio && python setup.py install
@@ -124,7 +119,11 @@ cd audio && python setup.py install
 the `version` is same as the torch version.
 
 ### Other Repositories
-There are many widely used pytorch-related repositories, and we musified some of them and put them into our [GitHub](https://github.com/MooreThreads), here's the list:
+Many repositories have supported MUSA backend upstream,
+like [Transformers](https://github.com/huggingface/transformers.git), [Accelerate](https://github.com/huggingface/accelerate.git),
+you can install them from PyPi with `pip install [repo-name]`.
+
+For others that haven't supported musa, we musified them and put into our [GitHub](https://github.com/MooreThreads), here's the list:
 | Repo | Branch | Link |  Build command |
 | :-- | :-: | :-: | :-: |
 | pytorch3d | musa-dev | https://github.com/MooreThreads/pytorch3d | python setup.py install |
@@ -137,54 +136,32 @@ If users find any question about these repos, please file issues in torch_musa, 
 submit a Pull Request that helping us to expand this list.
 
 ## Usage
-### Key Changes
 The following two key changes are required when using **torch_musa**:
- - Import **torch_musa** package
+ - Import **torch** will automatically load torch_musa:
    ```Python
    import torch
-   import torch_musa
+   torch.musa.is_available()  # should be True
    ```
 
  - Change the device to **musa**
    ```Python
    import torch
-   import torch_musa
 
    a = torch.tensor([1.2, 2.3], dtype=torch.float32, device='musa')
    b = torch.tensor([1.2, 2.3], dtype=torch.float32, device='cpu').to('musa')
    c = torch.tensor([1.2, 2.3], dtype=torch.float32).musa()
    ```
-**torch musa** has integrated torchvision ops in the musa backend. Please do the following if torchvision is not installed:
-- Install torchvision package via building from source
-  ```
-  # ensure torchvision is not installed
-  pip uninstall torchvision
 
-  git clone https://github.com/pytorch/vision.git
-  cd vision
-  python setup.py install
-  ```
-- Use torchvision musa backend:
-  ```
-  import torch
-  import torch_musa
-  import torchvision
-
-  def get_forge_data(num_boxes):
-      boxes = torch.cat((torch.rand(num_boxes, 2), torch.rand(num_boxes, 2) + 10), dim=1)
-      assert max(boxes[:, 0]) < min(boxes[:, 2])  # x1 < x2
-      assert max(boxes[:, 1]) < min(boxes[:, 3])  # y1 < y2
-      scores = torch.rand(num_boxes)
-      return boxes, scores
-
-  num_boxes = 10
-  boxes, scores = get_forge_data(num_boxes)
-  iou_threshold = 0.5
-  print(torchvision.ops.nms(boxes=boxes.to("musa"), scores=scores.to("musa"), iou_threshold=iou_threshold))
+- Also some cuda module functions:
+  ```Python
+  torch.backends.mudnn.allow_tf32 = True
+  
+  event = torch.musa.Event()
+  stream = torch.musa.Stream()
+  ...
   ```
 
-### Codegen
-In torch_musa, we provide the codegen module to implement bindings and registrations of customized MUSA kernels, see [link](tools/codegen/README.md).
+There you go.
 
 ## License
 torch_musa has a BSD-style license, as found in the [LICENSE](LICENSE) file.
