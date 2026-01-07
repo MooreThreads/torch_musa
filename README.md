@@ -130,6 +130,7 @@ For others that haven't supported musa, we musified them and put into our [GitHu
 | pytorch_sparse | master | https://github.com/MooreThreads/pytorch_sparse | python setup.py install |
 | pytorch_scatter | master | https://github.com/MooreThreads/pytorch_scatter | python setup.py install |
 | torchvision | v0.22.1-musa | https://github.com/MooreThreads/vision | python setup.py install |
+| pytorch_lightning | musa-dev | https://github.com/MooreThreads/pytorch-lightning | python setup.py install |
 | More to come... | | | |
 
 If users find any question about these repos, please file issues in torch_musa, and if anyone  musify a repository, you can
