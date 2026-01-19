@@ -4,6 +4,7 @@
 <!-- toc -->
 
 - [Overview](#overview)
+- [Usage](#usage)
 - [Installation](#installation)
   - [Prerequisites](#prerequisites)
   - [Docker Image](#docker-image)
@@ -13,7 +14,6 @@
   - [torchvision](#torchvision)
   - [torchaudio](#torchaudio)
   - [Other Repositories](#other-repositories)
-- [Usage](#usage)
 - [License](#license)
 
 <!-- tocstop -->
@@ -31,6 +31,33 @@ For some customize optimizations, like **Dynamic Double Casting** and **Unified 
 If you want to write your layers in C/C++, we provide a convenient extension API that is efficient and with minimal boilerplate. No wrapper code needs to be written. Refer to [ResNet50 example](torch_musa/examples/cpp/README.md).
 
 --------------------------------------------------------------------------------
+
+## Usage
+
+**We recommend users refer to [torchada](https://github.com/MooreThreads/torchada), which enable your torch scripts written with CUDA run directly on our MUSA platform.**
+
+Now `import torch` would automatically load torch_musa, and in most cases, one just need to switch the backend from **cuda** to **musa**:
+```Python
+import torch
+torch.musa.is_available()  # should be True
+
+# Creating tensors:
+a = torch.tensor([1.2, 2.3], dtype=torch.float32, device='musa')
+b = torch.tensor([1.2, 2.3], dtype=torch.float32, device='cpu').to('musa')
+c = torch.tensor([1.2, 2.3], dtype=torch.float32).musa()
+
+# Also some cuda modules or functions:
+torch.backends.mudnn.allow_tf32 = True
+event = torch.musa.Event()
+stream = torch.musa.Stream()
+```
+
+For distribute training or inference, initialize your process group with backend **mccl**:
+```Python
+import torch.distributed as dist
+
+dist.init_process_group("mccl", rank=rank, world_size=world_size)
+```
 
 ## Installation
 ### Prerequisites
@@ -71,7 +98,7 @@ export LD_LIBRARY_PATH=$MUSA_HOME/lib:$LD_LIBRARY_PATH
 export PYTORCH_REPO_PATH=/path/to/PyTorch
 ```
 
-To building torch_musa, run:
+To build torch_musa, run:
 ```bash
 bash build.sh -c  # clean cache then build PyTorch and torch_musa from scratch
 ```
@@ -94,7 +121,6 @@ USE_MCCL=0 bash build.sh -c
 ```
 
 ## MUSA Supported Repositories
-
 
 ### torchvision
 For torch_musa v2.7.0 and later, install torchvision from [our repository](https://gitub.com/MooreThreads/vision):
@@ -131,38 +157,9 @@ For others that haven't supported musa, we musified them and put into our [GitHu
 | pytorch_scatter | master | https://github.com/MooreThreads/pytorch_scatter | python setup.py install |
 | torchvision | v0.22.1-musa | https://github.com/MooreThreads/vision | python setup.py install |
 | pytorch_lightning | musa-dev | https://github.com/MooreThreads/pytorch-lightning | python setup.py install |
-| More to come... | | | |
 
 If users find any question about these repos, please file issues in torch_musa, and if anyone  musify a repository, you can
 submit a Pull Request that helping us to expand this list.
-
-## Usage
-The following two key changes are required when using **torch_musa**:
- - Import **torch** will automatically load torch_musa:
-   ```Python
-   import torch
-   torch.musa.is_available()  # should be True
-   ```
-
- - Change the device to **musa**
-   ```Python
-   import torch
-
-   a = torch.tensor([1.2, 2.3], dtype=torch.float32, device='musa')
-   b = torch.tensor([1.2, 2.3], dtype=torch.float32, device='cpu').to('musa')
-   c = torch.tensor([1.2, 2.3], dtype=torch.float32).musa()
-   ```
-
-- Also some cuda module functions:
-  ```Python
-  torch.backends.mudnn.allow_tf32 = True
-  
-  event = torch.musa.Event()
-  stream = torch.musa.Stream()
-  ...
-  ```
-
-There you go.
 
 ## License
 torch_musa has a BSD-style license, as found in the [LICENSE](LICENSE) file.
