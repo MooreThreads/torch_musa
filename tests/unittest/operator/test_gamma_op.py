@@ -101,7 +101,10 @@ def test_digamma_(input_data):
 @pytest.mark.parametrize("float_dtype", float_dtypes)
 def test_digamma_out(input_data, float_dtype):
     input_tensor = input_data["input"].clone().to(float_dtype)
-    data = {"input": input_tensor, "out": torch.zeros_like(input_tensor)}
+    data = {
+        "input": torch.rand_like(input_tensor),
+        "out": torch.zeros_like(input_tensor),
+    }
     test = testing.OpTest(
         func=torch.digamma,
         input_args=data,

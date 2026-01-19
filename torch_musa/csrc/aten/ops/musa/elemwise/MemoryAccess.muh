@@ -1,0 +1,304 @@
+#ifndef TORCH_MUSA_CSRC_ATEN_OPS_MUSA_ELEMWISE_MEMORYACCESS_MUH_
+#define TORCH_MUSA_CSRC_ATEN_OPS_MUSA_ELEMWISE_MEMORYACCESS_MUH_
+
+#include "torch_musa/csrc/aten/utils/DynamicCast.h"
+
+namespace at::musa::memory {
+
+template <int vec_size, typename scalar_t>
+__device__ inline aligned_vector<scalar_t, vec_size> load_vector(
+    const scalar_t* base_ptr,
+    uint32_t offset) {
+  using vec_t = aligned_vector<scalar_t, vec_size>;
+  auto from = (const vec_t*)(base_ptr + offset);
+  return *from;
+}
+
+template <int vec_size>
+__device__ inline aligned_vector<bool, vec_size> load_vector(
+    const bool* base_ptr,
+    uint32_t offset) {
+  using vec_t = aligned_vector<bool, vec_size>;
+  auto tmp = load_vector<vec_size>((const uint8_t*)base_ptr, offset);
+
+  vec_t ret;
+#pragma unroll
+  for (int i = 0; i < vec_size; ++i) {
+    ret.val[i] = bool(tmp.val[i]);
+  }
+  return ret;
+}
+
+template <int vec_size, typename scalar_t>
+__device__ inline void store_vector(
+    const scalar_t* src,
+    scalar_t* dst,
+    uint32_t offset) {
+  using vec_t = aligned_vector<scalar_t, vec_size>;
+  auto from = (const vec_t*)src;
+  *((vec_t*)(dst + offset)) = *from;
+}
+
+template <int vec_size>
+struct VectorizedLoadWithoutCast {
+  template <typename scalar_t>
+  using vec_t = aligned_vector<scalar_t, vec_size>;
+
+  template <typename scalar_t>
+  __device__ vec_t<scalar_t> load(
+      char* base_ptr,
+      uint32_t offset,
+      int /* arg */) {
+    auto ptr = (const scalar_t*)base_ptr;
+    return load_vector<vec_size, scalar_t>(ptr, offset);
+  }
+
+  template <typename scalar_t>
+  __device__ scalar_t
+  load_single(char* base_ptr, uint32_t offset, int /* arg */) {
+    auto ptr = (const scalar_t*)base_ptr;
+    return c10::load(ptr + offset);
+  }
+};
+
+template <int vec_size, int N>
+struct VectorizedLoadWithCast {
+  using type_array_t = std::array<ScalarType, N>;
+  using size_array_t = std::array<int, N>;
+
+  template <typename scalar_t>
+  using vec_t = aligned_vector<scalar_t, vec_size>;
+
+  type_array_t dtypes;
+  size_array_t element_sizes;
+
+  VectorizedLoadWithCast(const TensorIteratorBase& iter) {
+    TORCH_INTERNAL_ASSERT(iter.ninputs() == N);
+    const int n_out = iter.noutputs();
+#pragma unroll
+    for (auto i = 0; i < N; ++i) {
+      const auto dt = iter.dtype(n_out + i);
+      dtypes[i] = dt;
+      element_sizes[i] = c10::elementSize(dt);
+    }
+  }
+
+  template <typename scalar_t>
+  __device__ vec_t<scalar_t> load(char* base_ptr, uint32_t offset, int arg) {
+    auto ptr = base_ptr + element_sizes[arg] * offset;
+    return vectorized_fetch_and_cast<scalar_t, vec_size>(dtypes[arg], ptr);
+  }
+
+  template <typename scalar_t>
+  __device__ scalar_t load_single(char* base_ptr, uint32_t offset, int arg) {
+    void* ptr = base_ptr + element_sizes[arg] * offset;
+    return c10::fetch_and_cast<scalar_t>(dtypes[arg], ptr);
+  }
+};
+
+template <int vec_size>
+struct VectorizedStoreWithoutCast {
+  template <typename scalar_t>
+  using vec_t = aligned_vector<scalar_t, vec_size>;
+
+  template <typename scalar_t>
+  __device__ void store(
+      scalar_t* data,
+      char* base_ptr,
+      uint32_t offset,
+      int /* arg*/) {
+    auto ptr = (scalar_t*)base_ptr;
+    store_vector<vec_size>(data, ptr, offset);
+  }
+
+  template <typename scalar_t>
+  __device__ void store_single(
+      scalar_t* value,
+      char* base_ptr,
+      uint32_t offset,
+      int /* arg*/) {
+    auto ptr = (scalar_t*)base_ptr;
+    *(ptr + offset) = *value;
+  }
+};
+
+template <int vec_size, int N>
+struct VectorizedStoreWithCast {
+  using type_array_t = std::array<ScalarType, N>;
+  using size_array_t = std::array<int, N>;
+
+  template <typename scalar_t>
+  using vec_t = aligned_vector<scalar_t, vec_size>;
+
+  type_array_t dtypes;
+  size_array_t element_sizes;
+
+  VectorizedStoreWithCast(const TensorIteratorBase& iter) {
+    TORCH_INTERNAL_ASSERT(iter.noutputs() == N);
+#pragma unroll
+    for (auto i = 0; i < N; ++i) {
+      const auto dt = iter.dtype(i);
+      dtypes[i] = dt;
+      element_sizes[i] = c10::elementSize(dt);
+    }
+  }
+
+  template <typename scalar_t>
+  __device__ void store(
+      scalar_t* data,
+      char* base_ptr,
+      uint32_t offset,
+      int arg) {
+    auto ptr = base_ptr + element_sizes[arg] * offset;
+    vectorized_cast_and_store<scalar_t, vec_size>(dtypes[arg], ptr, data);
+  }
+
+  template <typename scalar_t>
+  __device__ void store_single(
+      scalar_t* value,
+      char* base_ptr,
+      uint32_t offset,
+      int arg) {
+    void* ptr = base_ptr + element_sizes[arg] * offset;
+    c10::cast_and_store<scalar_t>(dtypes[arg], ptr, *value);
+  }
+};
+
+namespace policies {
+
+template <typename data_t, typename storer_t>
+struct unroll_single_out {
+  data_t data;
+  int numel;
+  storer_t storer;
+  static constexpr int vlen = 1;
+
+  __device__ unroll_single_out(data_t data, int numel, storer_t s)
+      : data(data), numel(numel), storer(s) {}
+
+  __device__ __forceinline__ bool check_inbounds(int linear_id) {
+    return linear_id < numel;
+  }
+
+  template <typename scalar_t>
+  __device__ void store(scalar_t* args, int offset, int arg) {
+    storer.store_single(args, data[arg], offset, arg);
+  }
+};
+
+template <
+    typename data_t,
+    typename loader_t,
+    typename storer_t,
+    int n_outputs = 1>
+struct unroll_single : unroll_single_out<data_t, storer_t> {
+  using unroll_single_out<data_t, storer_t>::vlen;
+
+  loader_t loader;
+
+  __device__ unroll_single(data_t data, int numel, loader_t l, storer_t s)
+      : unroll_single_out<data_t, storer_t>(data, numel, s), loader(l) {}
+
+  template <typename scalar_t>
+  __device__ void load(scalar_t* args, int offset, int arg) {
+    (*args) = loader.template load_single<scalar_t>(
+        this->data[arg + n_outputs], offset, arg);
+  }
+};
+
+template <int vec_size, typename data_t, typename storer_t>
+struct unroll_out {
+  data_t data;
+  int remaining;
+  storer_t storer;
+  static constexpr int vlen = vec_size;
+
+  __device__ unroll_out(data_t data, int remaining, storer_t s)
+      : data(data), remaining(remaining), storer(s) {}
+
+  __device__ __forceinline__ bool check_inbounds(int offset) {
+    return offset < remaining;
+  }
+
+  template <typename scalar_t>
+  __device__ void store(scalar_t* args, int offset, int arg) {
+#pragma unroll
+    for (int i = 0; i < vlen; i++) {
+      if (check_inbounds(i)) {
+        storer.store_single(args + i, data[arg], offset + i, arg);
+      }
+    }
+  }
+};
+
+template <
+    int vec_size,
+    typename data_t,
+    typename loader_t,
+    typename storer_t,
+    int n_outputs = 1>
+struct unroll : unroll_out<vec_size, data_t, storer_t> {
+  using unroll_out<vec_size, data_t, storer_t>::vlen;
+
+  loader_t loader;
+
+  __device__ unroll(data_t data, int remaining, loader_t l, storer_t s)
+      : unroll_out<vec_size, data_t, storer_t>(data, remaining, s), loader(l) {}
+
+  template <typename scalar_t>
+  __device__ void load(scalar_t* args, int offset, int arg) {
+#pragma unroll
+    for (int i = 0; i < vlen; i++) {
+      if (this->check_inbounds(i)) {
+        args[i] = loader.template load_single<scalar_t>(
+            this->data[arg + n_outputs], offset + i, arg);
+      }
+    }
+  }
+};
+
+template <int vec_size, typename data_t, typename storer_t>
+struct vectorized_out {
+  data_t data;
+  storer_t storer;
+  static constexpr int vlen = vec_size;
+
+  __device__ vectorized_out(data_t data, storer_t s) : data(data), storer(s) {}
+
+  __device__ __forceinline__ constexpr bool check_inbounds(int offset) {
+    return true;
+  }
+
+  template <typename scalar_t>
+  __device__ void store(scalar_t* args, int offset, int arg) {
+    storer.store(args, data[arg], offset, arg);
+  }
+};
+
+template <
+    int vec_size,
+    typename data_t,
+    typename loader_t,
+    typename storer_t,
+    int n_outputs = 1>
+struct vectorized : vectorized_out<vec_size, data_t, storer_t> {
+  using vectorized_out<vec_size, data_t, storer_t>::vlen;
+
+  loader_t loader;
+
+  __device__ vectorized(data_t data, loader_t l, storer_t s)
+      : vectorized_out<vec_size, data_t, storer_t>(data, s), loader(l) {}
+
+  template <typename scalar_t>
+  __device__ void load(scalar_t* args, int offset, int arg) {
+    using vec_t = aligned_vector<scalar_t, vlen>;
+    *(vec_t*)args = loader.template load<scalar_t>(
+        this->data[arg + n_outputs], offset, arg);
+  }
+};
+
+} // namespace policies
+
+} // namespace at::musa::memory
+
+#endif // TORCH_MUSA_CSRC_ATEN_OPS_MUSA_ELEMWISE_MEMORYACCESS_MUH_

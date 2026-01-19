@@ -164,13 +164,17 @@ def test_huber_loss(dtype, reduction):
     )
     musa_target = torch.tensor(target_data.detach().numpy(), device="musa")
 
-    loss_cpu = torch.nn.functional.huber_loss(input_data, target_data, reduction=reduction)
+    loss_cpu = torch.nn.functional.huber_loss(
+        input_data, target_data, reduction=reduction
+    )
     if reduction == "none":
         loss_cpu.backward(torch.ones_like(loss_cpu))
     else:
         loss_cpu.backward()
 
-    loss_musa = torch.nn.functional.huber_loss(musa_data, musa_target, reduction=reduction)
+    loss_musa = torch.nn.functional.huber_loss(
+        musa_data, musa_target, reduction=reduction
+    )
     if reduction == "none":
         loss_musa.backward(torch.ones_like(loss_musa))
     else:
@@ -178,3 +182,118 @@ def test_huber_loss(dtype, reduction):
 
     assert pytest.approx(loss_cpu.detach().cpu(), rel=1e-3) == loss_musa.detach().cpu()
     assert pytest.approx(input_data.grad.cpu(), rel=1e-3) == musa_data.grad.cpu()
+
+
+# =========================================================
+#      multi_margin_loss / multilabel_margin_loss
+# =========================================================
+
+
+def _backward_with_reduction(loss, reduction: str):
+    if reduction == "none":
+        loss.backward(torch.ones_like(loss))
+    else:
+        loss.backward()
+
+
+def _make_multilabel_margin_target(
+    batch: int, num_classes: int, k: int
+) -> torch.Tensor:
+    assert 1 <= k <= num_classes
+    target = torch.full((batch, num_classes), -1, dtype=torch.long)
+    for b in range(batch):
+        perm = torch.randperm(num_classes, dtype=torch.long)
+        target[b, :k] = perm[:k]
+    return target
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("reduction", ["none", "mean", "sum"])
+@pytest.mark.parametrize("p", [1, 2])
+@pytest.mark.parametrize("use_weight", [False, True])
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (16, 10),  # (N, C)
+        (10,),  # (C)
+    ],
+)
+def test_multi_margin_loss(shape, use_weight, p, reduction):
+    torch.manual_seed(42)
+
+    # input
+    inp_cpu = torch.randn(*shape, dtype=torch.float32, requires_grad=True)
+    inp_musa = torch.tensor(inp_cpu.detach().numpy(), device="musa", requires_grad=True)
+
+    # target
+    if len(shape) == 1:
+        c = shape[0]
+        tgt_cpu = torch.tensor(random.randint(0, c - 1), dtype=torch.long)
+    else:
+        n, c = shape
+        tgt_cpu = torch.randint(0, c, (n,), dtype=torch.long)
+    tgt_musa = torch.tensor(tgt_cpu.detach().numpy(), device="musa")
+
+    # optional weight (shape: (C,))
+    weight_cpu = None
+    weight_musa = None
+    if use_weight:
+        c = shape[-1]
+        weight_cpu = torch.rand(c, dtype=torch.float32)
+        weight_musa = torch.tensor(weight_cpu.detach().numpy(), device="musa")
+
+    # forward
+    out_cpu = torch.nn.functional.multi_margin_loss(
+        inp_cpu, tgt_cpu, p=p, margin=1.0, weight=weight_cpu, reduction=reduction
+    )
+    out_musa = torch.nn.functional.multi_margin_loss(
+        inp_musa, tgt_musa, p=p, margin=1.0, weight=weight_musa, reduction=reduction
+    )
+
+    # backward
+    _backward_with_reduction(out_cpu, reduction)
+    _backward_with_reduction(out_musa, reduction)
+
+    assert pytest.approx(out_cpu.detach().cpu(), abs=1e-5) == out_musa.detach().cpu()
+    assert (
+        pytest.approx(inp_cpu.grad.detach().cpu(), abs=1e-5)
+        == inp_musa.grad.detach().cpu()
+    )
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("reduction", ["none", "mean", "sum"])
+@pytest.mark.parametrize(
+    "config",
+    [
+        # (N, C, k) where k is number of positive labels per sample
+        (8, 10, 3),
+        (4, 7, 1),
+        (2, 6, 6),  # all labels, no -1 padding needed (still valid)
+    ],
+)
+def test_multilabel_margin_loss(config, reduction):
+    torch.manual_seed(42)
+
+    n, c, k = config
+    inp_cpu = torch.randn(n, c, dtype=torch.float32, requires_grad=True)
+    inp_musa = torch.tensor(inp_cpu.detach().numpy(), device="musa", requires_grad=True)
+
+    tgt_cpu = _make_multilabel_margin_target(n, c, k)
+    tgt_musa = torch.tensor(tgt_cpu.detach().numpy(), device="musa")
+
+    out_cpu = torch.nn.functional.multilabel_margin_loss(
+        inp_cpu, tgt_cpu, reduction=reduction
+    )
+    out_musa = torch.nn.functional.multilabel_margin_loss(
+        inp_musa, tgt_musa, reduction=reduction
+    )
+
+    _backward_with_reduction(out_cpu, reduction)
+    _backward_with_reduction(out_musa, reduction)
+
+    assert pytest.approx(out_cpu.detach().cpu(), abs=1e-5) == out_musa.detach().cpu()
+    assert (
+        pytest.approx(inp_cpu.grad.detach().cpu(), abs=1e-5)
+        == inp_musa.grad.detach().cpu()
+    )

@@ -1,0 +1,12 @@
+diff --git a/setup.py b/setup.py
+index 61ee9363fc2..f11061ff0aa 100644
+--- a/setup.py
++++ b/setup.py
+@@ -1324,6 +1324,7 @@ def main():
+         "include/torch/csrc/jit/passes/quantization/*.h",
+         "include/torch/csrc/jit/passes/utils/*.h",
+         "include/torch/csrc/jit/runtime/*.h",
++        "include/torch/csrc/jit/runtime/static/*.h",
+         "include/torch/csrc/jit/ir/*.h",
+         "include/torch/csrc/jit/frontend/*.h",
+         "include/torch/csrc/jit/api/*.h",

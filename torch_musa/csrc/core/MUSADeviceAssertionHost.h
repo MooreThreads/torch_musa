@@ -134,3 +134,14 @@ std::string c10_retrieve_device_side_assertion_info();
 
 } // namespace musa
 } // namespace c10
+
+// Each kernel launched with TORCH_DSA_KERNEL_LAUNCH
+// requires the same input arguments. We introduce the following macro to
+// standardize these.
+#define TORCH_DSA_KERNEL_ARGS                                              \
+  [[maybe_unused]] c10::musa::DeviceAssertionsData *const assertions_data, \
+      [[maybe_unused]] uint32_t assertion_caller_id
+
+// This macro can be used to pass the DSA arguments onward to another
+// function
+#define TORCH_DSA_KERNEL_ARGS_PASS assertions_data, assertion_caller_id

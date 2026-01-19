@@ -9,7 +9,6 @@
 
 // TODO(@sw-compute): mublasLT has not been developed
 // #include <mublasLt.h>
-// #include <musolverDn.h>
 
 // TODO(@sw-compute): mudss has not been developed
 // #if defined(USE_CUDSS)

@@ -1,0 +1,278 @@
+#ifndef TORCH_MUSA_CSRC_ATEN_OPS_MUSA_ELEMWISE_UNARYLOOPS_MUH_
+#define TORCH_MUSA_CSRC_ATEN_OPS_MUSA_ELEMWISE_UNARYLOOPS_MUH_
+
+#include <ATen/ceil_div.h>
+#include <c10/core/Contiguity.h>
+
+#include "torch_musa/csrc/aten/musa/MUSAContextLight.h"
+#include "torch_musa/csrc/aten/ops/musa/elemwise/Functor.muh"
+#include "torch_musa/csrc/aten/ops/musa/elemwise/MemoryAccess.muh"
+#include "torch_musa/csrc/aten/utils/TensorIterator.h"
+#include "torch_musa/csrc/core/MUSAStream.h"
+
+namespace at::musa::unary {
+
+inline constexpr int io_bytes = 16;
+
+inline int calc_io_vlen_contig(int io_unit_bytes) {
+  TORCH_INTERNAL_ASSERT(io_bytes % io_unit_bytes == 0);
+  return io_bytes / io_unit_bytes;
+}
+
+inline auto default_contig_config(MusaTensorIterator& iter) {
+  const auto i_elem_bytes = static_cast<int>(iter.element_size(1));
+  const auto o_elem_bytes = static_cast<int>(iter.element_size(0));
+  const auto io_unit_bytes = std::max(i_elem_bytes, o_elem_bytes);
+  const auto io_vlen = calc_io_vlen_contig(io_unit_bytes);
+
+  int64_t nr_threads = 1024;
+  if (io_unit_bytes == 16) {
+    nr_threads = 256;
+  } else if (io_unit_bytes == 8) {
+    nr_threads = 512;
+  }
+  auto nr_blocks = ceil_div(iter.numel(), io_vlen * nr_threads);
+
+  const int mp_count = getCurrentDeviceProperties()->multiProcessorCount;
+  while (nr_blocks < mp_count && nr_threads > 128) {
+    nr_blocks <<= 1;
+    nr_threads >>= 1;
+  }
+
+  dim3 block(nr_threads, 1, 1);
+  dim3 grid(nr_blocks, 1, 1);
+  return std::make_tuple(io_vlen, grid, block);
+}
+
+template <typename func_t, typename policy_t>
+__device__ inline void kernel_helper(func_t f, policy_t policy, int offset) {
+  using traits = function_traits<func_t>;
+  static_assert(traits::arity == 1);
+
+  using return_t = typename traits::result_type;
+  using arg_t = std::tuple_element_t<0, typename traits::ArgsTuple>;
+
+  constexpr int vlen = policy_t::vlen;
+
+  arg_t args[vlen];
+  return_t results[vlen];
+
+  if constexpr (func_need_preload_v<func_t>) {
+    f.load();
+  }
+
+  policy.load(args, offset, 0);
+
+#pragma unroll
+  for (int i = 0; i < vlen; ++i) {
+    if (policy.check_inbounds(i)) {
+      results[i] = (return_t)(f(args[i]));
+    }
+  }
+
+  policy.store(results, offset, 0);
+}
+
+template <
+    int vec_size,
+    typename func_t,
+    typename array_t,
+    typename loader_t,
+    typename storer_t>
+__global__ void launch_vectorized_contig_kernel(
+    int N,
+    func_t f,
+    array_t data,
+    loader_t loader,
+    storer_t storer) {
+  const int offset = vec_size * (blockDim.x * blockIdx.x + threadIdx.x);
+  if (offset >= N) {
+    return;
+  }
+  const int remaining = N - offset;
+
+  if (remaining >= vec_size) {
+    auto policy =
+        memory::policies::vectorized<vec_size, array_t, loader_t, storer_t>(
+            data, loader, storer);
+    unary::kernel_helper(f, policy, offset);
+  }
+
+  if (remaining < vec_size) {
+    auto policy =
+        memory::policies::unroll<vec_size, array_t, loader_t, storer_t>(
+            data, remaining, loader, storer);
+    unary::kernel_helper(f, policy, offset);
+  }
+}
+
+template <bool nocast, typename func_t, typename array_t>
+inline void dispatch_contig(
+    MusaTensorIterator& iter,
+    const func_t& f,
+    array_t data) {
+  const auto numel = iter.numel();
+  TORCH_INTERNAL_ASSERT(
+      numel > 0 && numel <= std::numeric_limits<int32_t>::max());
+
+  const auto [io_vlen, grid, block] = default_contig_config(iter);
+  auto stream = at::musa::getCurrentMUSAStream();
+
+#define DISPATCH_VLEN(VLEN)                                             \
+  case VLEN: {                                                          \
+    if constexpr (nocast) {                                             \
+      memory::VectorizedLoadWithoutCast<VLEN> loader;                   \
+      memory::VectorizedStoreWithoutCast<VLEN> storer;                  \
+      launch_vectorized_contig_kernel<                                  \
+          VLEN,                                                         \
+          func_t,                                                       \
+          array_t,                                                      \
+          decltype(loader),                                             \
+          decltype(storer)>                                             \
+          <<<grid, block, 0, stream>>>(numel, f, data, loader, storer); \
+    } else {                                                            \
+      memory::VectorizedLoadWithCast<VLEN, 1> loader(iter);             \
+      memory::VectorizedStoreWithCast<VLEN, 1> storer(iter);            \
+      launch_vectorized_contig_kernel<                                  \
+          VLEN,                                                         \
+          func_t,                                                       \
+          array_t,                                                      \
+          decltype(loader),                                             \
+          decltype(storer)>                                             \
+          <<<grid, block, 0, stream>>>(numel, f, data, loader, storer); \
+    }                                                                   \
+    C10_MUSA_KERNEL_LAUNCH_CHECK();                                     \
+    return;                                                             \
+  }
+
+  switch (io_vlen) {
+    DISPATCH_VLEN(1)
+    DISPATCH_VLEN(2)
+    DISPATCH_VLEN(4)
+    DISPATCH_VLEN(8)
+    default:
+      TORCH_INTERNAL_ASSERT(false, "Unexpected vectorization size");
+  }
+#undef DISPATCH_VLEN
+}
+
+template <typename func_t, typename policy_t, typename off_t>
+__device__ inline void uncontig_kernel_helper(
+    func_t f,
+    policy_t policy,
+    off_t offsets) {
+  using traits = function_traits<func_t>;
+  static_assert(traits::arity == 1);
+  static_assert(policy_t::vlen == 1);
+
+  using return_t = typename traits::result_type;
+  using arg_t = std::tuple_element_t<0, typename traits::ArgsTuple>;
+
+  if constexpr (func_need_preload_v<func_t>) {
+    f.load();
+  }
+
+  arg_t arg;
+  return_t result;
+
+  policy.load(&arg, offsets[1], 0);
+  result = (return_t)(f(arg));
+  policy.store(&result, offsets[0], 0);
+}
+
+template <
+    typename func_t,
+    typename array_t,
+    typename off_calc_t,
+    typename loader_t,
+    typename storer_t>
+__global__ void launch_uncontig_kernel(
+    int N,
+    func_t f,
+    array_t data,
+    off_calc_t off_calc,
+    loader_t loader,
+    storer_t storer) {
+  int linear_id = blockDim.x * blockIdx.x + threadIdx.x;
+  const int linear_stride = gridDim.x * blockDim.x;
+
+  auto policy = memory::policies::unroll_single<array_t, loader_t, storer_t>(
+      data, N, loader, storer);
+
+  while (policy.check_inbounds(linear_id)) {
+    const auto linear_offsets = off_calc.get(linear_id);
+    unary::uncontig_kernel_helper(f, policy, linear_offsets);
+    linear_id += linear_stride;
+  }
+}
+
+template <bool nocast, typename func_t, typename array_t>
+inline void dispatch_uncontig(
+    MusaTensorIterator& iter,
+    const func_t& f,
+    array_t data) {
+  const auto numel = iter.numel();
+  TORCH_INTERNAL_ASSERT(
+      numel > 0 && numel <= std::numeric_limits<int32_t>::max());
+
+  const auto [io_vlen, grid, block] = default_contig_config(iter);
+  auto offset_calc = make_offset_calculator<2, true>(iter);
+  auto stream = at::musa::getCurrentMUSAStream();
+
+  if constexpr (nocast) {
+    memory::VectorizedLoadWithoutCast<1> loader;
+    memory::VectorizedStoreWithoutCast<1> storer;
+    launch_uncontig_kernel<
+        func_t,
+        array_t,
+        decltype(offset_calc),
+        decltype(loader),
+        decltype(storer)><<<grid, block, 0, stream>>>(
+        numel, f, data, std::move(offset_calc), loader, storer);
+  } else {
+    memory::VectorizedLoadWithCast<1, 1> loader(iter);
+    memory::VectorizedStoreWithCast<1, 1> storer(iter);
+    launch_uncontig_kernel<
+        func_t,
+        array_t,
+        decltype(offset_calc),
+        decltype(loader),
+        decltype(storer)><<<grid, block, 0, stream>>>(
+        numel, f, data, std::move(offset_calc), loader, storer);
+  }
+  C10_MUSA_KERNEL_LAUNCH_CHECK();
+}
+
+template <typename func_t, typename array_t>
+inline void gpu_kernel_impl_nocast(
+    MusaTensorIterator& iter,
+    const func_t& f,
+    array_t data) {
+  iter.coalesce_dimensions();
+
+  if (iter.is_contiguous()) {
+    unary::dispatch_contig<true>(iter, f, data);
+    return;
+  }
+
+  unary::dispatch_uncontig<true>(iter, f, data);
+}
+
+template <typename func_t, typename array_t>
+inline void gpu_kernel_impl(
+    MusaTensorIterator& iter,
+    const func_t& f,
+    array_t data) {
+  iter.coalesce_dimensions();
+
+  if (iter.is_contiguous()) {
+    unary::dispatch_contig<false>(iter, f, data);
+    return;
+  }
+
+  unary::dispatch_uncontig<false>(iter, f, data);
+}
+
+} // namespace at::musa::unary
+
+#endif // TORCH_MUSA_CSRC_ATEN_OPS_MUSA_ELEMWISE_UNARYLOOPS_MUH_

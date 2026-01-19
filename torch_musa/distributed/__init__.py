@@ -30,3 +30,7 @@ def _apply_distributed_patch():
     from ._state_dict_utils import _apply_state_dict_utils_patch
 
     _apply_state_dict_utils_patch()
+
+    from .dist_wrapper_patch import _apply_dist_wrapper_patch
+
+    _apply_dist_wrapper_patch()

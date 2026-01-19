@@ -21,6 +21,7 @@
 #include "torch_musa/csrc/aten/linalg/MUSASolver.h"
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/core/MUSACachingAllocator.h"
 
 namespace at::musa {
 
@@ -202,6 +203,39 @@ inline static void apply_cholesky_musolver_potrs(
   }
 }
 
+template <typename scalar_t>
+static void apply_cholesky_musolver_potrsBatched(
+    Tensor& self_working_copy,
+    const Tensor& A_column_major_copy,
+    bool upper,
+    Tensor& infos) {
+  auto handle = at::musa::getCurrentMUSABlasHandle();
+  const auto uplo = upper ? MUBLAS_FILL_MODE_UPPER : MUBLAS_FILL_MODE_LOWER;
+  const int64_t n = self_working_copy.size(-2);
+  const int64_t nrhs = self_working_copy.size(-1);
+  const int64_t lda = std::max<int64_t>(1, n);
+  const int64_t batch_size = at::native::batchCount(self_working_copy);
+
+  const int64_t ldb = std::max<int64_t>(1, A_column_major_copy.size(-1));
+
+  int* infos_ptr = infos.data_ptr<int>();
+
+  auto self_ptr_array = get_device_pointers<scalar_t>(self_working_copy);
+  auto A_ptr_array = get_device_pointers<scalar_t>(A_column_major_copy);
+
+  at::musa::solver::potrsBatched(
+      handle,
+      uplo,
+      at::native::cuda_int_cast(n, "n"),
+      at::native::cuda_int_cast(nrhs, "nrhs"),
+      reinterpret_cast<scalar_t**>(A_ptr_array.data_ptr()),
+      at::native::cuda_int_cast(lda, "lda"),
+      reinterpret_cast<scalar_t**>(self_ptr_array.data_ptr()),
+      at::native::cuda_int_cast(ldb, "ldb"),
+      infos_ptr,
+      at::native::cuda_int_cast(batch_size, "batch_size"));
+}
+
 Tensor& cholesky_inverse_kernel_impl_musolver(
     Tensor& result,
     Tensor& infos,
@@ -270,6 +304,387 @@ void lu_solve_looped_musolver(
 
           TORCH_INTERNAL_ASSERT_DEBUG_ONLY(info.item().toInt() == 0);
         }
+      });
+}
+
+/*
+  The geqrf function computes the QR decomposition of a m x n matrix A.
+
+  Args:
+  * `A` - [in] Tensor with matrices for QR decomposition,
+          [out] Tensor containing R in the upper triangle of A
+          and elementary reflectors below the main diagonal of A
+  * `tau` - Tensor containing the magnitudes of the elementary reflectors
+  * `m` - The number of rows of `input` to consider
+  * `n` - The number of columns of `input` to consider (actual sizes of `input`
+  could be larger)
+
+  For further details, please see the cuSOLVER documentation for GEQRF.
+*/
+template <typename scalar_t>
+static void apply_geqrf(const Tensor& A, const Tensor& tau) {
+  int64_t m = A.size(-2);
+  int64_t n = A.size(-1);
+  int64_t lda = std::max<int64_t>(1, m);
+  int64_t batch_size = at::native::batchCount(A);
+
+  auto A_stride = at::native::matrixStride(A);
+  auto tau_stride = tau.size(-1);
+
+  auto A_data = A.data_ptr<scalar_t>();
+  auto tau_data = tau.data_ptr<scalar_t>();
+
+  auto infos = at::zeros({1}, A.options().dtype(at::kInt));
+  auto infos_data = infos.data_ptr<int>();
+
+  int m_32 = at::native::cuda_int_cast(m, "m");
+  int n_32 = at::native::cuda_int_cast(n, "n");
+  int lda_32 = at::native::cuda_int_cast(lda, "lda");
+  auto handle = at::musa::getCurrentMUSABlasHandle();
+#if defined(REAL_MUSA_VERSION) && (REAL_MUSA_VERSION < 5010)
+  size_t lwork;
+  at::musa::solver::geqrf_bufferSize<scalar_t>(m_32, n_32, &lwork);
+#else
+  int lwork;
+  at::musa::solver::geqrf_bufferSize<scalar_t>(
+      handle, m_32, n_32, A_data, lda_32, &lwork);
+#endif // MUSA_VERSION
+
+  for (decltype(batch_size) i = 0; i < batch_size; i++) {
+    scalar_t* A_working_ptr = &A_data[i * A_stride];
+    scalar_t* tau_working_ptr = &tau_data[i * tau_stride];
+    auto handle = at::musa::getCurrentMUSABlasHandle();
+    // allocate workspace storage on device
+    auto& allocator = *::c10::musa::MUSACachingAllocator::get();
+    auto work_data =
+        allocator.allocate(sizeof(scalar_t) * std::max<int>(1, lwork));
+#if defined(REAL_MUSA_VERSION) && (REAL_MUSA_VERSION < 5010)
+    at::musa::solver::geqrf<scalar_t>(
+        handle,
+        m_32,
+        n_32,
+        A_working_ptr,
+        lda_32,
+        tau_working_ptr,
+        static_cast<void*>(work_data.get()));
+#else
+    at::musa::solver::geqrf<scalar_t>(
+        handle,
+        m_32,
+        n_32,
+        A_working_ptr,
+        lda_32,
+        tau_working_ptr,
+        static_cast<scalar_t*>(work_data.get()),
+        lwork,
+        infos_data);
+#endif
+  }
+
+  // info from geqrf only reports if the i-th parameter is wrong, not about the
+  // matrix singularity so we don't need to check it all the time
+  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(infos.item().toInt() == 0);
+}
+
+/*
+  The orgqr function allows reconstruction of an orthogonal (or unitary) matrix
+  Q, from a sequence of elementary reflectors, such as produced by the geqrf
+  function.
+
+  Args:
+  * `self` - Tensor with the directions of the elementary reflectors below the
+  diagonal, it will be overwritten with the result
+  * `tau` - Tensor containing the magnitudes of the elementary reflectors
+
+  For further details, please see the cuSOLVER documentation for ORGQR and
+  UNGQR.
+*/
+template <typename scalar_t>
+static void apply_orgqr(Tensor& self, const Tensor& tau) {
+  auto self_data = self.data_ptr<scalar_t>();
+  auto tau_data = tau.data_ptr<scalar_t>();
+  auto self_matrix_stride = at::native::matrixStride(self);
+  auto batchsize =
+      at::native::cuda_int_cast(at::native::batchCount(self), "batch size");
+  auto m = at::native::cuda_int_cast(self.size(-2), "m");
+  auto n = at::native::cuda_int_cast(self.size(-1), "n");
+  auto k = at::native::cuda_int_cast(tau.size(-1), "k");
+  auto tau_stride = std::max<int>(1, k);
+  auto lda = std::max<int>(1, m);
+
+  // LAPACK's requirement
+  TORCH_INTERNAL_ASSERT(m >= n);
+  TORCH_INTERNAL_ASSERT(n >= k);
+
+  // cuSOLVER doesn't compute anything for this case, which is wrong
+  // the result should be a matrix with 1 on the diagonal
+  if (k == 0) {
+    self.fill_(0);
+    self.diagonal(/*offset=*/0, /*dim1=*/-2, /*dim2=*/-1).fill_(1);
+    return;
+  }
+
+  // get the optimal work size and allocate workspace tensor
+  auto handle = at::musa::getCurrentMUSABlasHandle();
+
+#if defined(REAL_MUSA_VERSION) && (REAL_MUSA_VERSION < 5010)
+  size_t lwork;
+  at::musa::solver::orgqr_buffersize<scalar_t>(m, n, k, &lwork);
+#else
+  int lwork;
+  at::musa::solver::orgqr_buffersize<scalar_t>(
+      handle, m, n, k, self_data, lda, tau_data, &lwork);
+#endif
+
+  auto info = at::zeros({1}, self.options().dtype(at::kInt));
+  auto info_data = info.data_ptr<int>();
+
+  for (auto i = decltype(batchsize){0}; i < batchsize; i++) {
+    scalar_t* self_working_ptr = &self_data[i * self_matrix_stride];
+
+    // allocate workspace storage
+    auto& allocator = *::c10::musa::MUSACachingAllocator::get();
+
+    auto work_data = allocator.allocate(sizeof(scalar_t) * lwork);
+
+#if defined(REAL_MUSA_VERSION) && (REAL_MUSA_VERSION < 5010)
+    scalar_t* tau_working_ptr = &tau_data[i * tau_stride];
+    at::musa::solver::orgqr<scalar_t>(
+        handle,
+        m,
+        n,
+        k,
+        self_working_ptr,
+        lda,
+        tau_working_ptr,
+        static_cast<void*>(work_data.get()));
+#else
+    const scalar_t* tau_working_ptr = &tau_data[i * tau_stride];
+    at::musa::solver::orgqr<scalar_t>(
+        handle,
+        m,
+        n,
+        k,
+        self_working_ptr,
+        lda,
+        tau_working_ptr,
+        static_cast<scalar_t*>(work_data.get()),
+        lwork,
+        info_data);
+#endif // REAL_MUSA_VERSION
+
+    // info from orgqr only reports if the i-th parameter is wrong
+    // so we don't need to check it all the time
+    TORCH_INTERNAL_ASSERT_DEBUG_ONLY(info.item().toInt() == 0);
+  }
+}
+
+template <typename scalar_t>
+void batch_ormqr(
+    scalar_t* input_data,
+    scalar_t* tau_data,
+    scalar_t* other_data,
+    int64_t batch_size,
+    int64_t input_matrix_stride,
+    int64_t other_matrix_stride,
+    int64_t tau_stride,
+    int m,
+    int n,
+    int k,
+    int lda,
+    int ldc,
+    mublasSideMode_t side,
+    mublasOperation_t trans,
+    int lwork = 0,
+    int* info_data = nullptr) {
+  for (int64_t i = 0; i < batch_size; i++) {
+    scalar_t* input_working_ptr = &input_data[i * input_matrix_stride];
+    scalar_t* other_working_ptr = &other_data[i * other_matrix_stride];
+    scalar_t* tau_working_ptr = &tau_data[i * tau_stride];
+    auto handle = at::musa::getCurrentMUSABlasHandle();
+
+#if defined(REAL_MUSA_VERSION) && (REAL_MUSA_VERSION < 5000)
+    at::musa::solver::ormqr<scalar_t>(
+        handle,
+        side,
+        trans,
+        m,
+        n,
+        k,
+        input_working_ptr,
+        lda,
+        tau_working_ptr,
+        other_working_ptr,
+        ldc);
+#else
+    auto& allocator = *at::musa::getMUSADeviceAllocator();
+    auto work_data = allocator.allocate(sizeof(scalar_t) * lwork);
+    at::musa::solver::ormqr<scalar_t>(
+        handle,
+        side,
+        trans,
+        m,
+        n,
+        k,
+        input_working_ptr,
+        lda,
+        tau_working_ptr,
+        other_working_ptr,
+        ldc,
+        static_cast<scalar_t*>(work_data.get()),
+        lwork,
+        info_data);
+#endif // REAL_MUSA_VERSION
+
+    if (info_data) {
+      TORCH_INTERNAL_ASSERT_DEBUG_ONLY(info_data[i] == 0);
+    }
+  }
+}
+
+template <typename scalar_t>
+void apply_ormqr(
+    const Tensor& input,
+    const Tensor& tau,
+    const Tensor& other,
+    bool left,
+    bool transpose) {
+  auto side = left ? MUBLAS_SIDE_LEFT : MUBLAS_SIDE_RIGHT;
+  auto trans = transpose ? (input.is_complex() ? MUBLAS_OP_C : MUBLAS_OP_T)
+                         : MUBLAS_OP_N;
+
+  auto input_data = input.data_ptr<scalar_t>();
+  auto tau_data = tau.data_ptr<scalar_t>();
+  auto other_data = other.data_ptr<scalar_t>();
+
+  auto input_matrix_stride = at::native::matrixStride(input);
+  auto other_matrix_stride = at::native::matrixStride(other);
+  auto tau_stride = tau.size(-1);
+  auto batch_size = at::native::batchCount(input);
+
+  auto int_cast = [](int64_t value, const char* varname) -> int {
+    int result = static_cast<int>(value);
+    TORCH_CHECK(
+        static_cast<int64_t>(result) == value,
+        "musa_int_cast: The value of ",
+        varname,
+        " (",
+        (long long)value,
+        ") is too large to fit into a int (",
+        sizeof(int),
+        " bytes)");
+    return result;
+  };
+
+  auto m = int_cast(other.size(-2), "m");
+  auto n = int_cast(other.size(-1), "n");
+  auto k = int_cast(tau.size(-1), "k");
+  auto lda = std::max<int>(1, left ? m : n);
+  auto ldc = std::max<int>(1, m);
+
+  bool IS_COMPLEX = at::isComplexType(other.scalar_type());
+
+  auto handle = at::musa::getCurrentMUSABlasHandle();
+
+  int lwork = 0;
+  int* info_data = nullptr;
+  Tensor info;
+
+#if defined(REAL_MUSA_VERSION) && (REAL_MUSA_VERSION >= 5000)
+  if (!IS_COMPLEX) {
+    at::musa::solver::ormqr_buffersize<scalar_t>(
+        handle,
+        side,
+        trans,
+        m,
+        n,
+        k,
+        input_data,
+        lda,
+        tau_data,
+        other_data,
+        ldc,
+        &lwork);
+
+    info = at::zeros({1}, input.options().dtype(at::kInt));
+    info_data = info.data_ptr<int>();
+  }
+#endif // REAL_MUSA_VERSION
+
+  at::musa::batch_ormqr<scalar_t>(
+      input_data,
+      tau_data,
+      other_data,
+      batch_size,
+      input_matrix_stride,
+      other_matrix_stride,
+      tau_stride,
+      m,
+      n,
+      k,
+      lda,
+      ldc,
+      side,
+      trans,
+      lwork,
+      info_data);
+}
+
+Tensor _cholesky_solve_helper_musolver(
+    const Tensor& self,
+    const Tensor& A,
+    bool upper) {
+  const int64_t batch_size = at::native::batchCount(self);
+  Tensor infos = at::zeros({1}, self.options().dtype(at::kInt));
+  Tensor self_working_copy = at::native::cloneBatchedColumnMajor(self);
+  Tensor A_column_major_copy = at::native::cloneBatchedColumnMajor(A);
+
+  const int64_t nrhs = self_working_copy.size(-1);
+
+  if (batch_size > 1 && nrhs == 1) {
+    AT_DISPATCH_FLOATING_AND_COMPLEX_TYPES(
+        self.scalar_type(), "cholesky_musa_potrs_batched", [&] {
+          apply_cholesky_musolver_potrsBatched<scalar_t>(
+              self_working_copy, A_column_major_copy, upper, infos);
+        });
+  } else {
+    AT_DISPATCH_FLOATING_AND_COMPLEX_TYPES(
+        self.scalar_type(), "cholesky_musa_potrs", [&] {
+          apply_cholesky_musolver_potrs<scalar_t>(
+              self_working_copy, A_column_major_copy, upper, infos);
+        });
+  }
+
+  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(infos.item().toInt() == 0);
+
+  return self_working_copy;
+}
+
+// This is a type dispatching helper function for 'apply_geqrf'
+void geqrf_musolver(const Tensor& input, const Tensor& tau) {
+  AT_DISPATCH_FLOATING_AND_COMPLEX_TYPES(
+      input.scalar_type(), "geqrf_musa", [&] {
+        apply_geqrf<scalar_t>(input, tau);
+      });
+}
+
+Tensor& orgqr_helper_musolver(Tensor& result, const Tensor& tau) {
+  AT_DISPATCH_FLOATING_AND_COMPLEX_TYPES(
+      result.scalar_type(), "orgqr_cuda", [&] {
+        apply_orgqr<scalar_t>(result, tau);
+      });
+  return result;
+}
+
+void ormqr_helper_musolver(
+    const Tensor& input,
+    const Tensor& tau,
+    const Tensor& other,
+    bool left,
+    bool transpose) {
+  AT_DISPATCH_FLOATING_AND_COMPLEX_TYPES(
+      other.scalar_type(), "ormqr_musa", [&] {
+        apply_ormqr<scalar_t>(input, tau, other, left, transpose);
       });
 }
 

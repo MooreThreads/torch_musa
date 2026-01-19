@@ -1,0 +1,37 @@
+#ifndef TORCH_MUSA_CSRC_ATEN_OPS_MUSA_LOOPS_MUH_
+#define TORCH_MUSA_CSRC_ATEN_OPS_MUSA_LOOPS_MUH_
+
+#include <c10/util/Exception.h>
+
+#include "torch_musa/csrc/aten/ops/musa/MUSALoops.muh"
+
+namespace at::musa {
+
+template <typename func_t>
+inline void gpu_kernel(TensorIteratorBase& iter, const func_t& f) {
+  for (int arg = 0; arg < iter.ntensors(); arg++) {
+    TORCH_INTERNAL_ASSERT(
+        iter.device(arg).is_privateuseone(),
+        "argument ",
+        arg,
+        ": expected a MUSA device but found ",
+        iter.device(arg));
+  }
+
+  if (iter.numel() == 0) {
+    return;
+  }
+
+  if (!iter.can_use_32bit_indexing()) {
+    for (auto& sub_iter : iter.with_32bit_indexing()) {
+      gpu_kernel(sub_iter, f);
+    }
+    return;
+  }
+
+  gpu_kernel_impl(static_cast<MusaTensorIterator&>(iter), f);
+}
+
+} // namespace at::musa
+
+#endif // TORCH_MUSA_CSRC_ATEN_OPS_MUSA_LOOPS_MUH_

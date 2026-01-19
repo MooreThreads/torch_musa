@@ -92,10 +92,11 @@ DEFINE_COMPARISON_CHECKER(GE, >=)
 DEFINE_COMPARISON_CHECKER(EQ, ==)
 DEFINE_COMPARISON_CHECKER(NE, !=)
 
-#define CHECK_BINARY_OP(name, op, x, y)                                  \
-  if (auto msg = ToString##name(x, y))                                   \
-  LogMessage(__FILE__, __LINE__, torch::musa::logging::Severity::kFatal) \
-          .stream()                                                      \
+#define CHECK_BINARY_OP(name, op, x, y)                           \
+  if (auto msg = torch::musa::logging::ToString##name(x, y))      \
+  torch::musa::logging::LogMessage(                               \
+      __FILE__, __LINE__, torch::musa::logging::Severity::kFatal) \
+          .stream()                                               \
       << "Check failed: " << #x " " #op " " #y << *msg << ": "
 
 #define TORCH_MUSA_CHECK_LT(x, y) CHECK_BINARY_OP(LT, <, x, y)

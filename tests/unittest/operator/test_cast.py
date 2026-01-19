@@ -78,3 +78,23 @@ def call_cast_func(input_data, src_dtype, dst_dtype):
     assert comparator(mtgpu_result, cpu_result)
     assert mtgpu_result.dtype == cpu_result.dtype
     assert mtgpu_result.shape == cpu_result.shape
+
+
+input_data = [
+    torch.randn(5, 3) + 1j * torch.randn(5, 3),
+    torch.randint(10, (5, 3)) + 1j * torch.randint(10, (5, 3)),
+]
+all_dtypes = [
+    torch.complex32,
+    torch.complex64,
+    torch.complex128,
+    torch.float,
+    torch.half,
+]
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_data)
+@pytest.mark.parametrize("src_dtype", all_dtypes)
+def test_cast_to_complex(input_data, src_dtype):
+    call_cast_func(input_data, src_dtype, torch.bool)

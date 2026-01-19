@@ -65,6 +65,35 @@ def test_mm_fp16(input_data):
     test.check_grad_fn(fp16=True)
 
 
+input_data_complex = [
+    {
+        "input": torch.randn(4, 5, dtype=torch.complex64),
+        "mat2": torch.randn(5, 2, dtype=torch.complex64),
+    },
+    {
+        "input": torch.randn(64, 128, dtype=torch.complex128),
+        "mat2": torch.randn(256, 128, dtype=torch.complex128).t(),
+    },
+    {
+        "input": torch.randn(32, 43, dtype=torch.complex128).t(),
+        "mat2": torch.randn(32, 5, dtype=torch.complex128),
+    },
+]
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_data_complex)
+def test_mm_complex64(input_data):
+    test = testing.OpTest(
+        func=torch.mm,
+        input_args=input_data,
+        comparators=testing.DefaultComparator(abs_diff=1e-3),
+    )
+    test.check_result()
+    test.check_out_ops()
+    test.check_grad_fn()
+
+
 config = [
     # M, N, K
     [1, 1, 1],

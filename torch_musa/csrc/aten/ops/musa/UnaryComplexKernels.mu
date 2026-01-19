@@ -12,6 +12,7 @@
 #include <ATen/native/musa/Loops.muh>
 #include <limits>
 
+#include "torch_musa/csrc/aten/ops/Copy.h"
 namespace at::native {
 
 // We manually overload angle because std::arg does not work with types other
@@ -65,6 +66,35 @@ void angle_kernel_musa(TensorIteratorBase& iter) {
   }
 }
 
+// NB: Ignores the negative bit on tensors
+constexpr char conj_name[] = "conj_kernel";
+void conj_kernel_musa(TensorIteratorBase& iter) {
+  auto conj_chalf = [&] {
+    using scalar_t = c10::complex<at::Half>;
+#if AT_USE_JITERATOR()
+    static const auto conj_string = jiterator_stringify(
+        template <typename T> T conj_kernel(T z) { return std::conj(z); });
+    jitted_gpu_kernel<conj_name, scalar_t, scalar_t, 1>(iter, conj_string);
+#else
+    gpu_kernel(
+        iter, [] GPU_LAMBDA(scalar_t a) -> scalar_t { return std::conj(a); });
+#endif
+  };
+
+  AT_DISPATCH_SWITCH(
+      iter.common_dtype(),
+      "conj_cuda",
+      AT_DISPATCH_CASE_ALL_TYPES_AND3(kBool, kBFloat16, kHalf, [&] {
+        // Conj is a no-op for non-complex types
+        at::musa::direct_copy_kernel_musa(iter);
+      }) AT_DISPATCH_CASE_COMPLEX_TYPES([&] {
+        gpu_kernel(iter, [] GPU_LAMBDA(scalar_t a) -> scalar_t {
+          return std::conj(a);
+        });
+      }) AT_DISPATCH_CASE(kComplexHalf, conj_chalf));
+}
+
 REGISTER_MUSA_DISPATCH(angle_stub, &angle_kernel_musa);
+REGISTER_DISPATCH(conj_physical_stub, &conj_kernel_musa)
 
 } // namespace at::native

@@ -2,7 +2,12 @@
 
 # pylint: disable=C0301,unused-argument
 
-from typing import List, Optional, Union, Tuple
+from collections import defaultdict
+from collections.abc import Hashable, Iterable
+from copy import deepcopy
+from itertools import chain
+from typing import Any, Optional, Union, Tuple, List
+from typing_extensions import TypeAlias
 
 import torch
 from torch import Tensor
@@ -12,6 +17,8 @@ from torch.optim.optimizer import (
 )
 
 from ..utils import ext_loader
+
+StateDict: TypeAlias = dict[str, Any]
 
 # check fused_adamw method
 ext_module = ext_loader.load_ext("_ext", ["fused_adamw"])
@@ -110,8 +117,12 @@ class FusedAdamW(Optimizer):
         if differentiable:
             raise RuntimeError("FusedAdamW does not support `differentiable`")
         self._step_supports_amp_scaling = True
+        # parameters are allowed to be placed on the CPU during the initialization,
+        # but when running optimizer.step(), we will check again whether they are on
+        # the GPU device at this time
         fused_supported_devices = [
             torch._C._get_privateuse1_backend_name(),
+            "cpu",
         ]  # musa only
         if not all(
             p.device.type in fused_supported_devices and torch.is_floating_point(p)
@@ -139,6 +150,137 @@ class FusedAdamW(Optimizer):
             for s in state_values:
                 s["step"] = torch.tensor(float(s["step"]), dtype=torch.float32)
 
+    # pylint: disable-all
+    @staticmethod
+    def _process_value_according_to_param_policy(
+        param: torch.Tensor,
+        value: torch.Tensor,
+        param_id: int,
+        param_groups: list[dict[Any, Any]],
+        key: Hashable = None,
+    ) -> torch.Tensor:
+        # Floating-point types are a bit special here. They are the only ones
+        # that are assumed to always match the type of params.
+        # Make sure state['step'] is not casted https://github.com/pytorch/pytorch/issues/74424
+        # UNLESS fused or capturable, see note [special device hosting for step]
+        fused = False
+        capturable = False
+        assert param_groups is not None
+        for pg in param_groups:
+            if param_id in pg["params"]:
+                fused = pg["fused"] if "fused" in pg else False
+                capturable = pg["capturable"] if "capturable" in pg else False
+                break
+        if key == "step":
+            if capturable or fused:
+                return value.to(dtype=torch.float32)
+            else:
+                return value
+        else:
+            if param.is_floating_point():
+                return value.to(dtype=param.dtype, device=param.device)
+            else:
+                return value.to(device=param.device)
+
+    @torch._disable_dynamo
+    def load_state_dict(self, state_dict: StateDict) -> None:
+        r"""Load the optimizer state.
+
+        Args:
+            state_dict (dict): optimizer state. Should be an object returned
+                from a call to :meth:`state_dict`.
+
+        .. note::
+            The names of the parameters (if they exist under the "param_names" key of each param group
+            in :meth:`state_dict`) will not affect the loading process.
+            To use the parameters' names for custom cases (such as when the parameters in the loaded state dict
+            differ from those initialized in the optimizer),
+            a custom ``register_load_state_dict_pre_hook`` should be implemented to adapt the loaded dict
+            accordingly.
+            If ``param_names`` exist in loaded state dict ``param_groups`` they will be saved and override
+            the current names, if present, in the optimizer state. If they do not exist in loaded state dict,
+            the optimizer ``param_names`` will remain unchanged.
+        """
+        # shallow copy, to be consistent with module API
+        state_dict = state_dict.copy()
+
+        for pre_hook in self._optimizer_load_state_dict_pre_hooks.values():
+            hook_result = pre_hook(self, state_dict)
+            if hook_result is not None:
+                state_dict = hook_result
+
+        # Validate the state_dict
+        groups = self.param_groups
+
+        # Deepcopy as we write into saved_groups later to update state
+        saved_groups = deepcopy(state_dict["param_groups"])
+
+        if len(groups) != len(saved_groups):
+            raise ValueError(
+                "loaded state dict has a different number of parameter groups"
+            )
+        param_lens = (len(g["params"]) for g in groups)
+        saved_lens = (len(g["params"]) for g in saved_groups)
+        if any(p_len != s_len for p_len, s_len in zip(param_lens, saved_lens)):
+            raise ValueError(
+                "loaded state dict contains a parameter group "
+                "that doesn't match the size of optimizer's group"
+            )
+
+        # Update the state
+        id_map = dict(
+            zip(
+                chain.from_iterable(g["params"] for g in saved_groups),
+                chain.from_iterable(g["params"] for g in groups),
+            )
+        )
+
+        def _cast(param, value, param_id=None, param_groups=None, key=None):
+            r"""Make a deep copy of value, casting all tensors to device of param."""
+            if isinstance(value, torch.Tensor):
+                return FusedAdamW._process_value_according_to_param_policy(
+                    param, value, param_id, param_groups, key
+                )
+            elif isinstance(value, dict):
+                return {
+                    k: _cast(
+                        param, v, param_id=param_id, param_groups=param_groups, key=k
+                    )
+                    for k, v in value.items()
+                }
+            elif isinstance(value, Iterable):
+                return type(value)(_cast(param, v, param_id=param_id, param_groups=param_groups) for v in value)  # type: ignore[call-arg]
+            else:
+                return value
+
+        # Copy state assigned to params (and cast tensors to appropriate types).
+        # State that is not assigned to params is copied as is (needed for
+        # backward compatibility).
+        state: defaultdict[torch.Tensor, dict[Any, Any]] = defaultdict(dict)
+        for k, v in state_dict["state"].items():
+            if k in id_map:
+                param = id_map[k]
+                state[param] = _cast(
+                    param, v, param_id=k, param_groups=state_dict["param_groups"]
+                )
+            else:
+                state[k] = v
+
+        # Update parameter groups, setting their 'params' value
+        def update_group(
+            group: dict[str, Any], new_group: dict[str, Any]
+        ) -> dict[str, Any]:
+            new_group["params"] = group["params"]
+            if "param_names" in group and "param_names" not in new_group:
+                new_group["param_names"] = group["param_names"]
+            return new_group
+
+        param_groups = [update_group(g, ng) for g, ng in zip(groups, saved_groups)]
+        self.__setstate__({"state": state, "param_groups": param_groups})
+
+        for post_hook in self._optimizer_load_state_dict_post_hooks.values():
+            post_hook(self)
+
     def _init_group(
         self,
         group,
@@ -152,6 +294,8 @@ class FusedAdamW(Optimizer):
 
         has_complex = False
         for p in group["params"]:
+            if p.device.type != "musa":
+                raise RuntimeError("all parameters should on MUSA device")
             if p.grad is not None:
                 has_complex |= torch.is_complex(p)
                 params_with_grad.append(p)
@@ -196,6 +340,7 @@ class FusedAdamW(Optimizer):
 
         return has_complex
 
+    @torch.no_grad()
     def step(self, closure=None):
         """Perform a single optimization step.
 
@@ -233,6 +378,8 @@ class FusedAdamW(Optimizer):
                 if isinstance(group["lr"], torch.Tensor)
                 else _fused_adamw
             )
+            if len(params_with_grad) == 0:
+                continue
             func(
                 params_with_grad,
                 grads,

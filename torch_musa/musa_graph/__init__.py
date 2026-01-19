@@ -7,4 +7,5 @@ from .graphs import (
     graph_pool_handle,
     is_current_stream_capturing,
     make_graphed_callables,
+    update_musa_graph_with_profile,
 )

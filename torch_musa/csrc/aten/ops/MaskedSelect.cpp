@@ -6,6 +6,7 @@
 #include <torch/library.h>
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
+#include "torch_musa/csrc/aten/utils/StateGuard.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 #include <mudnn.h>
@@ -76,16 +77,16 @@ at::Tensor& MaskedSelectOut(
   std::vector<int64_t> out_shape;
   std::vector<int64_t> out_stride;
   CHECK_MUDNN_STATUS(mt_result.GetNdInfo(out_shape, out_stride), "GetNdInfo");
-  std::vector<int64_t> out_shape_int64;
-  for (const auto i : out_shape) {
-    out_shape_int64.push_back(static_cast<int64_t>(i));
+  TORCH_INTERNAL_ASSERT(out_shape.size() == 1);
+
+  if (GET_STATE(STRICT_MASK_SELECT)) {
+    out.resize_(out_shape);
+    Tensor out_strict = out.clone();
+    out.set_(out_strict);
+  } else {
+    out.unsafeGetTensorImpl()->set_sizes_and_strides(out_shape, out_stride);
   }
-  std::vector<int64_t> out_stride_int64;
-  for (const auto i : out_stride) {
-    out_stride_int64.push_back(static_cast<int64_t>(i));
-  }
-  out.unsafeGetTensorImpl()->set_sizes_and_strides(
-      out_shape_int64, out_stride_int64);
+
   return out;
 }
 

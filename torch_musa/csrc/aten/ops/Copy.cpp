@@ -8,7 +8,9 @@
 #include <c10/core/TensorOptions.h>
 #include <torch/library.h>
 
+#include <mudnn.h>
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
+#include "torch_musa/csrc/aten/ops/Copy.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/CachingHostAllocator.h"
@@ -18,12 +20,18 @@
 #include "torch_musa/csrc/core/MUSAStream.h"
 #include "torch_musa/csrc/core/PeerToPeerAccess.h"
 
-#include <mudnn.h>
-
 #include <memory>
 #include <unordered_set>
 
 namespace at {
+
+namespace native {
+extern void conj_kernel_musa(TensorIteratorBase& iter);
+extern void neg_kernel_cuda(TensorIteratorBase& iter);
+extern void neg_conj_kernel_cuda(TensorIteratorBase& iter);
+extern void direct_copy_kernel_cuda(TensorIteratorBase& iter);
+
+} // namespace native
 
 extern void set_quantizer_(const Tensor&, ConstQuantizerPtr);
 
@@ -221,8 +229,8 @@ void mtgpu_impl_copy_d2d(
       C10_MUSA_CHECK(musaMemcpyPeerAsync(
           dst, dst_device.index(), src, src_device.index(), size, copy_stream));
     } else if (
-        src_device == dst_device && tensor_src.dim() <= 8 &&
-        tensor_self.dim() <= 8) {
+        src_device == dst_device && !tensor_src.is_complex() &&
+        tensor_src.dim() <= 8 && tensor_self.dim() <= 8) {
       // we call the identity op to implement memcpy(d2d), which has better
       // performance
       muHandle& h = GetMudnnHandle();
@@ -237,12 +245,26 @@ void mtgpu_impl_copy_d2d(
           dst, src, size, musaMemcpyDeviceToDevice, copy_stream));
     }
   } else {
-    TORCH_CHECK(same_type, "Device to device copy is unsupported");
-    TORCH_CHECK(same_conj, "Device to device copy is unsupported");
-    TORCH_CHECK(same_neg, "Device to device copy is unsupported");
-    if (!is_contig) {
-      permute_to_contiguous(tensor_self, tensor_src);
-      return;
+    auto iter = TensorIteratorConfig()
+                    .add_output(tensor_self)
+                    .add_const_input(tensor_src)
+                    .resize_outputs(false)
+                    .check_all_same_dtype(false)
+                    .check_all_same_device(false)
+                    .build();
+
+    if (same_neg) {
+      if (!same_conj) {
+        at::native::conj_kernel_musa(iter);
+      } else {
+        direct_copy_kernel_musa(iter);
+      }
+    } else {
+      if (!same_conj) {
+        at::native::neg_conj_kernel_cuda(iter);
+      } else {
+        at::native::neg_kernel_cuda(iter);
+      }
     }
   }
 
@@ -279,6 +301,29 @@ void mtgpu_impl_datacast(const Tensor& tensor_self, const Tensor& tensor_src) {
 }
 
 } // namespace
+
+void direct_copy_kernel_musa(TensorIteratorBase& iter) {
+  TORCH_CHECK(iter.ntensors() == 2);
+  auto& tensor_self = iter.tensor(0);
+  auto& tensor_src = iter.tensor(1);
+
+  if (tensor_src.numel() == 0) {
+    tensor_self.zero_();
+    return;
+  }
+  if (tensor_self.is_complex() || tensor_src.is_complex()) {
+    at::native::direct_copy_kernel_cuda(iter);
+    return;
+  }
+  bool same_type = tensor_self.dtype() == tensor_src.dtype();
+  bool same_device = tensor_src.device() == tensor_self.device();
+  if (!same_type) {
+    // process no_same_dtype
+    mtgpu_impl_datacast(tensor_self, tensor_src);
+  } else {
+    permute_to_contiguous(tensor_self, tensor_src);
+  }
+}
 
 static bool maybe_enable_p2p_access(Device dst_device, Device src_device) {
   if (dst_device.is_cpu() || src_device.is_cpu()) {
@@ -336,7 +381,7 @@ Tensor MUSACopyFrom(
   // d2d copy handles all the situations, including pure copy, cast and permute
   if (is_musa(src) && is_musa(self)) {
     // call cast during copy with different type.
-    if (src.dtype() == self.dtype()) {
+    if (src.dtype() == self.dtype() || src.is_complex() || self.is_complex()) {
       mtgpu_impl_copy_d2d(self, src);
       return self;
     }
@@ -433,6 +478,14 @@ Tensor MUSACopyFrom(
 
 TORCH_LIBRARY_IMPL(aten, QuantizedPrivateUse1, m) {
   m.impl(TORCH_SELECTIVE_NAME("aten::_copy_from"), TORCH_FN(MUSACopyFrom));
+}
+
+TORCH_LIBRARY_IMPL(aten, Conjugate, m) {
+  m.impl("_copy_from", torch::CppFunction::makeFallthrough());
+}
+
+TORCH_LIBRARY_IMPL(aten, Negative, m) {
+  m.impl("_copy_from", torch::CppFunction::makeFallthrough());
 }
 
 } // namespace musa

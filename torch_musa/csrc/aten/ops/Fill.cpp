@@ -1,9 +1,11 @@
 #include <ATen/Config.h>
 #include <ATen/NativeFunctions.h>
+#include <ATen/native/Fill.h>
 #include <torch/library.h>
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
-#include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/aten/ops/musa/elemwise/Interface.muh"
+#include "torch_musa/csrc/aten/utils/TensorIterator.h"
 
 #include <mudnn.h>
 
@@ -15,6 +17,19 @@ Tensor& FillOp(
     const Scalar& value,
     const c10::optional<Tensor>& mask = c10::nullopt) {
   if C10_UNLIKELY (self.numel() == 0) {
+    return self;
+  }
+  if (self.is_complex()) {
+    MusaTensorIterator iter;
+    iter.add_output(self);
+
+    TensorIteratorConfig config;
+    config.set_check_mem_overlap(false)
+        .check_all_same_dtype(false)
+        .resize_outputs(false);
+
+    iter.build(config);
+    FillKernel(iter, value);
     return self;
   }
   c10::musa::MUSAGuard device_guard(self.device());

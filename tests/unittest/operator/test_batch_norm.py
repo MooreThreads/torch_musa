@@ -53,6 +53,36 @@ def test_batch_norm(inputs, train, affine):
         assert output.grad_fn.__class__ == output_musa.grad_fn.__class__
 
 
+@pytest.mark.parametrize("inputs", inputs)
+@pytest.mark.parametrize("affine", affine)
+def test__batch_norm_with_update(inputs, affine):
+    mod, input_data_list = inputs
+    func = torch.ops.aten._batch_norm_with_update
+    cmp = testing.DefaultComparator(abs_diff=1e-5)
+    for input_data_cpu in input_data_list:
+        if input_data_cpu.numel() == 0:
+            continue
+        m = mod(100, affine=affine)
+        input_data_musa = input_data_cpu.musa(0)
+
+        def fwd(m, i):
+            weight = m.weight
+            bias = m.bias
+            running_mean = m.running_mean
+            running_var = m.running_var
+            momentum = m.momentum
+            eps = m.eps
+            return func(i, weight, bias, running_mean, running_var, momentum, eps)
+
+        out_c, mean_c, var_c, _ = fwd(m, input_data_cpu)
+        m.to("musa")
+        out_m, mean_m, var_m, _ = fwd(m, input_data_musa)
+
+        assert cmp(out_c, out_m.cpu())
+        assert cmp(mean_c, mean_m.cpu())
+        assert cmp(var_c, var_m.cpu())
+
+
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("inputs", inputs)
 @pytest.mark.skipif(

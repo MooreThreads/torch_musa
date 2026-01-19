@@ -44,6 +44,10 @@ void THCPGraph_init(PyObject* module) {
           "capture_end",
           torch::wrap_pybind_function_no_gil(&at::musa::MUSAGraph::capture_end))
       .def(
+          "reinstantiate_graph",
+          torch::wrap_pybind_function_no_gil(
+              &at::musa::MUSAGraph::reinstantiate_graph))
+      .def(
           "replay",
           torch::wrap_pybind_function_no_gil(&at::musa::MUSAGraph::replay))
       .def(

@@ -5,6 +5,7 @@ Unit test for verifying the correctness of Musagraphs backend in torch_musa.
 import os
 import random
 import torch
+import pytest
 import numpy as np
 from torch_musa._inductor import musagraph_trees
 from torch_musa import testing
@@ -48,6 +49,9 @@ class SimpleModel(torch.nn.Module):
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.skip(
+    reason="Error in MUSA SDK 4.3.2, fixed in 4.3.3"
+)  # TODO(@ai-infra): remove this
 def test_musagraphs_backend():
     """Test the correctness of the Musagraphs backend for a simple linear model on MUSA."""
     set_seed()

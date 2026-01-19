@@ -2,7 +2,7 @@
 #define TORCH_MUSA_CSRC_ATEN_MUSA_MUSABLAS_H_
 
 #include <ATen/OpMathType.h>
-
+#include <internal/mublas_types.h>
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
 
 namespace at {
@@ -70,6 +70,49 @@ template <>
 void vdot<c10::complex<float>>(MUSABLAS_VDOT_ARGTYPES(c10::complex<float>));
 template <>
 void vdot<c10::complex<double>>(MUSABLAS_VDOT_ARGTYPES(c10::complex<double>));
+
+#define MUSABLAS_TRSM_ARGTYPES(Dtype)                                  \
+  mublasHandle_t handle, mublasSideMode_t side, mublasFillMode_t uplo, \
+      mublasOperation_t trans, mublasDiagType_t diag, int m, int n,    \
+      const Dtype *alpha, const Dtype *A, int lda, Dtype *B, int ldb
+
+template <typename Dtype>
+inline void trsm(MUSABLAS_TRSM_ARGTYPES(Dtype)) {
+  static_assert(
+      false && sizeof(Dtype), "at::musa::blas::trsm: not implemented");
+}
+
+template <>
+void trsm<float>(MUSABLAS_TRSM_ARGTYPES(float));
+template <>
+void trsm<double>(MUSABLAS_TRSM_ARGTYPES(double));
+template <>
+void trsm<c10::complex<float>>(MUSABLAS_TRSM_ARGTYPES(c10::complex<float>));
+template <>
+void trsm<c10::complex<double>>(MUSABLAS_TRSM_ARGTYPES(c10::complex<double>));
+
+#define MUSABLAS_TRSM_BATCHED_ARGTYPES(Dtype)                          \
+  mublasHandle_t handle, mublasSideMode_t side, mublasFillMode_t uplo, \
+      mublasOperation_t trans, mublasDiagType_t diag, int m, int n,    \
+      const Dtype *alpha, Dtype *A[], int lda, Dtype *B[], int ldb,    \
+      int batchCount
+
+template <typename Dtype>
+inline void trsmBatched(MUSABLAS_TRSM_BATCHED_ARGTYPES(Dtype)) {
+  static_assert(
+      false && sizeof(Dtype), "at::musa::blas::trsmBatched: not implemented");
+}
+
+template <>
+void trsmBatched<float>(MUSABLAS_TRSM_BATCHED_ARGTYPES(float));
+template <>
+void trsmBatched<double>(MUSABLAS_TRSM_BATCHED_ARGTYPES(double));
+template <>
+void trsmBatched<c10::complex<float>>(
+    MUSABLAS_TRSM_BATCHED_ARGTYPES(c10::complex<float>));
+template <>
+void trsmBatched<c10::complex<double>>(
+    MUSABLAS_TRSM_BATCHED_ARGTYPES(c10::complex<double>));
 
 } // namespace blas
 } // namespace musa

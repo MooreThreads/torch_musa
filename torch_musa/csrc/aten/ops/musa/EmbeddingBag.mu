@@ -11,8 +11,25 @@
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/MUSAStream.h"
 
+#include <ATen/AccumulateType.h>
+#include <ATen/native/musa/thread_constants.h>
+#include <ATen/musa/cub.muh>
+#include <ATen/native/musa/EmbeddingBackwardKernel.muh>
+#include <ATen/native/musa/KernelUtils.muh>
+#include <ATen/native/musa/SortingCommon.muh>
+#include <ATen/native/musa/block_reduce.muh>
+
+#if CUB_SUPPORTS_SCAN_BY_KEY()
+#include <thrust/iterator/reverse_iterator.h>
+#endif
+
 namespace at {
 namespace native {
+
+#if !CUB_SUPPORTS_SCAN_BY_KEY()
+template <typename index_t>
+void embedding_dense_backward_cuda_scan(Tensor& sorted_indices, Tensor& count);
+#endif
 
 namespace {
 

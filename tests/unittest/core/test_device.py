@@ -1,6 +1,6 @@
 """Test device features."""
 
-# pylint: disable=invalid-name, comparison-with-itself, unused-variable, unused-import, C0415, C0121, C2801, W0611
+# pylint: disable=invalid-name, comparison-with-itself, unused-variable, unused-import, C0415, C0121, C2801, W0611, C0116
 import queue
 import threading
 import torch
@@ -9,7 +9,8 @@ import torch_musa
 from torch_musa import testing
 from torch_musa.testing import get_cycles_per_ms, freeze_rng_state
 
-FIFTY_MIL_CYCLES = 50000000
+FIVE_HUNDRED_MIL_CYCLES = 500000000
+TEN_HUNDRED_MIL_CYCLES = 1000000000
 # TODO(Xiaokang Shang): get_allocator_backend() and set musaMallocAsync
 TEST_MUSAMALLOCASYNC = False
 
@@ -177,7 +178,7 @@ def _test_copy_sync_current_stream(x, y):
     with torch.musa.stream(s0):
         # TODO(Xiaokang Shang): time sleep not accurate, clock64 feature will be available
         # in the future.
-        torch.musa._sleep(FIFTY_MIL_CYCLES)
+        torch.musa._sleep(FIVE_HUNDRED_MIL_CYCLES)
         with torch.musa.stream(s1):
             y.copy_(x_plus_one)
 
@@ -191,7 +192,7 @@ def _test_copy_sync_current_stream(x, y):
     with torch.musa.stream(s1):
         # TODO(Xiaokang Shang): time sleep not accurate, clock64 feature will be available
         # in the future.
-        torch.musa._sleep(FIFTY_MIL_CYCLES)
+        torch.musa._sleep(FIVE_HUNDRED_MIL_CYCLES)
         with torch.musa.stream(s0):
             y.copy_(x_plus_one)
 
@@ -369,8 +370,7 @@ def test_streams_multi_gpu_query():
         s1 = torch.musa.current_stream()
         # TODO(Xiaokang Shang): time sleep not accurate, clock64 feature will be available
         # in the future.
-        torch.musa._sleep(FIFTY_MIL_CYCLES)
-
+        torch.musa._sleep(TEN_HUNDRED_MIL_CYCLES)
     assert s0.query() is True
     assert s1.query() is False
 
@@ -526,7 +526,7 @@ def test_events():
     stream.record_event(start_event)
     # TODO(Xiaokang Shang): time sleep not accurate, clock64 feature will be available
     # in the future.
-    torch.musa._sleep(FIFTY_MIL_CYCLES)
+    torch.musa._sleep(FIVE_HUNDRED_MIL_CYCLES)
     stream.record_event(event)
     assert event.query() is False
     event.synchronize()
@@ -586,7 +586,7 @@ def _event_wait(spin_time_cycles):
     with torch.musa.stream(s1):
         # TODO(Xiaokang Shang): time sleep not accurate, clock64 feature will be available
         # in the future.
-        torch.musa._sleep(FIFTY_MIL_CYCLES)
+        torch.musa._sleep(FIVE_HUNDRED_MIL_CYCLES)
     s1.synchronize()
     e_tok.record()
     e_tok.synchronize()
@@ -604,7 +604,7 @@ def _test_stream_event_nogil(sync_func, p2c, c2p):
     with torch.musa.device("musa:1"):
         c2p.put(0)
         p2c.get()
-        c2p.put(sync_func(FIFTY_MIL_CYCLES))
+        c2p.put(sync_func(FIVE_HUNDRED_MIL_CYCLES))
 
 
 @testing.skip_if_not_multiple_musa_device
@@ -626,7 +626,7 @@ def test_stream_event_nogil():
         with torch.musa.device("musa:0"):
             e_tik.record()
             p2c.put(0)
-            parent_time = sync_func(FIFTY_MIL_CYCLES)
+            parent_time = sync_func(FIVE_HUNDRED_MIL_CYCLES)
             child_time = c2p.get()
             e_tok.record()
             e_tok.synchronize()
@@ -660,7 +660,7 @@ def test_events_wait():
         s0 = torch.musa.current_stream()
         # TODO(Xiaokang Shang): time sleep not accurate, clock64 feature will be available
         # in the future.
-        torch.musa._sleep(FIFTY_MIL_CYCLES)
+        torch.musa._sleep(FIVE_HUNDRED_MIL_CYCLES)
         e0 = torch.musa.Event()
         s0.record_event(e0)
 
@@ -697,7 +697,7 @@ def test_events_multi_gpu_query():
         s1 = torch.musa.current_stream()
         # TODO(Xiaokang Shang): time sleep not accurate, clock64 feature will be available
         # in the future.
-        torch.musa._sleep(FIFTY_MIL_CYCLES)
+        torch.musa._sleep(TEN_HUNDRED_MIL_CYCLES)
         e1 = s1.record_event()
 
     assert e0.query() is True
@@ -750,7 +750,7 @@ def test_events_multi_gpu_elapsed_time():
         e1 = torch.musa.Event(enable_timing=True)
         # TODO(Xiaokang Shang): time sleep not accurate, clock64 feature will be available
         # in the future.
-        torch.musa._sleep(FIFTY_MIL_CYCLES)
+        torch.musa._sleep(FIVE_HUNDRED_MIL_CYCLES)
         s1.record_event(e1)
 
     e0.synchronize()
@@ -768,7 +768,7 @@ def test_events_multi_gpu_elapsed_time():
         e2 = torch.musa.Event(enable_timing=True)
         # TODO(Xiaokang Shang): time sleep not accurate, clock64 feature will be available
         # in the future.
-        torch.musa._sleep(FIFTY_MIL_CYCLES)
+        torch.musa._sleep(FIVE_HUNDRED_MIL_CYCLES)
         s0.record_event(e2)
         s0.synchronize()
 
@@ -894,3 +894,16 @@ def test_musart_register():
     r = musart.musaHostUnregister(t.data_ptr())
     assert r == 0
     assert t.is_pinned() == False
+
+
+def test_bf16_tf32_supported():
+    major, minor = torch_musa.get_device_capability()
+    capability = major * 10 + minor
+
+    if capability > 21:
+        assert torch_musa.is_bf16_supported(True)  # pylint: disable=E1123, E1121
+        assert torch_musa.is_bf16_supported(False)  # pylint: disable=E1123, E1121
+        assert torch_musa.is_tf32_supported()
+    else:
+        assert not torch_musa.is_bf16_supported(False)  # pylint: disable=E1123, E1121
+        assert not torch_musa.is_tf32_supported()

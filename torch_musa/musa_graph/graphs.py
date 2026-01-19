@@ -2,6 +2,7 @@
 
 """ grapsh api"""
 import gc
+import weakref
 
 import torch
 from torch.utils import _pytree
@@ -15,6 +16,16 @@ def is_current_stream_capturing():
     context.
     """
     return torch_musa._MUSAC._musa_isCurrentStreamCapturing()
+
+
+def update_musa_graph_with_profile():
+    r"""
+    When both graph and profile are used, reinstantiate the graph_exec,
+     otherwise the graph kernel information will be missing
+    """
+    graphs_ = MUSAGraph.get_latest_instance()
+    for instance_ in graphs_:
+        instance_.reinstantiate_graph()
 
 
 # Python shim helps Sphinx process docstrings more reliably.
@@ -37,8 +48,13 @@ class MUSAGraph(torch_musa._MUSAC._MUSAGraph):
         This API is in beta and may change in future releases.
     """
 
+    _graph_instances = weakref.WeakSet()
+
     def __new__(cls):
-        return super().__new__(cls)
+        instance = super().__new__(cls)
+        # save the latest MUSAGraph instance for profile.
+        cls._graph_instances.add(instance)
+        return instance
 
     def capture_begin(self, pool=None, capture_error_mode="global"):
         r"""Begin capturing MUSA work on the current stream.
@@ -74,6 +90,10 @@ class MUSAGraph(torch_musa._MUSAC._MUSAGraph):
         """
         super().capture_end()
 
+    def reinstantiate_graph(self):
+        r"""Replay the MUSA work captured by this graph."""
+        super().reinstantiate_graph()
+
     def replay(self):
         r"""Replay the MUSA work captured by this graph."""
         super().replay()
@@ -103,6 +123,13 @@ class MUSAGraph(torch_musa._MUSAC._MUSAGraph):
         enabled via MUSAGraph.enable_debug_mode()
         """
         return super().debug_dump(debug_path)
+
+    @classmethod
+    def get_latest_instance(cls):
+        """get the latest MUSAGraph instance, default None"""
+        if cls._graph_instances is not None:
+            return list(cls._graph_instances)
+        return None
 
 
 class graph:

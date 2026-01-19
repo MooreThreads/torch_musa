@@ -964,12 +964,27 @@ Tensor MaxAllCall(const Tensor& self, ::musa::dnn::Reduce::Mode m) {
 }
 
 Tensor MaxAll(const Tensor& self) {
-  // TODO(@caizhi): use musa porting to instead putting to cpu.
   c10::musa::MUSAGuard device_guard(self.device());
-  if (self.scalar_type() == ScalarType::Double) {
-    return at::max(self.to("cpu")).to("musa");
-  }
   return MaxAllCall(self, ::musa::dnn::Reduce::Mode::MAX);
+}
+
+void MaxMinAllOutCall(
+    const Tensor& self,
+    Tensor& out,
+    ::musa::dnn::Reduce::Mode m) {
+  DimVector dims_vec(0);
+  if (self.numel() == 0) {
+    out.zero_();
+  } else {
+    ReduceCall(out, self, dims_vec, m);
+  }
+}
+
+Tensor& MaxUnaryOut(const Tensor& self, Tensor& out) {
+  out.resize_({});
+  c10::musa::MUSAGuard device_guard(self.device());
+  MaxMinAllOutCall(self, out, ::musa::dnn::Reduce::Mode::MAX);
+  return out;
 }
 
 std::tuple<Tensor, Tensor> MaxDim(
@@ -1159,12 +1174,15 @@ Tensor MinAllCall(const Tensor& self, ::musa::dnn::Reduce::Mode m) {
 }
 
 Tensor MinAll(const Tensor& self) {
-  // TODO(@caizhi): use musa porting to instead putting to cpu.
   c10::musa::MUSAGuard device_guard(self.device());
-  if (self.scalar_type() == ScalarType::Double) {
-    return at::min(self.to("cpu")).to("musa");
-  }
   return MinAllCall(self, ::musa::dnn::Reduce::Mode::MIN);
+}
+
+Tensor& MinUnaryOut(const Tensor& self, Tensor& out) {
+  out.resize_({});
+  c10::musa::MUSAGuard device_guard(self.device());
+  MaxMinAllOutCall(self, out, ::musa::dnn::Reduce::Mode::MIN);
+  return out;
 }
 
 std::tuple<Tensor, Tensor> MinDim(

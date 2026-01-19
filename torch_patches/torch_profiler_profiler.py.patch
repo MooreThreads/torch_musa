@@ -1,0 +1,17 @@
+diff --git a/torch/profiler/profiler.py b/torch/profiler/profiler.py
+index ecc848c..70c69ff 100644
+--- a/torch/profiler/profiler.py
++++ b/torch/profiler/profiler.py
+@@ -195,6 +195,12 @@ class _KinetoProfile:
+                 custom_trace_id_callback=self.custom_trace_id_callback,
+             )
+         self.profiler._prepare_trace()
++        try:
++            torch.musa.update_musa_graph_with_profile()
++        except AttributeError:
++            # ignore the error if musa is not installed or
++            # update_musa_graph_with_profile is not ready in old version
++            pass
+ 
+     def start_trace(self):
+         if self.execution_trace_observer:

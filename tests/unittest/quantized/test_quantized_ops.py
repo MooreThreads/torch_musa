@@ -492,6 +492,87 @@ def test_fake_quantize_per_channel_affine_cachemask(config):
 
 
 configs = [
+    ((2, 2), 0, 255, 1),
+    ((2, 3, 16), 0, 255, 1),
+    ((1, 4, 8, 8), 0, 127, 1),
+    ((2, 2, 32), 0, 240, 1),
+]
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("config", configs)
+def test_fake_quantize_learnable_per_channel_affine(config):
+    shape, qmin, qmax, axis = config
+
+    def fake_quant_cachemask(
+        input_tensor, scale, zero_point, axis, quant_min, quant_max, grad_factor
+    ):
+        return torch.ops.aten._fake_quantize_learnable_per_channel_affine(
+            input_tensor, scale, zero_point, axis, quant_min, quant_max, grad_factor
+        )
+
+    input_tensor = get_input_tensor(shape, torch.float32)
+    scale_tensor = get_scale_tensor(shape, axis, torch.float32)
+    zero_point_tensor = get_zero_point_tensor(shape, axis, torch.float32)
+    grad_factor = torch.tensor(1.0, dtype=torch.double)
+    input_tensor.requires_grad_(True)
+    scale_tensor.requires_grad_(True)
+    zero_point_tensor.requires_grad_(True)
+
+    test = testing.OpTest(
+        func=fake_quant_cachemask,
+        input_args={
+            "input_tensor": input_tensor,
+            "scale": scale_tensor,
+            "zero_point": zero_point_tensor,
+            "axis": axis,
+            "quant_min": qmin,
+            "quant_max": qmax,
+            "grad_factor": grad_factor,
+        },
+        comparators=testing.DefaultComparator(abs_diff=1e-6),
+    )
+    test.check_result(train=True)
+
+
+configs = [
+    ((2, 2), 0, 255, 0.1, 4),
+    ((2, 3, 16), 0, 255, 0.2, 254),
+    ((1, 4, 8, 8), 0, 127, 10, 1),
+    ((2, 2, 32), 10, 240, 1, 100),
+]
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("config", configs)
+def test_fake_quantize_per_tensor_affine_cachemask(config):
+    shape, qmin, qmax, scale, zero_point = config
+
+    def fake_quant_cachemask(input_tensor, scale, zero_point, quant_min, quant_max):
+        return torch.ops.aten.fake_quantize_per_tensor_affine_cachemask(
+            input_tensor, scale, zero_point, quant_min, quant_max
+        )
+
+    input_tensor = get_input_tensor(shape, torch.float32)
+    scale_tensor = torch.tensor(scale, dtype=torch.float32)
+    zero_point_tensor = torch.tensor(zero_point, dtype=torch.int)
+
+    test = testing.OpTest(
+        func=fake_quant_cachemask,
+        input_args={
+            "input_tensor": input_tensor,
+            "scale": scale_tensor,
+            "zero_point": zero_point_tensor,
+            "quant_min": qmin,
+            "quant_max": qmax,
+        },
+        comparators=testing.DefaultComparator(abs_diff=1e-6),
+    )
+
+    test.check_result()
+
+
+configs = [
     ((2, 2), 0, 255),
     ((2, 3, 16), 0, 255),
     ((1, 4, 8, 8), 0, 127),
@@ -501,7 +582,7 @@ configs = [
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("config", configs)
-def test_fake_quantize_per_tensor_affine_cachemask(config):
+def test_fake_quantize_per_tensor_affine_cachemask_tensor_qparams(config):
     shape, qmin, qmax = config
 
     def fake_quant_cachemask(
@@ -514,7 +595,7 @@ def test_fake_quantize_per_tensor_affine_cachemask(config):
     input_tensor = get_input_tensor(shape, torch.float32)
     scale_tensor = torch.tensor(0.1, dtype=torch.float32)
     zero_point_tensor = torch.tensor(0, dtype=torch.int)
-    fake_quant_enabled_tensor = torch.tensor(1, dtype=torch.long)  #
+    fake_quant_enabled_tensor = torch.tensor(1, dtype=torch.long)
 
     test = testing.OpTest(
         func=fake_quant_cachemask,
@@ -530,6 +611,50 @@ def test_fake_quantize_per_tensor_affine_cachemask(config):
     )
 
     test.check_result()
+
+
+configs = [
+    ((2, 2), 0, 255),
+    ((2, 3, 16), 0, 255),
+    ((1, 4, 8, 8), 0, 127),
+    ((2, 2, 32), 0, 240),
+]
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("config", configs)
+def test_fake_quantize_learnable_per_tensor_affine(config):
+    shape, qmin, qmax = config
+
+    def fake_quant_cachemask(
+        input_tensor, scale, zero_point, grad_factor, quant_min, quant_max
+    ):
+        return torch.ops.aten._fake_quantize_learnable_per_tensor_affine(
+            input_tensor, scale, zero_point, quant_min, quant_max, grad_factor
+        )
+
+    input_tensor = get_input_tensor(shape, torch.float32)
+    scale_tensor = torch.tensor([0.1], dtype=torch.float32)
+    zero_point_tensor = torch.tensor([0], dtype=torch.float32)
+    grad_factor = torch.tensor(1.0, dtype=torch.double)
+    input_tensor.requires_grad_(True)
+    scale_tensor.requires_grad_(True)
+    zero_point_tensor.requires_grad_(True)
+
+    test = testing.OpTest(
+        func=fake_quant_cachemask,
+        input_args={
+            "input_tensor": input_tensor,
+            "scale": scale_tensor,
+            "zero_point": zero_point_tensor,
+            "grad_factor": grad_factor,
+            "quant_min": qmin,
+            "quant_max": qmax,
+        },
+        comparators=testing.DefaultComparator(abs_diff=1e-6),
+    )
+
+    test.check_result(train=True)
 
 
 configs = [

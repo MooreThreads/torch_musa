@@ -48,7 +48,9 @@ static void LUFactor(
   (void)batch_size; // Silence unused warning in some builds
   auto m = input.size(-2);
   auto n = input.size(-1);
-
+  TORCH_CHECK(
+      compute_pivots == true,
+      "musolver doesnot support pivots == false, musolver 1.4.0, while cusolver support");
   const auto lu_factor_solver = [batch_size, m, n](
                                     const Tensor& input,
                                     const Tensor& pivots,
@@ -157,6 +159,13 @@ namespace musa {
   return ::std::tuple<at::Tensor&, at::Tensor&, at::Tensor&, at::Tensor&>{
       solution, residuals, rank, singular_values};
   ;
+}
+
+Tensor _CholeskySolveHelperMusa(
+    const Tensor& self,
+    const Tensor& A,
+    bool upper) {
+  return _cholesky_solve_helper_musolver(self, A, upper);
 }
 
 } // namespace musa

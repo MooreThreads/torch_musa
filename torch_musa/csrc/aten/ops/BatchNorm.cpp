@@ -6,8 +6,10 @@
 #include <ATen/Functions.h>
 #include <ATen/NativeFunctions.h>
 #else
+#include <ATen/ops/_batch_norm_with_update_native.h>
 #include <ATen/ops/_native_batch_norm_legit_native.h>
 #include <ATen/ops/_native_batch_norm_legit_no_training_native.h>
+#include <ATen/ops/batch_norm_backward_native.h>
 #include <ATen/ops/batch_norm_update_stats_native.h>
 #include <ATen/ops/empty_like.h>
 #include <ATen/ops/native_batch_norm_backward_native.h>
@@ -427,6 +429,97 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
       bn.RunBwd(h, dx, dm, dv, dg, db, x, dy, m, v, g, InternalMemAlloc),
       "BN RunBwd");
   return std::make_tuple(grad_input, grad_weight, grad_bias);
+}
+
+std::tuple<Tensor, Tensor, Tensor, Tensor> _BatchNormWithUpdate(
+    const Tensor& input,
+    const std::optional<Tensor>& weight_opt,
+    const std::optional<Tensor>& bias_opt,
+    Tensor& running_mean,
+    Tensor& running_var,
+    double momentum,
+    double eps) {
+  c10::MaybeOwned<Tensor> weight_maybe_owned =
+      at::borrow_from_optional_tensor(weight_opt);
+  const Tensor& weight = *weight_maybe_owned;
+  const Tensor& bias = bias_opt.value_or(Tensor());
+  Tensor output, save_mean, save_var, reserve;
+
+  reserve = at::empty({0}, input.options().dtype(kByte));
+  std::tie(output, save_mean, save_var) = NativeBatchNorm(
+      input,
+      weight_opt,
+      bias_opt,
+      running_mean,
+      running_var,
+      /*training*/ true,
+      momentum,
+      eps);
+  return std::tuple<Tensor, Tensor, Tensor, Tensor>(
+      output, save_mean, save_var, reserve);
+}
+
+std::tuple<Tensor&, Tensor&, Tensor&, Tensor&> _BatchNormWithUpdateout(
+    const Tensor& input,
+    const std::optional<Tensor>& weight_opt,
+    const std::optional<Tensor>& bias_opt,
+    Tensor& running_mean,
+    Tensor& running_var,
+    double momentum,
+    double eps,
+    Tensor& out,
+    Tensor& save_mean,
+    Tensor& save_var,
+    Tensor& reserve) {
+  c10::MaybeOwned<Tensor> weight_maybe_owned =
+      at::borrow_from_optional_tensor(weight_opt);
+  const Tensor& weight = *weight_maybe_owned;
+  const Tensor& bias = bias_opt.value_or(Tensor());
+
+  std::tie(out, save_mean, save_var) = NativeBatchNormOut(
+      input,
+      weight_opt,
+      bias_opt,
+      running_mean,
+      running_var,
+      /*update*/ true,
+      momentum,
+      eps,
+      out,
+      save_mean,
+      save_var);
+  return std::tuple<Tensor&, Tensor&, Tensor&, Tensor&>(
+      out, save_mean, save_var, reserve);
+}
+
+std::tuple<Tensor, Tensor, Tensor> _NewBatchNormBackward(
+    const Tensor& grad_output,
+    const Tensor& input,
+    const Tensor& weight,
+    const std::optional<Tensor>& running_mean_opt,
+    const std::optional<Tensor>& running_var_opt,
+    const std::optional<Tensor>& save_mean_opt,
+    const std::optional<Tensor>& save_var_opt,
+    bool update,
+    double eps,
+    std::array<bool, 3> grad_input_mask,
+    const Tensor& reserve) {
+  const Tensor& running_mean = running_mean_opt.value_or(Tensor());
+  const Tensor& running_var = running_var_opt.value_or(Tensor());
+  const Tensor& save_mean = save_mean_opt.value_or(Tensor());
+  const Tensor& save_var = save_var_opt.value_or(Tensor());
+
+  return NativeBatchNormBwd(
+      grad_output,
+      input,
+      weight,
+      running_mean,
+      running_var,
+      save_mean,
+      save_var,
+      update,
+      eps,
+      grad_input_mask);
 }
 
 } // namespace musa

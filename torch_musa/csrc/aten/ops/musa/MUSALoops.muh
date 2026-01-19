@@ -1,0 +1,78 @@
+#ifndef TORCH_MUSA_CSRC_ATEN_OPS_MUSA_MUSALOOPS_MUH_
+#define TORCH_MUSA_CSRC_ATEN_OPS_MUSA_MUSALOOPS_MUH_
+
+#include <ATen/native/TensorIteratorDynamicCasting.h>
+
+#include "torch_musa/csrc/aten/ops/musa/elemwise/BinaryLoops.muh"
+#include "torch_musa/csrc/aten/ops/musa/elemwise/NullaryLoops.muh"
+
+namespace at::musa {
+
+template <typename func_t>
+inline void gpu_kernel_impl_nocast(MusaTensorIterator& iter, const func_t& f) {
+  using traits = function_traits<func_t>;
+  constexpr int ntensors = traits::arity + 1;
+
+  TORCH_INTERNAL_ASSERT(iter.can_use_32bit_indexing());
+  TORCH_INTERNAL_ASSERT(iter.ninputs() == traits::arity);
+  TORCH_INTERNAL_ASSERT(iter.noutputs() == 1);
+  TORCH_INTERNAL_ASSERT(!native::needs_dynamic_casting<func_t>::check(iter));
+
+  std::array<char*, ntensors> data;
+  for (int i = 0; i < ntensors; i++) {
+    data[i] = (char*)iter.data_ptr(i);
+  }
+
+  if constexpr (traits::arity == 0) {
+    nullary::gpu_kernel_impl_nocast(iter, f, data);
+    return;
+  }
+
+  if constexpr (traits::arity == 1) {
+    unary::gpu_kernel_impl_nocast(iter, f, data);
+    return;
+  }
+
+  if constexpr (traits::arity == 2) {
+    binary::gpu_kernel_impl_nocast(iter, f, data);
+    return;
+  }
+}
+
+template <typename func_t>
+inline void gpu_kernel_impl(MusaTensorIterator& iter, const func_t& f) {
+  if (!native::needs_dynamic_casting<func_t>::check(iter)) {
+    return gpu_kernel_impl_nocast(iter, f);
+  }
+
+  using traits = function_traits<func_t>;
+  constexpr int ntensors = traits::arity + 1;
+
+  TORCH_INTERNAL_ASSERT(iter.can_use_32bit_indexing());
+  TORCH_INTERNAL_ASSERT(iter.ninputs() == traits::arity);
+  TORCH_INTERNAL_ASSERT(iter.noutputs() == 1);
+
+  std::array<char*, ntensors> data;
+  for (int i = 0; i < ntensors; i++) {
+    data[i] = (char*)iter.data_ptr(i);
+  }
+
+  if constexpr (traits::arity == 0) {
+    nullary::gpu_kernel_impl(iter, f, data);
+    return;
+  }
+
+  if constexpr (traits::arity == 1) {
+    unary::gpu_kernel_impl(iter, f, data);
+    return;
+  }
+
+  if constexpr (traits::arity == 2) {
+    binary::gpu_kernel_impl(iter, f, data);
+    return;
+  }
+}
+
+} // namespace at::musa
+
+#endif // TORCH_MUSA_CSRC_ATEN_OPS_MUSA_MUSALOOPS_MUH_

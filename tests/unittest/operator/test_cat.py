@@ -326,3 +326,54 @@ def test_cat_zero_numel_multi_dim(dtype):
 
     assert out_cpu.shape == out_musa.shape
     assert out_cpu.dtype == out_musa.dtype
+
+
+# ============================ complex ============================
+complex_full_inputdata = [
+    {
+        "input": [
+            torch.complex(torch.randn(2, 3), torch.randn(2, 3)),
+            torch.complex(torch.randn(2, 3), torch.randn(2, 3)),
+        ],
+        "dim": 1,
+    },
+    {
+        "input": [1.0 + 1j * torch.randn(2, 3), 2.0 + 1j * torch.randn(2, 3)],
+        "dim": 1,
+    },
+    {
+        "input": [
+            torch.randn(2, 3) + 1j * torch.randn(2, 3),
+            torch.randn(2, 3),
+            torch.randn(2, 3) * 1j,
+        ],
+        "dim": 0,
+    },
+    {
+        "input": [
+            torch.tensor([1 + 1j, 2 + 2j, 3 + 3j]),
+            torch.tensor([4 + 4j, 5 + 5j, 6 + 6j]),
+        ],
+        "dim": 0,
+    },
+    {
+        "input": [
+            torch.randn(1, 0, 3) + 1j * torch.randn(1, 0, 3),
+            torch.randn(1, 0, 3) + 1j * torch.randn(1, 0, 3),
+        ],
+        "dim": 2,
+    },
+]
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", complex_full_inputdata)
+def test_cat_complex(input_data):
+    inputs = {"tensors": input_data["input"], "dim": input_data["dim"]}
+    test = testing.OpTest(
+        func=torch.cat,
+        input_args=inputs,
+    )
+    test.check_result()
+    test.check_out_ops()
+    test.check_grad_fn()

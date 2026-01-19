@@ -63,6 +63,10 @@ class IntrusivePtrNoGilDestructor {
 namespace py = pybind11;
 PYBIND11_DECLARE_HOLDER_TYPE(T, IntrusivePtrNoGilDestructor<T>, true);
 PYBIND11_DECLARE_HOLDER_TYPE(T, c10::intrusive_ptr<T>, true)
+
+template <typename T>
+using intrusive_ptr_class_ = py::class_<T, c10::intrusive_ptr<T>>;
+
 template <typename T>
 using intrusive_ptr_no_gil_destructor_class_ =
     py::class_<T, IntrusivePtrNoGilDestructor<T>>;
@@ -83,7 +87,6 @@ void registerProcessGroupMCCL(PyObject* mod) {
       "musa"); // returns a python ProcessGroupMCCL
   auto backend =
       py::module::import("torch._C._distributed_c10d").attr("Backend");
-  // auto backend = module.attr("Backend");
 
   auto processGroupMCCL =
       intrusive_ptr_no_gil_destructor_class_<::c10d::ProcessGroupMCCL>(
@@ -94,22 +97,114 @@ void registerProcessGroupMCCL(PyObject* mod) {
       .def( // Define the Init function of python ProcessGroupMCCL
           py::init([](const c10::intrusive_ptr<::c10d::Store>& store,
                       int rank,
-                      int world_size,
-                      // std::chrono::duration<float>& timeout) {
-                      std::chrono::milliseconds timeout) {
-            auto options = c10d::ProcessGroupMCCL::Options::create();
-            options->timeout = timeout;
+                      int size,
+                      c10::intrusive_ptr<::c10d::ProcessGroupMCCL::Options>
+                          options) {
+            // gil_scoped_release is not safe as a call_guard in init.
+            // https://github.com/pybind/pybind11/issues/5473
+            py::gil_scoped_release nogil{};
+
             return c10::make_intrusive<::c10d::ProcessGroupMCCL>(
-                store, rank, world_size, options);
+                store, rank, size, std::move(options));
           }),
           py::arg("store"),
           py::arg("rank"),
-          py::arg("world_size"),
+          py::arg("size"),
+          py::arg("options"),
+          R"(Create a new ProcessGroupMCCL instance.)")
+      .def(
+          py::init([](const c10::intrusive_ptr<::c10d::Store>& store,
+                      int rank,
+                      int size,
+                      const std::chrono::milliseconds& timeout) {
+            // gil_scoped_release is not safe as a call_guard in init.
+            // https://github.com/pybind/pybind11/issues/5473
+            py::gil_scoped_release nogil{};
+
+            auto options = ::c10d::ProcessGroupMCCL::Options::create();
+            options->is_high_priority_stream = false;
+            options->timeout = timeout;
+            return c10::make_intrusive<::c10d::ProcessGroupMCCL>(
+                store, rank, size, options);
+          }),
+          py::arg("store"),
+          py::arg("rank"),
+          py::arg("size"),
+          py::arg("timeout") = ::c10d::kProcessGroupMCCLDefaultTimeout,
+          R"(Create a new ProcessGroupMCCL instance.)")
+      .def("_group_start", &::c10d::ProcessGroupMCCL::groupStart)
+      .def("_group_end", &::c10d::ProcessGroupMCCL::groupEnd)
+      .def("comm_split_count", &::c10d::ProcessGroupMCCL::getCommSplitCounter)
+      .def(
+          "_set_default_timeout",
+          [](const c10::intrusive_ptr<::c10d::ProcessGroupMCCL>& self,
+             std::chrono::milliseconds timeout) {
+            self->getOptions()->timeout = timeout;
+          },
+          py::arg("timeout"),
+          py::call_guard<py::gil_scoped_release>())
+      .def(
+          "_add_ephemeral_timeout",
+          [](const c10::intrusive_ptr<::c10d::ProcessGroupMCCL>& self,
+             const std::chrono::milliseconds& timeout) {
+            self->addEphemeralTimeout(timeout);
+          },
           py::arg("timeout"))
       .def(
-          "abort",
-          [](const c10::intrusive_ptr<::c10d::ProcessGroupMCCL>& self) {
-            return self->abort();
+          "_verify_work_timeout",
+          [](const c10::intrusive_ptr<::c10d::ProcessGroupMCCL>& self,
+             const c10::intrusive_ptr<::c10d::Work>& work,
+             const std::chrono::milliseconds& timeout) {
+            return self->verifyWorkTimeoutForTest(work, timeout);
           },
+          py::arg("work"),
+          py::arg("timeout"))
+      .def_property_readonly(
+          "options",
+          &::c10d::ProcessGroupMCCL::getOptions,
+          R"(Return the options used to create this ProcessGroupMCCL instance.)")
+      .def_property_readonly(
+          "uid", &::c10d::ProcessGroupMCCL::getUid, R"(Return the uid.)")
+      .def_property(
+          "bound_device_id",
+          &::c10d::ProcessGroupMCCL::getBoundDeviceId,
+          &::c10d::ProcessGroupMCCL::setBoundDeviceId,
+          R"(Return the bound device id.)")
+      .def(
+          "perform_nocolor_split",
+          &::c10d::ProcessGroupMCCL::performNocolorSplit)
+      // .def("register_mem_pool", &::c10d::ProcessGroupMCCL::registerMemPool)
+      // .def(
+      //     "deregister_mem_pool",
+      //     &::c10d::ProcessGroupMCCL::deregisterMemPool)
+      .def(
+          "_is_initialized",
+          &::c10d::ProcessGroupMCCL::isInitialized,
+          py::call_guard<py::gil_scoped_release>())
+      .def(
+          "get_error",
+          &::c10d::ProcessGroupMCCL::getError,
           py::call_guard<py::gil_scoped_release>());
+
+  auto backendOptions = backend.attr("Options");
+
+  intrusive_ptr_class_<::c10d::ProcessGroupMCCL::Options>(
+      processGroupMCCL,
+      "Options",
+      backendOptions,
+      R"(ProcessGroup options for the MCCL backend)")
+      .def(py::init<bool>(), py::arg("is_high_priority_stream") = false)
+      // .def_readwrite("config", &::c10d::ProcessGroupNCCL::Options::config)
+      .def_readwrite(
+          "is_high_priority_stream",
+          &::c10d::ProcessGroupMCCL::Options::is_high_priority_stream)
+      .def_readwrite(
+          "split_from", &::c10d::ProcessGroupMCCL::Options::split_from)
+      .def_readwrite(
+          "split_color", &::c10d::ProcessGroupMCCL::Options::split_color)
+      .def_readwrite(
+          "global_ranks_in_group",
+          &::c10d::ProcessGroupMCCL::Options::global_ranks_in_group)
+      .def_readwrite(
+          "group_name", &::c10d::ProcessGroupMCCL::Options::group_name);
 }

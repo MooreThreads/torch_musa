@@ -163,7 +163,8 @@ struct KernelTable {
   REGISTER_KERNEL(at::ScalarType::Double, _MODE, double)       \
   REGISTER_KERNEL(at::ScalarType::Char, _MODE, int8_t)         \
   REGISTER_KERNEL(at::ScalarType::Int, _MODE, int32_t)         \
-  REGISTER_KERNEL(at::ScalarType::Long, _MODE, int64_t)
+  REGISTER_KERNEL(at::ScalarType::Long, _MODE, int64_t)        \
+  REGISTER_KERNEL(at::ScalarType::ComplexFloat, _MODE, double)
 
   KernelTable() {
     REGISTER_KERNEL_MODE(TriangularMode::TRIU);

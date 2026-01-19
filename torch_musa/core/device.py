@@ -2,46 +2,22 @@
 This package adds support for Moore Threads GPU device type implementation.
 """
 
-# pylint: disable=W0622
+# pylint: disable=W0622, W0718
 
 
 from typing import Any, Tuple, Optional, List
 from functools import lru_cache
+import torch
 import torch_musa._MUSAC
 from ._lazy_init import _lazy_init
 from ._utils import (
     _get_musa_device_index,
-    _dummy_type,
     DeviceUnion as _device_t,
 )
 
-
-if hasattr(torch_musa._MUSAC, "_MusaDeviceProperties"):
-    _MusaDeviceProperties = torch_musa._MUSAC._MusaDeviceProperties
-else:
-    _MusaDeviceProperties = _dummy_type("_MusaDeviceProperties")
-
-if hasattr(torch_musa._MUSAC, "_musa_exchangeDevice"):
-    _exchange_device = torch_musa._MUSAC._musa_exchangeDevice
-else:
-
-    def _exchange_device(device: int) -> int:
-        if device < 0:
-            return -1
-        prev_device = torch_musa.current_device()
-        if device != self.prev_device:
-            torch_musa.set_device(device)
-        return prev_device
-
-
-if hasattr(torch_musa._MUSAC, "_musa_maybeExchangeDevice"):
-    _maybe_exchange_device = torch_musa._MUSAC._musa_maybeExchangeDevice
-else:
-
-    def _maybe_exchange_device(device: int) -> int:
-        if device < 0:
-            return -1
-        raise NotImplementedError
+_MusaDeviceProperties = torch_musa._MUSAC._MusaDeviceProperties
+_exchange_device = torch_musa._MUSAC._musa_exchangeDevice
+_maybe_exchange_device = torch_musa._MUSAC._musa_maybeExchangeDevice
 
 
 class Device(object):
@@ -61,7 +37,7 @@ class Device(object):
         self.prev_idx = torch_musa._exchange_device(self.idx)
 
     def __exit__(self, *args):
-        torch_musa._exchange_device(self.prev_idx)
+        self.idx = torch_musa._maybe_exchange_device(self.prev_idx)
         return False
 
 
@@ -73,7 +49,8 @@ class DeviceOf(Device):
     """
 
     def __init__(self, obj):
-        idx = obj.get_device() if obj.device.type == "musa" else -1
+        musa_backend = torch._C._get_privateuse1_backend_name()
+        idx = obj.get_device() if obj.device.type == musa_backend else -1
         super().__init__(idx)
 
 
@@ -173,13 +150,13 @@ def device_count() -> int:
 class _DeviceGuard:
     def __init__(self, index: int):
         self.idx = index
-        self.prev_idx = -2
+        self.prev_idx = -1
 
     def __enter__(self):
         self.prev_idx = torch_musa._exchange_device(self.idx)
 
     def __exit__(self, type: Any, value: Any, traceback: Any):
-        torch_musa._exchange_device(self.prev_idx)
+        self.idx = torch_musa._maybe_exchange_device(self.prev_idx)
         return False
 
 
@@ -197,11 +174,29 @@ def get_arch_list() -> List[str]:
     return arch_flags.split()
 
 
-def is_bf16_supported():
+@lru_cache(maxsize=16)
+def _check_bf16_tensor_supported(device: _device_t):
+    try:
+        torch.tensor([1.0], dtype=torch.bfloat16, device=device)
+        return True
+    except Exception:
+        return False
+
+
+def is_bf16_supported(including_emulation: bool = True):
     r"""Return a bool indicating if the current MUSA device supports dtype bfloat16."""
     if not is_available():
         return False
     device = torch_musa.current_device()
     major, min = torch_musa.get_device_capability(device)
 
-    return major * 10 + min >= 22
+    if major * 10 + min >= 22:
+        return True
+    if not including_emulation:
+        return False
+    return _check_bf16_tensor_supported(device)
+
+
+def is_tf32_supported() -> bool:
+    r"""Return a bool indicating if the current MUSA device supports dtype tf32."""
+    return is_bf16_supported(including_emulation=False)

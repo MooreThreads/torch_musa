@@ -3,6 +3,7 @@
 #include <ATen/DeviceGuard.h>
 
 #include "musa_runtime_api.h"
+#include "musart_version.h"
 #include "torch_musa/csrc/aten/musa/MUSAGeneratorImpl.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
@@ -82,6 +83,14 @@ bool MUSAHooks::hasMUSA() const {
 void MUSAHooks::deviceSynchronize(DeviceIndex device_index) const {
   at::DeviceGuard device_guard(at::Device(at::musa::kMUSA, device_index));
   c10::musa::Synchronize();
+}
+
+bool MUSAHooks::hasMUSART() const {
+#ifdef MUSART_VERSION
+  return true;
+#else
+  return false;
+#endif
 }
 
 using at::MUSAHooksRegistry;

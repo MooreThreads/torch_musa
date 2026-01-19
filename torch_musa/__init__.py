@@ -4,7 +4,6 @@
 
 import sys
 import warnings
-import importlib
 import os
 import re
 from typing import Set, Type
@@ -17,15 +16,9 @@ try:
 except ImportError:
     pass
 
-is_loaded = False
-
 
 def _autoload():
-    global is_loaded
-
-    if is_loaded:
-        print("torch_musa already loaded.")
-        return
+    pass
 
 
 import torch
@@ -86,6 +79,7 @@ from .core.device import (
     register_musa_hook,
     get_arch_list,
     is_bf16_supported,
+    is_tf32_supported,
 )
 
 register_musa_hook()
@@ -96,6 +90,7 @@ from .core.stream import (
     current_stream,
     default_stream,
     ExternalStream,
+    StreamContext,
     stream,
     Stream,
     Event,
@@ -113,6 +108,7 @@ from .core.memory import *
 
 from .core._lazy_init import (
     _lazy_init,
+    _lazy_call,
     _initialized,
     _is_in_bad_fork,
     is_initialized,
@@ -147,9 +143,9 @@ from .core.tensor_attrs import set_torch_attributes
 from .core.module_attrs import set_module_attributes
 from .core.storage import set_storage_attributes
 
-from .core.storage import set_storage_attributes
-
 from .profiler import set_profiler_attributes
+
+from .utils import *
 
 
 def set_attributes():
@@ -202,6 +198,7 @@ from ._inductor import _init_inductor_backend_registration  # for internal usage
 
 def overwrite_cuda_api():
     torch.cuda._lazy_init = _lazy_init
+    torch.cuda._lazy_call = _lazy_call
 
 
 overwrite_cuda_api()

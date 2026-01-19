@@ -26,6 +26,8 @@ class MusaTensorIterator : public TensorIteratorBase {
 
   void cast_outputs();
 
+  void coalesce_dimensions();
+
   void add_owned_output(const TensorBase& output);
 
   void add_borrowed_output(const TensorBase& output);
@@ -53,6 +55,22 @@ class MusaTensorIterator : public TensorIteratorBase {
   bool output_is_type_corrected(int arg) const;
 
   const Tensor& original_input(int arg) const;
+
+  bool is_contiguous() const;
+
+  bool has_contiguous_first_dim() const {
+    if (ndim() == 0) {
+      return true;
+    }
+
+    int num_tensors = ntensors();
+    for (const auto i : c10::irange(num_tensors)) {
+      if (strides(i)[0] != 1) {
+        return false;
+      }
+    }
+    return true;
+  }
 
  protected:
   virtual void _set_output_raw_strided(

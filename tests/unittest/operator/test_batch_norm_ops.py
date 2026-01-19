@@ -1,5 +1,6 @@
 """This module contains unit tests for batch normalization operations."""
 
+# pylint: disable=C0116, W0613
 import math
 import torch
 import pytest
@@ -400,3 +401,39 @@ def test_batch_norm_backward_elemt(input_data, dtype):
     assert testing.DefaultComparator(abs_diff=1e-2)(
         grad_input_musa.cpu(), grad_input_cpu
     )
+
+
+input_data_batch_norm_update_stats = [
+    {
+        "input": torch.randn(4, 100, 4, 4),
+        "running_mean": torch.randn(100),
+        "running_var": torch.randn(100),
+    },
+    {
+        "input": torch.randn(4, 100, 4, 4).to(memory_format=torch.channels_last),
+        "running_mean": torch.randn(100),
+        "running_var": torch.randn(100),
+    },
+]
+
+
+@pytest.mark.parametrize("input_data", input_data_batch_norm_update_stats)
+@pytest.mark.parametrize("dtype", all_support_types)
+def test_batch_norm_update_stats(input_data, dtype):
+    i_cpu, m_cpu, v_cpu = (
+        input_data["input"],
+        input_data["running_mean"],
+        input_data["running_var"],
+    )
+    i_cpu.uniform_()
+    m_cpu.uniform_()
+    v_cpu.uniform_()
+    i_musa, m_musa, v_musa = i_cpu.musa(), m_cpu.musa(), v_cpu.musa()
+    f = torch.batch_norm_update_stats
+
+    res_cpu = f(i_cpu, m_cpu, v_cpu, momentum=0.0)
+    res_musa = f(i_musa, m_musa, v_musa, momentum=0.0)
+
+    cmp = testing.DefaultComparator(abs_diff=1e-5)
+    assert cmp(res_cpu[0], res_musa[0].cpu())
+    assert cmp(res_cpu[1], res_musa[1].cpu())

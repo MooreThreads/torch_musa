@@ -36,6 +36,7 @@ struct C10_EXPORT MUSAGraph {
       MempoolId_t pool = {0, 0},
       musaStreamCaptureMode capture_mode = musaStreamCaptureModeGlobal);
   void capture_end();
+  void reinstantiate_graph();
   void replay();
   void reset();
   MempoolId_t pool();

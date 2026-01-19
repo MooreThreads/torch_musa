@@ -64,8 +64,23 @@
 - func: atan2
 - func: atan2.out
 
+- func: linalg_ldl_factor_ex
+- func: linalg_ldl_factor_ex.out
+
 - func: linalg_cross
 - func: linalg_cross.out
+
+- func: _linalg_slogdet
+- func: _linalg_slogdet.sign
+
+- func: _linalg_eigh
+- func: _linalg_eigh.eigenvalues
+
+- func: _linalg_svd
+- func: _linalg_svd.U
+
+- func: linalg_ldl_solve
+- func: linalg_ldl_solve.out
 
 - func: expm1
 - func: expm1_
@@ -352,14 +367,23 @@
 - func: linalg_lu_solve
 - func: linalg_lu_solve.out
 
+- func: linalg_qr
+- func: linalg_qr.out
+
 - func: _linalg_solve_ex
 - func: _linalg_solve_ex.result
+
+- func: linalg_lu.out
+- func: linalg_lu
 
 - func: linalg_cholesky_ex
 - func: linalg_cholesky_ex.L
 
 - func: linalg_inv_ex
 - func: linalg_inv_ex.inverse
+
+- func: triangular_solve.X
+- func: triangular_solve
 
 - func: _convert_indices_from_coo_to_csr
 - func: _convert_indices_from_coo_to_csr.out
@@ -401,6 +425,48 @@
     PrivateUse1: CatOut
     QuantizedPrivateUse1: CatOutQuantizedMusa
 
+- func: special_entr
+- func: special_entr.out
+
+- func: special_ndtri
+- func: special_ndtri.out
+
+- func: special_log_ndtr
+- func: special_log_ndtr.out
+
+- func: special_erfcx
+- func: special_erfcx.out
+
+- func: special_xlog1py
+- func: special_xlog1py.out
+
+- func: special_zeta
+- func: special_zeta.out
+
+- func: special_i0e
+- func: special_i0e.out
+
+- func: special_i1
+- func: special_i1.out
+
+- func: special_i1e
+- func: special_i1e.out
+
+- func: special_airy_ai
+- func: special_airy_ai.out
+
+- func: special_bessel_j0
+- func: special_bessel_j0.out
+
+- func: special_bessel_j1
+- func: special_bessel_j1.out
+
+- func: special_bessel_y0
+- func: special_bessel_y0.out
+
+- func: special_bessel_y1
+- func: special_bessel_y1.out
+
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 #
 #                         UNSTRUCTURED FUNCTIONS
@@ -416,6 +482,18 @@
   device_guard: True
   dispatch:
     PrivateUse1: transformer_encoder_layer_forward
+
+- func: _transform_bias_rescale_qkv
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: _TransformBiasRescaleQKV
+
+- func: _native_multi_head_attention
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: _NativeMultiHeadAttention
 
 - func: _flash_attention_forward
   dispatch:
@@ -1061,6 +1139,12 @@
   dispatch:
     PrivateUse1: batch_norm_elemt_cuda
 
+- func: batch_norm_backward
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: _NewBatchNormBackward
+
 - func: batch_norm_backward_reduce
   device_check: ExactSame
   device_guard: True
@@ -1072,6 +1156,28 @@
   device_guard: True
   dispatch:
     PrivateUse1: batch_norm_backward_elemt_cuda
+
+- func: batch_norm_update_stats
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: batch_norm_update_stats_cuda
+
+- func: _batch_norm_with_update
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: _BatchNormWithUpdate
+
+- func: _batch_norm_with_update_functional
+  dispatch:
+    PrivateUse1: _BatchNormWithUpdateFunctional
+
+- func: _batch_norm_with_update.out
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: _BatchNormWithUpdateout
 
 - func: add.Tensor
   dispatch:
@@ -1373,6 +1479,15 @@
   dispatch:
     PrivateUse1: Bucketize
 
+- func: bucketize.Tensor_out
+  dispatch:
+    PrivateUse1: BucketizeOut
+
+- func: bucketize.Scalar
+  dispatch:
+    PrivateUse1: Bucketize
+  autogen: bucketize.Scalar_out
+
 - func: _chunk_cat
   dispatch:
     PrivateUse1: ChunkCatMUSA
@@ -1433,6 +1548,34 @@
   dispatch:
     PrivateUse1: EmbeddingBag
 
+- func: _embedding_bag_backward
+  dispatch:
+    PrivateUse1: EmbeddingBagBackward
+
+- func: _embedding_bag_dense_backward
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: _embedding_bag_dense_backward_cuda
+
+- func: _embedding_bag_per_sample_weights_backward
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: _embedding_bag_per_sample_weights_backward_cuda 
+
+- func: _embedding_bag_forward_only
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: _embedding_bag_forward_only_cuda
+
+- func: embedding_renorm_
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: embedding_renorm_cuda_
+
 - func: exponential_
   device_guard: True
   dispatch:
@@ -1464,208 +1607,720 @@
     PrivateUse1: MaskedFillTensor
     QuantizedPrivateUse1: masked_fill__quantized_cuda
 
-- func: _foreach_mul.Scalar
-  dispatch:
-    PrivateUse1: foreach_tensor_mul_scalar_kernel_musa
-
-- func: _foreach_mul_.Scalar
-  dispatch:
-    PrivateUse1: foreach_tensor_mul_scalar_kernel_musa_
-
-- func: _foreach_mul_.Tensor
+- func: _foreach_add.Scalar
   device_guard: True
   dispatch:
-    PrivateUse1: foreach_tensor_mul_tensor_kernel_cuda_
+    PrivateUse1: foreach_tensor_add_scalar_kernel_cuda
+
+- func: _foreach_add_.Scalar
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_add_scalar_kernel_cuda_
+
+- func: _foreach_add.List
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_add_list_kernel_cuda
+
+- func: _foreach_add_.List
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_add_list_kernel_cuda_
+
+- func: _foreach_add.ScalarList
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_add_scalarlist_kernel_cuda
+
+- func: _foreach_add_.ScalarList
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_add_scalarlist_kernel_cuda_
+
+- func: _foreach_add.Tensor
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_add_tensor_kernel_cuda
+
+- func: _foreach_add_.Tensor
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_add_tensor_kernel_cuda_
+
+- func: _foreach_sub.Scalar
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_sub_scalar_kernel_cuda
+
+- func: _foreach_sub_.Scalar
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_sub_scalar_kernel_cuda_
+
+- func: _foreach_sub.List
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_sub_list_kernel_cuda
+
+- func: _foreach_sub_.List
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_sub_list_kernel_cuda_
+
+- func: _foreach_sub.ScalarList
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_sub_scalarlist_kernel_cuda
+
+- func: _foreach_sub_.ScalarList
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_sub_scalarlist_kernel_cuda_
+
+- func: _foreach_mul.Scalar
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_mul_scalar_kernel_cuda
+
+- func: _foreach_mul_.Scalar
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_mul_scalar_kernel_cuda_
+
+- func: _foreach_mul.List
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_mul_list_kernel_cuda
+
+- func: _foreach_mul_.List
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_mul_list_kernel_cuda_
+
+- func: _foreach_mul.ScalarList
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_mul_scalarlist_kernel_cuda
+
+- func: _foreach_mul_.ScalarList
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_mul_scalarlist_kernel_cuda_
 
 - func: _foreach_mul.Tensor
   device_guard: True
   dispatch:
     PrivateUse1: foreach_tensor_mul_tensor_kernel_cuda
 
-- func: _foreach_mul_.List
+- func: _foreach_mul_.Tensor
+  device_guard: True
   dispatch:
-    PrivateUse1: foreach_tensor_mul_list_kernel_musa_
+    PrivateUse1: foreach_tensor_mul_tensor_kernel_cuda_
 
-- func: _foreach_mul.List
+- func: _foreach_div.Scalar
+  device_guard: True
   dispatch:
-    PrivateUse1: foreach_tensor_mul_list_kernel_musa
+    PrivateUse1: foreach_tensor_div_scalar_kernel_cuda
 
-- func: _foreach_mul.ScalarList
+- func: _foreach_div_.Scalar
+  device_guard: True
   dispatch:
-    PrivateUse1: foreach_tensor_mul_scalarlist_kernel_musa
-
-- func: _foreach_mul_.ScalarList
-  dispatch:
-    PrivateUse1: foreach_tensor_mul_scalarlist_kernel_musa_
-
-- func: _foreach_div_.List
-  dispatch:
-    PrivateUse1: foreach_tensor_div_list_kernel_musa_
+    PrivateUse1: foreach_tensor_div_scalar_kernel_cuda_
 
 - func: _foreach_div.List
+  device_guard: True
   dispatch:
-    PrivateUse1: foreach_tensor_div_list_kernel_musa
+    PrivateUse1: foreach_tensor_div_list_kernel_cuda
 
-- func: _foreach_clamp_min.List
+- func: _foreach_div_.List
+  device_guard: True
   dispatch:
-    PrivateUse1: foreach_tensor_clamp_min_list_kernel_musa
-
-- func: _foreach_clamp_min_.List
-  dispatch:
-    PrivateUse1: foreach_tensor_clamp_min_list_kernel_musa_
-
-- func: _foreach_clamp_max.List
-  dispatch:
-    PrivateUse1: foreach_tensor_clamp_max_list_kernel_musa
-
-- func: _foreach_clamp_max_.List
-  dispatch:
-    PrivateUse1: foreach_tensor_clamp_max_list_kernel_musa_
-
-- func: _foreach_maximum.List
-  dispatch:
-    PrivateUse1: foreach_tensor_clamp_min_list_kernel_musa
-
-- func: _foreach_maximum_.List
-  dispatch:
-    PrivateUse1: foreach_tensor_clamp_min_list_kernel_musa_
-
-- func: _foreach_minimum.List
-  dispatch:
-    PrivateUse1: foreach_tensor_clamp_max_list_kernel_musa
-
-- func: _foreach_minimum_.List
-  dispatch:
-    PrivateUse1: foreach_tensor_clamp_max_list_kernel_musa_
-
-- func: _foreach_add.List
-  dispatch:
-    PrivateUse1: foreach_tensor_add_list_alpha_kernel_musa
-
-- func: _foreach_add_.List
-  dispatch:
-    PrivateUse1: foreach_tensor_add_list_alpha_kernel_musa_
-
-- func: _foreach_add.Scalar
-  dispatch:
-    PrivateUse1: foreach_tensor_add_scalar_kernel_musa
-
-- func: _foreach_add_.Scalar
-  dispatch:
-    PrivateUse1: foreach_tensor_add_scalar_kernel_musa_
-
-- func: _foreach_add.ScalarList
-  dispatch:
-    PrivateUse1: foreach_tensor_add_scalarlist_kernel_musa
-
-- func: _foreach_add_.ScalarList
-  dispatch:
-    PrivateUse1: foreach_tensor_add_scalarlist_kernel_musa_
-
-- func: _foreach_sub.List
-  dispatch:
-    PrivateUse1: foreach_tensor_sub_list_alpha_kernel_musa
-
-- func: _foreach_sub_.List
-  dispatch:
-    PrivateUse1: foreach_tensor_sub_list_alpha_kernel_musa_
-
-- func: _foreach_sub.Scalar
-  dispatch:
-    PrivateUse1: foreach_tensor_sub_scalar_kernel_musa
-
-- func: _foreach_sub_.Scalar
-  dispatch:
-    PrivateUse1: foreach_tensor_sub_scalar_kernel_musa_
-
-- func: _foreach_sub.ScalarList
-  dispatch:
-    PrivateUse1: foreach_tensor_sub_scalarlist_kernel_musa
-
-- func: _foreach_sub_.ScalarList
-  dispatch:
-    PrivateUse1: foreach_tensor_sub_scalarlist_kernel_musa_
+    PrivateUse1: foreach_tensor_div_list_kernel_cuda_
 
 - func: _foreach_div.ScalarList
+  device_guard: True
   dispatch:
-    PrivateUse1: foreach_tensor_div_scalarlist_kernel_musa
+    PrivateUse1: foreach_tensor_div_scalarlist_kernel_cuda
 
 - func: _foreach_div_.ScalarList
+  device_guard: True
   dispatch:
-    PrivateUse1: foreach_tensor_div_scalarlist_kernel_musa_
+    PrivateUse1: foreach_tensor_div_scalarlist_kernel_cuda_
 
-- func: _foreach_sqrt
+- func: _foreach_div.Tensor
+  device_guard: True
   dispatch:
-    PrivateUse1: foreach_tensor_sqrt_musa
+    PrivateUse1: foreach_tensor_div_tensor_kernel_cuda
 
-- func: _foreach_sqrt_
+- func: _foreach_div_.Tensor
+  device_guard: True
   dispatch:
-    PrivateUse1: foreach_tensor_sqrt_musa_
+    PrivateUse1: foreach_tensor_div_tensor_kernel_cuda_
 
-- func: _foreach_addcmul.Scalar
+- func: _foreach_clamp_max.Scalar
+  device_guard: True
   dispatch:
-    PrivateUse1: foreach_tensor_addcmul_scalar_musa
+    PrivateUse1: foreach_tensor_clamp_max_scalar_kernel_cuda
 
-- func: _foreach_addcmul_.Scalar
+- func: _foreach_clamp_max_.Scalar
+  device_guard: True
   dispatch:
-    PrivateUse1: foreach_tensor_addcmul_scalar_musa_
+    PrivateUse1: foreach_tensor_clamp_max_scalar_kernel_cuda_
+
+- func: _foreach_clamp_max.List
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_clamp_max_list_kernel_cuda
+
+- func: _foreach_clamp_max_.List
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_clamp_max_list_kernel_cuda_
+
+- func: _foreach_clamp_max.ScalarList
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_clamp_max_scalarlist_kernel_cuda
+
+- func: _foreach_clamp_max_.ScalarList
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_clamp_max_scalarlist_kernel_cuda_
+
+- func: _foreach_clamp_min.Scalar
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_clamp_min_scalar_kernel_cuda
+
+- func: _foreach_clamp_min_.Scalar
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_clamp_min_scalar_kernel_cuda_
+
+- func: _foreach_clamp_min.List
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_clamp_min_list_kernel_cuda
+
+- func: _foreach_clamp_min_.List
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_clamp_min_list_kernel_cuda_
+
+- func: _foreach_clamp_min.ScalarList
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_clamp_min_scalarlist_kernel_cuda
+
+- func: _foreach_clamp_min_.ScalarList
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_clamp_min_scalarlist_kernel_cuda_
+
+- func: _foreach_maximum.Scalar
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_clamp_min_scalar_kernel_cuda
+
+- func: _foreach_maximum_.Scalar
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_clamp_min_scalar_kernel_cuda_
+
+- func: _foreach_maximum.List
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_clamp_min_list_kernel_cuda
+
+- func: _foreach_maximum_.List
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_clamp_min_list_kernel_cuda_
+
+- func: _foreach_maximum.ScalarList
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_clamp_min_scalarlist_kernel_cuda
+
+- func: _foreach_maximum_.ScalarList
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_clamp_min_scalarlist_kernel_cuda_
+
+- func: _foreach_minimum.Scalar
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_clamp_max_scalar_kernel_cuda
+
+- func: _foreach_minimum_.Scalar
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_clamp_max_scalar_kernel_cuda_
+
+- func: _foreach_minimum.List
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_clamp_max_list_kernel_cuda
+
+- func: _foreach_minimum_.List
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_clamp_max_list_kernel_cuda_
+
+- func: _foreach_minimum.ScalarList
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_clamp_max_scalarlist_kernel_cuda
+
+- func: _foreach_minimum_.ScalarList
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_clamp_max_scalarlist_kernel_cuda_
 
 - func: _foreach_addcdiv.Scalar
+  device_guard: True
   dispatch:
-    PrivateUse1: foreach_tensor_addcdiv_scalar_musa
-
-- func: _foreach_addcdiv_.Scalar
-  dispatch:
-    PrivateUse1: foreach_tensor_addcdiv_scalar_musa_
+    PrivateUse1: foreach_tensor_addcdiv_scalar_cuda
 
 - func: _foreach_addcdiv.ScalarList
+  device_guard: True
   dispatch:
-    PrivateUse1: foreach_tensor_addcdiv_scalarlist_musa
+    PrivateUse1: foreach_tensor_addcdiv_scalarlist_cuda
+
+- func: _foreach_addcdiv.Tensor
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_addcdiv_tensor_cuda
+
+- func: _foreach_addcdiv_.Scalar
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_addcdiv_scalar_cuda_
 
 - func: _foreach_addcdiv_.ScalarList
+  device_guard: True
   dispatch:
-    PrivateUse1: foreach_tensor_addcdiv_scalarlist_musa_
+    PrivateUse1: foreach_tensor_addcdiv_scalarlist_cuda_
 
-- func: _foreach_copy_
+- func: _foreach_addcdiv_.Tensor
+  device_guard: True
   dispatch:
-    PrivateUse1: foreach_tensor_copy_list_kernel_musa_
+    PrivateUse1: foreach_tensor_addcdiv_tensor_cuda_
 
-- func: _foreach_sign
+- func: _foreach_addcmul.Scalar
+  device_guard: True
   dispatch:
-    PrivateUse1: foreach_tensor_sign_musa
+    PrivateUse1: foreach_tensor_addcmul_scalar_cuda
 
-- func: _foreach_sign_
+- func: _foreach_addcmul.ScalarList
+  device_guard: True
   dispatch:
-    PrivateUse1: foreach_tensor_sign_musa_
+    PrivateUse1: foreach_tensor_addcmul_scalarlist_cuda
+
+- func: _foreach_addcmul.Tensor
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_addcmul_tensor_cuda
+
+- func: _foreach_addcmul_.Scalar
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_addcmul_scalar_cuda_
+
+- func: _foreach_addcmul_.ScalarList
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_addcmul_scalarlist_cuda_
+
+- func: _foreach_addcmul_.Tensor
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_addcmul_tensor_cuda_
+
+- func: _foreach_abs
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_abs_cuda
+
+- func: _foreach_abs_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_abs_cuda_
+
+- func: _foreach_acos
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_acos_cuda
+
+- func: _foreach_acos_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_acos_cuda_
+
+- func: _foreach_asin
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_asin_cuda
+
+- func: _foreach_asin_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_asin_cuda_
+
+- func: _foreach_atan
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_atan_cuda
+
+- func: _foreach_atan_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_atan_cuda_
+
+- func: _foreach_ceil
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_ceil_cuda
+
+- func: _foreach_ceil_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_ceil_cuda_
+
+- func: _foreach_cos
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_cos_cuda
+
+- func: _foreach_cos_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_cos_cuda_
+
+- func: _foreach_cosh
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_cosh_cuda
+
+- func: _foreach_cosh_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_cosh_cuda_
+
+- func: _foreach_erf
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_erf_cuda
+
+- func: _foreach_erf_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_erf_cuda_
+
+- func: _foreach_erfc
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_erfc_cuda
+
+- func: _foreach_erfc_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_erfc_cuda_
+
+- func: _foreach_exp
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_exp_cuda
+
+- func: _foreach_exp_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_exp_cuda_
+
+- func: _foreach_expm1
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_expm1_cuda
+
+- func: _foreach_expm1_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_expm1_cuda_
+
+- func: _foreach_floor
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_floor_cuda
+
+- func: _foreach_floor_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_floor_cuda_
+
+- func: _foreach_frac
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_frac_cuda
+
+- func: _foreach_frac_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_frac_cuda_
 
 - func: _foreach_lerp.List
+  device_guard: True
   dispatch:
-    PrivateUse1: foreach_tensor_lerp_list_kernel_musa
+    PrivateUse1: foreach_tensor_lerp_ternary_cuda
 
 - func: _foreach_lerp_.List
+  device_guard: True
   dispatch:
-    PrivateUse1: foreach_tensor_lerp_list_kernel_musa_
+    PrivateUse1: foreach_tensor_lerp_ternary_cuda_
 
 - func: _foreach_lerp.Scalar
+  device_guard: True
   dispatch:
-    PrivateUse1: foreach_tensor_lerp_scalar_kernel_musa
+    PrivateUse1: foreach_tensor_lerp_list_cuda
 
 - func: _foreach_lerp_.Scalar
+  device_guard: True
   dispatch:
-    PrivateUse1: foreach_tensor_lerp_scalar_kernel_musa_
+    PrivateUse1: foreach_tensor_lerp_list_cuda_
 
-- func: _foreach_reciprocal
+- func: _foreach_lerp.ScalarList
+  device_guard: True
   dispatch:
-    PrivateUse1: foreach_tensor_reciprocal_musa
+    PrivateUse1: foreach_tensor_lerp_scalarlist_cuda
 
-- func: _foreach_reciprocal_
+- func: _foreach_lerp_.ScalarList
+  device_guard: True
   dispatch:
-    PrivateUse1: foreach_tensor_reciprocal_musa_
+    PrivateUse1: foreach_tensor_lerp_scalarlist_cuda_
+
+- func: _foreach_lgamma
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_lgamma_cuda
+
+- func: _foreach_lgamma_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_lgamma_cuda_
+
+- func: _foreach_log
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_log_cuda
+
+- func: _foreach_log_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_log_cuda_
+
+- func: _foreach_log10
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_log10_cuda
+
+- func: _foreach_log10_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_log10_cuda_
+
+- func: _foreach_log1p
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_log1p_cuda
+
+- func: _foreach_log1p_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_log1p_cuda_
+
+- func: _foreach_log2
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_log2_cuda
+
+- func: _foreach_log2_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_log2_cuda_
+
+- func: _foreach_max
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_max_cuda
+
+- func: _foreach_neg
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_neg_cuda
+
+- func: _foreach_neg_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_neg_cuda_
 
 - func: _foreach_norm.Scalar
   device_guard: True
   dispatch:
     PrivateUse1: foreach_tensor_norm_cuda
+
+- func: _foreach_pow.List
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_pow_list_kernel_cuda
+
+- func: _foreach_pow.Scalar
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_pow_scalar_kernel_cuda
+
+- func: _foreach_pow.ScalarList
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_pow_scalarlist_kernel_cuda
+
+- func: _foreach_pow.ScalarAndTensor
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_scalar_pow_list_kernel_cuda
+
+- func: _foreach_pow_.List
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_pow_list_kernel_cuda_
+
+- func: _foreach_pow_.Scalar
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_pow_scalar_kernel_cuda_
+
+- func: _foreach_pow_.ScalarList
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_pow_scalarlist_kernel_cuda_
+
+- func: _foreach_reciprocal
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_reciprocal_cuda
+
+- func: _foreach_reciprocal_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_reciprocal_cuda_
+
+- func: _foreach_round
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_round_cuda
+
+- func: _foreach_round_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_round_cuda_
+
+- func: _foreach_rsqrt
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_rsqrt_cuda
+
+- func: _foreach_rsqrt_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_rsqrt_cuda_
+
+- func: _foreach_sigmoid
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_sigmoid_cuda
+
+- func: _foreach_sigmoid_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_sigmoid_cuda_
+
+- func: _foreach_sign
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_sign_cuda
+
+- func: _foreach_sign_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_sign_cuda_
+
+- func: _foreach_sin
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_sin_cuda
+
+- func: _foreach_sin_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_sin_cuda_
+
+- func: _foreach_sinh
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_sinh_cuda
+
+- func: _foreach_sinh_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_sinh_cuda_
+
+- func: _foreach_sqrt
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_sqrt_cuda
+
+- func: _foreach_sqrt_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_sqrt_cuda_
+
+- func: _foreach_tan
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_tan_cuda
+
+- func: _foreach_tan_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_tan_cuda_
+
+- func: _foreach_tanh
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_tanh_cuda
+
+- func: _foreach_tanh_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_tanh_cuda_
+
+- func: _foreach_trunc
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_trunc_cuda
+
+- func: _foreach_trunc_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_trunc_cuda_
+
+- func: _foreach_zero_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_zero_cuda_
+
+- func: _foreach_copy_
+  device_guard: True
+  dispatch:
+    PrivateUse1: foreach_tensor_copy_list_kernel_cuda_
 
 - func: gated_silu
   dispatch:
@@ -1684,6 +2339,26 @@
   device_guard: True
   dispatch:
     PrivateUse1: glu_backward_cuda
+
+- func: glu_jvp
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: glu_jvp
+
+- func: glu_jvp.out
+  dispatch:
+    PrivateUse1: GluJvpOut
+
+- func: glu_backward_jvp
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: glu_backward_jvp
+
+- func: glu_backward_jvp.out
+  dispatch:
+    PrivateUse1: GluBwdJvpOut
 
 - func: grid_sampler_2d
   dispatch:
@@ -1721,6 +2396,54 @@
   dispatch:
     PrivateUse1: LinalgLstsqOut
 
+- func: linalg_eig
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: linalg_eig
+
+- func: linalg_eig.out
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: linalg_eig_out
+
+- func: _linalg_eigvals
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: _linalg_eigvals
+
+- func: linalg_eigvals.out
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: linalg_eigvals_out
+
+- func: linalg_householder_product.out
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: linalg_householder_product_out
+
+- func: linalg_householder_product
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: linalg_householder_product
+
+- func: linalg_solve_triangular.out
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: linalg_solve_triangular_out
+
+- func: linalg_solve_triangular
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: linalg_solve_triangular
+
 - func: cholesky_inverse
   device_check: ExactSame
   device_guard: True
@@ -1732,6 +2455,24 @@
   device_guard: True
   dispatch:
     PrivateUse1: cholesky_inverse_out
+
+- func: cholesky.out
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: cholesky_out
+
+- func: cholesky
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: cholesky
+
+- func: _cholesky_solve_helper
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: _CholeskySolveHelperMusa
 
 - func: mse_loss_backward
   dispatch:
@@ -2119,6 +2860,11 @@
   dispatch:
     PrivateUse1: MaxAll
 
+- func: max.unary_out
+  device_guard: True
+  dispatch:
+    PrivateUse1: MaxUnaryOut
+
 - func: max.dim
   dispatch:
     PrivateUse1: MaxDim
@@ -2139,6 +2885,11 @@
 - func: min
   dispatch:
     PrivateUse1: MinAll
+
+- func: min.unary_out
+  device_guard: True
+  dispatch:
+    PrivateUse1: MinUnaryOut
 
 - func: min.dim
   dispatch:
@@ -2377,6 +3128,13 @@
   dispatch:
     PrivateUse1: ArgsortStable
 
+
+- func: kthvalue.values
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: kthvalue_out_cuda
+
 - func: stft
   dispatch:
     PrivateUse1: Stft
@@ -2396,6 +3154,54 @@
   dispatch:
     PrivateUse1: EmptyStridedMUSA
     QuantizedPrivateUse1: empty_strided_unknown_quantized
+
+- func: multi_margin_loss
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: multi_margin_loss_cuda
+
+- func: multi_margin_loss.out
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: multi_margin_loss_cuda_out
+
+- func: multi_margin_loss_backward.grad_input
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: multi_margin_loss_cuda_backward_out
+
+- func: multi_margin_loss_backward
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: multi_margin_loss_cuda_backward
+
+- func: multilabel_margin_loss_forward.output
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: multilabel_margin_loss_forward_out_cuda
+
+- func: multilabel_margin_loss_forward
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: multilabel_margin_loss_forward_cuda
+
+- func: multilabel_margin_loss_backward.grad_input
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: multilabel_margin_loss_backward_cuda_out
+
+- func: multilabel_margin_loss_backward
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: multilabel_margin_loss_backward_cuda
 
 - func: resize_
   dispatch:
@@ -2429,6 +3235,11 @@
 - func: take
   dispatch:
     PrivateUse1: Take
+- func: take.out
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: take_out
 
 - func: put_
   dispatch:
@@ -2949,6 +3760,16 @@
   dispatch:
     PrivateUse1: LogicalXorTensorOut
 
+- func: _fused_sgd_
+  device_guard: True
+  dispatch:
+    PrivateUse1: FusedSgdKernelMusa
+
+- func: _fused_sgd_.tensor_lr
+  device_guard: True
+  dispatch:
+    PrivateUse1: FusedSgdKernelMusa
+
 - func: _fused_adam_
   device_guard: True
   dispatch:
@@ -3073,6 +3894,22 @@
   dispatch:
     PrivateUse1: _thnn_fused_lstm_cell_backward_impl_cuda
 
+- func: _thnn_fused_gru_cell
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: _thnn_fused_gru_cell_cuda
+
+- func: _thnn_fused_gru_cell_backward
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: _thnn_fused_gru_cell_backward_cuda
+
+- func: split_with_sizes
+  dispatch:
+    NestedTensorPrivateUse1: split_with_sizes_nested
+
 - func: split_with_sizes_copy.out
   dispatch:
     PrivateUse1: SplitWithSizesCopyOutMUSA
@@ -3165,6 +4002,12 @@
   device_guard: True
   dispatch:
     PrivateUse1: normal
+
+- func: normal.Tensor_float_out
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: normal_out
 
 - func: normal.float_Tensor_out
   device_check: ExactSame
@@ -3306,15 +4149,29 @@
   device_check: ExactSame
   device_guard: True
   dispatch:
+    PrivateUse1: dense_to_sparse
     SparsePrivateUse1: sparse_coo_to_sparse
     SparseCsrPrivateUse1: sparse_compressed_to_sparse
+  autogen: _to_sparse.sparse_dim_out
 
 - func: _to_sparse
   device_check: ExactSame
   device_guard: True
   dispatch:
+    PrivateUse1: dense_to_sparse
     SparsePrivateUse1: sparse_coo_to_sparse
     SparseCsrPrivateUse1: sparse_compressed_to_sparse
+  autogen: _to_sparse.out
+
+- func: _to_sparse_csr
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    SparsePrivateUse1: coo_to_sparse_csr
+
+- func: sparse_dim
+  dispatch:
+    SparsePrivateUse1: sparse_dim_sparse
 
 - func: _nnz
   dispatch:
@@ -3328,16 +4185,6 @@
 - func: _values
   dispatch:
     SparsePrivateUse1: _values_sparse
-
-- func: _to_sparse_csr
-  device_check: ExactSame
-  device_guard: True
-  dispatch:
-    SparsePrivateUse1: coo_to_sparse_csr
-
-- func: sparse_dim
-  dispatch:
-    SparsePrivateUse1: sparse_dim_sparse
 
 - func: is_coalesced
   dispatch:
@@ -3361,6 +4208,7 @@
   dispatch:
     SparsePrivateUse1: values_sparse
     SparseCsrPrivateUse1: values_sparse_csr
+    NestedTensorPrivateUse1: values_nested
 
 - func: crow_indices
   dispatch:
@@ -3405,6 +4253,36 @@
   device_check: ExactSame
   dispatch:
     PrivateUse1: fused_moving_avg_obs_fake_quant_cuda
+
+- func: fake_quantize_per_tensor_affine_cachemask
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: fake_quantize_per_tensor_affine_cachemask
+
+- func: _fake_quantize_learnable_per_tensor_affine
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: _fake_quantize_learnable_per_tensor_affine
+
+- func: _fake_quantize_learnable_per_tensor_affine_backward
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: _fake_quantize_learnable_per_tensor_affine_backward
+
+- func: _fake_quantize_learnable_per_channel_affine
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: _fake_quantize_learnable_per_channel_affine
+
+- func: _fake_quantize_learnable_per_channel_affine_backward
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+   PrivateUse1: _fake_quantize_learnable_per_channel_affine_backward
 
 - func: fake_quantize_per_channel_affine_cachemask
   device_guard: True
@@ -3515,3 +4393,152 @@
   device_guard: True
   dispatch:
     PrivateUse1: _s_binomial_cuda
+
+- func: conj_physical.out
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: conj_physical_out
+
+- func: searchsorted.Tensor
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: searchsorted_cuda
+
+- func: searchsorted.Tensor_out
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: searchsorted_out_cuda
+
+- func: searchsorted.Scalar
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: searchsorted_cuda
+
+- func: searchsorted.Scalar_out
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: searchsorted_out_cuda
+
+- func: _assert_async
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: _AssertAsync
+
+- func: _assert_async.msg
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: _AssertAsyncMsg
+
+- func: _nested_from_padded
+  device_guard: True
+  dispatch:
+    PrivateUse1: _NestedFromPadded
+
+- func: to_padded_tensor
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    NestedTensorPrivateUse1: NestedTensor_to_padded_tensor_generic
+
+- func: _nested_tensor_from_mask
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: NestedTensor_nested_tensor_from_mask
+
+- func: _nested_tensor_from_mask_left_aligned
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: NestedTensor_nested_tensor_from_mask_left_aligned
+
+- func: _nested_view_from_buffer
+  device_guard: True
+  dispatch:
+    PrivateUse1: _nested_view_from_buffer
+
+- func: _nested_compute_contiguous_strides_offsets
+  device_guard: True
+  dispatch:
+    PrivateUse1: _nested_compute_contiguous_strides_offsets
+
+- func: _efficientzerotensor
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: _EfficientZeroTensor
+
+- func: unbind.int
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    NestedTensorPrivateUse1: NestedTensor_unbind
+
+- func: _validate_compressed_sparse_indices
+  device_guard: True
+  dispatch:
+    PrivateUse1: _validate_compressed_sparse_indices_cuda
+
+- func: mvlgamma.out
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: mvlgamma_out
+
+- func: std_mean.correction
+  device_guard: True
+  dispatch:
+    PrivateUse1: std_mean
+
+- func: frexp.Tensor_out
+  device_guard: True
+  device_check: ExactSame
+  dispatch:
+    PrivateUse1: frexp_out
+
+- func: addbmm_
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: addbmm_
+- func: addbmm.out
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: addbmm_out
+- func: addbmm
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: addbmm
+
+- func: geqrf.a
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: geqrf_out
+
+- func: geqrf
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: geqrf
+
+- func: ormqr.out
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: ormqr_out
+
+- func: ormqr
+  device_check: ExactSame
+  device_guard: True
+  dispatch:
+    PrivateUse1: ormqr

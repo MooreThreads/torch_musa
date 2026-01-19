@@ -27,4 +27,17 @@ void lu_solve_looped_musolver(
     const Tensor& pivots,
     const Tensor& B,
     at::native::TransposeType transpose);
+
+void geqrf_musolver(const Tensor& input, const Tensor& tau);
+Tensor& orgqr_helper_musolver(Tensor& result, const Tensor& tau);
+void ormqr_helper_musolver(
+    const Tensor& input,
+    const Tensor& tau,
+    const Tensor& other,
+    bool left,
+    bool transpose);
+Tensor _cholesky_solve_helper_musolver(
+    const Tensor& self,
+    const Tensor& A,
+    bool upper);
 } // namespace at::musa

@@ -1,5 +1,5 @@
 diff --git a/torch/distributed/distributed_c10d.py b/torch/distributed/distributed_c10d.py
-index 547030c..6a0c4ea 100644
+index 547030c..1eb1405 100644
 --- a/torch/distributed/distributed_c10d.py
 +++ b/torch/distributed/distributed_c10d.py
 @@ -89,6 +89,7 @@ __all__ = [
@@ -37,6 +37,15 @@ index 547030c..6a0c4ea 100644
  
  def is_gloo_available() -> bool:
      """Check if the Gloo backend is available."""
+@@ -2069,7 +2076,7 @@ def _new_process_group_helper(
+     pg._set_group_name(group_name)
+     pg._set_group_desc(group_desc)
+ 
+-    if device_id and pg._get_backend(device_id).supports_splitting:
++    if device_id:
+         eager_backend = pg._get_backend(device_id)
+         eager_backend.eager_connect_single_device(device_id)
+ 
 @@ -2707,6 +2714,10 @@ def broadcast(
          _warn_not_in_group("broadcast")
          return

@@ -1,0 +1,78 @@
+#ifndef TORCH_MUSA_CSRC_ATEN_OPS_MUSA_OFFSETCALCULATOR_MUH_
+#define TORCH_MUSA_CSRC_ATEN_OPS_MUSA_OFFSETCALCULATOR_MUH_
+
+#include <c10/core/impl/SizesAndStrides.h>
+#include <ATen/musa/detail/IntegerDivider.muh>
+
+#include "torch_musa/csrc/aten/utils/TensorIterator.h"
+
+namespace at::musa {
+
+inline constexpr int MAX_DIMS = C10_SIZES_AND_STRIDES_MAX_INLINE_SIZE;
+
+template <int NARGS, typename index_t = uint32_t, bool signed_strides = false>
+struct OffsetCalculator {
+  // We allow having negative strides to implement some operations like
+  // torch.flip
+  using stride_t =
+      std::conditional_t<signed_strides, std::make_signed_t<index_t>, index_t>;
+
+  using offset_type = std::array<stride_t, std::max<int>(NARGS, 1)>;
+
+  OffsetCalculator(
+      int dims,
+      const int64_t* sizes,
+      const int64_t* const* strides)
+      : dims(dims) {
+    TORCH_CHECK(dims <= MAX_DIMS, "tensor has too many (>", MAX_DIMS, ") dims");
+    for (int i = 0, rev_i = dims - 1; i < dims; ++i, --rev_i) {
+      sizes_[i] = detail::IntDivider<index_t>(sizes[rev_i]);
+      for (int arg = 0; arg < NARGS; arg++) {
+        strides_[i][arg] = strides[arg][rev_i];
+      }
+    }
+  }
+
+  __host__ __device__ offset_type get(index_t linear_idx) const {
+    offset_type offsets;
+#pragma unroll
+    for (int arg = 0; arg < NARGS; arg++) {
+      offsets[arg] = 0;
+    }
+
+#pragma unroll
+    for (int dim = 0; dim < MAX_DIMS; ++dim) {
+      if (dim == dims) {
+        break;
+      }
+      auto divmod = sizes_[dim].divmod(linear_idx);
+      linear_idx = divmod.div;
+
+#pragma unroll
+      for (int arg = 0; arg < NARGS; arg++) {
+        offsets[arg] += divmod.mod * strides_[dim][arg];
+      }
+    }
+    return offsets;
+  }
+
+  int dims;
+  detail::IntDivider<index_t> sizes_[MAX_DIMS];
+  stride_t strides_[MAX_DIMS][std::max<int>(NARGS, 1)];
+};
+
+template <int N, bool signed_strides = false>
+inline OffsetCalculator<N, uint32_t, signed_strides> make_offset_calculator(
+    const TensorIteratorBase& iter) {
+  TORCH_INTERNAL_ASSERT(N <= iter.ntensors());
+  std::array<const int64_t*, N> strides;
+  for (int i = 0; i < N; i++) {
+    strides[i] = iter.strides(i).data();
+  }
+  return OffsetCalculator<N, uint32_t, signed_strides>(
+      iter.ndim(), iter.shape().data(), strides.data());
+}
+
+} // namespace at::musa
+
+#endif // TORCH_MUSA_CSRC_ATEN_OPS_MUSA_OFFSETCALCULATOR_MUH_

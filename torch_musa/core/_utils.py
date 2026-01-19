@@ -17,6 +17,7 @@ def _get_musa_device_index(
     """Gets the device index from :attr:`device`, which can be a torch.device
     object, a Python integer, or ``None``.
     """
+    musa_backend = torch._C._get_privateuse1_backend_name()
     if device is None:
         if not torch_musa.is_available():
             raise ValueError("Moore Threads GPUs are not available")
@@ -25,13 +26,13 @@ def _get_musa_device_index(
         return device
     if isinstance(device, str):
         device = torch.device(device)
-        if device.type == "musa" and device.index is None:
+        if device.type == musa_backend and device.index is None:
             device = torch.device(device.type, torch_musa.current_device())
     if isinstance(device, torch.device):
         if allow_cpu:
-            if device.type not in ["musa", "cpu"]:
+            if device.type not in [musa_backend, "cpu"]:
                 raise ValueError(f"Expected a musa or cpu device, but got: {device}")
-        elif device.type != "musa":
+        elif device.type != musa_backend:
             raise ValueError(f"Expected a musa device, but got: {device}")
     if not torch.jit.is_scripting():
         if isinstance(device, torch_musa.device):
