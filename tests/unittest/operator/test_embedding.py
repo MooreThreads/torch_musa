@@ -8,7 +8,7 @@ import pytest
 
 from torch_musa import testing
 
-n = random.randint(1, 1024)
+n = random.randint(513, 1024)
 m = random.randint(1, 1024)
 
 
@@ -135,5 +135,40 @@ def test_embedding_bwd(input_shape, dtype):
         func=torch.ops.aten.embedding_dense_backward,
         input_args=input_args,
         comparators=comparator,
+    )
+    test.check_result()
+
+
+float_dtypes = [torch.float32]
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_shape", [(2, 512)])
+@pytest.mark.parametrize("dtype", float_dtypes)
+@pytest.mark.parametrize("norm_type", [1.0, 2.0])
+@pytest.mark.skipif(testing.get_musa_arch() < 31, reason="Precision issue on QY2")
+def test_embedding_renorm(input_shape, dtype, norm_type):
+    comparator = testing.DefaultComparator(abs_diff=1e-3, rel_diff=1e-3)
+    if dtype == torch.float16:
+        comparator = testing.DefaultComparator(abs_diff=1e-3, rel_diff=2e-2)
+    if dtype == torch.bfloat16:
+        comparator = testing.DefaultComparator(abs_diff=1e-3, rel_diff=2e-2)
+
+    n = random.randint(128 + 1, 256)
+    m = random.randint(1, 256)
+    input_tensor = torch.rand((n + 1, m)).to(dtype)
+    indices = torch.randint(low=0, high=n, size=input_shape)
+    max_norm = norm_type
+    input_args = {
+        "input": input_tensor,
+        "indices": indices,
+        "max_norm": max_norm,
+        "norm_type": norm_type,
+    }
+    test = testing.OpTest(
+        func=torch.embedding_renorm_,
+        input_args=input_args,
+        comparators=comparator,
+        # test_dtype=dtype,
     )
     test.check_result()

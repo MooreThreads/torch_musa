@@ -11,6 +11,13 @@
 #include <c10/core/TensorOptions.h>
 #include <torch/library.h>
 
+#ifndef AT_PER_OPERATOR_HEADERS
+#include <ATen/Functions.h>
+#include <ATen/NativeFunctions.h>
+#else
+#include <ATen/ops/_efficientzerotensor_native.h>
+#endif
+
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
@@ -18,8 +25,6 @@
 #include "torch_musa/csrc/core/MUSACachingAllocator.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 #include "torch_musa/csrc/core/PeerToPeerAccess.h"
-
-#include <mudnn.h>
 
 namespace at {
 namespace detail {
@@ -476,6 +481,25 @@ at::Tensor& Put_(
       common_device, source, "Put_", "source");
   const OptionalDeviceGuard device_guard(device_of(self));
   return at::native::put_(self, index, source, accumulate);
+}
+
+Tensor _EfficientZeroTensor(
+    IntArrayRef size,
+    std::optional<ScalarType> dtype,
+    std::optional<Layout> layout,
+    std::optional<Device> device,
+    std::optional<bool> pin_memory) {
+  auto device_ = device_or_default(device);
+  if (!device_.has_index()) {
+    device_.set_index(at::musa::current_device());
+  }
+  auto allocator = at::native::ZeroTensorAllocator(device_);
+  auto dtype_ = dtype_or_default(dtype);
+  auto zero_ks = at::DispatchKeySet(kMUSAKey) |
+      at::DispatchKeySet(c10::DispatchKey::ZeroTensor);
+  auto out = at::detail::empty_generic(
+      size, &allocator, zero_ks, dtype_, std::nullopt);
+  return out;
 }
 
 } // namespace musa

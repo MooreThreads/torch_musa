@@ -63,3 +63,27 @@ endif(CXX_AVX2_FOUND)
 # WARNING: From the above, now only AVX platform flags set in torch_musa. It's
 # sure that there will be more platforms integrated, but now TEMPORARILY we just
 # admit these two ISAs, lol.
+
+if(CXX_SVE_FOUND)
+  if(CXX_SVE256_FOUND)
+    message("-- SVE256 is FOUND")
+
+    set(CMAKE_CXX_FLAGS
+        "${CMAKE_CXX_FLAGS} -DHAVE_SVE_CPU_DEFINITION -DHAVE_SVE256_CPU_DEFINITION"
+    )
+    list(APPEND CPU_CAPABILITY_NAMES "SVE256")
+    if("${CMAKE_C_COMPILER_ID}" MATCHES "SVE256")
+      list(
+        APPEND
+        CPU_CAPABILITY_FLAGS
+        "${OPT_FLAG} -O2 -march=armv8-a+sve -DCPU_CAPABILITY_SVE -msve-vector-bits=256"
+      )
+    else()
+      list(
+        APPEND
+        CPU_CAPABILITY_FLAGS
+        "${OPT_FLAG} -march=armv8-a+sve -DCPU_CAPABILITY_SVE -msve-vector-bits=256"
+      )
+    endif()
+  endif(CXX_SVE256_FOUND)
+endif(CXX_SVE_FOUND)

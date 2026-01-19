@@ -1,6 +1,6 @@
 """Test tensor_factory operators."""
 
-# pylint: disable=missing-function-docstring, redefined-outer-name, unused-import
+# pylint: disable=missing-function-docstring, redefined-outer-name, unused-import, W0622, C0103
 import random
 import torch
 import pytest
@@ -107,3 +107,27 @@ def test_eye(n, m, dtype):
     musa_res = torch.eye(n, m, dtype=dtype, device="musa")
     cpu_res = torch.eye(n, m, dtype=dtype, device="cpu")
     _check_result(musa_res, cpu_res)
+
+
+def test_nested_tensor_from_mask():
+    N, L, D = 10, 12, 14
+
+    input = torch.rand(N, L, D).musa()
+    mask = torch.ones(N, L, dtype=torch.bool).musa()
+    # Leave first row be all True to maintain the nt's size unchanged
+    for i in range(1, N):
+        end = torch.randint(1, L, size=()).item()
+        mask[i, end:] = False
+
+    nt = torch._nested_tensor_from_mask(input, mask)
+    input_convert = nt.to_padded_tensor(0.0)
+    input.masked_fill_(mask.reshape(N, L, 1).logical_not(), 0.0)
+
+    assert torch.equal(input, input_convert)
+
+
+def test__efficientzerotensor():
+    device = "musa"
+    x = torch.zeros(3, device=device)
+    y = torch._efficientzerotensor(3, device=device)
+    assert x.device == y.device

@@ -214,6 +214,17 @@ void MUSAGraph::capture_end() {
   // }
 }
 
+void MUSAGraph::reinstantiate_graph() {
+  TORCH_CHECK(
+      graph_ != NULL && graph_exec_ != NULL && has_graph_ && has_graph_exec_,
+      "The graph_ and graph_exec_ musa have been created in the graph capture stage");
+  // we need to reinstantiate graph_exec, let mupti perceive more infos about
+  // the graph, when enable profile.
+  C10_MUSA_CHECK_WARN(musaGraphExecDestroy(graph_exec_));
+  graph_exec_ = NULL;
+  AT_MUSA_CHECK(musaGraphInstantiate(&graph_exec_, graph_, NULL, NULL, 0));
+}
+
 void MUSAGraph::replay() {
   TORCH_CHECK(
       has_graph_exec_,
@@ -280,10 +291,12 @@ void MUSAGraph::reset() {
   if (has_graph_) {
     C10_MUSA_CHECK_WARN(musaGraphDestroy(graph_));
     has_graph_ = false;
+    graph_ = NULL;
   }
   if (has_graph_exec_) {
     C10_MUSA_CHECK_WARN(musaGraphExecDestroy(graph_exec_));
     has_graph_exec_ = false;
+    graph_exec_ = NULL;
   }
 }
 

@@ -34,13 +34,6 @@ std::tuple<Tensor&, Tensor&> TopkOut(
       indices.device().type() == kMUSA,
       "Device of indices tensor of TopK must be MTGPU, but now is ",
       indices.device());
-  TORCH_CHECK(
-      self.scalar_type() == at::ScalarType::Float ||
-          self.scalar_type() == at::ScalarType::Half ||
-          self.scalar_type() == at::ScalarType::BFloat16,
-      "Dtype of input tensor of topk only support Float32/Half/BFloat16, but "
-      "now it is ",
-      self.scalar_type());
 
   c10::musa::MUSAGuard device_guard(self.device());
   int64_t wraped_dim = maybe_wrap_dim(dim, self.dim(), /*wrap_scalar=*/true);

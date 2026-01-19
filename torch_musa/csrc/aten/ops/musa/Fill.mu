@@ -1,33 +1,32 @@
 #define TORCH_ASSERT_NO_OPERATORS
-#include <ATen/Dispatch.h>
-#include <ATen/native/DispatchStub.h>
-#include <ATen/native/Fill.h>
-#include <ATen/native/TensorIterator.h>
+
+#include <ATen/Dispatch_v2.h>
 #include <c10/core/Scalar.h>
-#include <ATen/native/musa/Loops.muh>
 
-#include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/aten/ops/musa/Loops.muh"
 
-namespace at::native {
+namespace at::musa {
 
 template <typename scalar_t>
-struct FillFunctor {
-  FillFunctor(scalar_t v) : value(v) {}
-  __device__ __forceinline__ scalar_t operator()() const {
-    return value;
-  }
+struct fill_scalar {
+  scalar_t value_;
 
- private:
-  scalar_t value;
+  fill_scalar(scalar_t value) : value_(value) {}
+
+  __device__ __forceinline__ scalar_t operator()() const {
+    return value_;
+  }
 };
 
-void fill_kernel_musa(TensorIterator& iter, const Scalar& value) {
-  AT_DISPATCH_ALL_TYPES_AND_COMPLEX_AND4(
-      kComplexHalf, kBool, kHalf, kBFloat16, iter.dtype(), "fill_musa", [&]() {
-        gpu_kernel(iter, FillFunctor<scalar_t>(value.to<scalar_t>()));
-      });
+void FillKernel(TensorIteratorBase& iter, const Scalar& value) {
+  AT_DISPATCH_V2(
+      iter.dtype(),
+      "FillKernel",
+      AT_WRAP([&]() {
+        auto f = fill_scalar<scalar_t>(value.to<scalar_t>());
+        gpu_kernel(iter, f);
+      }),
+      AT_EXPAND(AT_COMPLEX_TYPES));
 }
 
-REGISTER_MUSA_DISPATCH(fill_stub, &fill_kernel_musa);
-
-} // namespace at::native
+} // namespace at::musa

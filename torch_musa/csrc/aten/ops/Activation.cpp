@@ -24,6 +24,10 @@
 #include <limits>
 
 namespace at {
+
+namespace native {
+extern void neg_kernel_cuda(TensorIteratorBase& iter);
+} // namespace native
 namespace musa {
 
 namespace {
@@ -321,11 +325,9 @@ DEFINE_ACTIVATE_OP(Cos, UNARY_MODE::COS)
 DEFINE_ACTIVATE_OP(Abs, UNARY_MODE::ABS)
 DEFINE_ACTIVATE_OP(Acos, UNARY_MODE::ACOS)
 DEFINE_ACTIVATE_OP(Atan, UNARY_MODE::ATAN)
-DEFINE_ACTIVATE_OP(Ceil, UNARY_MODE::CEIL)
 DEFINE_ACTIVATE_OP(Log, UNARY_MODE::LOG)
 DEFINE_ACTIVATE_OP(Log10, UNARY_MODE::LOG10)
 DEFINE_ACTIVATE_OP(Log2, UNARY_MODE::LOG2)
-DEFINE_ACTIVATE_OP(Floor, UNARY_MODE::FLOOR)
 DEFINE_ACTIVATE_OP_ARGS(HardSigmoid, UNARY_MODE::HARDSIGMOID, 0.166667, 0.5)
 
 #define SCALAR_COMPARISON(op_name, mode)                         \
@@ -479,6 +481,18 @@ void NegCall(
     const c10::optional<Scalar>& val,
     bool self_output = false) {
   const auto t_type = self.scalar_type();
+  if (self.is_complex()) {
+    auto iter = TensorIteratorConfig()
+                    .add_output(out)
+                    .add_const_input(self)
+                    .resize_outputs(false)
+                    .check_all_same_dtype(false)
+                    .check_all_same_device(false)
+                    .build();
+    at::native::neg_kernel_cuda(iter);
+    return;
+  }
+  MUSA_TENSOR_TYPE_CHECK(self);
   Tensor input;
   const bool isT =
       IsTranspose(self, false) && (self_output || IsTranspose(out, false));
@@ -498,7 +512,8 @@ void NegCall(
   switch (t_type) {
     case ScalarType::Float:
     case ScalarType::Half:
-    case ScalarType::BFloat16: {
+    case ScalarType::BFloat16:
+    case ScalarType::Double: {
       const double alpha = val.value().to<double>();
       UnaryCall(op_name, out, input, [&](::musa::dnn::Unary& op) {
         CHECK_MUDNN_STATUS(op.SetAlpha(alpha), "SetAlpha");
@@ -525,7 +540,6 @@ void NegCall(
 
 Tensor Neg(const Tensor& self) {
   const c10::musa::MUSAGuard device_guard(self.device());
-  MUSA_TENSOR_TYPE_CHECK(self);
   Tensor output =
       at::empty_like(self, self.options(), self.suggest_memory_format());
   Scalar val = -1;
@@ -535,7 +549,6 @@ Tensor Neg(const Tensor& self) {
 
 Tensor& Neg_(Tensor& self) {
   const c10::musa::MUSAGuard device_guard(self.device());
-  MUSA_TENSOR_TYPE_CHECK(self);
   Scalar val = -1;
   NegCall(__func__, self, self, val, true);
   return self;
@@ -543,7 +556,6 @@ Tensor& Neg_(Tensor& self) {
 
 Tensor& NegOut(const Tensor& self, Tensor& out) {
   const c10::musa::MUSAGuard device_guard(self.device());
-  MUSA_TENSOR_TYPE_CHECK(self);
   Scalar val = -1;
   out.resize_as_(self);
   NegCall(__func__, out, self, val);
@@ -695,19 +707,18 @@ at::Tensor PRelu(const at::Tensor& self, const at::Tensor& weight) {
   return at::native::_prelu_kernel_backward(grad_output, self, weight);
 }
 
-#if defined(TORCH_MUSA_ARCH) && TORCH_MUSA_ARCH >= 310
 #define _AT_DISPATCH_INF_TYPES(TYPE, NAME, ...) \
   AT_DISPATCH_FLOATING_TYPES_AND4(              \
       kHalf, kBFloat16, kFloat8_e5m2, kFloat8_e4m3fn, TYPE, NAME, __VA_ARGS__)
-#else
-#define _AT_DISPATCH_INF_TYPES(TYPE, NAME, ...) \
-  AT_DISPATCH_FLOATING_TYPES_AND2(kHalf, kBFloat16, TYPE, NAME, __VA_ARGS__)
-#endif
 
 at::Tensor IsNan(const at::Tensor& self) {
   // DeviceGuard omitted
   if C10_UNLIKELY (self.numel() == 0) {
     return at::empty_like(self, self.options().dtype(at::ScalarType::Bool));
+  }
+
+  if (!c10::isFloatingType(self.scalar_type())) {
+    return self != self;
   }
 
   return _AT_DISPATCH_INF_TYPES(self.scalar_type(), "isnan", [&]() {
@@ -783,6 +794,45 @@ Tensor& LogSigmoidBackwardOut(
   at::native::log_sigmoid_backward_stub(kMUSA, iter);
   return grad_input;
 }
+
+#define CEIL_FLOOR_ARGS(op_name, mode)                               \
+  Tensor op_name(const Tensor& input) {                              \
+    const c10::musa::MUSAGuard device_guard(input.device());         \
+    if (input.is_floating_point()) {                                 \
+      return Unary(__func__, input, [](::musa::dnn::Unary& op) {     \
+        CHECK_MUDNN_STATUS(op.SetMode(mode), "SetMode");             \
+      });                                                            \
+    } else {                                                         \
+      return input.clone();                                          \
+    }                                                                \
+  }                                                                  \
+                                                                     \
+  Tensor& op_name##_(Tensor& input) {                                \
+    const c10::musa::MUSAGuard device_guard(input.device());         \
+    if (input.is_floating_point()) {                                 \
+      Unary_(__func__, input, [](::musa::dnn::Unary& op) {           \
+        CHECK_MUDNN_STATUS(op.SetMode(mode), "SetMode");             \
+      });                                                            \
+    } else {                                                         \
+      return input;                                                  \
+    }                                                                \
+    return input;                                                    \
+  }                                                                  \
+                                                                     \
+  Tensor& op_name##Out(const Tensor& input, Tensor& output) {        \
+    const c10::musa::MUSAGuard device_guard(input.device());         \
+    if (input.is_floating_point()) {                                 \
+      UnaryOut(__func__, output, input, [](::musa::dnn::Unary& op) { \
+        CHECK_MUDNN_STATUS(op.SetMode(mode), "SetMode");             \
+      });                                                            \
+    } else {                                                         \
+      output.copy_(input);                                           \
+    }                                                                \
+    return output;                                                   \
+  }
+
+CEIL_FLOOR_ARGS(Ceil, UNARY_MODE::CEIL);
+CEIL_FLOOR_ARGS(Floor, UNARY_MODE::FLOOR);
 
 } // namespace musa
 } // namespace at

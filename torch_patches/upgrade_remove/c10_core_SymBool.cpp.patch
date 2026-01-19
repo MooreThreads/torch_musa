@@ -1,0 +1,34 @@
+diff --git a/c10/core/SymBool.cpp b/c10/core/SymBool.cpp
+index 1b5269c9da1..95b88104f03 100644
+--- a/c10/core/SymBool.cpp
++++ b/c10/core/SymBool.cpp
+@@ -72,6 +72,22 @@ bool SymBool::guard_size_oblivious(const char* file, int64_t line) const {
+   return a->guard_size_oblivious(file, line);
+ }
+ 
++bool SymBool::guard_or_false(const char* file, int64_t line) const {
++  if (auto ma = maybe_as_bool()) {
++    return *ma;
++  }
++  SymNode a = toSymNodeImpl();
++  return a->guard_or_false(file, line);
++}
++
++bool SymBool::guard_or_true(const char* file, int64_t line) const {
++  if (auto ma = maybe_as_bool()) {
++    return *ma;
++  }
++  SymNode a = toSymNodeImpl();
++  return a->guard_or_true(file, line);
++}
++
+ bool SymBool::expect_true(const char* file, int64_t line) const {
+   if (auto ma = maybe_as_bool()) {
+     return *ma;
+@@ -87,4 +103,4 @@ bool SymBool::has_hint() const {
+   return toSymNodeImpl()->has_hint();
+ }
+ 
+-} // namespace c10
++} // namespace c10
+\ No newline at end of file

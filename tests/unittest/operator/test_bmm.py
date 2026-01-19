@@ -50,3 +50,28 @@ def test_bmm(input_data):
     test.check_result()
     test.check_out_ops()
     test.check_grad_fn()
+
+
+input_data_complex = [
+    {
+        "input": torch.randn(4, 10, 5, dtype=torch.complex64),
+        "mat2": torch.randn(4, 5, 10, dtype=torch.complex64),
+    },
+    {
+        "input": torch.randn(4, 10, 0, dtype=torch.complex128),
+        "mat2": torch.randn(4, 0, 10, dtype=torch.complex128),
+    },
+]
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_data_complex)
+def test_bmm_complex(input_data):
+    test = testing.OpTest(
+        func=torch.bmm,
+        input_args=input_data,
+        comparators=testing.DefaultComparator(abs_diff=1e-6),
+    )
+    test.check_result()
+    test.check_out_ops()
+    test.check_grad_fn()

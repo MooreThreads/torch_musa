@@ -648,6 +648,72 @@ void MusaTensorIterator::cast_outputs() {
   }
 }
 
+void MusaTensorIterator::coalesce_dimensions() {
+  const auto dims = ndim();
+  if (dims <= 1) {
+    return;
+  }
+
+  auto can_coalesce = [&](int dim0, int dim1) {
+    auto shape0 = shape_[dim0];
+    auto shape1 = shape_[dim1];
+    if (shape0 == 1 || shape1 == 1) {
+      return true;
+    }
+    for (const auto i : c10::irange(ntensors())) {
+      auto& stride = operands_[i].stride_bytes;
+      if (shape0 * stride[dim0] != stride[dim1]) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  auto replace_stride = [&](int dim0, int dim1) {
+    for (const auto i : c10::irange(ntensors())) {
+      auto& stride = operands_[i].stride_bytes;
+      stride[dim0] = stride[dim1];
+    }
+  };
+
+  int prev_dim = dims - 1;
+  for (auto dim = prev_dim - 1; dim >= 0; --dim) {
+    if (can_coalesce(prev_dim, dim)) {
+      if (shape_[prev_dim] == 1) {
+        replace_stride(prev_dim, dim);
+      }
+      shape_[prev_dim] *= shape_[dim];
+    } else {
+      --prev_dim;
+      if (prev_dim != dim) {
+        replace_stride(prev_dim, dim);
+        shape_[prev_dim] = shape_[dim];
+      }
+    }
+  }
+
+  if (prev_dim != 0) {
+    shape_.erase(shape_.begin(), shape_.begin() + prev_dim);
+
+    for (const auto i : c10::irange(ntensors())) {
+      auto& stride = operands_[i].stride_bytes;
+      stride.erase(stride.begin(), stride.begin() + prev_dim);
+    }
+  }
+
+  has_coalesced_dimensions_ = true;
+}
+
+bool MusaTensorIterator::is_contiguous() const {
+  if (numel() == 1) {
+    return true;
+  }
+  if (ndim() != 1) {
+    return false;
+  }
+  return has_contiguous_first_dim();
+}
+
 void FunctionalTensorIterator::_set_output_raw_strided(
     int64_t output_idx,
     IntArrayRef sizes,

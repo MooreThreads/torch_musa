@@ -73,8 +73,7 @@ def test_take(input_data, dtype):
     if dtype == torch.float32:
         test.check_result()
         test.check_grad_fn()
-        # out op is not implemented
-        # test.check_out_ops()
+        test.check_out_ops()
     if dtype == torch.float16:
         test.check_musafp16_vs_musafp32()
 

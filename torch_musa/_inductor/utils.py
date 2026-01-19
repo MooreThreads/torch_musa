@@ -17,7 +17,7 @@ from torch._inductor.runtime.benchmarking import (
 )
 from torch.utils._triton import has_triton_package
 
-GPU_TYPES = ["cuda", "mps", "xpu", "musa"]
+GPU_TYPES = ["musa"]
 
 
 def is_gpu(device: str):

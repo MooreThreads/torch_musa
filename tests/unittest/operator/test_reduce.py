@@ -134,6 +134,34 @@ def test_std(input_data, dtype):
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("dtype", testing.get_float_types())
+@pytest.mark.parametrize("correction", [0, 1])
+@pytest.mark.parametrize("keepdim", [True, False])
+def test_std_mean_correction(input_data, dtype, correction, keepdim):
+    cmp = testing.DefaultComparator(abs_diff=1e-3, rel_diff=1e-3)
+
+    def fwd(device="cpu"):
+        x = input_data["input"].to(device).to(dtype)
+        dim = input_data["dim"]
+        std, mean = torch.std_mean(x, dim=dim, correction=correction, keepdim=keepdim)
+        return std, mean
+
+    cpu_std, cpu_mean = fwd("cpu")
+    musa_std, musa_mean = fwd("musa")
+
+    cmp(cpu_mean, musa_mean.cpu())
+    cmp(cpu_std, musa_std.cpu())
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_data)
+@pytest.mark.parametrize("dtype", testing.get_float_types())
+def test_std_mean(input_data, dtype):
+    function(input_data, dtype, torch.std_mean)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_data)
+@pytest.mark.parametrize("dtype", testing.get_float_types())
 def test_var(input_data, dtype):
     function(input_data, dtype, torch.var)
 
@@ -602,6 +630,57 @@ def test_max_out(input_data, dtype):
 
     cmp(max_values, max_values_musa.cpu())
     cmp(indices, indices_musa.cpu())
+
+
+reduce_dtype = [
+    torch.float32,
+    torch.float16,
+    torch.int32,
+    torch.int64,
+    torch.uint8,
+    torch.int8,
+    torch.bool,
+]
+if get_musa_arch() >= 22:
+    reduce_dtype.append(torch.bfloat16)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_data)
+@pytest.mark.parametrize("dtype", reduce_dtype)
+def test_max_unary_out(input_data, dtype):
+    cmp = testing.DefaultComparator()
+
+    def max_fwd(device="cpu"):
+        x = input_data["input"].to(device).to(dtype)
+        max_values = torch.tensor([], device=device, dtype=dtype)
+        torch.max(x, out=max_values)
+
+        return max_values
+
+    max_values = max_fwd("cpu")
+    max_values_musa = max_fwd("musa")
+
+    cmp(max_values, max_values_musa.cpu())
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_data)
+@pytest.mark.parametrize("dtype", reduce_dtype)
+def test_min_unary_out(input_data, dtype):
+    cmp = testing.DefaultComparator()
+
+    def min_fwd(device="cpu"):
+        x = input_data["input"].to(device).to(dtype)
+        min_values = torch.tensor([], device=device, dtype=dtype)
+        torch.min(x, out=min_values)
+
+        return min_values
+
+    min_values = min_fwd("cpu")
+    min_values_musa = min_fwd("musa")
+
+    cmp(min_values, min_values_musa.cpu())
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)

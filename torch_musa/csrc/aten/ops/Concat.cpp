@@ -15,6 +15,15 @@
 
 namespace at::musa {
 
+extern void cat_complex_out_musa(
+    const ITensorListRef& tensors,
+    int64_t dim,
+    int64_t valid,
+    bool all_contiguous,
+    bool all_same_dtype,
+    bool all_same_sizes_and_stride,
+    MemoryFormat memory_format,
+    const Tensor& result);
 namespace {
 
 // Make tensor `c_type` and `memory_format` contiguous.
@@ -64,6 +73,32 @@ TORCH_IMPL_FUNC(CatOut)
   }
 
   auto materialized = tensors.materialize();
+  // check the complex dtype
+  bool has_complex = false;
+  for (const Tensor& t : tensors) {
+    if (!native::cat_should_skip_tensor(t) && t.numel() > 0) {
+      if (at::isComplexType(t.scalar_type())) {
+        has_complex = true;
+        break;
+      }
+    }
+  }
+  if (!has_complex && at::isComplexType(out.scalar_type())) {
+    has_complex = true;
+  }
+  if (has_complex) {
+    cat_complex_out_musa(
+        tensors,
+        dim,
+        valid,
+        all_contiguous,
+        all_same_dtype,
+        all_same_sizes_and_stride,
+        memory_format,
+        out);
+    return;
+  }
+
   const size_t n = materialized.size();
   const auto c_type =
       all_same_dtype ? out.scalar_type() : native::result_type(materialized);

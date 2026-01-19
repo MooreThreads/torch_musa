@@ -49,6 +49,8 @@ struct MUSAHooks : MUSAHooksInterface {
   }
 
   void deviceSynchronize(DeviceIndex device_index) const override;
+
+  bool hasMUSART() const;
 };
 
 } // namespace at::musa::detail

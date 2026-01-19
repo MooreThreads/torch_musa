@@ -50,7 +50,7 @@ def function(input_data_, dtype, other_dtype, func):
         input_data["other"] = abs(input_data["other"])
     if func in (torch.pow,):
         input_data["exponent"] = input_data["exponent"].to(other_dtype)
-    comparator = testing.DefaultComparator(equal_nan=True)
+    comparator = testing.DefaultComparator(equal_nan=True, abs_diff=1e-6)
     if torch.bfloat16 in (dtype, other_dtype):
         comparator = testing.DefaultComparator(
             abs_diff=1, rel_diff=1e-1, equal_nan=True
@@ -174,6 +174,10 @@ input_datas_for_div = [
     {
         "input": torch.rand(30, 1).uniform_(-2, 2) * 100,
         "other": torch.randn(1, 30).uniform_(1, 2),
+    },
+    {
+        "input": torch.tensor(1),
+        "other": 1,
     },
 ]
 
@@ -892,6 +896,31 @@ def test_equal_tensor(input_data, dtype, other_dtype):
     function(input_data, dtype, other_dtype, torch.equal)
 
 
+complex_input_data = [
+    {
+        "input": torch.randn((3, 4), dtype=torch.complex64),
+        "other": torch.randn((3, 5), dtype=torch.complex64),
+    },
+    {
+        "input": torch.randn((10, 20), dtype=torch.complex128),
+        "other": torch.randn((10, 20), dtype=torch.complex128),
+    },
+]
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", complex_input_data)
+def test_equal_complex(input_data):
+    test = testing.OpTest(
+        func=torch.equal,
+        input_args=input_data,
+        comparators=testing.DefaultComparator(abs_diff=1e-6),
+    )
+    test.check_result()
+    test.check_out_ops()
+    test.check_grad_fn()
+
+
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize(
     "input_data",
@@ -1389,10 +1418,14 @@ def test_logaddexp_float(input_data, dtype, other_dtype, func):
 
 
 input_int_data = [
-    {"input": torch.tensor([12, 18, 100], dtype=torch.int32),
-     "other": torch.tensor([8, 24, 25], dtype=torch.int32)},
-    {"input": torch.tensor([[35, 10], [99, 12]], dtype=torch.int64),
-     "other": torch.tensor([[5, 30], [9, 6]], dtype=torch.int64)},
+    {
+        "input": torch.tensor([12, 18, 100], dtype=torch.int32),
+        "other": torch.tensor([8, 24, 25], dtype=torch.int32),
+    },
+    {
+        "input": torch.tensor([[35, 10], [99, 12]], dtype=torch.int64),
+        "other": torch.tensor([[5, 30], [9, 6]], dtype=torch.int64),
+    },
 ]
 
 

@@ -20,6 +20,9 @@ all_dtypes = testing.get_all_support_types()
 if testing.get_musa_arch() >= 22:
     float_dtypes.append(torch.bfloat16)
     all_dtypes.append(torch.bfloat16)
+    all_dtypes.append(torch.float64)
+
+integer_dtypes = [torch.int8, torch.int16, torch.int32, torch.int64]
 
 
 for data in testing.get_raw_data():
@@ -55,6 +58,7 @@ all_basic_funcs = [
     torch.sinc,
     torch.sinh,
     torch.trunc,
+    torch.ceil,
 ]
 
 all_inplace_funcs = [
@@ -84,6 +88,7 @@ all_inplace_funcs = [
     torch.sinc_,
     torch.sinh_,
     torch.trunc_,
+    torch.ceil_,
 ]
 
 
@@ -251,13 +256,32 @@ def test_neg(input_data, dtype):
     test.check_res()
 
 
+complex_input_data = [
+    {
+        "input": torch.randn(5, 3, dtype=torch.bfloat16)
+        + 1j * torch.randn(5, 3, dtype=torch.bfloat16)
+    },
+    {
+        "input": torch.randn(10, 5, 3, dtype=torch.float32)
+        + 1j * torch.randn(10, 5, 3, dtype=torch.float32)
+    },
+    {
+        "input": torch.randn(4096, 2048, dtype=torch.float64)
+        + 1j * torch.randn(4096, 2048, dtype=torch.float64)
+    },
+]
+
+
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@pytest.mark.parametrize("input_data", input_datas)
+@pytest.mark.parametrize("input_data", input_datas + complex_input_data)
 @pytest.mark.parametrize("dtype", all_dtypes)
 def test_neg_out(input_data, dtype):
     out = torch.tensor(np.array([]))
     input_args = {"input": input_data["input"], "out": out}
     function(input_args, dtype, torch.neg)
+
+
+# =================================== Test torch.neg end =================================== #
 
 
 # ============================ Test torch.nn.Threshold backward begin ========================== #
@@ -299,8 +323,6 @@ def test_threshold_backward_and_forward(input_data, dtype, threshold, value, tra
 
 
 # ============================ Test torch.nn.Threshold backward end ============================= #
-
-# =================================== Test torch.neg end =================================== #
 
 
 # =================================== Test nn functions begin =================================== #
@@ -443,7 +465,7 @@ def generate_inf_nan_tensor(shape, mode):
     assert mode in ["nan", "inf"]
     assert isinstance(shape, (list, tuple))
     value = float("nan") if mode == "nan" else float("inf")
-    t = torch.randn(shape)
+    t = torch.normal(5, 2, shape)
     if t.dim() == 4 and random.random() < 0.5:
         t = t.to(memory_format=torch.channels_last)
     mask = torch.rand(shape) < 0.5
@@ -468,7 +490,7 @@ def generate_inf_nan_tensor(shape, mode):
         generate_inf_nan_tensor((10, 9, 2, 2, 1, 4, 2, 1), "nan"),
     ],
 )
-@pytest.mark.parametrize("dtype", float_dtypes)
+@pytest.mark.parametrize("dtype", float_dtypes + integer_dtypes)
 def test_isnan(input_data, dtype):
     test = testing.OpTest(func=torch.isnan, input_args={"input": input_data.to(dtype)})
     test.check_result()
@@ -491,7 +513,7 @@ def test_isnan(input_data, dtype):
         generate_inf_nan_tensor((10, 9, 2, 2, 1, 4, 2, 1), "inf"),
     ],
 )
-@pytest.mark.parametrize("dtype", float_dtypes)
+@pytest.mark.parametrize("dtype", float_dtypes + integer_dtypes)
 def test_isinf(input_data, dtype):
     test = testing.OpTest(func=torch.isinf, input_args={"input": input_data.to(dtype)})
     test.check_result()

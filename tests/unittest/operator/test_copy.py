@@ -20,6 +20,10 @@ input_data = [
     {"input": torch.randn(10, 5, 3), "other": torch.randn(5, 3)},
     {"input": torch.randn(10, 5, 3), "other": torch.randn(3)},
     {"input": torch.randn(4096, 2048), "other": torch.randn(2048)},
+    {
+        "input": torch.randn(5, 3) + 1j * torch.randn(5, 3),
+        "other": torch.randn(5, 3) + 1j * torch.randn(5, 3),
+    },
 ]
 
 

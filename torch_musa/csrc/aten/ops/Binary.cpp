@@ -64,10 +64,10 @@
 
 #include <torch/library.h>
 
+#include <mudnn.h>
+#include "c10/core/ScalarType.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-
-#include <mudnn.h>
 
 namespace at {
 namespace musa {
@@ -227,6 +227,15 @@ void BinaryCall(
         other.device(),
         "!")
   };
+
+  if (m == BINARY_MODE::EQ) {
+    if ((self.scalar_type() == ScalarType::ComplexDouble) ||
+        (self.scalar_type() == ScalarType::ComplexFloat)) {
+      auto iter = TensorIterator::comparison_op(output, self, other);
+      at::native::eq_stub(iter.device_type(), iter);
+      return;
+    }
+  }
 
   muHandle& h = GetMudnnHandle();
   if (self.numel() == 0 && other.numel() == 0) {

@@ -59,6 +59,10 @@ struct MUSAHooksInterface : PrivateUse1HooksInterface {
     return false;
   }
 
+  virtual bool hasMUSART() const {
+    return false;
+  }
+
   virtual DeviceIndex current_device() const {
     return -1;
   }

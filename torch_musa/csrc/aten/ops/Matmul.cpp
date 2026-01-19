@@ -159,6 +159,59 @@ at::Tensor VDot(const Tensor& l, const Tensor& r) {
 }
 // TODO: support vdot.out ops
 
+void BlasBGEMM(
+    const Tensor& l,
+    const Tensor& r,
+    Tensor& out,
+    const Scalar& alpha = 1,
+    const Scalar& beta = 0) {
+  // blas use column major
+  TORCH_CHECK(out.is_contiguous(), "out tensor needs to be contiguous");
+  // (m, k) x (k, n) ---> (m, n)
+  // (n, k) x (k, m) ---> (n, m)
+  int64_t batch = l.size(0);
+  int64_t m = out.size(1);
+  int64_t n = out.size(2);
+  int64_t k = l.size(2);
+
+  bool lT = (l.stride(1) == 1 && l.stride(2) == l.size(1));
+  bool rT = (r.stride(1) == 1 && r.stride(2) == r.size(1));
+
+  char transl = lT ? 't' : 'n';
+  char transr = rT ? 't' : 'n';
+
+  auto ldl = lT ? l.stride(2) : l.stride(1);
+  auto ldr = rT ? r.stride(2) : r.stride(1);
+
+  int64_t stridel = l.stride(0);
+  int64_t strider = r.stride(0);
+  int64_t stridec = out.stride(0);
+
+  AT_DISPATCH_FLOATING_AND_COMPLEX_TYPES(
+      out.scalar_type(), "musaBlasBGEMM", [&] {
+        const auto alpha_value = alpha.to<scalar_t>();
+        const auto beta_value = beta.to<scalar_t>();
+        at::musa::blas::bgemm(
+            transr,
+            transl,
+            n,
+            m,
+            k,
+            alpha_value,
+            r.const_data_ptr<scalar_t>(),
+            ldr,
+            strider,
+            l.const_data_ptr<scalar_t>(),
+            ldl,
+            stridel,
+            beta_value,
+            out.data_ptr<scalar_t>(),
+            n,
+            stridec,
+            batch);
+      });
+}
+
 void BlasGEMM(
     const Tensor& l,
     const Tensor& r,
@@ -167,34 +220,39 @@ void BlasGEMM(
     const Scalar& alpha = 1,
     const Scalar& beta = 0) {
   // blas use column major
-  TORCH_CHECK(l.is_contiguous(), "left hand tensor needs to be contiguous");
-  TORCH_CHECK(r.is_contiguous(), "right hand tensor needs to be contiguous");
   TORCH_CHECK(out.is_contiguous(), "out tensor needs to be contiguous");
-
+  bool l_is_transposed = (l.stride(0) == 1) && (l.stride(1) == l.size(0));
+  bool r_is_transposed = (r.stride(0) == 1) && (r.stride(1) == r.size(0));
   // (m, k) x (k, n) ---> (m, n)
   // (n, k) x (k, m) ---> (n, m)
+  char transB = l_is_transposed ? 't' : 'n';
+  char transA = r_is_transposed ? 't' : 'n';
   int64_t m = out.size(0);
   int64_t n = out.size(1);
   int64_t k = l.size(1);
 
-  AT_DISPATCH_FLOATING_TYPES(out.scalar_type(), "musaBlasGEMM", [&] {
-    const auto alpha_value = alpha.to<scalar_t>();
-    const auto beta_value = beta.to<scalar_t>();
-    at::musa::blas::gemm(
-        'n',
-        'n',
-        n,
-        m,
-        k,
-        alpha_value,
-        r.const_data_ptr<scalar_t>(),
-        n,
-        l.const_data_ptr<scalar_t>(),
-        k,
-        beta_value,
-        out.data_ptr<scalar_t>(),
-        n);
-  });
+  auto ldb = l_is_transposed ? l.stride(1) : l.stride(0);
+  auto lda = r_is_transposed ? r.stride(1) : r.stride(0);
+
+  AT_DISPATCH_FLOATING_AND_COMPLEX_TYPES(
+      out.scalar_type(), "musaBlasGEMM", [&] {
+        const auto alpha_value = alpha.to<scalar_t>();
+        const auto beta_value = beta.to<scalar_t>();
+        at::musa::blas::gemm(
+            transA,
+            transB,
+            n,
+            m,
+            k,
+            alpha_value,
+            r.const_data_ptr<scalar_t>(),
+            lda,
+            l.const_data_ptr<scalar_t>(),
+            ldb,
+            beta_value,
+            out.data_ptr<scalar_t>(),
+            n);
+      });
 }
 
 void MmCall(
@@ -420,7 +478,9 @@ Tensor& MmOut(const Tensor& self, const Tensor& mat2, Tensor& out) {
       self.dim() == 2 && mat2.dim() == 2 && self.size(1) == mat2.size(0),
       "self and mat2 must be a matrix and self_shape[1] must equal to "
       "mat2_shape[0]");
-  if (out.scalar_type() == ScalarType::Double) {
+  if (out.scalar_type() == ScalarType::Double ||
+      out.scalar_type() == ScalarType::ComplexFloat ||
+      out.scalar_type() == ScalarType::ComplexDouble) {
     BlasGEMM(self, mat2, c10::nullopt, out);
   } else {
     MmCall(self, mat2, c10::nullopt, out);
@@ -461,7 +521,12 @@ Tensor& BmmOut(const Tensor& self, const Tensor& mat2, Tensor& out) {
       self.size(0) == mat2.size(0) && self.size(2) == mat2.size(1),
       "self_shape[0] must equal to mat2_shape[0], and self_shape[2] "
       "must equal to mat2_shape[1]");
-  BmmCall(self, mat2, out);
+  if (out.scalar_type() == ScalarType::ComplexFloat ||
+      out.scalar_type() == ScalarType::ComplexDouble) {
+    BlasBGEMM(self, mat2, out);
+  } else {
+    BmmCall(self, mat2, out);
+  }
   return out;
 }
 

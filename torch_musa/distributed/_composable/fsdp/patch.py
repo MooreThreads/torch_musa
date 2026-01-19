@@ -1,123 +1,43 @@
-"""Patch for FSDP module"""
+"""Patches for FSDP2 module"""
 
-# pylint: disable=W0613,C0301
+# pylint: disable=W0613,C0301,E1121,C0415,C0103
 
-import os
 from typing import (
     Optional,
     List,
+    Any,
 )
+import warnings
+
+# from enum import Enum
 from functools import wraps
 import torch
 import torch.distributed as dist
+import torch._dynamo.compiled_autograd as ca
 from torch.profiler import record_function
-from torch.distributed.device_mesh import init_device_mesh, DeviceMesh
-from torch.distributed.fsdp import fully_shard
+from torch.distributed.fsdp._fully_shard import fully_shard
 from torch.distributed.fsdp._fully_shard._fsdp_param_group import (
-    FSDPCommContext,
     FSDPParamGroup,
+    logger,
 )
 from torch.distributed.fsdp._fully_shard._fsdp_collectives import (
     foreach_all_gather_copy_out,
     _get_param_all_gather_inputs,
     _get_all_gather_input_metadatas,
     AllGatherResult,
+    foreach_reduce,
 )
 from torch.distributed.fsdp._fully_shard._fsdp_param import FSDPParam
+from torch.distributed.fsdp._fully_shard._fsdp_common import TrainingState
+
 
 __all__ = ["_apply_fsdp2_patches"]
 
-# set this flag to False will disable the chances of overlap below:
-#
-# overlap allgather-copy-in with forward compute and reduce-scatter
-# overlap allgather with foward/backward computation
-# overlap reduce-scatter with backward computation
-# overlap with all-gather/reduce-scatter/backward computation
-_TORCH_MUSA_FSDP2_DISABLE_OVERLAP = False
 
-
-def _init_default_fully_shard_mesh() -> DeviceMesh:
-    """Default to global MUSA mesh if possible else global CPU mesh."""
-    if not dist.distributed_c10d.is_initialized():
-        dist.distributed_c10d.init_process_group()
-    default_pg = dist.distributed_c10d._get_default_group()
-    device_type = "musa" if torch.musa.is_available() else "cpu"
-    mesh = init_device_mesh(device_type, mesh_shape=(default_pg.size(),))
-    return mesh
-
-
-def comm_context_lazy_init(self, device: torch.device):
-    """set streams used by all-gather-copy-in, all-gather, reduce_scatter
-    and all_reduce to current_stream.
+# _fsdp_param_group.py
+def wait_for_unshard_non_overlap(self):
     """
-    assert device.type == torch._C._get_privateuse1_backend_name()
-    if not torch.musa.is_available():
-        raise RuntimeError("FSDP requires MUSA for streams")
-
-    if _TORCH_MUSA_FSDP2_DISABLE_OVERLAP:
-        current_stream = torch.musa.current_stream()
-        self.all_gather_copy_in_stream = current_stream
-        self.all_gather_stream = current_stream
-        self.reduce_scatter_stream = current_stream
-        self.all_reduce_stream = current_stream
-    else:
-        # Setting the all-gather/reduce-scatter streams to be higher priority
-        # can help avoid some issues where their copies in/out are delayed and
-        # block computation (this is different from high-pri MCCL streams)
-        high_priority = -1
-        # All-gather state and copy-in stream allow overlapping the next
-        # copy-in with the current all-gather in forward; copy-in overlaps with
-        # reduce-scatter in backward without the separate copy-in stream
-        self.all_gather_copy_in_stream = torch.musa.Stream(priority=high_priority)
-        # All-gather stream allows overlapping next all-gather with current
-        # forward compute
-        self.all_gather_stream = torch.musa.Stream(priority=high_priority)
-        # Reduce-scatter stream gives separate execution "thread" for post-
-        # backward logic like pre/post-gradient division and reduce-scatter
-        self.reduce_scatter_stream = torch.musa.Stream(priority=high_priority)
-        # Run the HSDP all-reduces concurrently with all-gather/reduce-scatter
-        # since collectives use different network resources and can overlap
-        # in the typical intra-node sharding / inter-node replication case
-        self.all_reduce_stream = torch.musa.Stream()
-
-    # All-gather/reduce-scatter states keep references to collective
-    # tensors produced in one stream and used in another and accompanying
-    # MUSA events for synchronization
-    self.all_gather_state: Optional[AllGatherState] = None
-    self.reduce_scatter_state: Optional[ReduceScatterState] = None
-    # Post-forward order for explicit backward prefetching
-    self.post_forward_order: List[FSDPParamGroup] = []  # will cause ref cycles
-
-
-def unshard(self, async_op: bool = False):
-    """all-gather the fsdp params"""
-    if self._all_gather_result is not None:  # already called, pending wait
-        return
-    if self.is_unsharded:
-        return  # no-op
-    if self._reshard_after_forward_event is not None:
-        # Resharded parameter data is allocated in the default stream and
-        # used in the all-gather streams
-        self._wait_all_gather_streams_on_event(self._reshard_after_forward_event)
-        self._reshard_after_forward_event = None
-    with record_function(self._with_fqn("FSDP::all_gather")):
-        self._all_gather_result = foreach_all_gather(
-            self.fsdp_params,
-            self._all_gather_process_group,
-            async_op,
-            *self.comm_ctx.get_all_gather_streams(async_op, self._training_state),
-            self.device,
-        )
-
-
-def wait_for_unshard(self):
-    """
-    1. In forward with implict prefetching, to overlap the current copy-out
-    with the next all-gather, we save a reference to the current all-gather
-    result to free after the next copy-out.
-    2. Otherwise (explicit prefetching or in backward), we free the
-    all-gather result immediately after the current copy-out since we can
-    already overlap the current copy-out with the previous reduce-scatter.
+    the stream syncs at python side were removed in non overlap case
     """
     if not self._all_gather_result:
         return  # no preceding unshard
@@ -132,28 +52,102 @@ def wait_for_unshard(self):
         fsdp_param.init_unsharded_param()
     self._to_unsharded()
 
-    # [NOTE] Why save a reference of _all_gather_result in FORWARD ?
-    # allgather and copy-out already use different streams
+    # free memory used by all-gather output
     self._all_gather_result = None  # free unless saved in `all_gather_state`
+
+
+# _fsdp_param_group.py
+def post_backward_non_overlap(self, *unused: Any):
+    """post_backward will be used in non overlap case"""
+    if not ca.compiled_autograd_enabled:
+        logger.debug("%s", self._with_fqn("FSDP::post_backward"))
+    self._traing_state = TrainingState.POST_BACKWARD
+    with record_function(self._with_fqn("FSDP::post_backward_accumulate")):
+        for fsdp_param in self.fsdp_params:
+            fsdp_param.accumulate_unsharded_grad_if_needed()
+    with record_function(self._with_fqn("FSDP::post_backward_reshard")):
+        if not self.reduce_grads:
+            if self.reshard_after_backward:
+                self.reshard()
+            for fsdp_param in self.fsdp_params:
+                fsdp_param.to_accumulated_grad_if_needed()
+            return
+        # Save the autograd-computed gradients before resharding to only
+        # access the unsharded parameters when their data is present
+        fsdp_params_with_grad: List[FSDPParam] = []
+        unsharded_grads: List[torch.Tensor] = []
+        for fsdp_param in self.fsdp_params:
+            # May have an accumulated gradient of the reduce dtype if the
+            # previous backward did not reduce-scatter
+            if fsdp_param.unsharded_accumulated_grad is not None:
+                fsdp_params_with_grad.append(fsdp_param)
+                unsharded_grads.append(fsdp_param.unsharded_accumulated_grad_data)
+                fsdp_param.unsharded_accumulated_grad = None
+            elif fsdp_param.unsharded_param.grad is not None:
+                fsdp_params_with_grad.append(fsdp_param)
+                unsharded_grads.append(fsdp_param.unsharded_grad_data)
+                fsdp_param.unsharded_param.grad = None
+        if self.reshard_after_backward:
+            self.reshard()
+    if len(fsdp_params_with_grad) == 0:
+        return
+    with record_function(self._with_fqn("FSDP::post_backward_reduce")):
+        # See [Note: Unset reduce_scatter_state]
+        # if self.comm_ctx.reduce_scatter_state is not None:
+        #     torch.cuda.current_stream().wait_event(
+        #         self.comm_ctx.reduce_scatter_state.event
+        #     )
+        #     self.comm_ctx.reduce_scatter_state = None
+        (
+            _,
+            _,
+            self._post_reduce_event,
+            _,
+            _,
+            self._partial_reduce_output,
+        ) = foreach_reduce(
+            fsdp_params_with_grad,
+            unsharded_grads,
+            self._reduce_scatter_process_group,
+            self.comm_ctx.reduce_scatter_stream,
+            self._reduce_scatter_comm,
+            self._orig_dtype,
+            self._reduce_dtype,
+            self.device,
+            self.reduce_scatter_reduce_op,
+            self._all_reduce_process_group if self._is_hsdp else None,
+            self.comm_ctx.all_reduce_stream,
+            self.all_reduce_grads,
+            self._partial_reduce_output,
+            self._all_reduce_hook,
+        )
+        # [Note: Unset reduce_scatter_state]
+        # the reduce-scatter input is allocated in current_stream and used in
+        # reduce_scatter comm stream, but in FSDP2OverlapLevel.NO_OVERLAP case
+        # its memory is safe to be reused for the later computations in current_stream,
+        # so we don't need to hold reference and use MUSA events for synchronization here.
+        # self.comm_ctx.reduce_scatter_state = ReduceScatterState(
+        #     reduce_scatter_input, reduce_scatter_event
+        # )
 
 
 # _fsdp_collectives.py
 @torch.no_grad()
-def foreach_all_gather(
+def foreach_all_gather_non_overlap(
     fsdp_params: List[FSDPParam],
     group: dist.ProcessGroup,
     async_op: bool,
     all_gather_copy_in_stream: None,
     all_gather_stream: None,
     device: torch.device,
+    all_gather_comm: None,
 ) -> Optional[AllGatherResult]:
-    """foreach_all_gather
-
-    TODO: maybe we can avoid step by step all-gather in non-overlap case
+    """
+    the stream syncs at python side were removed in non overlap case, we
+    are using current_stream in this case.
     """
     world_size, rank = group.size(), group.rank()
 
-    # TODO: maybe we can reduce once memory allocation if no overlapping
     param_all_gather_inputs = _get_param_all_gather_inputs(fsdp_params)
     (
         param_all_gather_input_dtypes,
@@ -169,24 +163,27 @@ def foreach_all_gather(
 
     inp_split_sizes = [t.numel() for t in all_gather_inputs]
     all_gather_input_numel = sum(inp_split_sizes)
+    all_gather_output = all_gather_comm.allocate(
+        (all_gather_input_numel * world_size,), dtype=dtype, device=device
+    )
     all_gather_input, all_gather_output = torch.ops.fsdp.all_gather_copy_in(
         all_gather_inputs,
+        all_gather_output,
         inp_split_sizes,
         all_gather_input_numel,
-        world_size,
         rank,
-        dtype,
-        device,
     )
+    # safe to free, all-gather comm stream will wait copy-in finish
     del param_all_gather_inputs
 
-    all_gather_work = dist.all_gather_into_tensor(
+    all_gather_work = all_gather_comm(
         output_tensor=all_gather_output,
         input_tensor=all_gather_input,
         group=group,
         async_op=async_op,
     )
-    all_gather_event = None  # set to None if default stream
+    # all-gather copy-in/copy-out both using current_stream, just set all_gather_event to None
+    all_gather_event = None
     return AllGatherResult(
         all_gather_output,
         all_gather_event,
@@ -206,33 +203,28 @@ def _setup_fsdp2_patches():
     Why use lazy patches here ?
     To avoid the initialization of musa state caused by _get_musa_arch during import torch_musa.
     """
-    global _TORCH_MUSA_FSDP2_DISABLE_OVERLAP
+
+    from .custom_overlap_patch import (
+        _apply_custom_overlap_patch,
+        FSDP2OverlapLevel,
+        _FSDP2_OVERLAP_LEVEL,
+    )
+
+    _apply_custom_overlap_patch()
 
     if torch.musa.core._utils._get_musa_arch() < 31:
-        # disable the overlap between the computations and communications by default
-        _TORCH_MUSA_FSDP2_DISABLE_OVERLAP = (
-            os.environ.get("TORCH_MUSA_FSDP2_DISABLE_OVERLAP", "1") == "1"
+        _FSDP2_OVERLAP_LEVEL = FSDP2OverlapLevel.NO_OVERLAP
+        warnings.warn(
+            "The overlapping of FSDP2 was disabled on musa arch older than mp_31"
         )
-    else:
-        # enable the overlap between the computations and communications by default
-        _TORCH_MUSA_FSDP2_DISABLE_OVERLAP = (
-            os.environ.get("TORCH_MUSA_FSDP2_DISABLE_OVERLAP", "0") == "1"
-        )
-    if _TORCH_MUSA_FSDP2_DISABLE_OVERLAP:
+
+    if _FSDP2_OVERLAP_LEVEL == FSDP2OverlapLevel.NO_OVERLAP:
+        #
         torch.distributed.fsdp._fully_shard._fsdp_collectives.foreach_all_gather.__code__ = (
-            foreach_all_gather.__code__
+            foreach_all_gather_non_overlap.__code__
         )
-        FSDPParamGroup.unshard = unshard
-        FSDPParamGroup.wait_for_unshard = wait_for_unshard
-
-    # we always patch this now, cause we havn't monkey-patch torch.cuda.is_available()
-    # move this into scope above after PT2.6 landed
-    FSDPCommContext.lazy_init = comm_context_lazy_init
-
-    # _init_default_fully_shard_mesh is referenced by `fully_shard()`, so just replace __code__ here
-    torch.distributed.fsdp._fully_shard._fsdp_init._init_default_fully_shard_mesh.__code__ = (
-        _init_default_fully_shard_mesh.__code__
-    )
+        FSDPParamGroup.wait_for_unshard = wait_for_unshard_non_overlap
+        FSDPParamGroup.post_backward = post_backward_non_overlap
 
 
 def monkey_patched_fully_shard(fully_shard_func):
@@ -251,12 +243,4 @@ def monkey_patched_fully_shard(fully_shard_func):
 
 
 def _apply_fsdp2_patches():
-    torch.cuda.Stream = torch.musa.Stream
-    torch.cuda.current_device = torch.musa.current_device
-    torch.cuda.current_stream = torch.musa.current_stream
-    torch.cuda.set_stream = torch.musa.set_stream
-    torch.cuda.Event = torch.musa.Event
-
-    torch.distributed.fsdp.fully_shard = monkey_patched_fully_shard(
-        fully_shard
-    )
+    torch.distributed.fsdp.fully_shard = monkey_patched_fully_shard(fully_shard)

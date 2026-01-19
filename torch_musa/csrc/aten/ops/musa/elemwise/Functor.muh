@@ -1,0 +1,129 @@
+#ifndef TORCH_MUSA_CSRC_ATEN_OPS_MUSA_ELEMWISE_FUNCTOR_MUH_
+#define TORCH_MUSA_CSRC_ATEN_OPS_MUSA_ELEMWISE_FUNCTOR_MUH_
+
+#include <type_traits>
+
+#include <c10/core/ScalarType.h>
+
+namespace at::musa {
+
+template <typename scalar_t>
+struct device_scalar_base {
+  device_scalar_base(void* p) noexcept {
+    ptr = p;
+  }
+
+  __device__ operator scalar_t() const {
+    return val;
+  }
+
+  union {
+    void* ptr = nullptr;
+    scalar_t val;
+  };
+};
+
+template <typename scalar_t>
+struct device_scalar_nocast : device_scalar_base<scalar_t> {
+  using parent = device_scalar_base<scalar_t>;
+
+  device_scalar_nocast(void* ptr) noexcept : parent(ptr) {}
+
+  __device__ void load() {
+    auto v = *((scalar_t*)(this->ptr));
+    this->val = v;
+  }
+};
+
+template <typename scalar_t>
+struct device_scalar : device_scalar_base<scalar_t> {
+  using parent = device_scalar_base<scalar_t>;
+
+  ScalarType src_type_;
+
+  device_scalar(ScalarType src_type, void* ptr) noexcept
+      : parent(ptr), src_type_(src_type) {}
+
+  __device__ void load() {
+    auto v = c10::fetch_and_cast<scalar_t>(src_type_, this->ptr);
+    this->val = v;
+  }
+};
+
+template <typename T, typename = void>
+struct func_need_preload : std::false_type {};
+
+template <typename T>
+struct func_need_preload<T, std::void_t<decltype(std::declval<T>().load())>>
+    : std::true_type {};
+
+template <typename T>
+inline constexpr bool func_need_preload_v = func_need_preload<T>::value;
+
+namespace binary {
+
+// delegate from `binary` to `unary` function
+template <int idx, typename func_t>
+struct partial_nocast {
+  using traits = function_traits<func_t>;
+  using return_t = typename traits::result_type;
+  using arg1_t = std::tuple_element_t<idx, typename traits::ArgsTuple>;
+  using arg2_t = std::tuple_element_t<1 - idx, typename traits::ArgsTuple>;
+  using dev_arg_t = device_scalar_nocast<arg1_t>;
+
+  func_t f_;
+  dev_arg_t arg_;
+
+  partial_nocast(const func_t& f, void* ptr) : f_(f), arg_(ptr) {}
+
+  __device__ void load() {
+    if constexpr (func_need_preload_v<func_t>) {
+      f_.load();
+    }
+    arg_.load();
+  }
+
+  __device__ return_t operator()(arg2_t other) const {
+    if constexpr (idx == 0) {
+      return f_((arg1_t)arg_, other);
+    } else {
+      return f_(other, (arg1_t)arg_);
+    }
+  }
+};
+
+template <int idx, typename func_t>
+struct partial {
+  using traits = function_traits<func_t>;
+  using return_t = typename traits::result_type;
+  using arg1_t = std::tuple_element_t<idx, typename traits::ArgsTuple>;
+  using arg2_t = std::tuple_element_t<1 - idx, typename traits::ArgsTuple>;
+  using dev_arg_t = device_scalar<arg1_t>;
+
+  func_t f_;
+  dev_arg_t arg_;
+
+  partial(const func_t& f, ScalarType src_type, void* ptr)
+      : f_(f), arg_(src_type, ptr) {}
+
+  __device__ void load() {
+    if constexpr (func_need_preload_v<func_t>) {
+      f_.load();
+    }
+    arg_.load();
+  }
+
+  __device__ return_t operator()(arg2_t other) const {
+    if constexpr (idx == 0) {
+      return f_((arg1_t)arg_, other);
+    } else {
+      return f_(other, (arg1_t)arg_);
+    }
+  }
+};
+
+} // namespace binary
+
+} // namespace at::musa
+
+#endif // TORCH_MUSA_CSRC_ATEN_OPS_MUSA_ELEMWISE_FUNCTOR_MUH_

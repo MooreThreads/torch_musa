@@ -168,7 +168,7 @@ def test_normal_tensor_float(dtype):
     musa_out = torch.normal(mean.to("musa"), std)
     assert musa_out.shape == cpu_out.shape
     assert musa_out.dtype == mean.dtype
-    assert abs(musa_out.mean().cpu() - cpu_out.mean()) < 0.5
+    torch.allclose(musa_out.cpu(), cpu_out, atol=1e-5, rtol=1e-5)
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -180,7 +180,7 @@ def test_normal_float_tensor(dtype):
     musa_out = torch.normal(mean, std.to("musa"))
     assert musa_out.shape == cpu_out.shape
     assert musa_out.dtype == std.dtype
-    assert abs(musa_out.mean().cpu() - cpu_out.mean()) < 0.5
+    torch.allclose(musa_out.cpu(), cpu_out, atol=1e-5, rtol=1e-5)
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -192,7 +192,7 @@ def test_normal_tensor_tensor(dtype):
     musa_out = torch.normal(mean.to("musa"), std.to("musa"))
     assert musa_out.shape == cpu_out.shape
     assert musa_out.dtype == mean.dtype
-    assert abs(musa_out.mean().cpu() - cpu_out.mean()) < 0.5
+    torch.allclose(musa_out.cpu(), cpu_out, atol=1e-5, rtol=1e-5)
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -208,7 +208,23 @@ def test_normal_tensor_tensor_out(dtype):
     torch.normal(mean.to("musa"), std.to("musa"), out=out_musa)
 
     assert out_cpu.shape == out_musa.shape
-    assert abs(out_musa.mean().cpu() - out_cpu.mean()) < 0.5
+    torch.allclose(out_musa.cpu(), out_cpu, atol=1e-5, rtol=1e-5)
+
+
+@pytest.mark.parametrize("dtype", float_dtypes)
+def test_normal_tensor_float_out(dtype):
+    """Test normal distribution with tensor-float-out output."""
+    mean = torch.randn(128, dtype=dtype)
+    std = 1.5
+    out_cpu = torch.empty_like(mean)
+    out_musa = torch.empty_like(mean.to("musa"))
+
+    torch.normal(mean, std, out=out_cpu)
+    torch.normal(mean.to("musa"), std, out=out_musa)
+
+    assert out_musa.shape == out_cpu.shape
+    assert out_musa.dtype == mean.dtype
+    torch.allclose(out_musa.cpu(), out_cpu, atol=1e-5, rtol=1e-5)
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -224,15 +240,16 @@ def test_normal_float_tensor_out(dtype):
     torch.normal(mean, std.to("musa"), out=out_musa)
 
     assert out_cpu.shape == out_musa.shape
-    assert abs(out_musa.mean().cpu() - out_cpu.mean()) < 0.5
+    torch.allclose(out_musa.cpu(), out_cpu, atol=1e-5, rtol=1e-5)
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 def test__standard_gamma_grad():
     cpu_grad = torch._standard_gamma_grad(CPU_VAL, CPU_VAL_OUTPUT)
     dev_grad = torch._standard_gamma_grad(MUSA_VAL, MUSA_VAL_OUTPUT).cpu()
-    assert torch.allclose(cpu_grad, dev_grad, atol=1e-6, rtol=1e-5), \
-        "_standard_gamma_grad max diff too large"
+    assert torch.allclose(
+        cpu_grad, dev_grad, atol=1e-6, rtol=1e-5
+    ), "_standard_gamma_grad max diff too large"
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
@@ -246,8 +263,9 @@ def test__dirichlet_grad():
     cpu_grad = torch._dirichlet_grad(CPU_VAL, CPU_VAL_OUTPUT, CPU_TOTAL)
     dev_grad = torch._dirichlet_grad(MUSA_VAL, MUSA_VAL_OUTPUT, MUSA_TOTAL).cpu()
 
-    assert torch.allclose(cpu_grad, dev_grad, atol=1e-6, rtol=1e-5), \
-        "torch._dirichlet_grad failed on musa"
+    assert torch.allclose(
+        cpu_grad, dev_grad, atol=1e-6, rtol=1e-5
+    ), "torch._dirichlet_grad failed on musa"
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)

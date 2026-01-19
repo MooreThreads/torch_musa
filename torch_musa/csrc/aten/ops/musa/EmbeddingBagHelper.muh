@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ATen/native/EmbeddingBag.h>
 #include <float.h>
 #include <musa_fp16.h>
 #include <musa_runtime.h>
@@ -9,8 +10,6 @@
 
 namespace at {
 namespace native {
-
-enum class EmbeddingBagMode { SUM, MEAN, MAX };
 
 template <EmbeddingBagMode mode>
 struct ReduceOp;

@@ -23,6 +23,14 @@ class Context {
     return at::detail::getMUSAHooks().hasMUSA();
   }
 
+  static bool hasMUSART() {
+    return at::detail::getMUSAHooks().hasMUSART();
+  }
+
+  static bool checkMuBLASConfigDeterministic();
+
+  void alertMuBLASConfigNotDeterministic() const;
+
   void LazyInitMUSA() {
     c10::call_once(musa_init_, [&] { at::detail::getMUSAHooks().initMUSA(); });
   }

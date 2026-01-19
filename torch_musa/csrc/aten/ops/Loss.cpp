@@ -598,8 +598,10 @@ Tensor FusedCrossEntropyLoss2dFwd(
       break;
   }
 
-  muTensor in = CreateMUTensor(self.contiguous());
-  muTensor lab = CreateMUTensor(target.contiguous());
+  auto proxy_self = self.expect_contiguous(MemoryFormat::Contiguous);
+  auto proxy_target = target.expect_contiguous(MemoryFormat::Contiguous);
+  muTensor in = CreateMUTensor(*proxy_self);
+  muTensor lab = CreateMUTensor(*proxy_target);
   muTensor w = wt.numel() > 0 ? CreateMUTensor(wt) : muTensor();
   muTensor out = CreateMUTensor(output);
   CHECK_MUDNN_STATUS(loss.SetReductionMode(mode), "SetReductionMode");

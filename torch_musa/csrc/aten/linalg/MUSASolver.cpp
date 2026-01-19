@@ -294,6 +294,88 @@ void potrs<c10::complex<double>>(
 }
 
 template <>
+void potrsBatched<float>(
+    mublasHandle_t handle,
+    mublasFillMode_t uplo,
+    int n,
+    int nrhs,
+    float* Aarray[],
+    int lda,
+    float* Barray[],
+    int ldb,
+    int* info,
+    int batchSize) {
+  TORCH_MUSOLVER_CHECK(musolverDnSpotrsBatched(
+      handle, uplo, n, nrhs, Aarray, lda, Barray, ldb, info, batchSize));
+}
+
+template <>
+void potrsBatched<double>(
+    mublasHandle_t handle,
+    mublasFillMode_t uplo,
+    int n,
+    int nrhs,
+    double* Aarray[],
+    int lda,
+    double* Barray[],
+    int ldb,
+    int* info,
+    int batchSize) {
+  TORCH_MUSOLVER_CHECK(musolverDnDpotrsBatched(
+      handle, uplo, n, nrhs, Aarray, lda, Barray, ldb, info, batchSize));
+}
+
+template <>
+void potrsBatched<c10::complex<float>>(
+    mublasHandle_t handle,
+    mublasFillMode_t uplo,
+    int n,
+    int nrhs,
+    c10::complex<float>* Aarray[],
+    int lda,
+    c10::complex<float>* Barray[],
+    int ldb,
+    int* info,
+    int batchSize) {
+  TORCH_MUSOLVER_CHECK(musolverDnCpotrsBatched(
+      handle,
+      uplo,
+      n,
+      nrhs,
+      reinterpret_cast<muComplex**>(Aarray),
+      lda,
+      reinterpret_cast<muComplex**>(Barray),
+      ldb,
+      info,
+      batchSize));
+}
+
+template <>
+void potrsBatched<c10::complex<double>>(
+    mublasHandle_t handle,
+    mublasFillMode_t uplo,
+    int n,
+    int nrhs,
+    c10::complex<double>* Aarray[],
+    int lda,
+    c10::complex<double>* Barray[],
+    int ldb,
+    int* info,
+    int batchSize) {
+  TORCH_MUSOLVER_CHECK(musolverDnZpotrsBatched(
+      handle,
+      uplo,
+      n,
+      nrhs,
+      reinterpret_cast<muDoubleComplex**>(Aarray),
+      lda,
+      reinterpret_cast<muDoubleComplex**>(Barray),
+      ldb,
+      info,
+      batchSize));
+}
+
+template <>
 void getrs<double>(
     mublasHandle_t handle,
     int n,
@@ -432,4 +514,412 @@ void potrfBatched<c10::complex<double>>(
       info,
       batchSize));
 }
+
+#if defined(REAL_MUSA_VERSION) && (REAL_MUSA_VERSION < 5010)
+template <>
+void geqrf_bufferSize<float>(MUSASOLVER_GEQRF_BUFFERSIZE_ARGTYPES(float)) {
+  TORCH_MUSOLVER_CHECK(musolverDnSgeqrf_bufferSize(m, n, lwork));
+}
+
+template <>
+void geqrf_bufferSize<double>(MUSASOLVER_GEQRF_BUFFERSIZE_ARGTYPES(double)) {
+  TORCH_MUSOLVER_CHECK(musolverDnDgeqrf_bufferSize(m, n, lwork));
+}
+
+template <>
+void geqrf_bufferSize<c10::complex<float>>(
+    MUSASOLVER_GEQRF_BUFFERSIZE_ARGTYPES(c10::complex<float>)) {
+  TORCH_MUSOLVER_CHECK(musolverDnCgeqrf_bufferSize(m, n, lwork));
+}
+
+template <>
+void geqrf_bufferSize<c10::complex<double>>(
+    MUSASOLVER_GEQRF_BUFFERSIZE_ARGTYPES(c10::complex<double>)) {
+  TORCH_MUSOLVER_CHECK(musolverDnZgeqrf_bufferSize(m, n, lwork));
+}
+
+template <>
+void geqrf<float>(MUSASOLVER_GEQRF_ARGTYPES(float)) {
+  TORCH_MUSOLVER_CHECK(musolverDnSgeqrf(handle, m, n, dA, lda, ipiv, buffer));
+}
+
+template <>
+void geqrf<double>(MUSASOLVER_GEQRF_ARGTYPES(double)) {
+  TORCH_MUSOLVER_CHECK(musolverDnDgeqrf(handle, m, n, dA, lda, ipiv, buffer));
+}
+
+template <>
+void geqrf<c10::complex<float>>(
+    MUSASOLVER_GEQRF_ARGTYPES(c10::complex<float>)) {
+  TORCH_MUSOLVER_CHECK(musolverDnCgeqrf(
+      handle,
+      m,
+      n,
+      reinterpret_cast<muComplex*>(dA),
+      lda,
+      reinterpret_cast<muComplex*>(ipiv),
+      buffer));
+}
+
+template <>
+void geqrf<c10::complex<double>>(
+    MUSASOLVER_GEQRF_ARGTYPES(c10::complex<double>)) {
+  TORCH_MUSOLVER_CHECK(musolverDnZgeqrf(
+      handle,
+      m,
+      n,
+      reinterpret_cast<muDoubleComplex*>(dA),
+      lda,
+      reinterpret_cast<muDoubleComplex*>(ipiv),
+      buffer));
+}
+
+template <>
+void orgqr_buffersize<float>(int m, int n, int k, size_t* lwork) {
+  TORCH_MUSOLVER_CHECK(musolverDnSorgqr_bufferSize(m, n, k, lwork));
+}
+
+template <>
+void orgqr_buffersize<double>(int m, int n, int k, size_t* lwork) {
+  TORCH_MUSOLVER_CHECK(musolverDnDorgqr_bufferSize(m, n, k, lwork));
+}
+
+template <>
+void orgqr_buffersize<c10::complex<float>>(int m, int n, int k, size_t* lwork) {
+  TORCH_MUSOLVER_CHECK(musolverDnCungqr_bufferSize(m, n, k, lwork));
+}
+
+template <>
+void orgqr_buffersize<c10::complex<double>>(
+    int m,
+    int n,
+    int k,
+    size_t* lwork) {
+  TORCH_MUSOLVER_CHECK(musolverDnZungqr_bufferSize(m, n, k, lwork));
+}
+
+template <>
+void orgqr<float>(MUSASOLVER_ORGQR_ARGTYPES(float)) {
+  TORCH_MUSOLVER_CHECK(musolverDnSorgqr(handle, m, n, k, A, lda, ipiv, buffer));
+}
+
+template <>
+void orgqr<double>(MUSASOLVER_ORGQR_ARGTYPES(double)) {
+  TORCH_MUSOLVER_CHECK(musolverDnDorgqr(handle, m, n, k, A, lda, ipiv, buffer));
+}
+
+template <>
+void orgqr<c10::complex<float>>(
+    MUSASOLVER_ORGQR_ARGTYPES(c10::complex<float>)) {
+  TORCH_MUSOLVER_CHECK(musolverDnCungqr(
+      handle,
+      m,
+      n,
+      k,
+      reinterpret_cast<muComplex*>(A),
+      lda,
+      reinterpret_cast<muComplex*>(ipiv),
+      buffer));
+}
+
+template <>
+void orgqr<c10::complex<double>>(
+    MUSASOLVER_ORGQR_ARGTYPES(c10::complex<double>)) {
+  TORCH_MUSOLVER_CHECK(musolverDnZungqr(
+      handle,
+      m,
+      n,
+      k,
+      reinterpret_cast<muDoubleComplex*>(A),
+      lda,
+      reinterpret_cast<muDoubleComplex*>(ipiv),
+      buffer));
+}
+
+template <>
+void ormqr<float>(MUSASOLVER_ORMQR_ARGTYPES(float)) {
+  TORCH_MUSOLVER_CHECK(
+      musolverDnSormqr(handle, side, trans, m, n, k, A, lda, ipiv, C, ldc));
+}
+
+template <>
+void ormqr<double>(MUSASOLVER_ORMQR_ARGTYPES(double)) {
+  TORCH_MUSOLVER_CHECK(
+      musolverDnDormqr(handle, side, trans, m, n, k, A, lda, ipiv, C, ldc));
+}
+
+template <>
+void ormqr<c10::complex<float>>(
+    MUSASOLVER_ORMQR_ARGTYPES(c10::complex<float>)) {
+  TORCH_MUSOLVER_CHECK(musolverDnCunmqr(
+      handle,
+      side,
+      trans,
+      m,
+      n,
+      k,
+      reinterpret_cast<muComplex*>(A),
+      lda,
+      reinterpret_cast<muComplex*>(ipiv),
+      reinterpret_cast<muComplex*>(C),
+      ldc));
+}
+
+template <>
+void ormqr<c10::complex<double>>(
+    MUSASOLVER_ORMQR_ARGTYPES(c10::complex<double>)) {
+  TORCH_MUSOLVER_CHECK(musolverDnZunmqr(
+      handle,
+      side,
+      trans,
+      m,
+      n,
+      k,
+      reinterpret_cast<muDoubleComplex*>(A),
+      lda,
+      reinterpret_cast<muDoubleComplex*>(ipiv),
+      reinterpret_cast<muDoubleComplex*>(C),
+      ldc));
+}
+
+#else
+template <>
+void geqrf_bufferSize<float>(MUSASOLVER_GEQRF_BUFFERSIZE_ARGTYPES(float)) {
+  TORCH_MUSOLVER_CHECK(
+      musolverDnSgeqrf_bufferSize(handle, m, n, A, lda, lwork));
+}
+
+template <>
+void geqrf_bufferSize<double>(MUSASOLVER_GEQRF_BUFFERSIZE_ARGTYPES(double)) {
+  TORCH_MUSOLVER_CHECK(
+      musolverDnDgeqrf_bufferSize(handle, m, n, A, lda, lwork));
+}
+
+template <>
+void geqrf_bufferSize<c10::complex<float>>(
+    MUSASOLVER_GEQRF_BUFFERSIZE_ARGTYPES(c10::complex<float>)) {
+  TORCH_MUSOLVER_CHECK(musolverDnCgeqrf_bufferSize(
+      handle, m, n, reinterpret_cast<muComplex*>(A), lda, lwork));
+}
+
+template <>
+void geqrf_bufferSize<c10::complex<double>>(
+    MUSASOLVER_GEQRF_BUFFERSIZE_ARGTYPES(c10::complex<double>)) {
+  TORCH_MUSOLVER_CHECK(musolverDnZgeqrf_bufferSize(
+      handle, m, n, reinterpret_cast<muDoubleComplex*>(A), lda, lwork));
+}
+
+template <>
+void geqrf<float>(MUSASOLVER_GEQRF_ARGTYPES(float)) {
+  TORCH_MUSOLVER_CHECK(
+      musolverDnSgeqrf(handle, m, n, A, lda, tau, work, lwork, devInfo));
+}
+
+template <>
+void geqrf<double>(MUSASOLVER_GEQRF_ARGTYPES(double)) {
+  TORCH_MUSOLVER_CHECK(
+      musolverDnDgeqrf(handle, m, n, A, lda, tau, work, lwork, devInfo));
+}
+
+template <>
+void geqrf<c10::complex<float>>(
+    MUSASOLVER_GEQRF_ARGTYPES(c10::complex<float>)) {
+  TORCH_MUSOLVER_CHECK(musolverDnCgeqrf(
+      handle,
+      m,
+      n,
+      reinterpret_cast<muComplex*>(A),
+      lda,
+      reinterpret_cast<muComplex*>(tau),
+      reinterpret_cast<muComplex*>(work),
+      lwork,
+      devInfo));
+}
+
+template <>
+void geqrf<c10::complex<double>>(
+    MUSASOLVER_GEQRF_ARGTYPES(c10::complex<double>)) {
+  TORCH_MUSOLVER_CHECK(musolverDnZgeqrf(
+      handle,
+      m,
+      n,
+      reinterpret_cast<muDoubleComplex*>(A),
+      lda,
+      reinterpret_cast<muDoubleComplex*>(tau),
+      reinterpret_cast<muDoubleComplex*>(work),
+      lwork,
+      devInfo));
+}
+
+template <>
+void orgqr_buffersize<float>(MUSASOLVER_ORGQR_BUFFERSIZE_ARGTYPES(float)) {
+  TORCH_MUSOLVER_CHECK(
+      musolverDnSorgqr_bufferSize(handle, m, n, k, A, lda, tau, lwork));
+}
+
+template <>
+void orgqr_buffersize<double>(MUSASOLVER_ORGQR_BUFFERSIZE_ARGTYPES(double)) {
+  TORCH_MUSOLVER_CHECK(
+      musolverDnDorgqr_bufferSize(handle, m, n, k, A, lda, tau, lwork));
+}
+
+template <>
+void orgqr_buffersize<c10::complex<float>>(
+    MUSASOLVER_ORGQR_BUFFERSIZE_ARGTYPES(c10::complex<float>)) {
+  TORCH_MUSOLVER_CHECK(musolverDnCungqr_bufferSize(
+      handle,
+      m,
+      n,
+      k,
+      reinterpret_cast<const muComplex*>(A),
+      lda,
+      reinterpret_cast<const muComplex*>(tau),
+      lwork));
+}
+
+template <>
+void orgqr_buffersize<c10::complex<double>>(
+    MUSASOLVER_ORGQR_BUFFERSIZE_ARGTYPES(c10::complex<double>)) {
+  TORCH_MUSOLVER_CHECK(musolverDnZungqr_bufferSize(
+      handle,
+      m,
+      n,
+      k,
+      reinterpret_cast<const muDoubleComplex*>(A),
+      lda,
+      reinterpret_cast<const muDoubleComplex*>(tau),
+      lwork));
+}
+
+template <>
+void orgqr<float>(MUSASOLVER_ORGQR_ARGTYPES(float)) {
+  TORCH_MUSOLVER_CHECK(
+      musolverDnSorgqr(handle, m, n, k, A, lda, tau, work, lwork, devInfo));
+}
+
+template <>
+void orgqr<double>(MUSASOLVER_ORGQR_ARGTYPES(double)) {
+  TORCH_MUSOLVER_CHECK(
+      musolverDnDorgqr(handle, m, n, k, A, lda, tau, work, lwork, devInfo));
+}
+
+template <>
+void orgqr<c10::complex<float>>(
+    MUSASOLVER_ORGQR_ARGTYPES(c10::complex<float>)) {
+  TORCH_MUSOLVER_CHECK(musolverDnCungqr(
+      handle,
+      m,
+      n,
+      k,
+      reinterpret_cast<muComplex*>(A),
+      lda,
+      reinterpret_cast<muComplex*>(tau),
+      reinterpret_cast<muComplex*>(work),
+      lwork,
+      devInfo));
+}
+
+template <>
+void orgqr<c10::complex<double>>(
+    MUSASOLVER_ORGQR_ARGTYPES(c10::complex<double>)) {
+  TORCH_MUSOLVER_CHECK(musolverDnZungqr(
+      handle,
+      m,
+      n,
+      k,
+      reinterpret_cast<muDoubleComplex*>(A),
+      lda,
+      reinterpret_cast<muDoubleComplex*>(tau),
+      reinterpret_cast<muDoubleComplex*>(work),
+      lwork,
+      devInfo));
+}
+
+template <>
+void ormqr_buffersize<float>(MUSASOLVER_ORMQR_BUFFERSIZE_ARGTYPES_REAL(float)) {
+  TORCH_MUSOLVER_CHECK(musolverDnSormqr_bufferSize(
+      handle, side, trans, m, n, k, A, lda, tau, C, ldc, lwork));
+}
+
+template <>
+void ormqr_buffersize<double>(
+    MUSASOLVER_ORMQR_BUFFERSIZE_ARGTYPES_REAL(double)) {
+  TORCH_MUSOLVER_CHECK(musolverDnDormqr_bufferSize(
+      handle, side, trans, m, n, k, A, lda, tau, C, ldc, lwork));
+}
+
+template <>
+void ormqr<float>(MUSASOLVER_ORMQR_ARGTYPES(float)) {
+  TORCH_MUSOLVER_CHECK(musolverDnSormqr(
+      handle,
+      side,
+      trans,
+      m,
+      n,
+      k,
+      A,
+      lda,
+      ipiv,
+      C,
+      ldc,
+      buffer,
+      lwork,
+      devInfo));
+}
+
+template <>
+void ormqr<double>(MUSASOLVER_ORMQR_ARGTYPES(double)) {
+  TORCH_MUSOLVER_CHECK(musolverDnDormqr(
+      handle,
+      side,
+      trans,
+      m,
+      n,
+      k,
+      A,
+      lda,
+      ipiv,
+      C,
+      ldc,
+      buffer,
+      lwork,
+      devInfo));
+}
+
+template <>
+void ormqr<c10::complex<float>>(
+    MUSASOLVER_ORMQR_ARGTYPES(c10::complex<float>)) {
+  TORCH_MUSOLVER_CHECK(musolverDnCunmqr(
+      handle,
+      side,
+      trans,
+      m,
+      n,
+      k,
+      reinterpret_cast<muComplex*>(A),
+      lda,
+      reinterpret_cast<muComplex*>(ipiv),
+      reinterpret_cast<muComplex*>(C),
+      ldc));
+}
+
+template <>
+void ormqr<c10::complex<double>>(
+    MUSASOLVER_ORMQR_ARGTYPES(c10::complex<double>)) {
+  TORCH_MUSOLVER_CHECK(musolverDnZunmqr(
+      handle,
+      side,
+      trans,
+      m,
+      n,
+      k,
+      reinterpret_cast<muDoubleComplex*>(A),
+      lda,
+      reinterpret_cast<muDoubleComplex*>(ipiv),
+      reinterpret_cast<muDoubleComplex*>(C),
+      ldc));
+}
+
+#endif
+
 } // namespace at::musa::solver

@@ -1,0 +1,14 @@
+#ifndef TORCH_MUSA_CSRC_ATEN_OPS_MUSA_ELEMWISE_INTERFACE_MUH_
+#define TORCH_MUSA_CSRC_ATEN_OPS_MUSA_ELEMWISE_INTERFACE_MUH_
+
+#include <ATen/native/TensorIterator.h>
+
+namespace at::musa {
+
+void AddKernel(TensorIteratorBase& iter, const Scalar& alpha);
+
+void FillKernel(TensorIteratorBase& iter, const Scalar& value);
+
+} // namespace at::musa
+
+#endif // TORCH_MUSA_CSRC_ATEN_OPS_MUSA_ELEMWISE_INTERFACE_MUH_

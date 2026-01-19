@@ -15,14 +15,20 @@
 #include <ATen/ops/mul_native.h>
 #include <ATen/ops/reciprocal_musa_dispatch.h>
 #include <ATen/ops/sub_native.h>
+#include <ATen/ops/view_as_real.h>
 #endif
 
 #include "torch_musa/csrc/aten/ops/ElemwiseHelpers.h"
+#include "torch_musa/csrc/aten/ops/musa/elemwise/Interface.muh"
 
 namespace at {
 namespace musa {
 
 namespace {
+
+bool is_complex(const Tensor& t) {
+  return t.defined() && t.is_complex();
+}
 
 void InitBinaryIterator(
     MusaTensorIterator& iter,
@@ -55,6 +61,10 @@ void AddSubMeta(
     const Tensor& rhs,
     const Scalar& alpha) {
   InitBinaryIterator(iter, out, lhs, rhs);
+
+  const bool complex_case =
+      is_complex(out) || is_complex(lhs) || is_complex(rhs);
+
   auto dtype_lifter = [](ScalarType t) -> ScalarType {
     auto promote_type = t;
     switch (t) {
@@ -74,6 +84,11 @@ void AddSubMeta(
   {
     TensorIteratorConfig config;
     SetUpBinaryConfig(config);
+    if (complex_case) {
+      config.cast_common_dtype_to_outputs(false).enforce_safe_casting_to_output(
+          false);
+      iter.musa_promote_inputs_to_common_dtype(false);
+    }
     iter.build(config);
   }
   native::alpha_check(iter.dtype(), alpha);
@@ -115,6 +130,11 @@ void AddImpl(
     MusaTensorIterator& iter,
     const Scalar& alpha,
     const std::string& op_name) {
+  if (c10::isComplexType(iter.common_dtype())) {
+    AddKernel(iter, alpha);
+    return;
+  }
+
   const bool l_is_scalar = iter.is_cpu_scalar(1);
   const bool r_is_scalar = iter.is_cpu_scalar(2);
 
@@ -159,6 +179,11 @@ void SubImpl(
     MusaTensorIterator& iter,
     const Scalar& alpha,
     const std::string& op_name) {
+  if (c10::isComplexType(iter.common_dtype())) {
+    AddKernel(iter, -alpha);
+    return;
+  }
+
   if (iter.is_cpu_scalar(1)) {
     const auto unary_alpha = iter.input(0).item();
     if (!alpha.equal(1)) {
@@ -212,8 +237,15 @@ void MulMeta(
     const Tensor& lhs,
     const Tensor& rhs) {
   InitBinaryIterator(iter, out, lhs, rhs);
+  const bool complex_case =
+      is_complex(out) || is_complex(lhs) || is_complex(rhs);
   TensorIteratorConfig config;
   SetUpBinaryConfig(config);
+  if (complex_case) {
+    config.cast_common_dtype_to_outputs(false).enforce_safe_casting_to_output(
+        false);
+    iter.musa_promote_inputs_to_common_dtype(false);
+  }
   iter.build(config);
 }
 
@@ -230,6 +262,10 @@ void UnaryMul(
 }
 
 void MulImpl(MusaTensorIterator& iter, const std::string& op_name) {
+  if (c10::isComplexType(iter.common_dtype())) {
+    native::mul_stub(iter.device_type(), iter);
+    return;
+  }
   if (C10_UNLIKELY(BinaryMulFallThroughCPU(iter))) {
     const auto cpu_out = cpu::mul(iter.tensor(1).cpu(), iter.tensor(2).cpu());
     iter.output().copy_(cpu_out);
@@ -256,8 +292,14 @@ void DivMeta(
   InitBinaryIterator(iter, out, lhs, rhs);
   TensorIteratorConfig config;
   if constexpr (div_mode == BINARY_MODE::TRUEDIV) {
+    const bool complex_case =
+        is_complex(out) || is_complex(lhs) || is_complex(rhs);
     iter.musa_promote_inputs_to_common_dtype(false);
     SetUpBinaryFloatConfig(config);
+    if (complex_case) {
+      config.cast_common_dtype_to_outputs(false).enforce_safe_casting_to_output(
+          false);
+    }
   } else {
     SetUpBinaryConfig(config);
   }
@@ -277,7 +319,7 @@ void UnaryDiv(
         div_mode == UNARY_MODE::FLOORDIV) {
       UnaryAlphaCall(iter, alpha, div_mode, op_name);
     } else if (!iter.output(0).is_same(iter.input(0))) {
-      UnaryCall(iter, UNARY_MODE::IDENTITY, op_name);
+      UnaryCall(iter, UNARY_MODE::CAST, op_name);
     }
   }
   return;
@@ -285,6 +327,13 @@ void UnaryDiv(
 
 template <BINARY_MODE div_mode>
 void DivImpl(MusaTensorIterator& iter, const std::string& op_name) {
+  if constexpr (div_mode == BINARY_MODE::TRUEDIV) {
+    if (c10::isComplexType(iter.common_dtype())) {
+      native::div_true_stub(iter.device_type(), iter);
+      return;
+    }
+  }
+
   if (C10_UNLIKELY(BinaryDivFallThroughCPU(iter))) {
     const auto cpu_out = cpu::div(iter.tensor(1).cpu(), iter.tensor(2).cpu());
     iter.output().copy_(cpu_out);

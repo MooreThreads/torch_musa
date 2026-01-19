@@ -271,7 +271,12 @@ if(MUSA_FOUND)
       MUSA::musolver)
   else()
     find_package(MUSAToolkit REQUIRED COMPONENTS musolver mublas mufft)
-    list(APPEND DEPENDENT_LIBRARIES MUSA::mublas MUSA::musolver MUSA::mufft)
+    list(
+      APPEND
+      DEPENDENT_LIBRARIES
+      MUSA::mublas
+      MUSA::musolver
+      MUSA::mufft)
   endif()
 
   find_package(MUDNN REQUIRED)
@@ -331,6 +336,7 @@ set(GENERATED_MUSA_CSRCS
     "${CODE_GENERATED_DIR}/ATen/RegisterQuantizedMUSA.cpp"
     "${CODE_GENERATED_DIR}/ATen/RegisterSparseMUSA.cpp"
     "${CODE_GENERATED_DIR}/ATen/RegisterSparseCsrMUSA.cpp"
+    "${CODE_GENERATED_DIR}/ATen/RegisterNestedTensorMUSA.cpp"
     "${PROJECT_SOURCE_DIR}/torch_musa/csrc/inductor/aoti_torch/generated/c_shim_musa.cpp"
 )
 add_custom_command(

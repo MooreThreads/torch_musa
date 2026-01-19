@@ -1,0 +1,15 @@
+diff --git a/aten/src/ATen/native/BatchLinearAlgebra.cpp b/aten/src/ATen/native/BatchLinearAlgebra.cpp
+index 897e83890c7..deb567094e5 100644
+--- a/aten/src/ATen/native/BatchLinearAlgebra.cpp
++++ b/aten/src/ATen/native/BatchLinearAlgebra.cpp
+@@ -3063,8 +3063,8 @@ std::tuple<Tensor&, Tensor&> linalg_eig_out(const Tensor& input, Tensor& values,
+ 
+   // because MAGMA's GEEV takes CPU inputs and returns CPU outputs
+   // "out" tensors that are on GPU device can't be used directly
+-  values_tmp_needed |= values.is_cuda();
+-  vectors_tmp_needed |= vectors.is_cuda();
++  values_tmp_needed |= values.is_musa();
++  vectors_tmp_needed |= vectors.is_musa();
+ 
+   // determine the appropriate scalar_type for the temporary tensors
+   ScalarType values_type = input.scalar_type();
