@@ -148,7 +148,7 @@ USE_MCCL=0 bash build.sh -c
 对 torch_musa v2.7.0 及之后的版本，请从我们的 [vision 仓库](https://github.com/MooreThreads/vision) 安装 torchvision：
 
 ```shell
-git clone https://github.com/MooreThreads/vision -b v0.22.1-musa --depth 1
+git clone https://github.com/MooreThreads/vision -b v0.24.1-musa --depth 1
 cd vision && python setup.py install
 ```
 
@@ -186,7 +186,7 @@ cd audio && python setup.py install
 | pytorch_sparse | master | https://github.com/MooreThreads/pytorch_sparse |
 | pytorch_scatter | master | https://github.com/MooreThreads/pytorch_scatter |
 | pytorch_cluster | musa-dev | https://github.com/MooreThreads/pytorch_cluster |
-| torchvision | v0.22.1-musa | https://github.com/MooreThreads/vision |
+| torchvision | v0.24.1-musa | https://github.com/MooreThreads/vision |
 | pytorch_lightning | musa-dev | https://github.com/MooreThreads/pytorch-lightning |
 
 这些仓库可以通过`python setup.py install`或者`pip install . --no-build-isolation`来构建或者安装。

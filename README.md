@@ -134,7 +134,7 @@ USE_MCCL=0 bash build.sh -c
 ### torchvision
 For torch_musa v2.7.0 and later, install torchvision from [our repository](https://github.com/MooreThreads/vision):
 ```shell
-git clone https://github.com/MooreThreads/vision -b v0.22.1-musa --depth 1
+git clone https://github.com/MooreThreads/vision -b v0.24.1-musa --depth 1
 cd vision && python setup.py install
 ```
 
@@ -165,7 +165,7 @@ For others that haven't supported musa, we musified them and put into our [GitHu
 | pytorch_sparse | master | https://github.com/MooreThreads/pytorch_sparse |
 | pytorch_scatter | master | https://github.com/MooreThreads/pytorch_scatter |
 | pytorch_cluster | musa-dev | https://github.com/MooreThreads/pytorch_cluster |
-| torchvision | v0.22.1-musa | https://github.com/MooreThreads/vision |
+| torchvision | v0.24.1-musa | https://github.com/MooreThreads/vision |
 | pytorch_lightning | musa-dev | https://github.com/MooreThreads/pytorch-lightning |
 
 Each repository can be built and install via `python setup.py install` or `pip install . --no-build-isolation`.
