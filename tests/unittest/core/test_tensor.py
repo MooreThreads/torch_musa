@@ -88,6 +88,14 @@ def test_scalar_tensortype():
         assert musa_tensor.device.type == "musa"
         np.testing.assert_allclose(musa_tensor.to("cpu"), np_tensor)
 
+    for dtype in [torch.uint16, torch.uint32]:
+        data = torch.randint(0, 2, (3, 5), dtype=dtype)
+        musa_tensor = torch.tensor(data, device="musa")
+        cpu_tensor = torch.tensor(data, device="cpu")
+        assert musa_tensor.dtype == cpu_tensor.dtype
+        assert musa_tensor.device.type == "musa"
+        np.testing.assert_allclose(musa_tensor.to("cpu"), cpu_tensor)
+
 
 def test_tensor_type():
     tensor = torch.rand(3, 3, device="musa:0")

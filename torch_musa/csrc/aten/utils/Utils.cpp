@@ -13,7 +13,7 @@
 #endif
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
-#include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/core/MUSACachingAllocator.h"
 
 #include <mudnn.h>
@@ -39,10 +39,6 @@ void ConfigFormat(
     const Tensor& t,
     muTensor& mt,
     bool permute_if_not_contiguous) {
-  TORCH_CHECK(
-      t.dim() <= 8,
-      "mudnn only support intput tensors'dim <= 8, but it is ",
-      t.dim());
   const auto t_dim = t.dim();
   const auto memory_format = t.suggest_memory_format();
   muTensor::Format mudnn_format = muTensor::Format::NCHW;
@@ -105,6 +101,12 @@ void SetMUTensorDType(ScalarType dtype, muTensor& m_t) {
     case ScalarType::Byte:
       m_t.SetType(muTensor::Type::UINT8);
       break;
+    case ScalarType::UInt16:
+      m_t.SetType(muTensor::Type::UINT16);
+      break;
+    case ScalarType::UInt32:
+      m_t.SetType(muTensor::Type::UINT32);
+      break;
     case ScalarType::UInt64:
       m_t.SetType(muTensor::Type::UINT64);
       break;
@@ -131,7 +133,6 @@ void SetMUTensorDType(ScalarType dtype, muTensor& m_t) {
 #endif
     default:
       TORCH_CHECK(false, "SetMUTensorDType Unsupported tensor dtype: ", dtype);
-      throw;
   }
 }
 
@@ -200,7 +201,6 @@ std::pair<muTensor, muTensor> CreateMUTensorsCompression(
   }
 
   const int ndim = prev_dim + 1;
-  TORCH_CHECK(ndim <= 8, "mudnn only supports dim <= 8, but it is ", ndim);
   // adjust to the compressed dim.
   shape1.resize(ndim);
   stride1.resize(ndim);
@@ -221,7 +221,7 @@ std::pair<muTensor, muTensor> CreateMUTensorsCompression(
   SetMUTensorAddr(t2.data_ptr(), rst2);
   rst2.SetNdInfo(ndim, shape2.data(), stride2.data());
 
-  return {rst1, rst2};
+  return {std::move(rst1), std::move(rst2)};
 }
 
 muTensor CreateMUTensor(const Tensor& t, bool permute_if_not_contiguous) {
@@ -265,13 +265,28 @@ c10::optional<Tensor> maybe_create_proxy(
   return c10::nullopt;
 }
 
-bool MatContiguous(const Tensor& mat) {
-  for (int i = 0; i < mat.dim() - 1; i++) {
-    if (mat.stride(i) != mat.stride(i + 1) * mat.size(i + 1)) {
+bool IsContiguousAfterTranspose(const Tensor& mat, bool strict) {
+  // mat.dim() should be >= 2, and this is guaranteed by the
+  // caller(IsTranspose), so we do not check it here.
+  int64_t d = mat.dim();
+  std::vector<int64_t> t_size(mat.sizes().begin(), mat.sizes().end());
+  std::vector<int64_t> t_stride(mat.strides().begin(), mat.strides().end());
+  std::swap(t_size[d - 2], t_size[d - 1]);
+  std::swap(t_stride[d - 2], t_stride[d - 1]);
+  int64_t expected_stride = 1;
+  for (int64_t i = d - 1; i >= 0; --i) {
+    const auto& size_i = t_size[i];
+    if (!strict && size_i == 1) {
+      continue;
+    }
+
+    if (t_stride[i] != expected_stride) {
       return false;
     }
+    expected_stride *= size_i;
   }
-  return mat.is_contiguous();
+
+  return true;
 }
 
 // If a matrix is ​​transposed, the following two conditions
@@ -280,11 +295,12 @@ bool MatContiguous(const Tensor& mat) {
 // 2. the origin matrix(untransposed matrix) should be contiguous
 bool IsTranspose(const Tensor& mat, bool strict) {
   if (mat.dim() >= 2) {
-    const Tensor t_mat = mat.transpose(-2, -1);
-    if (!strict && t_mat.is_contiguous() && mat.is_contiguous()) {
+    bool t_mat_contiguous_loose = IsContiguousAfterTranspose(mat, false);
+    if (!strict && t_mat_contiguous_loose && mat.is_contiguous()) {
       return false;
     }
-    return strict ? MatContiguous(t_mat) : t_mat.is_contiguous();
+    return strict ? IsContiguousAfterTranspose(mat, true)
+                  : t_mat_contiguous_loose;
   }
   return false;
 }

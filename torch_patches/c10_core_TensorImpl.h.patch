@@ -1,0 +1,17 @@
+diff --git a/c10/core/TensorImpl.h b/c10/core/TensorImpl.h
+index 9721813..e1d7c85 100644
+--- a/c10/core/TensorImpl.h
++++ b/c10/core/TensorImpl.h
+@@ -573,6 +573,12 @@ struct C10_API TensorImpl : public c10::intrusive_ptr_target {
+   TensorImpl(TensorImpl&&) = delete;
+   TensorImpl& operator=(TensorImpl&&) = delete;
+ 
++  void _unsafe_set_device(const c10::Device& d) {
++    device_opt_ = d;
++    _change_backend_component_keys(d);
++  }
++
++
+   /**
+    * Release (decref) storage, and any other external allocations.  This
+    * override is for `intrusive_ptr_target` and is used to implement weak

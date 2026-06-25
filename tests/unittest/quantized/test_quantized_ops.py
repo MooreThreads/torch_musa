@@ -951,3 +951,141 @@ def test_run_pointwise_binary_vs_onednn(config, dtype, attr):
         inputs=cpu_input_args, device="cpu", refer=True, onednn_flag=True
     )
     test.compare_res(out_musa, out_cpu)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_data_per_tensor)
+@pytest.mark.parametrize("dtype", dtype)
+def test_gelu(input_data, dtype):
+    inputs = {
+        "input": input_data["input"],
+        "scale": input_data["input"].abs().max() / 2**7,
+        "zero_point": 0 if dtype == torch.qint8 else 128,
+        "dtype": dtype,
+    }
+
+    x = torch.quantize_per_tensor(
+        inputs["input"], inputs["scale"], inputs["zero_point"], dtype
+    )
+
+    test = testing.OpTest(
+        func=torch.nn.functional.gelu,
+        input_args={"input": x},
+        comparators=testing.QuantizedComparator(),
+    )
+    test.check_result()
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_data_per_tensor)
+@pytest.mark.parametrize("dtype", dtype)
+def test_relu(input_data, dtype):
+    inputs = {
+        "input": input_data["input"],
+        "scale": input_data["input"].abs().max() / 2**7,
+        "zero_point": 0 if dtype == torch.qint8 else 128,
+        "dtype": dtype,
+    }
+
+    x = torch.quantize_per_tensor(
+        inputs["input"], inputs["scale"], inputs["zero_point"], dtype
+    )
+
+    test = testing.OpTest(
+        func=torch.nn.functional.relu,
+        input_args={"input": x},
+        comparators=testing.QuantizedComparator(),
+    )
+    test.check_result()
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_data_per_tensor)
+@pytest.mark.parametrize("dtype", dtype)
+def test_relu_(input_data, dtype):
+    inputs = {
+        "input": input_data["input"],
+        "scale": input_data["input"].abs().max() / 2**7,
+        "zero_point": 0 if dtype == torch.qint8 else 128,
+        "dtype": dtype,
+    }
+
+    x = torch.quantize_per_tensor(
+        inputs["input"], inputs["scale"], inputs["zero_point"], dtype
+    )
+
+    test = testing.OpTest(
+        func=torch.nn.functional.relu_,
+        input_args={"input": x},
+        comparators=testing.QuantizedComparator(),
+    )
+    test.check_result()
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_data_per_tensor)
+@pytest.mark.parametrize("dtype", dtype)
+def test_index_put_(input_data, dtype):
+    inputs = {
+        "input": input_data["input"],
+        "scale": input_data["input"].abs().max() / 2**7,
+        "zero_point": 0 if dtype == torch.qint8 else 128,
+        "dtype": dtype,
+    }
+
+    x = torch.quantize_per_tensor(
+        inputs["input"], inputs["scale"], inputs["zero_point"], dtype
+    )
+
+    ndim = x.dim()
+
+    if ndim == 3:
+        indices = (torch.tensor([0, 0]), torch.tensor([1, 2]), torch.tensor([2, 3]))
+    elif ndim == 4:
+        indices = (
+            torch.tensor([0, 0]),
+            torch.tensor([1, 2]),
+            torch.tensor([2, 3]),
+            torch.tensor([0, 1]),
+        )
+
+    val = torch.tensor([10.0, 20.0])
+
+    test = testing.OpTest(
+        func=torch.index_put_,
+        input_args={"input": x, "indices": indices, "values": val},
+        comparators=testing.QuantizedComparator(),
+    )
+    test.check_result()
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize(
+    "m, k, n",
+    [
+        (32, 16, 24),
+        (64, 32, 32),
+        (128, 64, 16),
+    ],
+)
+def test_int_mm(m, k, n):
+
+    mat1 = torch.randint(-128, 127, (m, k), dtype=torch.int8)
+    mat2 = torch.randint(-128, 127, (k, n), dtype=torch.int8)
+
+    out = torch.empty((m, n), dtype=torch.int32)
+    test = testing.OpTest(
+        func=torch._int_mm,
+        input_args={"input": mat1, "mat2": mat2},
+        comparators=testing.DefaultComparator(),
+    )
+
+    test.check_result()
+
+    test = testing.OpTest(
+        func=torch._int_mm,
+        input_args={"input": mat1, "mat2": mat2, "out": out},
+        comparators=testing.DefaultComparator(),
+    )
+
+    test.check_result()

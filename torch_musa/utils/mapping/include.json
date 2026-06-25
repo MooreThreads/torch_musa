@@ -108,5 +108,7 @@
     "npps_support_functions.h": "mtpps_support_functions.h",
     "nvblas.h": "mtblas.h",
     "nvfunctional": "mtfunctional",
-    "SparseCUDAApplyUtils": "SparseMUSAApplyUtils"
+    "SparseCUDAApplyUtils": "SparseMUSAApplyUtils",
+    "cutlass.h": "mutlass.h",
+    "<cutlass": "<mutlass"
 }

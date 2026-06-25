@@ -76,7 +76,8 @@ def check_model(
 ):
     inductor_configs = {
         "aot_inductor.package": True,
-        # TODO: "aot_inductor.force_mmap_weights": True,
+        "aot_inductor.package_cpp_only": getattr(self, "package_cpp_only", True),
+        "aot_inductor.force_mmap_weights": getattr(self, "force_mmap_weights", True),
     }
     with torch.no_grad():
         torch.manual_seed(0)
@@ -134,15 +135,53 @@ class AOTInductorTestsTemplate:
 common_utils.instantiate_parametrized_tests(AOTInductorTestsTemplate)
 
 
-class AOTInductorTestPackagedABICompatibleMusa(TestCase):
+class AOTInductorTestPackagedCppOnlyMmapMusa(TestCase):
     device = "musa"
     check_model = check_model
+    package_cpp_only = True
+    force_mmap_weights = True
+
+
+class AOTInductorTestPackagedCppOnlyNoMmapMusa(TestCase):
+    device = "musa"
+    check_model = check_model
+    package_cpp_only = True
+    force_mmap_weights = False
+
+
+class AOTInductorTestPackagedNoCppMmapMusa(TestCase):
+    device = "musa"
+    check_model = check_model
+    package_cpp_only = False
+    force_mmap_weights = True
+
+
+class AOTInductorTestPackagedNoCppNoMmapMusa(TestCase):
+    device = "musa"
+    check_model = check_model
+    package_cpp_only = False
+    force_mmap_weights = False
 
 
 copy_tests(
     AOTInductorTestsTemplate,
-    AOTInductorTestPackagedABICompatibleMusa,
-    "packaged_abi_compatible_musa",
+    AOTInductorTestPackagedCppOnlyMmapMusa,
+    "cpp_only_mmap_musa",
+)
+copy_tests(
+    AOTInductorTestsTemplate,
+    AOTInductorTestPackagedCppOnlyNoMmapMusa,
+    "cpp_only_no_mmap_musa",
+)
+copy_tests(
+    AOTInductorTestsTemplate,
+    AOTInductorTestPackagedNoCppMmapMusa,
+    "no_cpp_mmap_musa",
+)
+copy_tests(
+    AOTInductorTestsTemplate,
+    AOTInductorTestPackagedNoCppNoMmapMusa,
+    "no_cpp_no_mmap_musa",
 )
 
 

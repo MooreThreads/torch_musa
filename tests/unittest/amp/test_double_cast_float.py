@@ -10,6 +10,7 @@ from torch_musa import testing
 
 DEVICE = "musa"
 
+
 def set_seed(seed=1029):
     random.seed(seed)
     os.environ["PYTHONHASHSEED"] = str(seed)
@@ -41,7 +42,11 @@ class SimpleTransformer(nn.Module):
     def __init__(self):
         super().__init__()
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model=32, nhead=4, dim_feedforward=64
+            d_model=32,
+            nhead=4,
+            dim_feedforward=64,
+            # TODO(MTAI): mudnn does not support fp32 and p greater than 0
+            dropout=0.0,
         )
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=2)
         self.flatten = nn.Flatten()

@@ -13,6 +13,8 @@ from torch._inductor.codegen.common import (
     get_wrapper_codegen_for_device,
 )
 from torch._inductor.graph import GraphLowering
+from torch._inductor.template_heuristics.registry import get_template_heuristic
+from torch._inductor.template_heuristics.triton import mm_template
 from torch_musa.testing.base_test_tool import _HAS_TRITON
 
 import torch_musa
@@ -37,3 +39,6 @@ def test_inductor_registration():
     wrapper_codegen = get_wrapper_codegen_for_device("musa")
 
     assert scheduling and wrapper_codegen
+
+    heuristic = get_template_heuristic(mm_template.uid, "musa", "mm")
+    assert heuristic.__class__.__name__ == "MUSAMMTemplateConfigHeuristic"

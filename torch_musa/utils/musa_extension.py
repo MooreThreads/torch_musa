@@ -3,6 +3,7 @@
 # pylint: disable=E1120,W0613,C0103,W9015,W9016,C0116
 
 import copy
+import json
 import multiprocessing
 import os
 import shlex
@@ -10,7 +11,6 @@ import subprocess
 import sys
 import sysconfig
 import warnings
-import platform
 from os.path import dirname, realpath, join
 from typing import List, Optional, Tuple, Union
 import setuptools
@@ -42,14 +42,6 @@ if os.getenv("MAX_JOBS") is None:
     os.environ["MAX_JOBS"] = str(multiprocessing.cpu_count())
 
 SUBPROCESS_DECODE_ARGS = ()
-
-
-def _get_cpu_arch():
-    if any(x in platform.machine() for x in ["arm", "aarch64"]):
-        return "arm"
-    if any(x in platform.machine() for x in ["x86", "x64"]):
-        return "x86"
-    raise ValueError(f"Unidentified CPU arch: {platform.machine()}")
 
 
 def get_cxx_compiler():
@@ -302,9 +294,48 @@ RERUN_CMAKE = False
 install_requires = ["packaging"]
 MUSA_HOME = _find_musa_home()
 MUDNN_HOME = os.environ.get("MUDNN_HOME") or os.environ.get("MUDNN_PATH")
+
+
 _HERE = os.path.abspath(__file__)
 _TORCH_MUSA_PATH = os.path.dirname(os.path.dirname(_HERE))
 TORCH_MUSA_LIB_PATH = os.path.join(_TORCH_MUSA_PATH, "lib")
+_MUSA_VERSIONS_PATH = os.path.join(_TORCH_MUSA_PATH, "share", "musa_versions.json")
+
+
+def _load_musa_versions() -> dict:
+    if not os.path.isfile(_MUSA_VERSIONS_PATH):
+        return {}
+    with open(_MUSA_VERSIONS_PATH, "r", encoding="utf-8") as version_file:
+        return json.load(version_file)
+
+
+_MUSA_VERSIONS = _load_musa_versions()
+
+
+def _get_musa_version_macro(name: str) -> int:
+    value = _MUSA_VERSIONS.get(name)
+    if value is None:
+        raise RuntimeError(f"Missing MUSA version macro: {name}")
+    return int(value)
+
+
+def _use_mudnn_c_api() -> bool:
+    env_flag = os.environ.get("USE_MUDNN_C_API", None)
+    if env_flag is not None:
+        return str(env_flag) == "1"
+
+    return _get_musa_version_macro("MUDNN_VERSION") >= 3300
+
+
+def _musa_version_macros() -> List[Tuple[str, str]]:
+    return [
+        (name, str(_get_musa_version_macro(name)))
+        for name in (
+            "MUSA_COMP_VERSION",
+            "MUSPARSE_VERSION",
+            "REAL_MUSA_VERSION",
+        )
+    ]
 
 
 def include_paths(musa: bool = False) -> List[str]:
@@ -434,6 +465,9 @@ def MUSAExtension(name, sources, *args, **kwargs):
     kwargs["extra_link_args"] = extra_link_args
 
     user_define_macros = kwargs.get("define_macros", [])
+    if _use_mudnn_c_api():
+        user_define_macros.append(("TORCH_MUSA_USE_MUDNN_C_API", None))
+    user_define_macros.extend(_musa_version_macros())
     kwargs["define_macros"] = user_define_macros
 
     mcc_arch_flags = _get_musa_arch_flags()
@@ -448,9 +482,6 @@ def MUSAExtension(name, sources, *args, **kwargs):
 
     if "cxx" not in kwargs["extra_compile_args"]:
         kwargs["extra_compile_args"]["cxx"] = []
-    if _get_cpu_arch() != "arm":
-        kwargs["extra_compile_args"]["mcc"].append("-march=native")
-        kwargs["extra_compile_args"]["cxx"].append("-march=native")
 
     return setuptools.Extension(name, sources, *args, **kwargs)
 
@@ -937,6 +968,11 @@ def _write_ninja_file_to_build_library(
     if not is_standalone:
         common_cflags.append(f"-DTORCH_EXTENSION_NAME={name}")
         common_cflags.append("-DTORCH_API_INCLUDE_EXTENSION_H")
+
+    if _use_mudnn_c_api():
+        common_cflags.append("-DTORCH_MUSA_USE_MUDNN_C_API")
+
+    common_cflags += [f"-D{name}={value}" for name, value in _musa_version_macros()]
 
     common_cflags += [f"{x}" for x in _get_pybind11_abi_build_flags()]
 

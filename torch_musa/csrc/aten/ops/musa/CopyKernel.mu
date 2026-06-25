@@ -9,7 +9,6 @@
 #include <ATen/native/TensorIterator.h>
 #include <ATen/native/musa/Loops.muh>
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
-#include "torch_musa/csrc/core/CachingHostAllocator.h"
 #include "torch_musa/csrc/core/PeerToPeerAccess.h"
 
 #ifndef AT_PER_OPERATOR_HEADERS

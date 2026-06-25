@@ -306,8 +306,8 @@ def musa_override_native_function_info(
     for ds_str in new_musa_dispatch:
         dk = DispatchKey.parse(ds_str)
         # Structured legacy hits it
-        if dk is MUSA_STRUCTURED_DISPATCH_KEY and torch_part_of_structured_group:
-            continue
+        # if dk is MUSA_STRUCTURED_DISPATCH_KEY and torch_part_of_structured_group:
+        #     continue
         assert dk in impl_kinds
         assert (
             impl_kinds[dk] != FunctionImplKind.Legacy or same_device_behaviour is True

@@ -1,7 +1,9 @@
 #include <ATen/ExpandUtils.h>
 #include <ATen/NamedTensorUtils.h>
 #include <ATen/native/BinaryOps.h>
+#include <c10/util/ArrayRef.h>
 #include <torch/library.h>
+#include <optional>
 
 #ifndef AT_PER_OPERATOR_HEADERS
 #include <ATen/Functions.h>
@@ -15,16 +17,17 @@
 
 #include <ATen/TensorIterator.h>
 
+#include "torch_musa/csrc/aten/mudnn/Ternary.h"
 #include "torch_musa/csrc/aten/ops/ElemwiseHelpers.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-
-#include <mudnn.h>
 
 namespace at {
 namespace musa {
 using TERNARY_MODE = ::musa::dnn::Ternary::Mode;
 
+namespace {
 void TernaryCall(
     Tensor& output,
     const Tensor& self,
@@ -47,10 +50,12 @@ void TernaryCall(
       m = TERNARY_MODE::ADDCDIV_ALPHA;
     }
     if (self.is_floating_point()) {
-      CHECK_MUDNN_STATUS(top.SetAlpha(alpha_scalar.toDouble()), "SetAlpha");
+      SetTernary(top, m, alpha_scalar.toDouble());
     } else {
-      CHECK_MUDNN_STATUS(top.SetAlpha(alpha_scalar.toLong()), "SetAlpha");
+      SetTernary(top, m, alpha_scalar.toLong());
     }
+  } else {
+    SetTernary(top, m);
   }
 
   auto input1_mt = CreateMUTensor(input1);
@@ -58,7 +63,6 @@ void TernaryCall(
   auto self_mt = CreateMUTensor(self);
   // output should be contiguous, caller should be responsible for this
   auto om_mt = CreateMUTensor(output);
-  CHECK_MUDNN_STATUS(top.SetMode(m), "SetMode");
   CHECK_MUDNN_STATUS(top.Run(h, om_mt, self_mt, input1_mt, input2_mt), "Run");
 }
 
@@ -83,6 +87,11 @@ void TernarycommonDtypeCall(
   auto common_dtype = at::result_type(input1, input2);
   at::native::alpha_check(common_dtype, alpha_scalar);
 
+  auto out_shape = at::infer_size(
+      at::infer_size(input1.sizes(), input2.sizes()), self.sizes());
+  if (output.sizes() != out_shape) {
+    output.resize_(out_shape);
+  }
   // WARN: output created by torch, which could be non-contiguous.
   Tensor contiguous_output =
       FormatContiguous(output, at::MemoryFormat::Contiguous);
@@ -106,41 +115,7 @@ void TernarycommonDtypeCall(
   }
 }
 
-Tensor& TernaryOut(
-    Tensor& output,
-    const Tensor& cond,
-    const Tensor& self,
-    const Tensor& other,
-    TERNARY_MODE m,
-    const Scalar& alpha_scalar) {
-  TORCH_CHECK(
-      self.scalar_type() == other.scalar_type(),
-      "input scalar type must the same");
-
-  Tensor contiguous_out =
-      FormatContiguous(output, at::MemoryFormat::Contiguous);
-  Tensor contiguous_cond = FormatContiguous(cond, at::MemoryFormat::Contiguous);
-  Tensor contiguous_self = FormatContiguous(self, at::MemoryFormat::Contiguous);
-  Tensor contiguous_other =
-      FormatContiguous(other, at::MemoryFormat::Contiguous);
-
-  // 1. deal with other and self tensor shape isn't same
-  if (other.dim() == 0) {
-    contiguous_other = at::full_like(contiguous_self, other.item());
-  }
-  if (self.dim() == 0) {
-    contiguous_self = at::full_like(contiguous_other, self.item());
-  }
-
-  TernaryCall(
-      contiguous_out,
-      contiguous_cond,
-      contiguous_self,
-      contiguous_other,
-      m,
-      alpha_scalar);
-  return output;
-}
+} // anonymous namespace
 
 Tensor& WhereSelfOut(
     const Tensor& condition,
@@ -225,22 +200,7 @@ Tensor& AddcMulOut(
     const Scalar& alpha_scalar,
     Tensor& output) {
   c10::musa::MUSAGuard device_guard(self.device());
-  TORCH_CHECK(
-      self.device().type() == kMUSA,
-      "Device of input tensor of addcmul must be MUSA, but now it is ",
-      self.device());
-  TORCH_CHECK(
-      input1.device().type() == kMUSA,
-      "Device of input1 tensor of addcmul must be MUSA, but now it is ",
-      input1.device());
-  TORCH_CHECK(
-      input2.device().type() == kMUSA,
-      "Device of input2 tensor of addcmul must be MUSA, but now it is ",
-      input2.device());
-  TORCH_CHECK(
-      output.device().type() == kMUSA,
-      "Device of output tensor of addcmul must be MUSA, but now it is ",
-      output.device());
+
   TernarycommonDtypeCall(
       self, input1, input2, alpha_scalar, output, TERNARY_MODE::ADDCMUL);
 
@@ -253,37 +213,8 @@ Tensor& AddcDivOut(
     const Tensor& input2,
     const Scalar& alpha_scalar,
     Tensor& output) {
-  TORCH_CHECK(
-      self.device().type() == kMUSA,
-      "Device of input tensor of addcdiv must be MUSA, but now it is ",
-      self.device());
-  TORCH_CHECK(
-      input1.device().type() == kMUSA,
-      "Device of input1 tensor of addcdiv must be MUSA, but now it is ",
-      self.device());
-  TORCH_CHECK(
-      input2.device().type() == kMUSA,
-      "Device of input2 tensor of addcdiv must be MUSA, but now it is ",
-      input2.device());
-  TORCH_CHECK(
-      output.device().type() == kMUSA,
-      "Device of output tensor of addcdiv must be MUSA, but now it is ",
-      output.device());
   c10::musa::MUSAGuard device_guard(self.device());
 
-  TORCH_CHECK(
-      self.scalar_type() == input1.scalar_type() &&
-          self.scalar_type() == input2.scalar_type() &&
-          self.scalar_type() == output.scalar_type(),
-      "Dtype of self, input1, input2, output should be the same");
-  TORCH_CHECK(
-      self.scalar_type() == at::ScalarType::Float ||
-          self.scalar_type() == at::ScalarType::Half ||
-          self.scalar_type() == at::ScalarType::Int ||
-          self.scalar_type() == at::ScalarType::Long ||
-          self.scalar_type() == at::ScalarType::BFloat16,
-      "Dtype of input tensor of addcdiv only support int32/64, fp32/fp16/bf16, but now it is ",
-      self.scalar_type());
   TernarycommonDtypeCall(
       self, input1, input2, alpha_scalar, output, TERNARY_MODE::ADDCDIV);
 

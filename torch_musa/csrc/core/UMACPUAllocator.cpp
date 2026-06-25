@@ -37,5 +37,6 @@ void UMACPUAllocatorContext::set_allocator() {
 
 void UMACPUAllocatorContext::reset_allocator() {
   c10::SetAllocator(c10::DeviceType::CPU, prev_allocator_ptr_);
+  prev_allocator_ptr_ = nullptr;
 }
 } // namespace c10

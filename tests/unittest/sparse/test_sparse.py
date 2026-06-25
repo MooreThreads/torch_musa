@@ -5,6 +5,7 @@
 from numbers import Number
 import pytest
 import torch
+import numpy as np
 from torch.testing import make_tensor
 from torch_musa import testing
 
@@ -133,3 +134,93 @@ class TestSparse:
             i, v, torch.Size([10, 2]), dtype=dtype, device=device
         )
         self.assert_equal(x.coalesce()._nnz(), 9)
+
+
+dtypes = [torch.float32, torch.float16, torch.int32, torch.int64, torch.bfloat16]
+
+
+def _make_dense(m, n, dtype, device="musa"):
+    x = torch.zeros((m, n), device=device, dtype=dtype)
+    x[0, 0] = 1
+    x[1, 2] = 3
+    x[-1, -1] = 5
+    return x
+
+
+@pytest.mark.parametrize("dtype", dtypes)
+def test_to_sparse_from_dense_dispatch(dtype):
+    dense = _make_dense(16, 32, dtype, device="musa")
+    out = torch.ops.aten._to_sparse(dense)
+    assert out.layout == torch.sparse_coo
+    assert out.device.type == "musa"
+    torch.testing.assert_close(out.to_dense().cpu(), dense.cpu())
+
+
+@pytest.mark.parametrize("dtype", dtypes)
+def test_to_sparse_from_compressed_dispatch(dtype):
+    dense = _make_dense(16, 32, dtype, device="musa")
+    csr = dense.to_sparse_csr()
+    out = torch.ops.aten._to_sparse(csr)
+    assert out.layout == torch.sparse_coo
+    assert out.device.type == "musa"
+    torch.testing.assert_close(out.to_dense().cpu(), dense.cpu())
+
+    csc = dense.to_sparse_csc()
+    out = torch.ops.aten._to_sparse(csc)
+    assert out.layout == torch.sparse_coo
+    assert out.device.type == "musa"
+    torch.testing.assert_close(out.to_dense().cpu(), dense.cpu())
+
+    blocksize = (1, 1)
+    bsc = dense.to_sparse_bsr(blocksize)
+    out = torch.ops.aten._to_sparse(bsc)
+    assert out.layout == torch.sparse_coo
+    assert out.device.type == "musa"
+    torch.testing.assert_close(out.to_dense().cpu(), dense.cpu())
+
+    blocksize = (1, 1)
+    bsc = dense.to_sparse_bsc(blocksize)
+    out = torch.ops.aten._to_sparse(bsc)
+    assert out.layout == torch.sparse_coo
+    assert out.device.type == "musa"
+    torch.testing.assert_close(out.to_dense().cpu(), dense.cpu())
+
+
+@pytest.mark.parametrize("dtype", dtypes)
+def test_to_dense_from_coo_dispatch(dtype):
+    dense = _make_dense(16, 32, dtype, device="musa")
+    coo = dense.to_sparse()
+    out = torch.ops.aten._to_dense(coo)
+    assert out.layout == torch.strided
+    assert out.device.type == "musa"
+    torch.testing.assert_close(out.cpu(), dense.cpu())
+
+
+@pytest.mark.parametrize("dtype", dtypes)
+def test_to_dense_from_compressed_dispatch(dtype):
+    dense = _make_dense(16, 32, dtype, device="musa")
+    csr = dense.to_sparse_csr()
+    out = torch.ops.aten._to_dense(csr)
+    assert out.layout == torch.strided
+    assert out.device.type == "musa"
+    torch.testing.assert_close(out.cpu(), dense.cpu())
+
+    csc = dense.to_sparse_csc()
+    out = torch.ops.aten._to_dense(csc)
+    assert out.layout == torch.strided
+    assert out.device.type == "musa"
+    torch.testing.assert_close(out.cpu(), dense.cpu())
+
+    blocksize = (1, 1)
+    bsc = dense.to_sparse_bsr(blocksize)
+    out = torch.ops.aten._to_dense(bsc)
+    assert out.layout == torch.strided
+    assert out.device.type == "musa"
+    torch.testing.assert_close(out.cpu(), dense.cpu())
+
+    blocksize = (1, 1)
+    bsc = dense.to_sparse_bsc(blocksize)
+    out = torch.ops.aten._to_dense(bsc)
+    assert out.layout == torch.strided
+    assert out.device.type == "musa"
+    torch.testing.assert_close(out.cpu(), dense.cpu())

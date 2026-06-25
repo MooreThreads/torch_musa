@@ -15,22 +15,45 @@
 
 include(FindPackageHandleStandardArgs)
 
-set(MUDNN_INCLUDE_SEARCH_PATHS $ENV{MUSA_HOME}/include/)
+set(MUDNN_INCLUDE_SEARCH_PATHS $ENV{MUSA_HOME}/include)
 set(MUDNN_LIB_SEARCH_PATHS $ENV{MUSA_HOME}/lib)
 
-find_path(
-  MUDNN_INCLUDE_DIR
-  NAMES mudnn.h
-  PATHS ${MUDNN_INCLUDE_SEARCH_PATHS}
-  NO_DEFAULT_PATH)
-find_path(MUDNN_INCLUDE_DIR NAMES mudnn.h NO_CMAKE_FIND_ROOT_PATH)
+macro(find_header var dir file)
+  find_path(
+    ${var}
+    NAMES ${file}
+    PATHS ${dir}
+    NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
+endmacro()
 
-find_library(
-  MUDNN_LIBRARY
-  NAMES mudnn
-  PATHS ${MUDNN_LIB_SEARCH_PATHS}
-  NO_DEFAULT_PATH)
-find_library(MUDNN_LIBRARY NAMES mudnn NO_CMAKE_FIND_ROOT_PATH)
+macro(find_lib var dir file)
+  find_library(
+    ${var}
+    NAMES ${file}
+    PATHS ${dir}
+    NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
+endmacro()
+
+set(MUDNN_INCLUDE_DIR)
+set(MUDNN_LIBRARY)
+set(MUDNN_CXX_INCLUDE_DIR)
+set(MUDNN_CXX_LIBRARY)
+
+if(NOT USE_MUDNN_C_API)
+  find_header(MUDNN_CXX_INCLUDE_DIR "${MUDNN_INCLUDE_SEARCH_PATHS}/mudnncxx"
+              "mudnn.h")
+  find_lib(MUDNN_CXX_LIBRARY ${MUDNN_LIB_SEARCH_PATHS} "mudnncxx")
+  set(MUDNN_INCLUDE_DIR ${MUDNN_CXX_INCLUDE_DIR})
+  set(MUDNN_LIBRARY ${MUDNN_CXX_LIBRARY})
+endif()
+
+if(NOT MUDNN_INCLUDE_DIR)
+  find_header(MUDNN_INCLUDE_DIR ${MUDNN_INCLUDE_SEARCH_PATHS} "mudnn.h")
+endif()
+
+if(NOT MUDNN_LIBRARY)
+  find_lib(MUDNN_LIBRARY ${MUDNN_LIB_SEARCH_PATHS} "mudnn")
+endif()
 
 find_package_handle_standard_args(MUDNN DEFAULT_MSG MUDNN_INCLUDE_DIR
                                   MUDNN_LIBRARY)
@@ -42,6 +65,8 @@ if(MUDNN_FOUND)
 
   mark_as_advanced(
     MUDNN_ROOT_DIR
+    MUDNN_CXX_INCLUDE_DIR
+    MUDNN_CXX_LIBRARY
     MUDNN_LIBRARY_RELEASE
     MUDNN_LIBRARY_DEBUG
     MUDNN_LIBRARY

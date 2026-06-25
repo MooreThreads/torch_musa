@@ -165,3 +165,5 @@ tools/ops_filter/*.csv
 # aoti generate files
 torch_musa/csrc/inductor/aoti_torch/generated/*
 torch_musa/_inductor/codegen/fallback_ops.py
+
+.cursor/

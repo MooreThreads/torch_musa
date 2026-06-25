@@ -3,7 +3,9 @@
 #include <c10/util/Logging.h>
 #include <musa_runtime_api.h>
 #include "torch_musa/csrc/core/MUSAException.h"
+#include "torch_musa/csrc/core/MUSAGuard.h"
 #include "torch_musa/csrc/core/MUSAPluggableAllocator.h"
+
 namespace c10 {
 void* musa_malloc_managed(size_t size, int device, musaStream_t stream) {
   void* ptr = nullptr;

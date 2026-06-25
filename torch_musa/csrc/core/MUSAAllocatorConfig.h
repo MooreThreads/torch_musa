@@ -3,6 +3,7 @@
 
 #include <c10/musa/MUSAMacros.h>
 #include <c10/util/Exception.h>
+#include <c10/util/env.h>
 
 #include <atomic>
 #include <cstddef>
@@ -12,6 +13,12 @@
 #include <vector>
 
 namespace c10::musa::MUSACachingAllocator {
+
+enum class Expandable_Segments_Handle_Type : int {
+  UNSPECIFIED = 0,
+  POSIX_FD = 1,
+  FABRIC_HANDLE = 2,
+};
 
 // Environment config parser
 class C10_MUSA_API MUSAAllocatorConfig {
@@ -34,8 +41,21 @@ class C10_MUSA_API MUSAAllocatorConfig {
 #endif
   }
 
+  static Expandable_Segments_Handle_Type expandable_segments_handle_type() {
+    return instance().m_expandable_segments_handle_type;
+  }
+
+  static void set_expandable_segments_handle_type(
+      Expandable_Segments_Handle_Type handle_type) {
+    instance().m_expandable_segments_handle_type = handle_type;
+  }
+
   static bool release_lock_on_musamalloc() {
     return instance().m_release_lock_on_musamalloc;
+  }
+
+  static bool graph_capture_record_stream_reuse() {
+    return instance().m_graph_capture_record_stream_reuse;
   }
 
   /** Pinned memory allocator settings */
@@ -68,6 +88,10 @@ class C10_MUSA_API MUSAAllocatorConfig {
     return instance().m_roundup_power2_divisions;
   }
 
+  static size_t max_non_split_rounding_size() {
+    return instance().m_max_non_split_rounding_size;
+  }
+
   static std::string last_allocator_settings() {
     std::lock_guard<std::mutex> lock(
         instance().m_last_allocator_settings_mutex);
@@ -77,24 +101,27 @@ class C10_MUSA_API MUSAAllocatorConfig {
   static MUSAAllocatorConfig& instance() {
     static MUSAAllocatorConfig* s_instance = ([]() {
       auto inst = new MUSAAllocatorConfig();
-      const char* env = getenv("PYTORCH_MUSA_ALLOC_CONF");
+      auto env = c10::utils::get_env("PYTORCH_MUSA_ALLOC_CONF");
       inst->parseArgs(env);
       return inst;
     })();
     return *s_instance;
   }
 
-  void parseArgs(const char* env);
+  void parseArgs(const std::optional<std::string>& env);
 
  private:
   MUSAAllocatorConfig();
 
-  static void lexArgs(const char* env, std::vector<std::string>& config);
+  static void lexArgs(const std::string& env, std::vector<std::string>& config);
   static void consumeToken(
       const std::vector<std::string>& config,
       size_t i,
       const char c);
   size_t parseMaxSplitSize(const std::vector<std::string>& config, size_t i);
+  size_t parseMaxNonSplitRoundingSize(
+      const std::vector<std::string>& config,
+      size_t i);
   size_t parseGarbageCollectionThreshold(
       const std::vector<std::string>& config,
       size_t i);
@@ -114,14 +141,21 @@ class C10_MUSA_API MUSAAllocatorConfig {
   size_t parsePinnedUseBackgroundThreads(
       const std::vector<std::string>& config,
       size_t i);
+  size_t parseGraphCaptureRecordStreamReuse(
+      const std::vector<std::string>& config,
+      size_t i);
 
   std::atomic<size_t> m_max_split_size;
+  std::atomic<size_t> m_max_non_split_rounding_size;
   std::vector<size_t> m_roundup_power2_divisions;
   std::atomic<double> m_garbage_collection_threshold;
   std::atomic<size_t> m_pinned_num_register_threads;
   std::atomic<bool> m_expandable_segments;
+  std::atomic<Expandable_Segments_Handle_Type>
+      m_expandable_segments_handle_type;
   std::atomic<bool> m_release_lock_on_musamalloc;
   std::atomic<bool> m_pinned_use_musa_host_register;
+  std::atomic<bool> m_graph_capture_record_stream_reuse;
   std::atomic<bool> m_pinned_use_background_threads;
   std::string m_last_allocator_settings;
   std::mutex m_last_allocator_settings_mutex;

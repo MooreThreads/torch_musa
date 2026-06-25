@@ -14,6 +14,7 @@
 #include <c10/core/Contiguity.h>
 #include <c10/util/Optional.h>
 
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 namespace at {
@@ -45,15 +46,27 @@ optional<Scalar> CPUFastScalarReciprocal(const Scalar& input) {
   return nullopt;
 }
 
-template <typename MUDNN_OP>
-void SetAlpha(MUDNN_OP& op, const Scalar& alpha) {
+template <typename OP, typename MODE>
+void SetAlpha(OP& op, const Scalar& alpha, MODE mode) {
   if (alpha.isFloatingPoint()) {
-    CHECK_MUDNN_STATUS(op.SetAlpha(alpha.toDouble()), "SetAlpha");
+    if constexpr (std::is_same_v<OP, ::musa::dnn::Unary>) {
+      SetUnary(op, mode, alpha.toDouble());
+    } else {
+      SetBinary(op, mode, alpha.toDouble());
+    }
   } else if (alpha.isBoolean()) {
     const auto v = static_cast<int64_t>(alpha.to<bool>());
-    CHECK_MUDNN_STATUS(op.SetAlpha(v), "SetAlpha");
+    if constexpr (std::is_same_v<OP, ::musa::dnn::Unary>) {
+      SetUnary(op, mode, v);
+    } else {
+      SetBinary(op, mode, v);
+    }
   } else {
-    CHECK_MUDNN_STATUS(op.SetAlpha(alpha.toLong()), "SetAlpha");
+    if constexpr (std::is_same_v<OP, ::musa::dnn::Unary>) {
+      SetUnary(op, mode, alpha.toLong());
+    } else {
+      SetBinary(op, mode, alpha.toLong());
+    }
   }
 }
 
@@ -125,7 +138,7 @@ void UnaryCall(
     const std::string op_name) {
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Unary op;
-  CHECK_MUDNN_STATUS(op.SetMode(mode), "SetMode");
+  SetUnary(op, mode);
   auto out = iter.mu_output(0);
   auto in = iter.mu_input(0);
   CHECK_MUDNN_STATUS(op.Run(h, out, in), "Run " + op_name);
@@ -138,8 +151,7 @@ void UnaryAlphaCall(
     const std::string op_name) {
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Unary op;
-  CHECK_MUDNN_STATUS(op.SetMode(mode), "SetMode");
-  SetAlpha(op, alpha);
+  SetAlpha(op, alpha, mode);
   auto out = iter.mu_output(0);
   auto in = iter.mu_input(0);
   CHECK_MUDNN_STATUS(op.Run(h, out, in), "Run " + op_name);
@@ -151,7 +163,7 @@ void BinaryCall(
     const std::string& op_name) {
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Binary op;
-  CHECK_MUDNN_STATUS(op.SetMode(mode), "SetMode");
+  SetBinary(op, mode);
   auto out = iter.mu_output(0);
   auto lhs = iter.mu_input(0);
 
@@ -171,8 +183,7 @@ void BinaryAlphaCall(
     const std::string& op_name) {
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Binary op;
-  SetAlpha(op, alpha);
-  CHECK_MUDNN_STATUS(op.SetMode(mode), "SetMode");
+  SetAlpha(op, alpha, mode);
   auto out = iter.mu_output(0);
   auto lhs = iter.mu_input(0);
 
@@ -191,7 +202,7 @@ void TernaryCall(
     const std::string& op_name) {
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Ternary op;
-  CHECK_MUDNN_STATUS(op.SetMode(mode), "SetMode");
+  SetTernary(op, mode);
   auto out = iter.mu_output(0);
   auto inp0 = iter.mu_input(0);
   auto inp1 = iter.mu_input(1);

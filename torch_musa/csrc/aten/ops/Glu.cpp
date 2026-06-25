@@ -4,7 +4,9 @@
 #include <ATen/native/Pool.h>
 #include <torch/library.h>
 
+#include "torch_musa/csrc/aten/mudnn/Glu.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 #include <mudnn.h>

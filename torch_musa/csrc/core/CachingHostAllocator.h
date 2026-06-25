@@ -2,6 +2,7 @@
 #define TORCH_MUSA_CSRC_CORE_CACHINGHOSTALLOCATOR_H_
 
 #include <ATen/core/CachingHostAllocator.h>
+#include <c10/util/Deprecated.h>
 
 #include "torch_musa/csrc/core/MUSAStream.h"
 

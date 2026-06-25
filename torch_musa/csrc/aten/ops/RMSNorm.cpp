@@ -2,6 +2,8 @@
 #include <ATen/AccumulateType.h>
 #include <ATen/native/layer_norm.h>
 
+#include "torch_musa/csrc/aten/mudnn/RMSNorm.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 #include "torch_musa/csrc/core/MUSAGuard.h"
@@ -111,9 +113,8 @@ void FusedRMSNormForwardCall(
   }
 
   ::musa::dnn::RMSNorm op;
-  CHECK_MUDNN_STATUS(op.SetEpsilon(eps), "SetEpsilon");
   const auto norm_axes = CreateMuDNNNormAxes(contig_input, normalized_shape);
-  CHECK_MUDNN_STATUS(op.SetAxis(norm_axes.size(), norm_axes.data()), "SetAxis");
+  SetRMSNorm(op, norm_axes.size(), norm_axes.data(), eps);
   auto mudnn_out = CreateMUTensor(contig_output);
   auto mudnn_invvar = CreateMUTensor(contig_invvar);
   auto mudnn_in = CreateMUTensor(contig_input);
@@ -127,21 +128,31 @@ void FusedRMSNormForwardCall(
 
 } // anonymous namespace
 
-std::tuple<Tensor, Tensor> FusedRMSNormForward(
+std::tuple<Tensor&, Tensor&> FusedRMSNormForwardOut(
     const Tensor& input,
     IntArrayRef normalized_shape,
+    double eps,
     const c10::optional<Tensor>& weight_opt,
-    std::optional<double> eps) {
+    Tensor& output,
+    Tensor& invvar) {
   const auto weight = weight_opt.value_or(Tensor());
   (void)native::_check_layer_norm_inputs(
       input, normalized_shape, weight, Tensor());
 
   const auto input_device = input.device();
   TORCH_CHECK(
-      input_device.is_privateuseone(),
-      "Device of input tensor of RMSNorm must be MUSA, but now is ",
-      input_device);
-  CheckDevice("input", input_device, "weight", weight, "FusedRMSNormForward");
+      !output.defined() || input.sizes().equals(output.sizes()),
+      "Expected input to be of same shape as output, but got ",
+      "input of shape = ",
+      input.sizes(),
+      " and output of shape = ",
+      output.sizes());
+  CheckDevice(
+      "input", input_device, "weight", weight, "FusedRMSNormForwardOut");
+  CheckDevice(
+      "input", input_device, "output", output, "FusedRMSNormForwardOut");
+  CheckDevice(
+      "input", input_device, "invvar", invvar, "FusedRMSNormForwardOut");
 
   const auto input_dtype = input.scalar_type();
   TORCH_CHECK(
@@ -149,7 +160,8 @@ std::tuple<Tensor, Tensor> FusedRMSNormForward(
           input_dtype == ScalarType::BFloat16,
       "Dtype of input tensor of RMSNorm only supports Float32, Half and BFloat16, but now is ",
       input_dtype);
-  CheckDType("input", input_dtype, "weight", weight, "FusedRMSNormForward");
+  CheckDType("input", input_dtype, "weight", weight, "FusedRMSNormForwardOut");
+  CheckDType("input", input_dtype, "output", output, "FusedRMSNormForwardOut");
 
   const c10::musa::MUSAGuard device_guard(input_device);
   const Tensor contig_input = (input.dim() == 2 && input.stride(1) == 1)
@@ -158,26 +170,69 @@ std::tuple<Tensor, Tensor> FusedRMSNormForward(
   const auto contig_gamma = weight.defined()
       ? FormatContiguous(weight, MemoryFormat::Contiguous)
       : Tensor();
-  auto contig_output = at::empty_like(
-      contig_input,
-      contig_input.options().memory_format(MemoryFormat::Contiguous));
-  auto contig_invvar = CreateRMSNormFwdInvvar(contig_input, normalized_shape);
-  auto acc_type = at::toAccumulateType(input_dtype, /*is_cuda=*/true);
-  double eps_val = eps.has_value();
-  if (acc_type == at::ScalarType::Float) {
-    eps_val = eps.value_or(std::numeric_limits<float>::epsilon());
+
+  const auto input_shape = contig_input.sizes();
+  if (!output.defined()) {
+    output = at::empty_like(
+        contig_input,
+        contig_input.options().memory_format(MemoryFormat::Contiguous));
   } else {
-    eps_val = eps.value_or(std::numeric_limits<double>::epsilon());
+    output = FormatContiguous(output, MemoryFormat::Contiguous);
   }
+
+  const auto invvar_ndim = input_shape.size() - normalized_shape.size();
+  const auto invvar_shape = IntArrayRef(input_shape.data(), invvar_ndim);
+  const auto invvar_dtype = InferInvvarDType(input_dtype);
+  if ((!invvar.defined()) || (invvar.sizes() != invvar_shape)) {
+    invvar.resize_(invvar_shape);
+  }
+  const bool need_invvar_proxy = (invvar.scalar_type() != invvar_dtype);
+  auto invvar_proxy = need_invvar_proxy
+      ? c10::MaybeOwned<Tensor>::owned(
+            CreateRMSNormFwdInvvar(contig_input, normalized_shape))
+      : c10::MaybeOwned<Tensor>::borrowed(invvar);
 
   FusedRMSNormForwardCall(
       contig_input,
       contig_gamma,
       normalized_shape,
-      eps_val,
-      contig_output,
-      contig_invvar);
-  return {contig_output, contig_invvar};
+      eps,
+      output,
+      const_cast<Tensor&>(*invvar_proxy));
+
+  if (need_invvar_proxy) {
+    invvar.copy_(*invvar_proxy);
+  }
+  return {output, invvar};
+}
+
+std::tuple<Tensor&, Tensor> FusedRMSNormForwardOut(
+    const Tensor& input,
+    Tensor& output,
+    IntArrayRef normalized_shape,
+    double eps,
+    const std::optional<Tensor>& weight_opt) {
+  auto invvar = CreateRMSNormFwdInvvar(input, normalized_shape);
+  FusedRMSNormForwardOut(
+      input, normalized_shape, eps, weight_opt, output, invvar);
+  return {output, invvar};
+}
+
+std::tuple<Tensor, Tensor> FusedRMSNormForward(
+    const Tensor& input,
+    IntArrayRef normalized_shape,
+    const c10::optional<Tensor>& weight_opt,
+    std::optional<double> eps) {
+  auto output = at::empty_like(
+      input, input.options().memory_format(MemoryFormat::Contiguous));
+  const auto acc_type =
+      at::toAccumulateType(input.scalar_type(), /*is_cuda=*/true);
+  const double eps_val = (acc_type == at::ScalarType::Float)
+      ? eps.value_or(std::numeric_limits<float>::epsilon())
+      : eps.value_or(std::numeric_limits<double>::epsilon());
+  auto ret = FusedRMSNormForwardOut(
+      input, output, normalized_shape, eps_val, weight_opt);
+  return std::make_tuple(std::move(output), std::move(std::get<1>(ret)));
 }
 
 std::tuple<Tensor, Tensor> FusedRMSNormBackward(
@@ -204,7 +259,7 @@ std::tuple<Tensor, Tensor> FusedRMSNormBackward(
 
   ::musa::dnn::RMSNorm op;
   const auto norm_axes = CreateMuDNNNormAxes(contig_input, normalized_shape);
-  CHECK_MUDNN_STATUS(op.SetAxis(norm_axes.size(), norm_axes.data()), "SetAxis");
+  SetRMSNorm(op, norm_axes.size(), norm_axes.data());
   auto mudnn_dx = CreateMUTensor(contig_grad_input);
   auto mudnn_dg =
       has_weight ? CreateMUTensor(contig_grad_gamma) : CreateEmptyMUTensor();

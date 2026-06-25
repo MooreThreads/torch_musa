@@ -1,0 +1,22 @@
+diff --git a/aten/src/ATen/native/LinearAlgebra.cpp b/aten/src/ATen/native/LinearAlgebra.cpp
+index 616e6ec..1337523 100644
+--- a/aten/src/ATen/native/LinearAlgebra.cpp
++++ b/aten/src/ATen/native/LinearAlgebra.cpp
+@@ -2300,7 +2300,7 @@ inline Tensor _move_memory_if_cuda_input(
+   const Tensor& mem,
+   const Tensor& in
+ ) {
+-  return (in.device().type() == at::kCUDA)
++  return (in.device().type() == at::kCUDA || in.device().type() == at::kPrivateUse1)
+     ? mem.to(at::device_of(in).value())
+     : mem;
+ }
+@@ -2657,7 +2657,7 @@ Tensor mexp_impl(
+     // It requires moving data back and forth between devices when `a` is on CUDA,
+     // but at the cost of only one single CPU-CUDA synchronization (instead of 6),
+     // and better performance overall (benchmarked).
+-    const auto norm_cpu = (a.device().type() == at::kCUDA)
++    const auto norm_cpu = (a.device().type() == at::kCUDA || a.device().type() == at::kPrivateUse1)
+       ? norm.to(at::kCPU) : norm;
+ 
+     constexpr std::array<

@@ -105,10 +105,10 @@
 #include <ATen/ops/zeros_like.h>
 #endif
 
+#include "torch_musa/csrc/aten/mudnn/Reduce.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-
-#include <mudnn.h>
 
 namespace at {
 namespace musa {
@@ -208,15 +208,14 @@ void ReduceCall(
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Reduce r;
-  CHECK_MUDNN_STATUS(r.SetMode(m), "SetMode");
   // That input is scalar, but dim = [0] is allowed in PyTorch, in which case
   // we need pass an empty 'dim' paramter to Reduce in muDNN.
-  if (self.dim() == 0 && self.numel() == 1) {
-    CHECK_MUDNN_STATUS(r.SetDim({}), "SetDim");
-  } else {
-    std::vector<int> dim_int(dim.begin(), dim.end());
-    CHECK_MUDNN_STATUS(r.SetDim(dim_int.size(), dim_int.data()), "SetDim");
+  std::vector<int> dim_int;
+  if (!(self.dim() == 0 && self.numel() == 1)) {
+    dim_int.insert(dim_int.end(), dim.begin(), dim.end());
   }
+  const int ndim = static_cast<int>(dim_int.size());
+  const int* dims = dim_int.empty() ? nullptr : dim_int.data();
   // set order parameter for norm op
   if (is_norm) {
     float p_value = 2.0f;
@@ -231,7 +230,9 @@ void ReduceCall(
             false, "norm_kernel_musa_impl expects norm to be integer or float");
       }
     }
-    CHECK_MUDNN_STATUS(r.SetNormOrd(p_value), "SetNormOrd");
+    SetReduceNorm(r, m, ndim, dims, p_value);
+  } else {
+    SetReduce(r, m, ndim, dims);
   }
 
   CHECK_MUDNN_STATUS(r.Run(h, out, in, InternalMemAlloc), "Run");
@@ -313,15 +314,16 @@ void AnyAllDimImpl(
   SetMUTensorDType(compute_dtype, in_mt);
 
   ::musa::dnn::Reduce r;
-  CHECK_MUDNN_STATUS(r.SetMode(m), "SetMode");
+
   // That input is scalar, but dim = [0] is allowed in PyTorch, in which case
   // we need pass an empty 'dim' paramter to Reduce in muDNN.
-  if (self.dim() == 0 && self.numel() == 1) {
-    CHECK_MUDNN_STATUS(r.SetDim({}), "SetDim");
-  } else {
-    std::vector<int> dim_int(dims_vec.begin(), dims_vec.end());
-    CHECK_MUDNN_STATUS(r.SetDim(dim_int.size(), dim_int.data()), "SetDim");
+  std::vector<int> dim_int;
+  if (!(self.dim() == 0 && self.numel() == 1)) {
+    dim_int.insert(dim_int.end(), dims_vec.begin(), dims_vec.end());
   }
+  const int _dim = static_cast<int>(dim_int.size());
+  const int* _dims = dim_int.empty() ? nullptr : dim_int.data();
+  SetReduce(r, m, _dim, _dims);
   CHECK_MUDNN_STATUS(r.Run(h, out_mt, in_mt, InternalMemAlloc), "Run");
 
   if (need_extra_copy) {
@@ -608,143 +610,6 @@ Tensor Norm(
   return out;
 }
 
-namespace {
-
-using CUM_MODE = ::musa::dnn::Cum::Mode;
-
-void CumulativeImpl(Tensor& out, const Tensor& in, int64_t dim, CUM_MODE mode) {
-  namedinference::propagate_names(out, in);
-
-  if (in.numel() == 0) {
-    return;
-  }
-  if (in.dim() == 0) {
-    out.fill_(in);
-  }
-
-  const c10::musa::MUSAGuard device_guard(in.device());
-  auto in_ctype = in.scalar_type();
-  auto out_ctype = out.scalar_type();
-
-  if (isFloatingType(in_ctype) || isFloatingType(out_ctype)) {
-    out_ctype = promoteTypes(in_ctype, out_ctype);
-    in_ctype = out_ctype;
-  } else if (out_ctype == ScalarType::Int || out_ctype == ScalarType::Long) {
-    if (in_ctype == ScalarType::Byte || in_ctype == ScalarType::Short) {
-      in_ctype = ScalarType::Int;
-    } else if (in_ctype == ScalarType::Long) {
-      out_ctype = in_ctype;
-    }
-  } else {
-    // Special cases for muDNN workarounds.
-    if (in_ctype == ScalarType::Long) {
-      out_ctype = in_ctype;
-    } else {
-      out_ctype = ScalarType::Int;
-      if (in_ctype == ScalarType::Byte || in_ctype == ScalarType::Short) {
-        in_ctype = out_ctype;
-      }
-    }
-  }
-
-  using Proxy = typename c10::MaybeOwned<Tensor>;
-  auto make_proxy = [](const Tensor& in, ScalarType dtype) -> Proxy {
-    if (dtype != in.scalar_type()) {
-      return Proxy::owned(in.to(dtype));
-    }
-    return Proxy::borrowed(in);
-  };
-  auto c_in = make_proxy(in, in_ctype);
-  auto c_out = make_proxy(out, out_ctype);
-  auto contig_c_in = FormatContiguous(*c_in, MemoryFormat::Contiguous);
-  auto contig_c_out = FormatContiguous(*c_out, MemoryFormat::Contiguous);
-
-  auto mudnn_out = CreateMUTensor(contig_c_out);
-  auto mudnn_in = CreateMUTensor(contig_c_in);
-  muHandle& h = GetMudnnHandle();
-  ::musa::dnn::Cum cum;
-  CHECK_MUDNN_STATUS(cum.SetDim(static_cast<int>(dim)), "SetDim");
-  CHECK_MUDNN_STATUS(cum.SetMode(mode), "SetMode");
-  CHECK_MUDNN_STATUS(
-      cum.Run(h, mudnn_out, mudnn_in, InternalMemAlloc), "CumRun");
-
-  if (out_ctype != out.scalar_type()) {
-    out.copy_(contig_c_out);
-  }
-}
-
-Tensor& CumulativeOut(
-    const Tensor& self,
-    int64_t dim,
-    c10::optional<ScalarType> dtype,
-    Tensor& out,
-    CUM_MODE mode) {
-  // Keep logical consistency with torch.
-  if (dtype) {
-    const auto out_dtype = out.scalar_type();
-    const auto expect_dtype = dtype.value();
-    TORCH_CHECK(
-        expect_dtype == out_dtype,
-        "Expected out tensor to have dtype ",
-        expect_dtype,
-        ", but got ",
-        out_dtype,
-        " instead");
-  }
-  native::resize_output(out, self.sizes());
-  CumulativeImpl(out, self, dim, mode);
-  return out;
-}
-
-Tensor& Cumulative_(
-    Tensor& self,
-    int64_t dim,
-    c10::optional<ScalarType> dtype,
-    CUM_MODE mode) {
-  // Since check_inplace(...) does not modify the `self` tensor in torch,
-  // we ignore the `dtype` parameter here, even though it may have a value.
-  CumulativeImpl(self, self, dim, mode);
-  return self;
-}
-
-Tensor Cumulative(
-    const Tensor& self,
-    int64_t dim,
-    c10::optional<ScalarType> dtype,
-    CUM_MODE mode) {
-  const auto in_dtype = self.scalar_type();
-  const auto out_dtype = dtype.value_or(
-      isIntegralType(in_dtype, true) ? ScalarType::Long : in_dtype);
-  Tensor out = at::empty(self.sizes(), self.options().dtype(out_dtype));
-  CumulativeImpl(out, self, dim, mode);
-  return out;
-}
-
-} // anonymous namespace
-
-#define GEN_CUMULATIVE_FUNCTION(OP, MODE)                                     \
-  Tensor OP(                                                                  \
-      const Tensor& self, int64_t dim, c10::optional<ScalarType> dtype) {     \
-    return Cumulative(self, dim, dtype, MODE);                                \
-  }                                                                           \
-                                                                              \
-  Tensor& OP##_(Tensor& self, int64_t dim, c10::optional<ScalarType> dtype) { \
-    return Cumulative_(self, dim, dtype, MODE);                               \
-  }                                                                           \
-                                                                              \
-  Tensor& OP##Out(                                                            \
-      const Tensor& self,                                                     \
-      int64_t dim,                                                            \
-      c10::optional<ScalarType> dtype,                                        \
-      Tensor& out) {                                                          \
-    return CumulativeOut(self, dim, dtype, out, MODE);                        \
-  }
-
-GEN_CUMULATIVE_FUNCTION(CumSum, CUM_MODE::ADD)
-GEN_CUMULATIVE_FUNCTION(CumProd, CUM_MODE::MUL)
-
-#undef GEN_CUMULATIVE_FUNCTION
-
 void CummaxHelper(
     const Tensor& self,
     Tensor& values,
@@ -883,9 +748,8 @@ void ReduceIndicesCall(
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Reduce r;
-  CHECK_MUDNN_STATUS(r.SetMode(m), "SetMode");
   int dim_int = dim;
-  CHECK_MUDNN_STATUS(r.SetDim({dim_int}), "SetDim");
+  SetReduce(r, m, 1, &dim_int);
   CHECK_MUDNN_STATUS(
       r.RunWithIndices(h, out, ids, in, InternalMemAlloc), "RunWithIndices");
 
@@ -910,9 +774,8 @@ void ReduceIndicesOnlyCall(
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Reduce r;
-  CHECK_MUDNN_STATUS(r.SetMode(m), "SetMode");
   int dim_int = dim;
-  CHECK_MUDNN_STATUS(r.SetDim({dim_int}), "SetDim");
+  SetReduce(r, m, 1, &dim_int);
   CHECK_MUDNN_STATUS(r.RunIndices(h, out, in, InternalMemAlloc), "RunIndices");
   if (C10_UNLIKELY(!output.is_same(out_tmp))) {
     output.copy_(out_tmp);

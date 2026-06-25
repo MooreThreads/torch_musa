@@ -2,6 +2,7 @@
 
 # pylint: disable=C0103, W0621, C0301, W9015, W9016, W9017, W9018
 import contextlib
+import os
 import warnings
 from typing import cast, Iterable, List, Union, Generator
 import torch
@@ -22,7 +23,68 @@ __all__ = [
     "seed_all",
     "initial_seed",
     "fork_rng",
+    "NV_GPU_REGISTRY",
+    "align_rng_to_nv_gpu",
 ]
+
+
+# ---------------------------------------------------------------------------
+# RNG grid sizing alignment with NVIDIA GPUs
+# ---------------------------------------------------------------------------
+
+# NV GPU spec table: {name: (multiProcessorCount, maxThreadsPerMultiProcessor)}
+NV_GPU_REGISTRY = {
+    "V100": (80, 2048),
+    "A100": (108, 2048),
+    "A800": (108, 2048),
+    "H100_PCIE": (114, 2048),
+    "H100": (132, 2048),
+    "H200": (132, 2048),
+    "H800": (132, 2048),
+    "B200": (192, 2048),
+}
+
+
+def align_rng_to_nv_gpu(gpu_name=None):
+    """Align RNG grid sizing to a target NVIDIA GPU.
+
+    Sets TORCH_ARCH_MP_COUNT and TORCH_ARCH_MAXTHREADS_PER_MP environment variables
+    so the C++ RNG grid config reads the correct values.
+
+    Priority:
+        TORCH_ARCH_MP_COUNT/TORCH_ARCH_MAXTHREADS_PER_MP (explicit) >
+        gpu_name argument >
+        TORCH_RNG_ALIGN env var >
+        device real values (no action)
+
+    Args:
+        gpu_name: NVIDIA GPU name (e.g. "H200", "A100"). If None,
+                  reads from TORCH_RNG_ALIGN env var.
+
+    Raises:
+        ValueError: If gpu_name is not found in NV_GPU_REGISTRY.
+    """
+    if os.environ.get("TORCH_ARCH_MP_COUNT") and os.environ.get(
+        "TORCH_ARCH_MAXTHREADS_PER_MP"
+    ):
+        return
+
+    if gpu_name is None:
+        gpu_name = os.environ.get("TORCH_RNG_ALIGN")
+
+    if gpu_name is None:
+        return
+
+    name = gpu_name.upper().replace("-", "_")
+    if name not in NV_GPU_REGISTRY:
+        raise ValueError(
+            f"Unknown NV GPU '{gpu_name}'. "
+            f"Available: {', '.join(sorted(NV_GPU_REGISTRY.keys()))}"
+        )
+
+    mp_count, max_threads = NV_GPU_REGISTRY[name]
+    os.environ["TORCH_ARCH_MP_COUNT"] = str(mp_count)
+    os.environ["TORCH_ARCH_MAXTHREADS_PER_MP"] = str(max_threads)
 
 
 def get_rng_state(device: Union[int, str, torch.device] = "musa") -> Tensor:

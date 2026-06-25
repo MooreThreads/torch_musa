@@ -42,11 +42,6 @@ std::tuple<Tensor, Tensor, Tensor, Tensor, Tensor> _FlashAttnForward(
     const std::optional<Tensor>& _alibi_slopes) {
 #if defined(MUDNN_VERSION) && (MUDNN_VERSION >= 3000)
   const auto softmax_scale = sdp::calculate_scale(query, scale).expect_float();
-  std::optional<Tensor> out = std::nullopt;
-
-  std::optional<Tensor> seqused_k = _seqused_k;
-  std::optional<at::Tensor> block_table =
-      std::nullopt; // we are not using the block table yet
 
   TORCH_CHECK(
       !_alibi_slopes.has_value(),
@@ -57,16 +52,12 @@ std::tuple<Tensor, Tensor, Tensor, Tensor, Tensor> _FlashAttnForward(
   TORCH_CHECK(
       !window_size_right.has_value(),
       "_flash_attention_forward doesn't support window_size_right for MUSA backend");
-
-  // We are going to have two paths:
-  // 1. The standard MHA path for dense tensors
-  // 2. The Varseqlen path
   TORCH_CHECK(
       cumulative_sequence_length_q.has_value() ==
           cumulative_sequence_length_k.has_value(),
       "cumulative_sequence_length_q and cumulative_sequence_length_k must be both set or both not set");
-  Tensor output, q_padded, k_padded, v_padded, logsumexp, output_shape,
-      philox_seed, philox_offset, debug_attn_mask;
+
+  Tensor output, logsumexp, rng_state, debug_attn_mask;
   if (cumulative_sequence_length_q.has_value()) {
     std::tie(output, logsumexp, debug_attn_mask) = MuDNNFlashVarlenFwd(
         query,
@@ -80,22 +71,21 @@ std::tuple<Tensor, Tensor, Tensor, Tensor, Tensor> _FlashAttnForward(
         softmax_scale,
         is_causal);
   } else {
-    std::tie(output, logsumexp, debug_attn_mask) = MuDNNFlashSDPAFwd(
+    std::tie(output, logsumexp, debug_attn_mask, rng_state) = MuDNNFlashSDPAFwd(
         query,
         key,
         value,
         /*attn_mask=*/std::nullopt,
         dropout_p,
         is_causal,
+        return_debug_mask,
         softmax_scale);
   }
-  debug_attn_mask =
-      return_debug_mask ? debug_attn_mask : at::empty({0}, query.options());
   return std::make_tuple(
       std::move(output),
       std::move(logsumexp),
-      std::move(philox_seed),
-      std::move(philox_offset),
+      std::move(rng_state),
+      Tensor(),
       std::move(debug_attn_mask));
 
 #else
@@ -104,7 +94,6 @@ std::tuple<Tensor, Tensor, Tensor, Tensor, Tensor> _FlashAttnForward(
 #endif
 }
 
-// TODO(@ai-infra): dropout_p is not used in backward currently
 std::tuple<Tensor, Tensor, Tensor> _FlashAttnBackward(
     const Tensor& grad_out,
     const Tensor& query,
@@ -118,8 +107,8 @@ std::tuple<Tensor, Tensor, Tensor> _FlashAttnBackward(
     int64_t max_seqlen_batch_k,
     double dropout_p,
     bool is_causal,
-    const Tensor& philox_seed,
-    const Tensor& philox_offset,
+    const Tensor& rng_state,
+    const Tensor& unused,
     std::optional<double> scale,
     std::optional<int64_t> window_size_left,
     std::optional<int64_t> window_size_right) {
@@ -136,13 +125,12 @@ std::tuple<Tensor, Tensor, Tensor> _FlashAttnBackward(
       !window_size_right.has_value(),
       "_flash_attention_forward doesn't support window_size_right for MUSA backend");
 
-  at::Tensor dq;
-  at::Tensor dk;
-  at::Tensor dv;
-
   // We check the whether the cumulative_sequence_length_q is defined
   // in order to determine whether we are using varlen or dense backward
   if (cumulative_sequence_length_q.defined()) {
+    auto dq = at::empty_like(query);
+    auto dk = at::empty_like(key);
+    auto dv = at::empty_like(value);
     // Varlen backward
     auto [dQuery, dKey, dValue, dSoftmax] = MuDNNFlashVarlenBwd(
         contiguous_grad_out,
@@ -173,8 +161,10 @@ std::tuple<Tensor, Tensor, Tensor> _FlashAttnBackward(
         contiguous_out,
         logsumexp,
         /*dropout_mask=*/Tensor(),
+        rng_state,
+        dropout_p,
         is_causal,
-        /*attn_mask=*/Tensor(),
+        /*attn_mask=*/std::nullopt,
         softmax_scale);
     return std::make_tuple(
         std::move(dQuery), std::move(dKey), std::move(dValue));
@@ -313,10 +303,14 @@ std::tuple<Tensor, Tensor> _NativeMultiHeadAttention(
 // [3 * D]
 // [3, B, NH, T, DH]
 std::tuple<Tensor, Tensor, Tensor> _TransformBiasRescaleQKV(
-    const Tensor& qkv,
+    const Tensor& qkv_,
     const Tensor& qkv_bias,
     const int64_t num_head) {
-  TORCH_CHECK(!qkv.is_nested(), "Not support nested q/k/v tensors.");
+  // TORCH_CHECK(!qkv.is_nested(), "Not support nested q/k/v tensors.");
+  auto qkv_proxy = qkv_.is_nested()
+      ? c10::MaybeOwned<Tensor>::owned(qkv_.to_padded_tensor(0))
+      : c10::MaybeOwned<Tensor>::borrowed(qkv_);
+  const auto& qkv = *qkv_proxy;
 
   auto B = qkv.size(0);
   auto T = qkv.size(1);

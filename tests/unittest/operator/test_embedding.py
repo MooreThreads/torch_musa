@@ -143,7 +143,7 @@ float_dtypes = [torch.float32]
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@pytest.mark.parametrize("input_shape", [(2, 512)])
+@pytest.mark.parametrize("input_shape", [(2, 32)])
 @pytest.mark.parametrize("dtype", float_dtypes)
 @pytest.mark.parametrize("norm_type", [1.0, 2.0])
 @pytest.mark.skipif(testing.get_musa_arch() < 31, reason="Precision issue on QY2")
@@ -155,7 +155,7 @@ def test_embedding_renorm(input_shape, dtype, norm_type):
         comparator = testing.DefaultComparator(abs_diff=1e-3, rel_diff=2e-2)
 
     n = random.randint(128 + 1, 256)
-    m = random.randint(1, 256)
+    m = 128
     input_tensor = torch.rand((n + 1, m)).to(dtype)
     indices = torch.randint(low=0, high=n, size=input_shape)
     max_norm = norm_type

@@ -41,9 +41,11 @@
 #include <ATen/ops/zeros_like.h>
 #endif
 #include <ATen/native/ConvUtils.h>
-#include <mudnn.h>
+#include "torch_musa/csrc/aten/mudnn/Convolution.h"
+#include "torch_musa/csrc/aten/mudnn/Permute.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Context.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 namespace at {
@@ -129,7 +131,9 @@ Tensor ConvNd(
   ConfigConv(c, input.scalar_type(), stride, padding, dilation, groups);
 
   ::musa::dnn::Convolution::Algorithm algo;
-  c.GetRecommendForwardAlgorithm(h, algo, out, in, ke);
+  CHECK_MUDNN_STATUS(
+      c.GetRecommendForwardAlgorithm(h, algo, out, in, ke),
+      "GetRecommendForwardAlgorithm");
 
   ::musa::dnn::Convolution::FusedActivationDesc act;
   act.SetMode(::musa::dnn::Convolution::FusedActivationDesc::Mode::IDENTITY);
@@ -144,7 +148,6 @@ Tensor ConvNd(
       "RunFusion");
 #else
   if constexpr (N == 2) {
-    // bias always contiguous ?
     muTensor bias = (bias_opt.has_value() && bias_opt.value().numel() != 0)
         ? CreateMUTensor(bias_opt.value())
         : CreateEmptyMUTensor();
@@ -299,18 +302,13 @@ Tensor Convolution(
       : ConvNd<3>(input, weight, bias_opt, stride, padding, dilation, groups);
 }
 
-static muTensor CreateMUTensorFromNDHWCToDHWCN(
+static void SetDHWCNWeightMUTensor(
     const Tensor& out,
-    const Tensor& in) {
-  // called by ConvDataBwd in ChannelsLast3d case
-  // NOTE: The memory format at Torch level makes no sense,
-  // i.e., the out just needs to satisfy a dense layout
-  muTensor in_mu, out_mu;
-
+    IntArrayRef sizes,
+    muTensor& out_mu) {
   SetMUTensorDType(out.scalar_type(), out_mu);
   SetMUTensorAddr(out.data_ptr(), out_mu);
   out_mu.SetFormat(muTensor::Format::DHWCN);
-  auto sizes = in.sizes();
   // desired out's shape and stride:
   // shape: (sizes[0], sizes[1], sizes[2], sizes[3], sizes[4])
   // stride: (1,
@@ -325,6 +323,26 @@ static muTensor CreateMUTensorFromNDHWCToDHWCN(
   out_mu.SetNdInfo(
       {sizes[2], sizes[3], sizes[4], sizes[1], sizes[0]},
       {stride_2, stride_3, stride_4, sizes[0], 1});
+}
+
+static muTensor CreateDHWCNWeightMUTensor(
+    const Tensor& out,
+    IntArrayRef sizes) {
+  muTensor out_mu;
+  SetDHWCNWeightMUTensor(out, sizes, out_mu);
+  return out_mu;
+}
+
+static void CreateMUTensorFromNDHWCToDHWCN(
+    const Tensor& out,
+    const Tensor& in) {
+  // called by ConvDataBwd in ChannelsLast3d case
+  // NOTE: The memory format at Torch level makes no sense,
+  // i.e., the out just needs to satisfy a dense layout
+  muTensor in_mu, out_mu;
+
+  auto sizes = in.sizes();
+  SetDHWCNWeightMUTensor(out, sizes, out_mu);
 
   SetMUTensorDType(in.scalar_type(), in_mu);
   SetMUTensorAddr(in.data_ptr(), in_mu);
@@ -336,8 +354,8 @@ static muTensor CreateMUTensorFromNDHWCToDHWCN(
   //          sizes[1] * sizes[4] * sizes[3],
   //          sizes[1] * sizes[4],
   //          sizes[1])
-  stride_3 = sizes[1] * sizes[4];
-  stride_2 = stride_3 * sizes[3];
+  int64_t stride_3 = sizes[1] * sizes[4];
+  int64_t stride_2 = stride_3 * sizes[3];
   int64_t stride_0 = stride_2 * sizes[2];
   in_mu.SetNdInfo(
       {sizes[2], sizes[3], sizes[4], sizes[1], sizes[0]},
@@ -347,8 +365,6 @@ static muTensor CreateMUTensorFromNDHWCToDHWCN(
   ::musa::dnn::Permute op;
   CHECK_MUDNN_STATUS(
       op.Run(h, out_mu, in_mu), "CreateMUTensorFromNDHWCToDHWCN");
-
-  return out_mu;
 }
 
 template <int ND>
@@ -369,16 +385,18 @@ Tensor ConvDataBwd(
       FormatContiguous(grad_output, weight_memory_format);
   auto grad_input_t = at::empty(
       input_size, contiguous_grad_output.options(), weight_memory_format);
-
+  auto w = CreateMUTensor(contiguous_weight);
   auto gout = CreateMUTensor(contiguous_grad_output);
   auto gin = CreateMUTensor(grad_input_t);
-  auto w = CreateMUTensor(contiguous_weight);
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Convolution c;
   ConfigConv(c, weight.scalar_type(), stride, padding, dilation, groups);
+
   ::musa::dnn::Convolution::AlgorithmBwdData algo;
-  c.GetRecommendBackwardDataAlgorithm(h, algo, gin, gout, w);
+  CHECK_MUDNN_STATUS(
+      c.GetRecommendBackwardDataAlgorithm(h, algo, gin, gout, w),
+      "GetRecommendBackwardDataAlgorithm");
   CHECK_MUDNN_STATUS(
       c.RunBwdData(h, gin, gout, w, algo, InternalMemAlloc), "ConvBwdData");
   return grad_input_t;
@@ -404,9 +422,10 @@ Tensor ConvDataBwd<3>(
   if (weight_memory_format == MemoryFormat::ChannelsLast3d) {
     // call FormatContiguous to ensure restride
     contiguous_weight = at::empty(weight.sizes(), weight.options());
-    w = CreateMUTensorFromNDHWCToDHWCN(
-        contiguous_weight, FormatContiguous(weight, weight_memory_format));
-
+    const auto formatted_weight =
+        FormatContiguous(weight, weight_memory_format);
+    CreateMUTensorFromNDHWCToDHWCN(contiguous_weight, formatted_weight);
+    w = CreateDHWCNWeightMUTensor(contiguous_weight, formatted_weight.sizes());
   } else {
     contiguous_weight = FormatContiguous(weight, weight_memory_format);
     w = CreateMUTensor(contiguous_weight);
@@ -424,7 +443,9 @@ Tensor ConvDataBwd<3>(
   ::musa::dnn::Convolution c;
   ConfigConv(c, weight.scalar_type(), stride, padding, dilation, groups);
   ::musa::dnn::Convolution::AlgorithmBwdData algo;
-  c.GetRecommendBackwardDataAlgorithm(h, algo, gin, gout, w);
+  CHECK_MUDNN_STATUS(
+      c.GetRecommendBackwardDataAlgorithm(h, algo, gin, gout, w),
+      "GetRecommendBackwardDataAlgorithm");
   CHECK_MUDNN_STATUS(
       c.RunBwdData(h, gin, gout, w, algo, InternalMemAlloc), "ConvBwdData");
   return grad_input_t;
@@ -456,7 +477,9 @@ Tensor ConvWeightBwd(
   ::musa::dnn::Convolution c;
   ConfigConv(c, input.scalar_type(), stride, padding, dilation, groups);
   ::musa::dnn::Convolution::AlgorithmBwdFilter algo;
-  c.GetRecommendBackwardFilterAlgorithm(h, algo, gw, in, gout);
+  CHECK_MUDNN_STATUS(
+      c.GetRecommendBackwardFilterAlgorithm(h, algo, gw, in, gout),
+      "GetRecommendBackwardFilterAlgorithm");
   CHECK_MUDNN_STATUS(
       c.RunBwdFilter(h, gw, in, gout, algo, InternalMemAlloc), "ConvBwdFilter");
   return grad_weight_t;

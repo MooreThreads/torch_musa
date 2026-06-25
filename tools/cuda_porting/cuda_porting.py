@@ -40,7 +40,7 @@ r"""All folders needed for cuda-porting
 """
 PORT_FILES = [
     PortingFile("aten/src/ATen/native/cuda", True, False),
-    PortingFile("aten/src/ATen/native/nested", True, True),
+    PortingFile("aten/src/ATen/native/nested", True, False),
     PortingFile("aten/src/ATen/native/quantized", True, True),
     PortingFile("aten/src/ATen/native/sparse", True, False),
     PortingFile("aten/src/ATen/native/transformers", True, True),
@@ -162,6 +162,11 @@ def port_cuda(
         r"SparseCUDATensorMath.muh": "SparseMUSATensorMath.muh",
         r"SparseCUDABlas.h": "SparseMUSABlas.h",
         r"SparseCUDABlas.cpp": "SparseMUSABlas.cpp",
+        r"Device\(kCUDA\)": "Device(kPrivateUse1)",
+        r"device\(at::kCUDA\)": "device(at::kPrivateUse1)",
+        r"CUTLASS": "MUTLASS",
+        r"cutlass::": "mutlass::",
+        r"NO_CUDNN_DESTROY_HANDLE": "NO_MUDNN_DESTROY_HANDLE",
     }
 
     # unregister CUDA kernel bindings that managed by stub mechiasm,
@@ -220,6 +225,7 @@ def port_cuda(
                         or ".cu" in file_path
                         or "FakeQuantPerTensorAffine.cpp" in file_path
                         or "FakeQuantPerChannelAffine.cpp" in file_path
+                        or "TensorAdvancedIndexing.cpp" in file_path
                     ):
                         shutil.copy(file_path, destination_folder)
                     else:

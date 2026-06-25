@@ -42,6 +42,7 @@ def _init_inductor_backend_registration():
     from .codegen.wrapper import MUSATritonWrapperCodeGen  # avoid circular import
     from .codegen.triton import MUSATritonScheduling
     from .runtime.triton_heuristics import _apply_triton_heuristics_patches
+    from .template_heuristics import _apply_template_heuristics_patches
 
     # done fallback here
     _make_torch_musa_aten_fallback()
@@ -62,6 +63,7 @@ def _init_inductor_backend_registration():
     )
 
     # apply patches
+    _apply_template_heuristics_patches()
     _apply_triton_heuristics_patches()
 
 

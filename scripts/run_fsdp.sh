@@ -13,5 +13,5 @@ pytest --last-failed --junitxml=${TEST_REPORT_DIR}/${GPU_TYPE}-distributed-test-
 pytest --last-failed --junitxml=${TEST_REPORT_DIR}/${GPU_TYPE}-dynamo-test-failed-results.xml -v tests/unittest/dynamo
 # pytest --last-failed --junitxml=${TEST_REPORT_DIR}/${GPU_TYPE}-inductor-test-failed-results.xml -v tests/unittest/inductor
 end_time=$(date +%s.%N)
-runtime=$(( end_time - start_time ))
+runtime=$(awk "BEGIN {print $end_time - $start_time}")
 echo "Total runtime: $runtime seconds"

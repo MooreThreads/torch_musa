@@ -1,7 +1,7 @@
 #include <ATen/ATen.h>
 #include <ATen/core/Tensor.h>
 
-#include "torch_musa/csrc/aten/mudnn/Handle.h"
+#include "torch_musa/csrc/aten/musa/MUSAContextLight.h"
 #include "torch_musa/csrc/aten/musa/MUSAMacros.muh"
 #include "torch_musa/csrc/aten/musa/MUSAMath.muh"
 #include "torch_musa/csrc/aten/ops/Bucketize.h"
@@ -220,20 +220,15 @@ void BucketizeRun(
       "Unsupported out dtype of Bucketize: ",
       out.scalar_type());
 
-  at::musa::muHandle& h = GetMudnnHandle();
-
   int bd_num = boundaries.numel();
   int elements = in.numel();
   if (elements == 0)
     return;
 
   // device info
-  musaDeviceProp device_prop;
-  int device_id = h.GetDeviceId();
-  TORCH_CHECK(
-      musaSuccess == musaGetDeviceProperties(&device_prop, device_id),
-      "musaGetDeviceProperties error");
-  const int mp_num = device_prop.multiProcessorCount;
+  const auto* device_prop = at::musa::getCurrentDeviceProperties();
+  const int mp_num = device_prop->multiProcessorCount;
+
   const uint32_t nr_threads = 512;
   const uint32_t nr_blocks =
       std::min(at::musa::ceil_div(elements, 512), mp_num);

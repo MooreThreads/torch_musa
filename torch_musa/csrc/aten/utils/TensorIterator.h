@@ -5,7 +5,7 @@
 
 #include <ATen/TensorIterator.h>
 
-#include "torch_musa/csrc/aten/utils/Utils.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 
 namespace at {
@@ -109,6 +109,8 @@ class MusaTensorIterator : public TensorIteratorBase {
   bool tensor_is_type_corrected(int arg) const;
 
   void compute_types(const TensorIteratorConfig&);
+
+  bool _is_cpu_scalar(int64_t arg) const;
 
   FastSetupType compute_fast_setup_type(const TensorIteratorConfig&);
 

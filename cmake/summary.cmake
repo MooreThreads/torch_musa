@@ -23,6 +23,8 @@ function(torch_musa_build_configuration_summary)
   message(STATUS "MUSA TOOLKITS PATH      : ${MUSA_TOOLKIT_ROOT_DIR}")
   message(STATUS "MUSAToolkits_LIBRARIES  : ${MUSA_LIBRARIES}")
   message(STATUS "REAL_MUSA_VERSION       : ${REAL_MUSA_VERSION}")
+  message(STATUS "MUDNN_INCLUDE_DIR       : ${MUDNN_INCLUDE_DIR}")
   message(STATUS "MUDNN_LIBRARIES         : ${MUDNN_LIBRARIES}")
+  message(STATUS "USE_MUDNN_C_API         : ${USE_MUDNN_C_API}")
 
 endfunction()

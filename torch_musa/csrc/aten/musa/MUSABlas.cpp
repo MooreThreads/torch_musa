@@ -8,6 +8,7 @@
 #include "torch_musa/csrc/aten/musa/Exceptions.h"
 #include "torch_musa/csrc/aten/musa/MUSABlas.h"
 #include "torch_musa/csrc/aten/utils/Context.h"
+#include "torch_musa/csrc/core/MUSACachingAllocator.h"
 #include "torch_musa/csrc/core/MUSAFunctions.h"
 
 #define MUSABLAS_POSINT_CHECK(FD, X)         \
@@ -500,6 +501,198 @@ void trsmBatched<c10::complex<double>>(
       reinterpret_cast<muDoubleComplex**>(B),
       ldb,
       batchCount));
+}
+
+template <typename T, mublasStatus_t (*destructor)(T*)>
+struct MuBlasLtDeleter {
+  void operator()(T* x) {
+    if (x != nullptr) {
+      TORCH_MUSABLAS_CHECK(destructor(x));
+    }
+  }
+};
+
+template <typename T, mublasStatus_t (*destructor)(T*)>
+class MuBlasLtDescriptor {
+ public:
+  T* descriptor() const {
+    return descriptor_.get();
+  }
+  T* descriptor() {
+    return descriptor_.get();
+  }
+
+ protected:
+  std::unique_ptr<T, MuBlasLtDeleter<T, destructor>> descriptor_;
+};
+
+class MuBlasLtMatmulDescriptor : public MuBlasLtDescriptor<
+                                     mublasLtMatmulDescOpaque_t,
+                                     &mublasLtMatmulDescDestroy> {
+ public:
+  MuBlasLtMatmulDescriptor(
+      mublasComputeType_t compute_type,
+      musaDataType_t scale_type) {
+    mublasLtMatmulDesc_t raw_descriptor = nullptr;
+    TORCH_MUSABLAS_CHECK(
+        mublasLtMatmulDescCreate(&raw_descriptor, compute_type, scale_type));
+    descriptor_.reset(raw_descriptor);
+  }
+  template <typename T>
+  inline void setAttribute(mublasLtMatmulDescAttributes_t attr, const T value) {
+    // NOLINTNEXTLINE(bugprone-sizeof-expression)
+    TORCH_MUSABLAS_CHECK(::mublasLtMatmulDescSetAttribute(
+        descriptor(), attr, &value, sizeof(value)));
+  }
+};
+
+class MuBlasLtMatmulPreference : public MuBlasLtDescriptor<
+                                     mublasLtMatmulPreferenceOpaque_t,
+                                     &mublasLtMatmulPreferenceDestroy> {
+ public:
+  MuBlasLtMatmulPreference() {
+    mublasLtMatmulPreference_t raw_descriptor = nullptr;
+    TORCH_MUSABLAS_CHECK(mublasLtMatmulPreferenceCreate(&raw_descriptor));
+    descriptor_.reset(raw_descriptor);
+  }
+  template <typename T>
+  inline void setAttribute(
+      mublasLtMatmulPreferenceAttributes_t attr,
+      const T value) {
+    TORCH_MUSABLAS_CHECK(::mublasLtMatmulPreferenceSetAttribute(
+        descriptor(), attr, &value, sizeof(T)));
+  }
+};
+
+class MuBlasLtMatrixLayout : public MuBlasLtDescriptor<
+                                 mublasLtMatrixLayoutOpaque_t,
+                                 &mublasLtMatrixLayoutDestroy> {
+ public:
+  MuBlasLtMatrixLayout(
+      musaDataType_t type,
+      uint64_t rows,
+      uint64_t cols,
+      int64_t ld,
+      bool t = false) {
+    mublasLtMatrixLayout_t raw_descriptor = nullptr;
+    TORCH_MUSABLAS_CHECK(mublasLtMatrixLayoutCreate(
+        &raw_descriptor, type, t ? cols : rows, t ? rows : cols, ld));
+    descriptor_.reset(raw_descriptor);
+  }
+  template <typename T>
+  inline void setAttribute(
+      mublasLtMatrixLayoutAttribute_t attr,
+      const T value) {
+    TORCH_MUSABLAS_CHECK(::mublasLtMatrixLayoutSetAttribute(
+        descriptor(), attr, &value, sizeof(T)));
+  }
+};
+
+void int8_gemm(
+    bool transpose_mat1,
+    bool transpose_mat2,
+    int64_t m,
+    int64_t n,
+    int64_t k,
+    const int8_t* mat1_ptr,
+    int64_t mat1_ld,
+    const int8_t* mat2_ptr,
+    int64_t mat2_ld,
+    int32_t* result_ptr,
+    int64_t result_ld) {
+  mublasComputeType_t computeType = MUBLAS_COMPUTE_32I;
+  musaDataType_t scaleType = MUSA_R_32I;
+
+  musaDataType_t abType = MUSA_R_8I;
+  musaDataType_t cType = MUSA_R_32I;
+
+  mublasLtMatmulHeuristicResult_t heuristicResult = {};
+
+  MuBlasLtMatmulDescriptor computeDesc(computeType, scaleType);
+  mublasOperation_t transa = transpose_mat1 ? MUBLAS_OP_T : MUBLAS_OP_N;
+  computeDesc.setAttribute(MUBLASLT_MATMUL_DESC_TRANSA, transa);
+  mublasOperation_t transb = transpose_mat2 ? MUBLAS_OP_T : MUBLAS_OP_N;
+  computeDesc.setAttribute(MUBLASLT_MATMUL_DESC_TRANSB, transb);
+  auto stream = at::musa::getCurrentMUSAStream();
+
+  MuBlasLtMatrixLayout Adesc(abType, m, k, mat1_ld, transpose_mat1);
+  MuBlasLtMatrixLayout Bdesc(abType, k, n, mat2_ld, transpose_mat2);
+  MuBlasLtMatrixLayout Cdesc(cType, m, n, result_ld);
+
+  // mublas team: alpha and beta need to be the same dtype as of scaleType
+  at::opmath_type<int32_t> alpha_val = 1;
+  int32_t beta_val = 0;
+  mublasLtHandle_t ltHandle = at::musa::getCurrentMUSABlasLtHandle();
+
+  size_t workspaceSize = 1024 * 1024 * 4;
+  auto& allocator = *::c10::musa::MUSACachingAllocator::get();
+  void* workspace = allocator.allocate(workspaceSize).get();
+
+  MuBlasLtMatmulPreference preference;
+  preference.setAttribute(
+      MUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES, workspaceSize);
+  int returnedResult = 0;
+
+  TORCH_MUSABLAS_CHECK(mublasLtMatmulAlgoGetHeuristic(
+      ltHandle,
+      computeDesc.descriptor(),
+      Adesc.descriptor(),
+      Bdesc.descriptor(),
+      Cdesc.descriptor(),
+      Cdesc.descriptor(),
+      preference.descriptor(),
+      1,
+      &heuristicResult,
+      &returnedResult));
+  if (returnedResult == 0) {
+    TORCH_MUSABLAS_CHECK(MUBLAS_STATUS_NOT_IMPLEMENTED);
+  }
+
+  mublasStatus_t mublasStatus = mublasLtMatmul(
+      ltHandle,
+      computeDesc.descriptor(),
+      &alpha_val,
+      mat1_ptr,
+      Adesc.descriptor(),
+      mat2_ptr,
+      Bdesc.descriptor(),
+      &beta_val,
+      result_ptr,
+      Cdesc.descriptor(),
+      result_ptr,
+      Cdesc.descriptor(),
+      &heuristicResult.algo, // Heuristics don't seem to work for int8
+      workspace, // Non-zero workspace doesn't seem to work.
+      workspaceSize,
+      stream);
+  TORCH_CHECK(
+      mublasStatus == MUBLAS_STATUS_SUCCESS,
+      "MUSA error: ",
+      at::musa::blas::_mublasGetErrorEnum(mublasStatus),
+      " when calling mublasLtMatmul with transpose_mat1 ",
+      transpose_mat1,
+      " transpose_mat2 ",
+      transpose_mat2,
+      " m ",
+      m,
+      " n ",
+      n,
+      " k ",
+      k,
+      " mat1_ld ",
+      mat1_ld,
+      " mat2_ld ",
+      mat2_ld,
+      " result_ld ",
+      result_ld,
+      " abType ",
+      abType,
+      " cType ",
+      cType,
+      " computeType ",
+      computeType,
+      " scaleType ",
+      scaleType);
 }
 
 } // namespace blas

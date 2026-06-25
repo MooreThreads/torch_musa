@@ -85,6 +85,30 @@ def test_binary(input_data, dtype, other_dtype, func):
     function(input_data, dtype, other_dtype, func)
 
 
+compare_funcs = [
+    torch.eq,
+    torch.ne,
+    torch.ge,
+    torch.gt,
+    torch.le,
+    torch.lt
+]
+
+truncate_input_data = [-128, -1, 0, 1, 127]
+scalars = [255, 0b11111111, -1, 128, -128, 0b01111111, 127]
+
+@pytest.mark.parametrize("input_data", truncate_input_data)
+@pytest.mark.parametrize("scalar", scalars)
+@pytest.mark.parametrize("func", compare_funcs)
+def test_truncate_binary(input_data, scalar, func):
+    musa_tensor = torch.tensor(input_data, dtype=torch.int8, device="musa")
+    cpu_tensor = torch.tensor(input_data, dtype=torch.int8, device="cpu")
+
+    musa_output = func(musa_tensor, scalar)
+    cpu_output = func(cpu_tensor, scalar)
+    assert musa_output == cpu_output, "Mismatch truncate binary"
+
+
 all_funcs_inplace = [
     torch.atan2,
     torch.add,

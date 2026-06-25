@@ -18,11 +18,14 @@ struct UMACPUAllocatorContext {
  public:
   void set_allocator();
   void reset_allocator();
+  bool is_active() const {
+    return prev_allocator_ptr_ != nullptr;
+  }
 
  private:
   Allocator* prev_allocator_ptr_{nullptr};
 };
 
-inline static UMACPUAllocatorContext uma_cpu_alloc_context;
+inline UMACPUAllocatorContext uma_cpu_alloc_context;
 
 } // namespace c10

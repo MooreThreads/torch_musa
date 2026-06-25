@@ -9,6 +9,28 @@ namespace at {
 namespace musa {
 namespace blas {
 
+enum class ScalingType : std::uint8_t {
+  TensorWise, // fp32 scales
+  RowWise, // fp32 scales
+  BlockWise1x16, // fp8_e4m3fn scales
+  BlockWise1x32, // fp8_e8m0fnu scales
+  BlockWise1x128, // fp32 scales
+  BlockWise128x128, // fp32 scales
+};
+
+void int8_gemm(
+    bool transpose_mat1,
+    bool transpose_mat2,
+    int64_t m,
+    int64_t n,
+    int64_t k,
+    const int8_t* mat1_ptr,
+    int64_t mat1_ld,
+    const int8_t* mat2_ptr,
+    int64_t mat2_ld,
+    int32_t* result_ptr,
+    int64_t result_ld);
+
 #define MUSABLAS_GEMM_ARGTYPES(Dtype)                                     \
   char transa, char transb, int64_t m, int64_t n, int64_t k,              \
       at::opmath_type<Dtype> alpha, const Dtype *a, int64_t lda,          \

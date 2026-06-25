@@ -90,3 +90,26 @@ def test_masked_softmax(shape, dtype, dim, mask_type):
         comparators=testing.DefaultComparator(abs_diff=abs_diff),
     )
     test.check_result()
+
+
+@pytest.mark.parametrize("shape", input_shapes)
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
+def test_masked_scale(shape, dtype):
+    if testing.get_musa_arch() < 22 and dtype == torch.bfloat16:
+        pytest.skip("bf16 not supported")
+    cpu_input = torch.randn(shape, dtype=dtype)
+    cpu_input.uniform_(-2.0, 2.0)
+    cpu_mask = generate_mask(shape).to(torch.uint8)
+    scale = 0.5
+    musa_input = cpu_input.to("musa")
+    musa_mask = cpu_mask.to("musa")
+
+    musa_out = torch._masked_scale(musa_input, musa_mask, scale)
+
+    expected = musa_input * scale
+    expected = expected * musa_mask.to(expected.dtype)
+
+    abs_diff = 1e-6
+    if dtype in (torch.float16, torch.bfloat16):
+        abs_diff = 5e-3
+    assert testing.DefaultComparator(abs_diff=abs_diff)(musa_out.cpu(), expected.cpu())

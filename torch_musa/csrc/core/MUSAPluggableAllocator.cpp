@@ -7,23 +7,6 @@
 
 namespace torch::musa::MUSAPluggableAllocator {
 
-MUSAPluggableAllocatorDeleterContext::MUSAPluggableAllocatorDeleterContext(
-    std::function<FreeFuncType> free_fn,
-    void* data,
-    size_t size,
-    int device,
-    musaStream_t stream)
-    : free_fn_(free_fn),
-      data_(data),
-      size_(size),
-      device_(device),
-      stream_(stream) {}
-
-void MUSAPluggableAllocatorDeleterContext::free() {
-  free_fn_(data_, size_, device_, stream_);
-  delete this;
-}
-
 int device_count = 0;
 
 void custom_raw_deleter(void* ptr);
@@ -80,7 +63,7 @@ void MUSAPluggableAllocator::set_record_stream_fn(
   record_stream_fn_ = std::move(record_stream_fn);
 }
 
-void MUSAPluggableAllocator::set_begin_allocate_to_pool_fn(
+void MUSAPluggableAllocator::set_begin_allocate_to_pool(
     std::function<
         void(int, c10::musa::MempoolId_t, std::function<bool(musaStream_t)>)>
         capture_begin_fn) {
@@ -92,7 +75,7 @@ void MUSAPluggableAllocator::set_end_allocate_to_pool_fn(
   end_allocate_to_pool_fn_ = std::move(capture_about_to_end_fn);
 }
 
-void MUSAPluggableAllocator::set_release_pool_fn(
+void MUSAPluggableAllocator::set_release_pool(
     std::function<void(int, c10::musa::MempoolId_t)> capture_destroy_fn) {
   relase_pool_fn_ = std::move(capture_destroy_fn);
 }
@@ -114,10 +97,8 @@ c10::DataPtr MUSAPluggableAllocator::allocate(size_t size) {
   C10_MUSA_CHECK(c10::musa::GetDevice(&device));
   musaStream_t stream = c10::musa::getCurrentMUSAStream(device);
   void* r = this->malloc(size, device, stream);
-  auto* ctx = new MUSAPluggableAllocatorDeleterContext(
-      free_fn_, r, size, device, stream);
   c10::DataPtr data_ptr = {
-      r, ctx, raw_deleter(), c10::Device(c10::DeviceType::PrivateUse1, device)};
+      r, r, raw_deleter(), c10::Device(c10::DeviceType::PrivateUse1, device)};
   return data_ptr;
 }
 
@@ -177,7 +158,15 @@ void MUSAPluggableAllocator::setMemoryFraction(
   }
 }
 
-void MUSAPluggableAllocator::emptyCache() {
+double MUSAPluggableAllocator::getMemoryFraction(c10::DeviceIndex device) {
+  TORCH_CHECK(
+      false,
+      "MUSAPluggableAllocator does not yet support getMemoryFraction. "
+      "If you need it, please file an issue describing your use case.");
+}
+
+void MUSAPluggableAllocator::emptyCache(
+    /*unused*/ c10::musa::MempoolId_t mempool_id) {
   if (reset_fn_) {
     return reset_fn_();
   }
@@ -230,8 +219,8 @@ void MUSAPluggableAllocator::resetPeakStats(c10::DeviceIndex device) {
       "If you need it, please file an issue describing your use case.");
 }
 
-c10::musa::MUSACachingAllocator::SnapshotInfo MUSAPluggableAllocator::
-    snapshot() {
+c10::musa::MUSACachingAllocator::SnapshotInfo MUSAPluggableAllocator::snapshot(
+    c10::musa::MempoolId_t mempool) {
   TORCH_CHECK(
       false,
       "MUSAPluggableAllocator does not yet support snapshot. "
@@ -283,7 +272,8 @@ void MUSAPluggableAllocator::recordHistory(
     bool enabled,
     c10::musa::MUSACachingAllocator::CreateContextFn context_recorder,
     size_t alloc_trace_max_entries,
-    c10::musa::MUSACachingAllocator::RecordContext when) {
+    c10::musa::MUSACachingAllocator::RecordContext when,
+    bool clearHistory) {
   TORCH_CHECK(
       false,
       "MUSAPluggableAllocator does not yet support recordHistory. "
@@ -391,8 +381,8 @@ void changeCurrentAllocator(
   current_custom_allocator = allocator;
 }
 
-void custom_raw_deleter(void* ctx) {
-  reinterpret_cast<MUSAPluggableAllocatorDeleterContext*>(ctx)->free();
+void custom_raw_deleter(void* ptr) {
+  current_custom_allocator->raw_delete(ptr);
 }
 
 } // namespace torch::musa::MUSAPluggableAllocator

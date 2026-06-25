@@ -11,7 +11,12 @@
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/quantized/mudnn/Linear.h"
+#include "torch_musa/csrc/aten/utils/Context.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+
+#include "torch_musa/csrc/aten/mudnn/BatchMatMul.h"
+#include "torch_musa/csrc/aten/mudnn/BatchNorm.h"
 
 template <bool kReluFused>
 void PackedLinearWeightMudnn::apply_impl_helper(
@@ -44,10 +49,14 @@ void PackedLinearWeightMudnn::apply_impl_helper(
   at::musa::SetMudnnQuantizationInfo(rmt, weight_scale, weight_zp);
   at::musa::SetMudnnQuantizationInfo(rst, output_scale, output_zero_point);
 
-  at::musa::muHandle& h = at::GetMudnnHandle();
+  auto& h = at::GetMudnnHandle();
   ::musa::dnn::MatMul mm;
   // quantized linear always accept transpose weight
-  CHECK_MUDNN_STATUS(mm.SetTranspose(false, true), "SetTranspose");
+  const auto mode = at::musa::GetMatmulComputeModeFromCtx(input.scalar_type());
+
+  ::at::musa::SetMatMul(
+      mm, mode, /*trans_l=*/false, /*trans_r=*/true, 1.0, 0.0, 1.0);
+
   if (bias->defined()) {
     CHECK_MUDNN_STATUS(
         mm.RunWithBiasAdd(h, rst, lmt, rmt, bmt, at::musa::InternalMemAlloc),

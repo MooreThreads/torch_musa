@@ -4,6 +4,7 @@ from typing import Callable, Any
 import os
 import sys
 import tempfile
+import inspect
 import subprocess
 import contextlib
 import functools
@@ -215,6 +216,10 @@ def spawn_isolated_test(fn: Callable[..., Any]) -> Callable[..., None]:
             mp.set_start_method("spawn")
 
         env = os.environ.copy()
+
+        PYTHONPATH = env.get("PYTHONPATH", "")
+        fn_path = os.path.dirname(inspect.getmodule(fn).__file__)
+        env["PYTHONPATH"] = f"{fn_path}:${PYTHONPATH}"
 
         with tempfile.TemporaryDirectory() as tempdir:
             output_filepath = os.path.join(tempdir, "subprocess_output.tmp")

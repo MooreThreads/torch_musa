@@ -1,0 +1,24 @@
+diff --git a/aten/src/ATen/native/cuda/DistributionTemplates.h b/aten/src/ATen/native/cuda/DistributionTemplates.h
+index 1fc9195..a1b2c3d 100644
+--- a/aten/src/ATen/native/cuda/DistributionTemplates.h
++++ b/aten/src/ATen/native/cuda/DistributionTemplates.h
+@@ -12,6 +12,7 @@
+ #include <c10/util/Half.h>
+ #include <ATen/cuda/CUDAApplyUtils.cuh>
+ #include <ATen/cuda/CUDAContext.h>
++#include "torch_musa/csrc/aten/utils/RNGGridConfig.h"
+ #include <ATen/cuda/detail/OffsetCalculator.cuh>
+ #include <ATen/cuda/CUDAGraphsUtils.cuh>
+ #include <ATen/detail/FunctionTraits.h>
+@@ -50,9 +51,9 @@ std::tuple<uint64_t, dim3, dim3> calc_execution_policy(const int64_t total_eleme
+   const uint32_t block_size = block_size_bound;
+   dim3 dim_block(block_size);
+   dim3 grid((numel + block_size - 1) / block_size);
+-  uint32_t blocks_per_sm = at::cuda::getCurrentDeviceProperties()->maxThreadsPerMultiProcessor / block_size;
++  uint32_t blocks_per_sm = at::cuda::getRNGMaxThreadsPerMultiProcessor() / block_size;
+   grid.x = std::min(
+-      static_cast<uint32_t>(at::cuda::getCurrentDeviceProperties()->multiProcessorCount) * blocks_per_sm,
++      at::cuda::getRNGMultiProcessorCount() * blocks_per_sm,
+       grid.x);
+   //number of times random will be generated per thread, to offset philox counter in thc random state
+   uint64_t counter_offset = ((numel - 1) / (block_size * grid.x * unroll_factor) + 1) * max_generator_offsets_per_curand_call;

@@ -40,6 +40,8 @@
 
 #include <tuple>
 
+#include "torch_musa/csrc/aten/mudnn/Reduce.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 
@@ -136,8 +138,7 @@ at::Tensor& ReduceOp(
   std::vector<int> dims(dims_vec.data(), dims_vec.data() + dims_vec.size());
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Reduce r;
-  CHECK_MUDNN_STATUS(r.SetMode(mode), "SetMode");
-  CHECK_MUDNN_STATUS(r.SetDim(dims.size(), dims.data()), "SetDim");
+  SetReduce(r, mode, dims.size(), dims.data());
   CHECK_MUDNN_STATUS(r.Run(h, out_m, in_m, InternalMemAlloc), "Run");
 
   return out;
@@ -183,9 +184,7 @@ void CallVarStdMode(
   std::vector<int> dims(dims_vec.data(), dims_vec.data() + dims_vec.size());
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Reduce r;
-  CHECK_MUDNN_STATUS(r.SetMode(mode), "SetMode");
-  CHECK_MUDNN_STATUS(r.SetDim(dims.size(), dims.data()), "SetDim");
-  CHECK_MUDNN_STATUS(r.SetCorrection(correction), "SetCorrection");
+  SetReduceCorrection(r, mode, dims.size(), dims.data(), correction);
   CHECK_MUDNN_STATUS(r.Run(h, out_m, in_m, InternalMemAlloc), "Run");
 }
 
@@ -316,10 +315,6 @@ std::tuple<at::Tensor&, at::Tensor&> AMinMaxOut(
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Reduce r_min;
   ::musa::dnn::Reduce r_max;
-  CHECK_MUDNN_STATUS(
-      r_min.SetMode(::musa::dnn::Reduce::Mode::MIN), "SetMinMode");
-  CHECK_MUDNN_STATUS(
-      r_max.SetMode(::musa::dnn::Reduce::Mode::MAX), "SetMaxMode");
   if (dim.has_value()) {
     IntArrayRef dims(dim.value());
     DimVector dims_vec(dims);
@@ -327,8 +322,11 @@ std::tuple<at::Tensor&, at::Tensor&> AMinMaxOut(
     namedinference::propagate_names_for_reduction(min, self, dims_vec, keepdim);
     namedinference::propagate_names_for_reduction(max, self, dims_vec, keepdim);
     const int dim_m = dims_vec[0];
-    CHECK_MUDNN_STATUS(r_min.SetDim({dim_m}), "SetMinDim");
-    CHECK_MUDNN_STATUS(r_max.SetDim({dim_m}), "SetMaxDim");
+    SetReduce(r_min, ::musa::dnn::Reduce::Mode::MIN, 1, &dim_m);
+    SetReduce(r_max, ::musa::dnn::Reduce::Mode::MAX, 1, &dim_m);
+  } else {
+    SetReduce(r_min, ::musa::dnn::Reduce::Mode::MIN, 0, nullptr);
+    SetReduce(r_max, ::musa::dnn::Reduce::Mode::MAX, 0, nullptr);
   }
   CHECK_MUDNN_STATUS(r_min.Run(h, min_m, in_m, InternalMemAlloc), "RunMin");
   CHECK_MUDNN_STATUS(r_max.Run(h, max_m, in_m, InternalMemAlloc), "RunMax");

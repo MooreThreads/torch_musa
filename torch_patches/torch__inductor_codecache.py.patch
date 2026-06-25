@@ -1,5 +1,5 @@
 diff --git a/torch/_inductor/codecache.py b/torch/_inductor/codecache.py
-index 7b24208..3e3a584 100644
+index 7b24208a2c5..00187a853a4 100644
 --- a/torch/_inductor/codecache.py
 +++ b/torch/_inductor/codecache.py
 @@ -170,6 +170,8 @@ def get_kernel_bin_format(device: str) -> str:
@@ -20,6 +20,15 @@ index 7b24208..3e3a584 100644
              # If cuda is not installed, none of the above config is relevant.
              system = {}
  
+@@ -1647,7 +1649,7 @@ class CudaKernelParamCache:
+             specified_dir=split_aot_inductor_output_path(
+                 config.aot_inductor.output_path
+             )[0],
+-            key=basename,
++            # key=basename,
+         )
+         # Retrieve the basename again in case it is a generated hashcode
+         basename, _ = get_name_and_dir_from_output_file_path(bin_path)
 @@ -1713,7 +1715,11 @@ class AotCodeCompiler:
          """
          generated_files: list[Union[str, Weights]] = additional_files  # type: ignore[assignment]
@@ -74,3 +83,18 @@ index 7b24208..3e3a584 100644
                      for name in graph.constants.keys()
                      if name not in graph.folded_constants
                  )
+@@ -2411,10 +2418,10 @@ end
+                         f_weights.write(struct.pack("q", magic_number))
+ 
+                     generated_files.append(weight_file)
+-                else:
+-                    # TODO: unify to always use mmap_weights
+-                    generated_files.append(consts_o)
+-                    so_builder.save_src_to_cmake(cmake_path, consts_o)
++
++                # TODO: unify to always use mmap_weights
++                generated_files.append(consts_o)
++                so_builder.save_src_to_cmake(cmake_path, consts_o)
+ 
+                 if config.aot_inductor.emit_multi_arch_kernel:
+                     so_builder.save_kernel_asm_to_cmake(cmake_path, asm_files)

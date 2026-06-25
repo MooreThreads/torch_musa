@@ -5,7 +5,8 @@
 
 namespace at::musa {
 
-#define STATE_GUARD_CLS(NAME) NAME_##StateGuard
+#define STATE_GUARD_CLS_(N) N##_StateGuard
+#define STATE_GUARD_CLS(NAME) STATE_GUARD_CLS_(NAME)
 
 #define DECL_STATE_GUARD(NAME, TYPE, INIT) \
   struct STATE_GUARD_CLS(NAME) {           \
@@ -16,6 +17,7 @@ namespace at::musa {
   TYPE Get##NAME##State();
 
 DECL_STATE_GUARD(STRICT_MASK_SELECT, bool, false);
+DECL_STATE_GUARD(NNZ_NONE_CONTIGUOUS, bool, false);
 
 #undef DECL_STATE_GUARD
 

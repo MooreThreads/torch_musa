@@ -1,177 +1,166 @@
-#include <ATen/ATen.h>
-#include <ATen/core/Array.h>
-#include <ATen/core/List.h>
+#define TORCH_ASSERT_ONLY_METHOD_OPERATORS
+#include <ATen/AccumulateType.h>
+#include <ATen/Dispatch.h>
+#include <ATen/ceil_div.h>
 #include <ATen/core/Tensor.h>
+#include <ATen/native/RangeUtils.h>
+#include <c10/util/MaybeOwned.h>
 
-#include <musa_fp16.h>
-#include "torch_musa/csrc/aten/mudnn/Handle.h"
-#include "torch_musa/csrc/aten/musa/MUSADtype.muh"
-#include "torch_musa/csrc/aten/musa/MUSAMath.muh"
-#include "torch_musa/csrc/aten/ops/RangeFactories.h"
+#ifndef AT_PER_OPERATOR_HEADERS
+#include <ATen/Functions.h>
+#include <ATen/NativeFunctions.h>
+#else
+#include <ATen/ops/empty_like.h>
+#endif
+
+#include "torch_musa/csrc/aten/musa/MUSAContextLight.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/MUSAStream.h"
+// clang-format off
+// #include "torch_musa/csrc/aten/ops/musa/elemwise/MemoryAccess.muh"
+#include "torch_musa/csrc/aten/musa/MUSADtype.muh"
+#include "torch_musa/csrc/aten/musa/MUSAMath.muh"
+// clang-format on
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 
-namespace at {
-namespace native {
+namespace at::musa {
+
 namespace {
 
-template <typename T>
-__global__ void arange_kernel(T* out_ptr, T start, T step, int numel) {
-  typedef typename at::musa::Dtype<T>::Vec4 vec4;
-  int global_stride = blockDim.x * gridDim.x;
-  int idx = threadIdx.x + blockIdx.x * blockDim.x;
-  int vec_idx = idx * 4;
-  vec4* out_vec4_ptr = (vec4*)(out_ptr);
-  vec4 vec_o;
+template <typename scalar_t, typename accscalar_t>
+__global__ void arange_kernel(
+    scalar_t* out_ptr,
+    accscalar_t start,
+    accscalar_t step,
+    int64_t numel) {
+  constexpr int vec_size = 128 / (sizeof(scalar_t) * 8);
+  // using vec_t = aligned_vector<scalar_t, vec_size>;
+  using vec_t = VecType<scalar_t, 128>;
 
-  while (vec_idx < numel) {
-    if (vec_idx + 4 <= numel) {
-      vec_o.x = start + static_cast<T>(vec_idx + 0) * step;
-      vec_o.y = start + static_cast<T>(vec_idx + 1) * step;
-      vec_o.z = start + static_cast<T>(vec_idx + 2) * step;
-      vec_o.w = start + static_cast<T>(vec_idx + 3) * step;
+  const auto stride = (int64_t)(blockDim.x) * gridDim.x * vec_size;
+  auto idx = (threadIdx.x + (int64_t)(blockIdx.x) * blockDim.x) * vec_size;
 
-      out_vec4_ptr[idx] = vec_o;
-
-    } else {
-      for (int i = vec_idx; i < numel; ++i) {
-        out_ptr[i] = start + static_cast<T>(i) * step;
-      }
+  accscalar_t base;
+  while (idx + vec_size <= numel) {
+    vec_t vec_o;
+    base = start + (accscalar_t)(idx)*step;
+#pragma unroll
+    for (int i = 0; i < vec_size; ++i) {
+      // vec_o.val[i] = (scalar_t)(base);
+      vec_o.val_.elem[i] = (scalar_t)(base);
+      base += step;
     }
-    idx += global_stride;
-    vec_idx += global_stride * 4;
+    // *(vec_t*)(out_ptr + idx) = vec_o;
+    vec_t::store(out_ptr, idx, vec_o);
+    idx += stride;
+  }
+
+  base = start + (accscalar_t)(idx)*step;
+  while (idx < numel) {
+    out_ptr[idx] = (scalar_t)(base);
+    base += step;
+    ++idx;
   }
 }
 
-void CheckParams(double start, double end, double step, Tensor& out) {
-  TORCH_CHECK(
-      out.scalar_type() == at::ScalarType::Double ||
-          out.scalar_type() == at::ScalarType::Float ||
-          out.scalar_type() == at::ScalarType::Int ||
-          out.scalar_type() == at::ScalarType::Long ||
-          out.scalar_type() == at::ScalarType::Half ||
-          out.scalar_type() == at::ScalarType::BFloat16,
-      "unsupported data type ",
-      out.scalar_type());
-  TORCH_CHECK(step > 0 || step < 0, "step mustn't be zero.");
-  TORCH_CHECK(
-      (step > 0 && start <= end) || (step < 0 && end <= start),
-      "upper and lower bound inconsistent with step");
-  double size_d = std::ceil((end - start) / step);
-  int64_t size = static_cast<int64_t>(size_d);
-  if (size != out.numel()) {
-    if (out.numel() > 0) {
-      TORCH_WARN(
-          "The number of elements in the out tensor of shape ",
-          out.sizes(),
-          "is ",
-          out.numel(),
-          " which does not match the computed number of elements ",
-          size);
-    }
-    out.resize_({size});
-  }
-  TORCH_CHECK(
-      size == out.numel(),
-      "The number of out tensor elements mismatches with induced number: ",
-      out.numel(),
-      " vs ",
-      size_d);
-}
-
-void launch(
-    const Tensor& out,
-    const Scalar& start,
-    const Scalar& step,
-    const int numel,
-    const int nr_block,
-    const int thread_per_block) {
-  auto stream = c10::musa::getCurrentMUSAStream();
-  switch (out.scalar_type()) {
-    case at::ScalarType::Double:
-      arange_kernel<double><<<nr_block, thread_per_block, 0, stream>>>(
-          static_cast<double*>(out.data_ptr()),
-          start.toDouble(),
-          step.toDouble(),
-          numel);
-      break;
-    case at::ScalarType::Float:
-      arange_kernel<float><<<nr_block, thread_per_block, 0, stream>>>(
-          static_cast<float*>(out.data_ptr()),
-          start.toFloat(),
-          step.toFloat(),
-          numel);
-      break;
-    case at::ScalarType::Half:
-      arange_kernel<float16_t><<<nr_block, thread_per_block, 0, stream>>>(
-          static_cast<float16_t*>(out.data_ptr()),
-          static_cast<float16_t>(start.toFloat()),
-          static_cast<float16_t>(step.toFloat()),
-          numel);
-      break;
-    case at::ScalarType::BFloat16:
-      arange_kernel<bfloat16_t><<<nr_block, thread_per_block, 0, stream>>>(
-          static_cast<bfloat16_t*>(out.data_ptr()),
-          static_cast<bfloat16_t>(start.toFloat()),
-          static_cast<bfloat16_t>(step.toFloat()),
-          numel);
-      break;
-    case at::ScalarType::Int:
-      arange_kernel<int32_t><<<nr_block, thread_per_block, 0, stream>>>(
-          static_cast<int32_t*>(out.data_ptr()),
-          start.toInt(),
-          step.toInt(),
-          numel);
-      break;
-    case at::ScalarType::Long:
-      arange_kernel<int64_t><<<nr_block, thread_per_block, 0, stream>>>(
-          static_cast<int64_t*>(out.data_ptr()),
-          start.toLong(),
-          step.toLong(),
-          numel);
-      break;
-    default:
-      TORCH_CHECK(false, "unsupported data type (", out.scalar_type(), ")");
-  }
-}
 } // namespace
 
-void ArangeRun(
+Tensor& ArangeStartOut(
     const Scalar& start,
     const Scalar& end,
     const Scalar& step,
     Tensor& out) {
-  CheckParams(start.toDouble(), end.toDouble(), step.toDouble(), out);
-  int out_numel = out.numel();
-  if (out_numel == 0) {
-    return;
-  }
+  const auto* dev_prop = getCurrentDeviceProperties();
+  const int mp_num = dev_prop->multiProcessorCount;
+  const int major = dev_prop->major;
+  const int minor = dev_prop->minor;
+  const musaStream_t stream = getCurrentMUSAStream();
+  AT_DISPATCH_ALL_TYPES_AND2(
+      at::ScalarType::Half,
+      at::ScalarType::BFloat16,
+      out.scalar_type(),
+      "arange_musa",
+      [&, mp_num, major, minor, stream]() {
+        using accscalar_t = at::acc_type<scalar_t, true>;
+        auto xstart = start.to<accscalar_t>();
+        auto xend = end.to<accscalar_t>();
+        auto xstep = step.to<accscalar_t>();
 
-  // device info
-  musaDeviceProp device_prop;
-  at::musa::muHandle& h = GetMudnnHandle();
-  int device_id = h.GetDeviceId();
-  TORCH_CHECK(
-      musaSuccess == musaGetDeviceProperties(&device_prop, device_id),
-      "musaGetDeviceProperties error");
-  int mp_num = device_prop.multiProcessorCount;
+        native::arange_check_bounds(start, end, step);
 
-  const int block_size = 1024;
-  int block_num =
-      at::musa::ceil_div(at::musa::ceil_div(out_numel, 4), block_size);
-#if MUSA_ARCH > 210
-  block_num = block_num;
-#else
-  block_num = std::min(block_num, mp_num);
-#endif
+        double size_d;
+        if constexpr (std::is_same_v<scalar_t, int64_t>) {
+          int64_t sgn = (xstep > 0) - (xstep < 0);
+          size_d = std::ceil((xend - xstart + xstep - sgn) / xstep);
+        } else {
+          size_d = std::ceil(
+              static_cast<double>(end.to<double>() - start.to<double>()) /
+              step.to<double>());
+        }
 
-  launch(out, start, step, out_numel, block_size, block_num);
-  C10_MUSA_KERNEL_LAUNCH_CHECK();
+        TORCH_CHECK(
+            size_d >= 0 &&
+                size_d <=
+                    static_cast<double>(std::numeric_limits<int64_t>::max()),
+            "invalid size, possible overflow?");
+        const auto size = static_cast<int64_t>(size_d);
+        int64_t numel = out.numel();
+
+        if (numel != size) {
+          if (numel > 0) {
+            TORCH_WARN(
+                "The number of elements in the out tensor of shape ",
+                out.sizes(),
+                " is ",
+                numel,
+                " which does not match the computed number of elements ",
+                size,
+                ". Note that this may occur as a result of rounding error. "
+                "The out tensor will be resized to a tensor of shape (",
+                size,
+                ",).");
+          }
+          out.resize_({size});
+          numel = size;
+        }
+
+        if (numel == 0) {
+          return;
+        }
+
+        const bool is_contig = out.is_contiguous();
+        auto r = is_contig ? c10::MaybeOwned<Tensor>::borrowed(out)
+                           : c10::MaybeOwned<Tensor>::owned(at::empty_like(
+                                 out, LEGACY_CONTIGUOUS_MEMORY_FORMAT));
+
+        constexpr int64_t vec_size = 128 / (sizeof(scalar_t) * 8);
+        constexpr int elemsize = sizeof(scalar_t);
+        int64_t threads = elemsize < 4 ? 1024 : (elemsize < 8 ? 512 : 256);
+        int64_t blocks = ceil_div(numel, vec_size * threads);
+
+        if (major < 2 || (major == 2 && minor <= 1)) {
+          blocks = std::min(blocks, static_cast<int64_t>(mp_num));
+        } else {
+          while (blocks < mp_num && threads > 256) {
+            blocks <<= 1;
+            threads >>= 1;
+          }
+        }
+        blocks = std::max<int64_t>(1, blocks);
+
+        arange_kernel<scalar_t, accscalar_t><<<blocks, threads, 0, stream>>>(
+            r->data_ptr<scalar_t>(), xstart, xstep, numel);
+        C10_MUSA_KERNEL_LAUNCH_CHECK();
+
+        if (!is_contig) {
+          out.copy_(*r);
+        }
+      });
+
+  return out;
 }
 
-REGISTER_MUSA_DISPATCH(arange_start_out_stub, &ArangeRun);
-
-} // namespace native
-} // namespace at
+} // namespace at::musa

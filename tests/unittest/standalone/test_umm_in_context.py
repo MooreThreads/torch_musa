@@ -38,9 +38,8 @@ def test_torch_load_use_umm_in_context():
     del model
     torch.musa.reset_peak_memory_stats()
     current_allocated = torch.musa.memory_allocated()
-    import torch_musa
 
-    with torch_musa.use_unified_cpu_allocator():
+    with torch.musa.use_unified_cpu_allocator():
         model = load_model()
     max_allocated = torch.musa.max_memory_allocated()
     peak_memory_unified = max_allocated - current_allocated
@@ -57,6 +56,60 @@ def test_torch_load_use_umm_in_context():
 
     fake_inputs = torch.randn(8, 3, 224, 224, device="musa")
     fake_labels = torch.randint(0, 10, (8,), device="musa")
+
+    num_steps = 5
+    for step in range(num_steps):
+        optimizer.zero_grad()
+        outputs = model(fake_inputs)
+        loss = criterion(outputs, fake_labels)
+        loss.backward()
+        optimizer.step()
+        print(f"Step [{step+1}/{num_steps}], Loss: {loss.item():.4f}")
+
+
+def lazy_load_model():
+    """Load a ResNet18 model."""
+    model = resnet18(pretrained=False)
+
+    state_dict = model.state_dict()
+    checkpoint = io.BytesIO()
+    torch.save(state_dict, checkpoint)
+    checkpoint.seek(0)
+    state_dict_loaded = torch.load(checkpoint, map_location="musa")
+    new_model = resnet18(pretrained=False)
+    new_model.lazy_to("musa")
+    new_model.load_state_dict(state_dict_loaded)
+    return new_model
+
+
+def test_to_use_umm_in_context():
+    """
+    Takes effect in context for torch.load(map_location="musa") memory usage reduce
+    with torch_musa.use_unified_cpu_allocator():
+        pass
+    """
+
+    model = load_model()
+    max_allocated = torch.musa.max_memory_allocated()
+    peak_memory_ori = max_allocated
+
+    del model
+    torch.musa.reset_peak_memory_stats()
+
+    with torch.musa.use_unified_allocator():
+        model = lazy_load_model()
+        fake_inputs = torch.randn(8, 3, 224, 224).lazy_musa()
+        fake_labels = torch.randint(0, 10, (8,)).lazy_musa()
+    max_allocated = torch.musa.max_memory_allocated()
+    peak_memory_unified = max_allocated
+    print(f"peak_memory_ori: {peak_memory_ori / 1024**2:.2f} MB")
+    print(f"peak_memory_unified: {peak_memory_unified / 1024**2:.2f} MB")
+    assert peak_memory_unified == 0, "unifed memory don't cost memory"
+
+    model.train()
+
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
 
     num_steps = 5
     for step in range(num_steps):

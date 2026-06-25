@@ -35,3 +35,7 @@ def _apply_distributed_patch():
     from .dist_wrapper_patch import _apply_dist_wrapper_patch
 
     _apply_dist_wrapper_patch()
+
+    from .fsdp._fully_shard import _apply_fully_shard_patch
+
+    _apply_fully_shard_patch()

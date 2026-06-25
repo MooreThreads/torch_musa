@@ -1,72 +1,114 @@
-"""Test sparse csr operators."""
+"""
+Test sparse CSR/CSC conversion ops dispatch.
+Covers `torch.ops.aten._to_sparse_csr` / `_to_sparse_csc`with different input
+layouts to exercise the dispatch entries in
+`torch_musa/csrc/aten/ops/musa_functions.yaml`:
+- PrivateUse1: dense -> sparse (CSR/CSC)
+- SparsePrivateUse1: COO -> sparse (CSR/CSC)
+- SparseCsrPrivateUse1: compressed (CSR) -> sparse (CSR/CSC)
+"""
 
 # pylint: disable=missing-function-docstring, unused-import
 import numpy as np
 import pytest
 import torch
+from utils import make_dense_tensor
 
 
-def test_coo_to_csr():
-    shape = (16, 512)
-    indices_x = []
-    indices_y = []
-    values = []
-    for i in range(shape[0]):
-        n = np.random.randint(0, 16)
-        indices_x.extend([i] * n)
-        indices_y.extend(np.random.randint(0, shape[1], n))
-        values.extend([np.random.randint(0, 16) for _ in range(n)])
+dtypes = [torch.float32, torch.float16, torch.int32, torch.int64, torch.bfloat16]
+m_arr = [512]
+n_arr = [1024]
 
-    indices = torch.tensor([indices_x, indices_y])
-    values = torch.tensor(values, dtype=torch.float32)
-    indices_m = indices.musa()
-    values_m = values.musa()
 
-    coo = torch.sparse_coo_tensor(indices, values, shape)
-    coo_musa = torch.sparse_coo_tensor(indices_m, values_m, shape)
+@pytest.mark.parametrize("m", m_arr)
+@pytest.mark.parametrize("n", n_arr)
+@pytest.mark.parametrize("dtype", dtypes)
+def test_dense_to_sparse_csr(m, n, dtype):
+    device = "musa"
+    dense = make_dense_tensor(m, n, dtype)
 
-    assert coo._nnz() == coo_musa._nnz()
-    coo_coalesce, coo_musa_coalesce = coo.coalesce(), coo_musa.coalesce()
-    assert torch.all(coo_coalesce.indices() == coo_musa_coalesce.indices().cpu())
-    assert torch.all(coo_coalesce.values() == coo_musa_coalesce.values().cpu())
+    csr = dense.to_sparse_csr()
 
+    assert csr.layout == torch.sparse_csr
+    assert csr.device.type == device
+
+    dense_back = csr.to_dense()
+    torch.testing.assert_close(dense_back.cpu(), dense.cpu())
+
+
+@pytest.mark.parametrize("m", m_arr)
+@pytest.mark.parametrize("n", n_arr)
+@pytest.mark.parametrize("dtype", dtypes)
+def test_coo_to_sparse_csr(m, n, dtype):
+    device = "musa"
+    dense = make_dense_tensor(m, n, dtype)
+
+    coo = dense.to_sparse()
     csr = coo.to_sparse_csr()
-    csr_musa = coo_musa.to_sparse_csr()
-    assert csr._nnz() == csr_musa._nnz()
-    assert torch.all(csr.crow_indices() == csr_musa.crow_indices().cpu())
-    assert torch.all(csr.col_indices() == csr_musa.col_indices().cpu())
-    assert torch.all(csr.values() == csr_musa.values().cpu())
+
+    assert csr.layout == torch.sparse_csr
+    assert csr.device.type == device
+
+    dense_back = csr.to_dense()
+    torch.testing.assert_close(dense_back.cpu(), dense.cpu())
 
 
-def test_csr_to_coo():
-    shape = (16, 512)
-    cumsum_x = [0]
-    indices_y = []
-    values = []
-    for _ in range(shape[0]):
-        n = np.random.randint(0, 16)
-        pre_num = cumsum_x[-1]
-        cumsum_x.append(pre_num + n)
-        indices_y.extend(np.random.randint(0, shape[1], n))
-        values.extend([np.random.randint(0, 16) for _ in range(n)])
+@pytest.mark.parametrize("m", m_arr)
+@pytest.mark.parametrize("n", n_arr)
+@pytest.mark.parametrize("dtype", dtypes)
+def test_sparse_compressed_to_sparse_csr(m, n, dtype):
+    dense = make_dense_tensor(m, n, dtype)
 
-    crow_indices = torch.tensor(cumsum_x)
-    col_indices = torch.tensor(indices_y)
-    values = torch.tensor(values, dtype=torch.float32)
+    csc = dense.to_sparse_csc()
+    out_from_csc = csc.to_sparse_csr()
+    assert out_from_csc.layout == torch.sparse_csr
+    torch.testing.assert_close(out_from_csc.to_dense().cpu(), dense.cpu())
 
-    crow_indices_m = crow_indices.musa()
-    col_indices_m = col_indices.musa()
-    values_m = values.musa()
 
-    csr = torch.sparse_csr_tensor(crow_indices, col_indices, values, shape)
-    csr_musa = torch.sparse_csr_tensor(crow_indices_m, col_indices_m, values_m, shape)
-    assert csr._nnz() == csr_musa._nnz()
-    assert torch.all(csr.crow_indices() == csr_musa.crow_indices().cpu())
-    assert torch.all(csr.col_indices() == csr_musa.col_indices().cpu())
-    assert torch.all(csr.values() == csr_musa.values().cpu())
+@pytest.mark.parametrize("m", m_arr)
+@pytest.mark.parametrize("n", n_arr)
+@pytest.mark.parametrize("dtype", dtypes)
+def test_dense_to_sparse_csc(m, n, dtype):
+    device = "musa"
+    dense = make_dense_tensor(m, n, dtype)
 
-    coo = csr.to_sparse()
-    coo_musa = csr_musa.to_sparse()
-    coo_coalesce, coo_musa_coalesce = coo.coalesce(), coo_musa.coalesce()
-    assert torch.all(coo_coalesce.indices() == coo_musa_coalesce.indices().cpu())
-    assert torch.all(coo_coalesce.values() == coo_musa_coalesce.values().cpu())
+    csc = dense.to_sparse_csc()
+
+    assert csc.layout == torch.sparse_csc
+    assert csc.device.type == device
+
+    dense_back = csc.to_dense()
+    torch.testing.assert_close(dense_back.cpu(), dense.cpu())
+
+
+@pytest.mark.parametrize("m", m_arr)
+@pytest.mark.parametrize("n", n_arr)
+@pytest.mark.parametrize("dtype", dtypes)
+def test_coo_to_sparse_csc(m, n, dtype):
+    device = "musa"
+    dense = make_dense_tensor(m, n, dtype)
+
+    coo = dense.to_sparse()
+
+    csc = coo.to_sparse_csc()
+
+    assert csc.layout == torch.sparse_csc
+    assert csc.device.type == device
+
+    dense_back = csc.to_dense()
+    torch.testing.assert_close(dense_back.cpu(), dense.cpu())
+
+
+@pytest.mark.parametrize("m", m_arr)
+@pytest.mark.parametrize("n", n_arr)
+@pytest.mark.parametrize("dtype", dtypes)
+def test_sparse_compressed_to_sparse_csc(m, n, dtype):
+    dense = make_dense_tensor(m, n, dtype)
+
+    csr = dense.to_sparse_csr()
+    out_from_csr = csr.to_sparse_csc()
+
+    assert out_from_csr.layout == torch.sparse_csc
+
+    dense_back = out_from_csr.to_dense()
+    torch.testing.assert_close(dense_back.cpu(), dense.cpu())

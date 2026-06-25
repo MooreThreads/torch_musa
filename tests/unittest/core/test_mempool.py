@@ -1,14 +1,11 @@
 """Test MemPool"""
 
-import os
 import ctypes
 
 import threading
-import tempfile
-from pathlib import Path
 import torch
 
-from torch_musa.utils.musa_extension import MUSA_HOME
+from torch_musa.utils.musa_extension import load_inline
 from torch_musa.testing.common_utils import spawn_isolated_test
 
 
@@ -66,12 +63,8 @@ def test_mempool_multithread():
     assert len(set(active_pool_ids)) == 4
 
 
-@spawn_isolated_test
-def test_mempool_with_allocator():
-    pool = torch.musa.MemPool()
-    assert pool.allocator is None
-
-    allocator_source = """
+def _get_dummy_allocator():
+    dummy_allocator_source = """
     #include <sys/types.h>
     #include <musa_runtime_api.h>
 
@@ -79,45 +72,79 @@ def test_mempool_with_allocator():
         int alloc_called_flag = 0;
         int free_called_flag = 0;
 
-        void* my_alloc(size_t size, int device, void* stream) {
+        void* dummy_alloc(size_t size, int device, void* stream) {
         void* ptr;
         musaMalloc(&ptr, size);
         alloc_called_flag = 1;
         return ptr;
         }
 
-        void my_free(void* ptr, size_t size, int device, void* stream) {
+        void dummy_free(void* ptr, size_t size, int device, void* stream) {
         musaFree(ptr);
         free_called_flag = 1;
         }
     }
     """
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        src_file_path = Path(temp_dir) / "allocator.cpp"
-        src_file_path.write_text(allocator_source)
-        so_file_path = Path(temp_dir) / "allocator.so"
+    dummy_allocator_libname = "dummy_allocator"
+    dummy_allocator = load_inline(
+        name=dummy_allocator_libname,
+        cpp_sources=dummy_allocator_source,
+        is_python_module=False,
+        keep_intermediates=False,
+        verbose=True,
+        with_musa=True,
+    )
+    allocator = torch.musa.memory.MUSAPluggableAllocator(
+        dummy_allocator,
+        "dummy_alloc",
+        "dummy_free",
+    )
 
-        compile_cmd = (
-            f"g++ {src_file_path} -o {so_file_path} -I{MUSA_HOME}/include "
-            f"-lmusart -L{MUSA_HOME}/lib -shared -fPIC"
-        )
-        os.system(compile_cmd)
+    return dummy_allocator, allocator
 
-        custom_allocator = torch.musa.memory.MUSAPluggableAllocator(
-            so_file_path, "my_alloc", "my_free"
-        )
-        pool = torch.musa.MemPool(custom_allocator.allocator())
 
-        assert id(custom_allocator.allocator()) == id(pool.allocator)
+@spawn_isolated_test
+def test_mempool_with_allocator():
+    pool = torch.musa.MemPool()
+    assert pool.allocator is None
 
-        custom_alloc_lib = ctypes.CDLL(so_file_path)
-        alloc_called_flag = ctypes.c_int.in_dll(custom_alloc_lib, "alloc_called_flag")
-        free_called_flag = ctypes.c_int.in_dll(custom_alloc_lib, "free_called_flag")
-        assert alloc_called_flag.value == 0
-        assert free_called_flag.value == 0
+    dummy_allocator, allocator = _get_dummy_allocator()
+    pool = torch.musa.MemPool(allocator.allocator())
 
-        with torch.musa.use_mem_pool(pool):
-            # will route to custom malloc logic
-            _ = torch.randn((1,), device="musa")
-            assert alloc_called_flag.value == 1
+    assert id(allocator.allocator()) == id(pool.allocator)
+    alloc_lib = ctypes.CDLL(dummy_allocator)
+    alloc_called_flag = ctypes.c_int.in_dll(alloc_lib, "alloc_called_flag")
+    free_called_flag = ctypes.c_int.in_dll(alloc_lib, "free_called_flag")
+    assert alloc_called_flag.value == 0
+    assert free_called_flag.value == 0
+
+    with torch.musa.use_mem_pool(pool):
+        # will route to custom malloc logic
+        _ = torch.randn((1,), device="musa")
+        assert alloc_called_flag.value == 1
+
+
+@spawn_isolated_test
+def test_mempool_expandable():
+    torch.musa.memory._set_allocator_settings("expandable_segments:True")
+    _, allocator = _get_dummy_allocator()
+    pool = torch.musa.MemPool(allocator.allocator())
+
+    data = []
+    nelem = 1024 * 1024 // 4
+    with torch.musa.use_mem_pool(pool):
+        data.append(torch.empty(nelem, device="musa"))
+
+    # the second allocation should be in expandable segment
+    data.append(torch.empty(nelem, device="musa"))
+
+    segments = torch.musa.memory.memory_snapshot()
+
+    num_expandable_segments = 0
+    for segment in segments:
+        if segment["is_expandable"]:
+            num_expandable_segments += 1
+
+    assert len(segments) == 2, "Expected to have 2 segment"
+    assert num_expandable_segments == 1, "Expected to have 1 expandable segment only"

@@ -2,13 +2,12 @@
 #include <ATen/NamedTensorUtils.h>
 #include <ATen/NativeFunctions.h>
 #include <ATen/native/Pool.h>
-#include <torch/library.h>
 
+#include "torch_musa/csrc/aten/mudnn/Pooling.h"
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-
-#include <mudnn.h>
 
 namespace at {
 namespace musa {
@@ -58,19 +57,23 @@ void PoolCall(
   }
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Pooling pool;
-  CHECK_MUDNN_STATUS(pool.SetMode(p.mode), "SetMode");
-  CHECK_MUDNN_STATUS(
-      pool.SetNdInfo(
-          {p.k[0], p.k[1]},
-          {p.pad[0], p.pad[1]},
-          {p.d[0], p.d[1]},
-          {p.dil[0], p.dil[1]}),
-      "SetNdInfo");
   if (p.divisor_override.has_value()) {
-    CHECK_MUDNN_STATUS(
-        pool.SetDivisor(at::native::safe_downcast<int, int64_t>(
-            p.divisor_override.value())),
-        "SetDivisor");
+    SetPooling(
+        pool,
+        p.mode,
+        {p.k[0], p.k[1]},
+        {p.pad[0], p.pad[1]},
+        {p.d[0], p.d[1]},
+        {p.dil[0], p.dil[1]},
+        at::native::safe_downcast<int, int64_t>(p.divisor_override.value()));
+  } else {
+    SetPooling(
+        pool,
+        p.mode,
+        {p.k[0], p.k[1]},
+        {p.pad[0], p.pad[1]},
+        {p.d[0], p.d[1]},
+        {p.dil[0], p.dil[1]});
   }
   CHECK_MUDNN_STATUS(pool.Run(h, out, in, inds), "Run");
 }
@@ -96,19 +99,23 @@ void PoolCallBwd(
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Pooling pool;
-  CHECK_MUDNN_STATUS(pool.SetMode(p.mode), "SetMode");
-  CHECK_MUDNN_STATUS(
-      pool.SetNdInfo(
-          {p.k[0], p.k[1]},
-          {p.pad[0], p.pad[1]},
-          {p.d[0], p.d[1]},
-          {p.dil[0], p.dil[1]}),
-      "SetNdInfo");
   if (p.divisor_override.has_value()) {
-    CHECK_MUDNN_STATUS(
-        pool.SetDivisor(at::native::safe_downcast<int, int64_t>(
-            p.divisor_override.value())),
-        "SetDivisor");
+    SetPooling(
+        pool,
+        p.mode,
+        {p.k[0], p.k[1]},
+        {p.pad[0], p.pad[1]},
+        {p.d[0], p.d[1]},
+        {p.dil[0], p.dil[1]},
+        at::native::safe_downcast<int, int64_t>(p.divisor_override.value()));
+  } else {
+    SetPooling(
+        pool,
+        p.mode,
+        {p.k[0], p.k[1]},
+        {p.pad[0], p.pad[1]},
+        {p.d[0], p.d[1]},
+        {p.dil[0], p.dil[1]});
   }
   CHECK_MUDNN_STATUS(pool.RunBwd(h, out, in, inds), "Run");
 }
@@ -811,7 +818,7 @@ TORCH_IMPL_FUNC(adaptive_max_pool2d_out_musa)
   auto indices_mu = CreateMUTensor(indices);
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Pooling pool;
-  CHECK_MUDNN_STATUS(pool.SetMode(PoolingMode::ADAPTIVE_MAXPOOL), "SetMode");
+  SetPooling(pool, PoolingMode::ADAPTIVE_MAXPOOL);
   CHECK_MUDNN_STATUS(pool.Run(h, output_mu, input_mu, indices_mu), "Run");
 }
 
@@ -852,7 +859,7 @@ TORCH_IMPL_FUNC(adaptive_max_pool2d_backward_out_musa)
   auto indices_mu = CreateMUTensor(indices_tmp);
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Pooling pool;
-  CHECK_MUDNN_STATUS(pool.SetMode(PoolingMode::ADAPTIVE_MAXPOOL), "SetMode");
+  SetPooling(pool, PoolingMode::ADAPTIVE_MAXPOOL);
   CHECK_MUDNN_STATUS(
       pool.RunBwd(h, grad_input_mu, grad_output_mu, indices_mu), "Run");
 

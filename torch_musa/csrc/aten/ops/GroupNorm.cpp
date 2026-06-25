@@ -5,9 +5,10 @@
 #include <torch/library.h>
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
-#include <mudnn.h>
+#include "torch_musa/csrc/aten/mudnn/GroupNorm.h"
 
 namespace at {
 namespace musa {
@@ -99,15 +100,13 @@ std::tuple<Tensor, Tensor, Tensor> NativeGroupNorm(
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::GroupNorm op;
-  CHECK_MUDNN_STATUS(op.SetEpsilon(eps), "SetEpsilon");
   int axis = 1;
   if (memory_format == at::MemoryFormat::ChannelsLast) {
     axis = 3;
   } else if (memory_format == at::MemoryFormat::ChannelsLast3d) {
     axis = 4;
   }
-  CHECK_MUDNN_STATUS(op.SetAxis(axis), "SetAxis");
-  CHECK_MUDNN_STATUS(op.SetGroup(static_cast<int>(group)), "SetGroup");
+  SetGroupNorm(op, eps, axis, static_cast<int>(group));
   CHECK_MUDNN_STATUS(op.Run(h, out, mean, rstd, in, gamma, beta), "RunOp");
 
   return std::make_tuple(contiguous_Y, contiguous_mean, contiguous_rstd);

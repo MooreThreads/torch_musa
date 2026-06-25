@@ -65,13 +65,14 @@ std::tuple<Tensor, Tensor, Tensor, Tensor> MuDNNMathSDPABwd(
     const std::optional<Tensor>& attn_mask,
     std::optional<double> scale);
 
-std::tuple<Tensor, Tensor, Tensor> MuDNNFlashSDPAFwd(
+std::tuple<Tensor, Tensor, Tensor, Tensor> MuDNNFlashSDPAFwd(
     const Tensor& _query,
     const Tensor& _key,
     const Tensor& _value,
     const std::optional<Tensor>& attn_mask,
     double dropout_p,
     bool is_causal,
+    bool return_debug_mask,
     std::optional<double> scale);
 
 std::tuple<Tensor, Tensor, Tensor, Tensor> MuDNNFlashSDPABwd(
@@ -82,6 +83,8 @@ std::tuple<Tensor, Tensor, Tensor, Tensor> MuDNNFlashSDPABwd(
     const Tensor& _output,
     const Tensor& _logsumexp,
     const Tensor& _dropout_mask,
+    const Tensor& rng_state,
+    double dropout_p,
     bool is_causal,
     const std::optional<Tensor>& attn_mask,
     std::optional<double> scale);
@@ -116,15 +119,46 @@ inline bool check_musa_arch(const sdp_params& params, bool is_debug) {
 inline bool check_musa_attention_input(
     const sdp_params& params,
     bool is_debug) {
-  int64_t qk_head_dim = params.query.size(-1);
-  int64_t v_head_dim = params.value.size(-1);
+  const int64_t qk_head_dim = params.query.size(-1);
+  const int64_t v_head_dim = params.value.size(-1);
 
-  bool is_head_dim_qk192_v128 = qk_head_dim == 192 && v_head_dim == 128;
-  bool is_head_dim_qkv_160 = qk_head_dim == 160 && v_head_dim == 160;
+  const auto arch = at::musa::getMUSAArch();
+  const bool fwd_only = (!input_requires_grad(params));
 
-  if (!((qk_head_dim <= 128 && v_head_dim <= 128) ||
-        (at::musa::getMUSAArch() >= 220 &&
-         (is_head_dim_qk192_v128 || is_head_dim_qkv_160)))) {
+  const bool is_head_dim_qkv_128 = (qk_head_dim <= 128 && v_head_dim <= 128);
+  const bool is_head_dim_qkv_160 = (qk_head_dim == 160 && v_head_dim == 160);
+  const bool is_head_dim_qkv_256 = (qk_head_dim == 256 && v_head_dim == 256);
+  // const bool is_head_dim_qkv_384 = (qk_head_dim == 384 && v_head_dim == 384);
+  const bool is_head_dim_qkv_512 = (qk_head_dim == 512 && v_head_dim == 512);
+  const bool is_head_dim_qk192_v128 = (qk_head_dim == 192 && v_head_dim == 128);
+
+  bool enable = is_head_dim_qkv_128;
+  if (arch == 220) {
+    if (fwd_only) {
+      enable = enable || is_head_dim_qkv_160;
+    } else {
+      enable = enable && (qk_head_dim >= 64 && v_head_dim >= 64);
+    }
+  } else if (arch == 310) {
+    enable = enable || is_head_dim_qkv_160;
+    enable = enable || is_head_dim_qkv_256;
+    // enable = enable || is_head_dim_qkv_384;
+    enable = enable || is_head_dim_qkv_512;
+    enable = enable || is_head_dim_qk192_v128;
+  }
+
+  if (params.dropout > 0.0 && is_head_dim_qkv_128) {
+    if (is_debug) {
+      TORCH_WARN(
+          "Flash SDPA does not support dropout with qk_head_dim: ",
+          qk_head_dim,
+          " v_head_dim: ",
+          v_head_dim);
+    }
+    return false;
+  }
+
+  if (!enable) {
     if (is_debug) {
       TORCH_WARN(
           "Unsupported qk_head_dim: ",

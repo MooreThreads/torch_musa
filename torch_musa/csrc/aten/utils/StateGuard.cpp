@@ -4,9 +4,8 @@ namespace at::musa {
 
 #define DECL_STATE(NAME, TYPE, INIT) inline thread_local TYPE NAME = INIT;
 
-DECL_STATE(STRICT_MASK_SELECT, bool, false)
-
-#define DEFINE_GUARD(NAME, TYPE)                             \
+#define DEFINE_GUARD(NAME, TYPE, INIT)                       \
+  DECL_STATE(NAME, TYPE, INIT)                               \
   STATE_GUARD_CLS(NAME)::STATE_GUARD_CLS(NAME)(TYPE state) { \
     prev_ = NAME;                                            \
     NAME = state;                                            \
@@ -18,7 +17,8 @@ DECL_STATE(STRICT_MASK_SELECT, bool, false)
     return NAME;                                             \
   }
 
-DEFINE_GUARD(STRICT_MASK_SELECT, bool);
+DEFINE_GUARD(STRICT_MASK_SELECT, bool, false);
+DEFINE_GUARD(NNZ_NONE_CONTIGUOUS, bool, false);
 
 #undef DEFINE_GUARD
 #undef DECL_STATE

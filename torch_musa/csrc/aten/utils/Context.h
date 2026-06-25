@@ -3,10 +3,12 @@
 
 #include <c10/core/ScalarType.h>
 #include <c10/util/CallOnce.h>
+#include <c10/util/env.h>
 #include <torch/csrc/tensor/python_tensor.h>
 
 #include <mudnn.h>
 
+#include "torch_musa/csrc/aten/mudnn/Tensor.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/MUSAHooksInterface.h"
 
@@ -67,11 +69,9 @@ static inline bool HasMUSA() {
 }
 
 // Get the ComputeMode (TENSOR/SCALAR) from the context and input tensor dtype
-::musa::dnn::Convolution::ComputeMode GetComputeModeFromCtx(
-    const at::ScalarType& dtype);
+ComputeMode GetComputeModeFromCtx(const at::ScalarType& dtype);
 
-::musa::dnn::Convolution::ComputeMode GetMatmulComputeModeFromCtx(
-    const at::ScalarType& dtype);
+ComputeMode GetMatmulComputeModeFromCtx(const at::ScalarType& dtype);
 
 PyMethodDef* GetContextMethods();
 

@@ -295,6 +295,37 @@ def test_logsumexp_low_prec(input_data, dtype):
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("dtype", [torch.float32])
+def test_logcumsumexp(input_data, dtype):
+    function(input_data, dtype, torch.logcumsumexp)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.skipif(get_musa_arch() <= 21, reason="Only support arch greater than 21")
+@pytest.mark.parametrize("input_data", input_data)
+@pytest.mark.parametrize("dtype", [torch.float16])
+def test_logcumsumexp_low_prec(input_data, dtype):
+    if isinstance(input_data["input"], torch.Tensor):
+        input_data["input"] = input_data["input"].to(dtype)
+    if dtype == torch.float16:
+        abs_diff, rel_diff = 5e-3, 1e-3
+    else:
+        abs_diff, rel_diff = 5e-2, 1e-3
+    test = testing.OpTest(
+        func=torch.logcumsumexp,
+        input_args=input_data,
+        comparators=testing.DefaultComparator(abs_diff, rel_diff),
+    )
+    if dtype == torch.float16:
+        test.check_musafp16_vs_musafp32()
+        test.check_out_ops(fp16=True)
+    elif dtype == torch.bfloat16:
+        test.check_musabf16_vs_musafp16()
+        test.check_out_ops(bf16=True)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_data)
+@pytest.mark.parametrize("dtype", [torch.float32])
 def test_prod(input_data, dtype):
     function(input_data, dtype, torch.prod)
 
@@ -923,6 +954,36 @@ def test_prod_i32_in_f32_out(config, interval):
     )
     test.check_result()
     test.check_out_ops()
+
+
+@pytest.mark.parametrize(
+    "shape_dim",
+    [
+        ((10,), 0),
+        ((2, 3, 4), 1),
+        ((2, 0, 4), 2),
+        ((2, 3, 4, 5), (0, 2)),
+    ],
+)
+@pytest.mark.parametrize("dtype", [torch.float32, torch.int64, torch.bool])
+@pytest.mark.parametrize("keepdim", [True, False])
+def test_hash_tensor(shape_dim, dtype, keepdim):
+    shape, dim = shape_dim
+    if dtype is torch.bool:
+        x_cpu = torch.randint(0, 2, shape, dtype=dtype)
+    elif dtype.is_floating_point:
+        x_cpu = torch.randn(shape, dtype=dtype)
+    else:
+        x_cpu = torch.randint(-5, 5, shape, dtype=dtype)
+
+    x_musa = x_cpu.to("musa")
+
+    out_cpu = torch.hash_tensor(x_cpu, dim=dim, keepdim=keepdim)
+    out_musa = torch.hash_tensor(x_musa, dim=dim, keepdim=keepdim)
+
+    assert out_cpu.shape == out_musa.shape
+    assert out_cpu.dtype == out_musa.dtype
+    assert torch.equal(out_cpu, out_musa.cpu())
 
 
 any_all_integer_input_data = [

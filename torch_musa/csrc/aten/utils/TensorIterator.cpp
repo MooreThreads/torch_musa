@@ -6,6 +6,7 @@
 #include <c10/util/Exception.h>
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 
 namespace at {
 namespace musa {
@@ -276,6 +277,11 @@ void MusaTensorIterator::mark_inplace() {
   }
 }
 
+bool MusaTensorIterator::_is_cpu_scalar(int64_t arg) const {
+  auto& op = operands_[arg];
+  return op.tensor_base().dim() == 0 && op.tensor_base().is_cpu();
+}
+
 void MusaTensorIterator::compute_types(const TensorIteratorConfig& config) {
   TensorIteratorBase::compute_types(config);
 
@@ -310,7 +316,7 @@ void MusaTensorIterator::compute_types(const TensorIteratorConfig& config) {
 
     if (config.promote_inputs_to_common_dtype_ &&
         do_promote_inputs_to_common_dtype_ && !op.is_output &&
-        op.current_dtype != promote_common_dtype_ && !is_cpu_scalar(i)) {
+        op.current_dtype != promote_common_dtype_ && !_is_cpu_scalar(i)) {
       op.exchange_tensor(c10::MaybeOwned<TensorBase>::owned(
           op.tensor().to(promote_common_dtype_)));
       op.current_dtype = promote_common_dtype_;

@@ -17,7 +17,9 @@
 #include <ATen/ops/resize.h>
 #endif
 
+#include "torch_musa/csrc/aten/mudnn/BatchNorm.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 namespace at {
@@ -47,6 +49,26 @@ static void copy_arg(const at::Tensor& dst, const at::Tensor& src) {
   dst.copy_(src);
 }
 
+template <typename... Args>
+ScalarType check_and_get_dtype(Args&&... args) {
+  ScalarType common_dtype = ScalarType::Undefined;
+  auto process = [&common_dtype](const c10::optional<Tensor>& tensor) {
+    if (tensor.has_value() && tensor->defined()) {
+      ScalarType current_dtype = tensor->scalar_type();
+
+      if (common_dtype == ScalarType::Undefined) {
+        common_dtype = current_dtype;
+      } else if (common_dtype != current_dtype) {
+        TORCH_CHECK(false, "Except same dtypes for BatchNorm");
+      }
+    }
+  };
+
+  (process(args), ...);
+  return common_dtype == ScalarType::Undefined ? ScalarType::Float
+                                               : common_dtype;
+}
+
 std::tuple<Tensor&, Tensor&, Tensor&> NativeBatchNormOut(
     const Tensor& input,
     const c10::optional<Tensor>& weight_opt,
@@ -67,6 +89,10 @@ std::tuple<Tensor&, Tensor&, Tensor&> NativeBatchNormOut(
       inp_dtype);
   const c10::musa::MUSAGuard device_guard(input.device());
   const auto stat_dtype = save_mean.scalar_type();
+  TORCH_CHECK(
+      stat_dtype == at::ScalarType::Float,
+      "BatchNorm save_mean supports Float dtype, now got: ",
+      stat_dtype);
 
   auto vector_to_mutensor = [](const std::optional<Tensor>& vec,
                                const std::optional<ScalarType>& empty_dtype) {
@@ -80,11 +106,14 @@ std::tuple<Tensor&, Tensor&, Tensor&> NativeBatchNormOut(
     return ret;
   };
 
-  auto w = vector_to_mutensor(weight_opt, std::nullopt);
-  auto b = vector_to_mutensor(bias_opt, std::nullopt);
+  auto dtype = check_and_get_dtype(
+      weight_opt, bias_opt, running_mean_opt, running_var_opt);
 
-  auto rm = vector_to_mutensor(running_mean_opt, stat_dtype);
-  auto rv = vector_to_mutensor(running_var_opt, stat_dtype);
+  auto w = vector_to_mutensor(weight_opt, dtype);
+  auto b = vector_to_mutensor(bias_opt, dtype);
+
+  auto rm = vector_to_mutensor(running_mean_opt, dtype);
+  auto rv = vector_to_mutensor(running_var_opt, dtype);
 
   auto m = CreateEmptyMUTensor();
   auto v = CreateEmptyMUTensor();
@@ -93,27 +122,25 @@ std::tuple<Tensor&, Tensor&, Tensor&> NativeBatchNormOut(
     int64_t n_input = input.size(1);
     save_mean.resize_({n_input});
     save_invstd.resize_({n_input});
-    m = vector_to_mutensor(save_mean, stat_dtype);
-    v = vector_to_mutensor(save_invstd, stat_dtype);
+    m = vector_to_mutensor(save_mean, std::nullopt);
+    v = vector_to_mutensor(save_invstd, std::nullopt);
   }
 
   const auto input_memory_format = input.suggest_memory_format();
   Tensor contig_input = FormatContiguous(input.alias(), input_memory_format);
-  auto in = CreateMUTensor(contig_input);
 
   auto proxy_out = output.expect_contiguous(input_memory_format);
+  auto in = CreateMUTensor(contig_input);
   auto out = CreateMUTensor(*proxy_out);
 
   auto& h = GetMudnnHandle();
   ::musa::dnn::BatchNorm bn;
-  CHECK_MUDNN_STATUS(bn.SetEpsilon(eps), "SetEpsilon");
-  CHECK_MUDNN_STATUS(bn.SetTraining(training), "SetTraining");
   // muDNN supports PER_CHANNEL and PER_ACTIVATION modes, while PER_ACTIVATION
   // has higher performance and lower accuracy, we hard code PER_CHANNEL here to
   // keep the accuracy (BN can be folded into conv easily which could speed up
   // inference)
-  CHECK_MUDNN_STATUS(
-      bn.SetMode(::musa::dnn::BatchNorm::Mode::PER_CHANNEL), "SetTraining");
+  ::at::musa::SetBatchNorm(
+      bn, ::musa::dnn::BatchNorm::Mode::PER_CHANNEL, eps, training);
 
   if (!training) {
     CHECK_MUDNN_STATUS(bn.RunPure(h, out, in, rm, rv, w, b), "RunPure");
@@ -142,11 +169,7 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNorm(
   auto output = at::empty_like(self);
   int64_t n_input = self.size(1);
 
-  auto save_mean_var_dtype =
-      (running_mean_opt.has_value() && running_mean_opt->defined())
-      ? running_mean_opt->scalar_type()
-      : at::toAccumulateType(self.scalar_type(), /*is_cuda=*/true);
-  auto options = self.options().dtype(save_mean_var_dtype);
+  auto options = self.options().dtype(at::ScalarType::Float);
   auto save_mean = at::empty({0}, options);
   auto save_invstd = at::empty({0}, options);
 
@@ -413,17 +436,17 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
     grad_bias = at::empty_like(weight);
   }
 
+  const auto input_memory_format = input.suggest_memory_format();
+  auto contiguous_input = FormatContiguous(input, input_memory_format);
+  auto contiguous_grad_out = FormatContiguous(grad_out, input_memory_format);
+
   auto dx = CreateMUTensor(grad_input);
   auto dm = CreateMUTensor(grad_mean);
   auto dv = CreateMUTensor(grad_var);
   auto dg = CreateMUTensor(grad_weight);
   auto db = CreateMUTensor(grad_bias);
 
-  const auto input_memory_format = input.suggest_memory_format();
-  auto contiguous_input = FormatContiguous(input, input_memory_format);
   auto x = CreateMUTensor(contiguous_input);
-
-  auto contiguous_grad_out = FormatContiguous(grad_out, input_memory_format);
   auto dy = CreateMUTensor(contiguous_grad_out);
 
   auto m = CreateMUTensor(mean);
@@ -432,12 +455,13 @@ std::tuple<Tensor, Tensor, Tensor> NativeBatchNormBwd(
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::BatchNorm bn;
-  CHECK_MUDNN_STATUS(bn.SetEpsilon(eps), "BN SetEpsilon");
-  CHECK_MUDNN_STATUS(bn.SetTraining(train), "BN SetTraining");
+  ::at::musa::SetBatchNorm(
+      bn, ::musa::dnn::BatchNorm::Mode::PER_CHANNEL, eps, train);
 
   CHECK_MUDNN_STATUS(
       bn.RunBwd(h, dx, dm, dv, dg, db, x, dy, m, v, g, InternalMemAlloc),
       "BN RunBwd");
+
   return std::make_tuple(grad_input, grad_weight, grad_bias);
 }
 

@@ -216,7 +216,7 @@ class TestMHA:
             assert weight_npt is None
 
     @parametrize("dtype", [torch.float, torch.half])
-    @parametrize("use_nt", [False])
+    @parametrize("use_nt", [True, False])
     @parametrize("use_padding, pad_all", [(False, False)])
     @parametrize("need_weights", [False])
     @parametrize("average_attn_weights", [False, True])

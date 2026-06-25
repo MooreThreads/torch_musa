@@ -5,6 +5,7 @@
 #include <musolver.h>
 #include <musparse.h>
 
+#include "torch_musa/csrc/aten/mudnn/Exception.h"
 #include "torch_musa/csrc/core/MUSAException.h"
 
 const char* musparseGetErrorString(musparseStatus_t status);

@@ -15,23 +15,22 @@
 #endif
 
 #include <iostream>
+#include "torch_musa/csrc/aten/mudnn/LayerNorm.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 namespace at::musa {
 
 using Proxy = c10::MaybeOwned<Tensor>;
 
 namespace {
-void MaybeSetVarMode(const Tensor& input, ::musa::dnn::LayerNorm& op) {
+::musa::dnn::LayerNorm::VarMode GetVarMode(const Tensor& input) {
 #if defined(MUDNN_VERSION) && (MUDNN_VERSION >= 3100)
   if (input.dtype() == at::ScalarType::Float) {
-    CHECK_MUDNN_STATUS(
-        op.SetVarMode(::musa::dnn::LayerNorm::VarMode::WELFORD), "SetMode");
-  } else {
-    CHECK_MUDNN_STATUS(
-        op.SetVarMode(::musa::dnn::LayerNorm::VarMode::DIRECT), "SetMode");
+    return ::musa::dnn::LayerNorm::VarMode::WELFORD;
   }
 #endif
+  return ::musa::dnn::LayerNorm::VarMode::DIRECT;
 }
 } // anonymous namespace
 
@@ -139,10 +138,8 @@ std::tuple<Tensor, Tensor, Tensor> NativeLayerNorm(
   if (M > 0) {
     muHandle& h = GetMudnnHandle();
     ::musa::dnn::LayerNorm op;
-    CHECK_MUDNN_STATUS(
-        op.SetAxis(norm_axis.size(), norm_axis.data()), "SetAxis");
-    CHECK_MUDNN_STATUS(op.SetEpsilon(eps), "SetEpsilon");
-    MaybeSetVarMode(input, op);
+    ::at::musa::SetLayerNorm(
+        op, norm_axis.size(), norm_axis.data(), eps, GetVarMode(input));
     CHECK_MUDNN_STATUS(
         op.Run(
             h,
@@ -293,9 +290,8 @@ std::tuple<Tensor, Tensor, Tensor> NativeLayerNorm(
 
     muHandle& h = GetMudnnHandle();
     ::musa::dnn::LayerNorm op;
-    MaybeSetVarMode(X, op);
-    CHECK_MUDNN_STATUS(
-        op.SetAxis(norm_axis.size(), norm_axis.data()), "SetAxis");
+    ::at::musa::SetLayerNorm(
+        op, norm_axis.size(), norm_axis.data(), 1e-5, GetVarMode(X));
     CHECK_MUDNN_STATUS(
         op.RunBwd(
             h,

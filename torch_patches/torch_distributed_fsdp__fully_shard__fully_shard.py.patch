@@ -7,7 +7,7 @@ index eb348a0..fb471f7 100644
          state = self._get_fsdp_state()
          if (fsdp_param_group := state._fsdp_param_group) is not None:
 -            fsdp_param_group._all_gather_comm = comm
-+            # TODO(mingyuan.wang): delete this once zero copy all-gather/reduce-scatter over ACE implementation ready 
++            # TODO(mingyuan.wang): delete this once zero copy all-gather/reduce-scatter over ACE implementation ready
 +            fsdp_param_group._forward_all_gather_comm = comm
 +            fsdp_param_group._backward_all_gather_comm = comm
  

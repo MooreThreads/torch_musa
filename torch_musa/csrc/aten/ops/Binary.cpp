@@ -62,11 +62,11 @@
 #include <ATen/ops/tanh_backward_native.h>
 #endif
 
-#include <torch/library.h>
-
-#include <mudnn.h>
 #include "c10/core/ScalarType.h"
+#include "torch_musa/csrc/aten/mudnn/Binary.h"
+#include "torch_musa/csrc/aten/mudnn/Unary.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 namespace at {
@@ -128,28 +128,17 @@ void UnaryCall(
   if (C10_UNLIKELY(self.numel() == 0 || other.numel() == 0)) {
     return;
   }
-  bool is_other_integer = false;
+
+  auto other_scalar = other.item();
+  const bool is_other_integer = other_scalar.isIntegral(false);
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Unary uop;
-  auto other_scalar = other.item();
-  if (other_scalar.isFloatingPoint()) {
-    CHECK_MUDNN_STATUS(uop.SetAlpha(other_scalar.toDouble()), "SetAlpha");
-  } else if (other_scalar.isIntegral(false)) {
-    is_other_integer = true;
-    CHECK_MUDNN_STATUS(uop.SetAlpha(other_scalar.toLong()), "SetAlpha");
-  } else {
-    AT_ERROR(
-        other_scalar.type(), " is not implemented for broadcast in Binary");
-  }
 
-  if (self.numel() == 0) {
-    return;
-  }
-
+  UNARY_MODE u_m;
   if (m == BINARY_MODE::MUL) {
-    CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::MUL), "SetMode");
+    u_m = UNARY_MODE::MUL;
   } else if (m == BINARY_MODE::ADD) {
-    CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::ADD), "SetMode");
+    u_m = UNARY_MODE::ADD;
   } else if (m == BINARY_MODE::TRUEDIV) {
     // truediv with integer input and integer scalar divider should output a
     // fp32 tensor instead of keeping the dtype
@@ -158,17 +147,26 @@ void UnaryCall(
              self.scalar_type() == at::ScalarType::Long)
         ? output.to(at::ScalarType::Float)
         : output;
-    CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::TRUEDIV), "SetMode");
+    u_m = UNARY_MODE::TRUEDIV;
   } else if (m == BINARY_MODE::SUB) {
-    CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::SUB), "SetMode");
+    u_m = UNARY_MODE::SUB;
   } else if (m == BINARY_MODE::FLOORMOD) {
-    CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::FLOORMOD), "SetMode");
+    u_m = UNARY_MODE::FLOORMOD;
   } else if (m == BINARY_MODE::FLOORDIV) {
-    CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::FLOORDIV), "SetMode");
+    u_m = UNARY_MODE::FLOORDIV;
   } else if (m == BINARY_MODE::TRUNCATEDIV) {
-    CHECK_MUDNN_STATUS(uop.SetMode(UNARY_MODE::TRUNCATEDIV), "SetMode");
+    u_m = UNARY_MODE::TRUNCATEDIV;
   } else {
     AT_ERROR("Invalid mode for broadcast in Binary");
+  }
+
+  if (other_scalar.isFloatingPoint()) {
+    SetUnary(uop, u_m, other_scalar.toDouble());
+  } else if (other_scalar.isIntegral(false)) {
+    SetUnary(uop, u_m, other_scalar.toLong());
+  } else {
+    AT_ERROR(
+        other_scalar.type(), " is not implemented for broadcast in Binary");
   }
 
   TORCH_INTERNAL_ASSERT_DEBUG_ONLY(
@@ -318,7 +316,7 @@ void BinaryCall(
   muTensor musa_out = CreateMUTensor(output);
 
   ::musa::dnn::Binary bop;
-  CHECK_MUDNN_STATUS(bop.SetMode(m), "SetMode");
+  SetBinary(bop, m);
   CHECK_MUDNN_STATUS(
       bop.Run(h, musa_out, musa_self, musa_other), "Run " + op_name);
   if (is_trans) {
@@ -537,8 +535,6 @@ Tensor& ThresholdBwdOut(
   auto mt_grad_output = CreateMUTensor(contiguous_grad_output);
   auto mt_self = CreateMUTensor(contiguous_self);
   auto mt_output = CreateMUTensor(grad_input);
-  CHECK_MUDNN_STATUS(
-      binary_op.SetMode(::musa::dnn::Binary::Mode::THRESHOLD_BW), "SetMode");
   // only support float32 now
   AT_DISPATCH_ALL_MTGPU_TYPES_AND_HALF(
       self.scalar_type(), "threshold_backward", [&] {
@@ -547,13 +543,15 @@ Tensor& ThresholdBwdOut(
             self.scalar_type() == at::ScalarType::Float ||
             self.scalar_type() == at::ScalarType::Half ||
             self.scalar_type() == at::ScalarType::BFloat16) {
-          CHECK_MUDNN_STATUS(
-              binary_op.SetAlpha(static_cast<double>(threshold_value)),
-              "SetAlpha");
+          SetBinary(
+              binary_op,
+              BINARY_MODE::THRESHOLD_BW,
+              static_cast<double>(threshold_value));
         } else {
-          CHECK_MUDNN_STATUS(
-              binary_op.SetAlpha(static_cast<int64_t>(threshold_value)),
-              "SetAlpha");
+          SetBinary(
+              binary_op,
+              BINARY_MODE::THRESHOLD_BW,
+              static_cast<int64_t>(threshold_value));
         }
         CHECK_MUDNN_STATUS(
             binary_op.Run(h, mt_output, mt_grad_output, mt_self), "Run");

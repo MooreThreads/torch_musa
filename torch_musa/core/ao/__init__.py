@@ -2,6 +2,7 @@
 
 __all__ = [
     "nn",
+    "_quantized_conversions",
 ]
 
 

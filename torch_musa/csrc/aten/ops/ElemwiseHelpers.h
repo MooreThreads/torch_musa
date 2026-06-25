@@ -8,6 +8,9 @@
 
 #include <utility>
 
+#include "torch_musa/csrc/aten/mudnn/Binary.h"
+#include "torch_musa/csrc/aten/mudnn/Ternary.h"
+#include "torch_musa/csrc/aten/mudnn/Unary.h"
 #include "torch_musa/csrc/aten/utils/TensorIterator.h"
 
 namespace at {

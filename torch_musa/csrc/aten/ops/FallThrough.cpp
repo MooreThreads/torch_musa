@@ -7,6 +7,7 @@
 #else
 #include <ATen/ops/_batch_norm_with_update_compositeexplicitautograd_dispatch.h>
 #include <ATen/ops/_batch_norm_with_update_native.h>
+#include <ATen/ops/conj_physical_compositeimplicitautograd_dispatch.h>
 #include <ATen/ops/glu_backward_jvp_compositeexplicitautograd_dispatch.h>
 #include <ATen/ops/glu_backward_jvp_native.h>
 #include <ATen/ops/glu_jvp_compositeexplicitautograd_dispatch.h>
@@ -60,6 +61,10 @@ Tensor& GluBwdJvpOut(
     Tensor& out) {
   return at::compositeexplicitautograd::glu_backward_jvp_out(
       out, grad_x, grad_glu, x, dgrad_glu, dx, dim);
+}
+
+Tensor ConjPhysicalWrapper(const Tensor& self) {
+  return at::compositeimplicitautograd::conj_physical(self);
 }
 
 } // namespace at::musa

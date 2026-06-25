@@ -153,5 +153,9 @@ Tensor EmptyQuantized(
   return output;
 }
 
+Tensor dequantize_musa(const Tensor& self) {
+  return self.to(at::kFloat);
+}
+
 } // namespace musa
 } // namespace at

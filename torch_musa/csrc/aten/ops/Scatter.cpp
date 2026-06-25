@@ -11,7 +11,9 @@
 #include <ATen/ops/scatter.h>
 #endif
 
+#include "torch_musa/csrc/aten/mudnn/Scatter.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 #include <mudnn.h>
@@ -75,7 +77,7 @@ Tensor& ScatterOp(
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Scatter op;
-  CHECK_MUDNN_STATUS(op.SetMode(mode), "SetMode");
+  ::at::musa::SetScatter(op, mode);
 
   // mudnn scatter op only supports contig tensors
   // and we always run inplace kernel to avoid `self` tensor contiguous copy

@@ -16,7 +16,7 @@ from torch.distributed.checkpoint.state_dict import get_state_dict, set_state_di
 from torch.distributed._state_dict_utils import (
     _check_state_dict_similarity,
     _copy_state_dict,
-    _create_cpu_state_dict
+    _create_cpu_state_dict,
 )
 
 from torch.testing._internal.common_fsdp import MLP
@@ -138,11 +138,9 @@ class TestFullyShardD(FSDPTest):
         if self.rank == 0:
             delete_folder("checkpoint")
 
-
     def test_dp_shard_dcp_save_load(self):
         self._test_dp_shard_dcp_save_load(False)
         self._test_dp_shard_dcp_save_load(True)
-
 
     def test_create_cpu_state_dict(self):
         device = torch.device("musa")

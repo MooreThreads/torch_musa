@@ -1,0 +1,156 @@
+diff --git a/tools/autograd/templates/python_variable_methods.cpp b/tools/autograd/templates/python_variable_methods.cpp
+index bfc5b80835c..a82113ce056 100644
+--- a/tools/autograd/templates/python_variable_methods.cpp
++++ b/tools/autograd/templates/python_variable_methods.cpp
+@@ -14,6 +14,7 @@
+ #include "torch/csrc/Size.h"
+ #include "torch/csrc/autograd/generated/VariableType.h"
+ #include "torch/csrc/autograd/python_variable.h"
++#include "torch/csrc/autograd/python_lazy_to.h"
+ #include "torch/csrc/autograd/utils/python_arg_parsing.h"
+ #include "torch/csrc/autograd/utils/error_messages.h"
+ #include "torch/csrc/autograd/utils/wrap_outputs.h"
+@@ -449,6 +450,32 @@ static PyObject * THPVariable_cpu(PyObject* self, PyObject* args, PyObject* kwar
+    END_HANDLE_TH_ERRORS
+ }
+ 
++static PyObject * THPVariable_lazy_cpu(PyObject* self, PyObject* args, PyObject* kwargs)
++{
++   HANDLE_TH_ERRORS
++   static PythonArgParser parser({
++     "lazy_cpu(*, MemoryFormat? memory_format=None)"
++   });
++   auto& self_ = THPVariable_Unpack(self);
++   ParsedArgs<1> parsed_args;
++   auto r = parser.parse(self, args, kwargs, parsed_args);
++
++   if(r.has_torch_function()){
++    return handle_torch_function(r, self, args, kwargs, THPVariableClass, "torch.Tensor");
++    }
++
++   if (can_lazy_replace_device(self_, std::nullopt, at::Device(at::DeviceType::CPU), false, std::nullopt)) {
++      at::Device device = at::Device(at::DeviceType::CPU);
++      lazy_replace_device(self_, device);
++      Py_INCREF(self);
++      return self;
++    }
++
++   auto opt_memory_format = r.memoryformatOptional(0);
++   return THPVariable_Wrap(dispatch_to(self_, at::Device(at::DeviceType::CPU), false, false, opt_memory_format));
++   END_HANDLE_TH_ERRORS
++}
++
+ static Tensor dispatch_nonzero(const Tensor & self) {
+   pybind11::gil_scoped_release no_gil;
+   OptionalDeviceGuard device_guard(device_of(self));
+@@ -1022,6 +1049,94 @@ static PyObject * THPVariable_to(PyObject* self, PyObject* args, PyObject* kwarg
+   END_HANDLE_TH_ERRORS
+ }
+ 
++// Returns true when the target device differs from the tensor's current device,
++// the current device is not meta, and the optional has a value.
++bool has_different_non_meta_device(
++    const std::optional<c10::Device>& target,
++    const c10::Device& current) {
++  return (current != c10::Device("meta") && target.has_value() && target.value() != current);
++}
++
++template <typename T>
++inline bool is_null_or_equal_to(
++    const std::optional<T>& test,
++    const T& value) {
++  if (!test.has_value()) {
++    return true;
++  }
++  return test.value() == value;
++}
++
++// Checks whether lazy_to can simply relabel the device in-place (no data copy).
++// Only valid when used within a unified memory allocator context.
++TORCH_PYTHON_API bool can_lazy_replace_device(
++    const Tensor& self,
++    std::optional<ScalarType> dtype,
++    std::optional<Device> device,
++    bool copy,
++    std::optional<c10::MemoryFormat> optional_memory_format) {
++  auto memory_format = optional_memory_format.value_or(MemoryFormat::Preserve);
++  return has_different_non_meta_device(device, self.device()) &&
++      is_null_or_equal_to(dtype, self.dtype().toScalarType()) && !copy &&
++      (memory_format == MemoryFormat::Preserve ||
++       self.suggest_memory_format() == memory_format);
++}
++
++TORCH_PYTHON_API void lazy_replace_device(const Tensor& self, Device device) {
++  self.unsafeGetTensorImpl()->_unsafe_set_device(device);
++  at::DataPtr& dtr = self.unsafeGetTensorImpl()->unsafe_storage().unsafeGetStorageImpl()->_mutable_data_ptr_no_checks();
++  dtr.unsafe_set_device(device);
++}
++
++static PyObject * THPVariable_lazy_to(PyObject* self, PyObject* args, PyObject* kwargs)
++{
++  HANDLE_TH_ERRORS
++  static PythonArgParser parser({
++    "lazy_to(Device device=None, ScalarType dtype=None, bool non_blocking=False, bool copy=False, *, MemoryFormat? memory_format=None)",
++    "lazy_to(ScalarType dtype, bool non_blocking=False, bool copy=False, *, MemoryFormat? memory_format=None)",
++    "lazy_to(Tensor tensor, bool non_blocking=False, bool copy=False, *, MemoryFormat? memory_format=None)",
++  });
++  ParsedArgs<5> parsed_args;
++  auto r = parser.parse(self, args, kwargs, parsed_args);
++  if (r.has_torch_function()) {
++    return handle_torch_function(r, self, args, kwargs, THPVariableClass, "torch.Tensor");
++  }
++  auto parsed = parse_to_conversion(r, /*allow_copy*/ true);
++  auto& device = std::get<0>(parsed);
++  auto& scalarType = std::get<1>(parsed);
++  auto non_blocking = std::get<2>(parsed);
++  auto copy = std::get<3>(parsed);
++  auto opt_memory_format = std::get<4>(parsed);
++  auto& self_ = THPVariable_Unpack(self);
++  if (can_lazy_replace_device(self_, scalarType, device, copy, opt_memory_format)) {
++    c10::Device validate_device = *device;
++    if (validate_device.has_index() == false) {
++      int64_t default_index = c10::impl::getDeviceGuardImpl(validate_device.type())->getDevice().index();
++      validate_device = c10::Device(validate_device.type(), default_index);
++    }
++    lazy_replace_device(self_, validate_device);
++    Py_INCREF(self);
++    return self;
++  }
++
++  torch::utils::maybe_initialize_device(device);
++  if (!device && !scalarType && !copy && !opt_memory_format.has_value()) {
++    Py_INCREF(self);
++    return self;
++  } else if (!device && !scalarType) {
++    return THPVariable_Wrap(
++        dispatch_to(self_, non_blocking, copy, opt_memory_format));
++  } else if (!device) {
++    return THPVariable_Wrap(dispatch_to(self_, *scalarType, non_blocking, copy, opt_memory_format));
++  } else if (!scalarType) {
++    return THPVariable_Wrap(dispatch_to(self_, *device, non_blocking, copy, opt_memory_format));
++  } else {
++    return THPVariable_Wrap(dispatch_to(self_, *device, *scalarType, non_blocking, copy, opt_memory_format));
++  }
++  Py_RETURN_NONE;
++  END_HANDLE_TH_ERRORS
++}
++
+ // implemented on the python object b/c arbitrarily nested list not declarable in native_functions.yaml
+ // See: ATen/native/README.md for more context
+ static PyObject * THPVariable_tolist(PyObject* self, PyObject* args)
+@@ -1293,6 +1408,7 @@ PyMethodDef variable_methods[] = {
+   {"contiguous", castPyCFunctionWithKeywords(THPVariable_contiguous), METH_VARARGS | METH_KEYWORDS, nullptr},
+   {"copy_", castPyCFunctionWithKeywords(THPVariable_copy_), METH_VARARGS | METH_KEYWORDS, nullptr},
+   {"cpu", castPyCFunctionWithKeywords(THPVariable_cpu), METH_VARARGS | METH_KEYWORDS, nullptr},
++  {"lazy_cpu", castPyCFunctionWithKeywords(THPVariable_lazy_cpu), METH_VARARGS | METH_KEYWORDS, nullptr},
+   {"cuda", castPyCFunctionWithKeywords(THPVariable_cuda), METH_VARARGS | METH_KEYWORDS, nullptr},
+   {"mtia", castPyCFunctionWithKeywords(THPVariable_mtia), METH_VARARGS | METH_KEYWORDS, nullptr},
+   {"xpu", castPyCFunctionWithKeywords(THPVariable_xpu), METH_VARARGS | METH_KEYWORDS, nullptr},
+@@ -1329,6 +1445,7 @@ PyMethodDef variable_methods[] = {
+   {"storage_offset", THPVariable_storage_offset, METH_NOARGS, nullptr},
+   {"stride", castPyCFunctionWithKeywords(THPVariable_stride), METH_VARARGS | METH_KEYWORDS, nullptr},
+   {"to", castPyCFunctionWithKeywords(THPVariable_to), METH_VARARGS | METH_KEYWORDS, nullptr},
++  {"lazy_to", castPyCFunctionWithKeywords(THPVariable_lazy_to), METH_VARARGS | METH_KEYWORDS, nullptr},
+   {"tolist", THPVariable_tolist, METH_NOARGS, nullptr},
+   {"type", castPyCFunctionWithKeywords(THPVariable_type), METH_VARARGS | METH_KEYWORDS, nullptr},
+   ${py_method_defs}

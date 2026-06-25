@@ -54,6 +54,7 @@ dtypes = [
 ]
 
 ind_dtypes = [torch.int64]  # cpu only support int64 indices
+fp8_dtypes = [torch.float8_e4m3fn, torch.float8_e5m2]
 
 
 # test index_put
@@ -292,6 +293,32 @@ def test_index_tensor(config, tensor_dtype, ind_dtype, neg_indices):
     }
     test = testing.OpTest(func=func, input_args=input_data)
     test.check_result()
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.skipif(
+    testing.get_musa_arch() < 31, reason="fp8 is only supported on mp_31+"
+)
+@pytest.mark.parametrize("tensor_dtype", fp8_dtypes)
+@pytest.mark.parametrize(
+    "indices",
+    [
+        [torch.tensor([0, 2, 4, 7])],
+        [slice(None), torch.tensor([1, 3, 5])],
+        [torch.tensor([[0, 2], [4, 6]]), slice(None)],
+    ],
+)
+def test_index_tensor_fp8(tensor_dtype, indices):
+    input_data = torch.randn(16 * 128, dtype=torch.float32).reshape(16, 128)
+    input_data = input_data.to(tensor_dtype)
+    indices = tuple(indices)
+
+    musa_result = input_data.musa()[indices]
+    cpu_result = input_data.float()[indices]
+
+    assert musa_result.dtype == tensor_dtype
+    assert musa_result.shape == cpu_result.shape
+    assert torch.equal(musa_result.cpu().float(), cpu_result)
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)

@@ -15,6 +15,11 @@ def _musa(self, *args, **kwargs):
     return torch_musa._MUSAC._musa(self, *args, **kwargs)
 
 
+def _lazy_musa(self, *args, **kwargs):
+    """Returns a copy of this object in MUSA memory"""
+    return torch_musa._MUSAC._lazy_musa(self, *args, **kwargs)
+
+
 def _pin_memory(self, device: Optional[Union[_device, str, None]] = "musa"):
     """Copies the tensor to pinned memory, if it’s not already pinned."""
     return self.orig_pin_memory(device)
@@ -36,6 +41,17 @@ def _to(self, *args, **kwargs) -> Tensor:
     return self.orig_to(*args, **kwargs)
 
 
+def _lazy_to(self, *args, **kwargs) -> Tensor:
+    """Performs Tensor dtype and/or device conversion."""
+    if len(args) > 0 and isinstance(args[0], int):
+        device = torch.device("musa:" + str(args[0]))
+        return self.orig_lazy_to(device, *args[1:], **kwargs)
+    device = kwargs.get("device")
+    if isinstance(device, int):
+        kwargs["device"] = torch.device("musa:" + str(device))
+    return self.orig_lazy_to(*args, **kwargs)
+
+
 @property
 def _is_musa(self):
     """Check if a tensor is a musa tensor"""
@@ -46,11 +62,14 @@ def set_torch_attributes():
     """Set tensor attributes for torch musa."""
     torch.Tensor.is_musa = _is_musa
     torch.Tensor.musa = _musa
+    torch.Tensor.lazy_musa = _lazy_musa
     # store original method
     torch.Tensor.orig_pin_memory = torch.Tensor.pin_memory
     torch.Tensor.orig_is_pinned = torch.Tensor.is_pinned
     torch.Tensor.orig_to = torch.Tensor.to
+    torch.Tensor.orig_lazy_to = torch.Tensor.lazy_to
     # then we hack it with our customized function
     torch.Tensor.pin_memory = _pin_memory
     torch.Tensor.is_pinned = _is_pinned
     torch.Tensor.to = _to
+    torch.Tensor.lazy_to = _lazy_to

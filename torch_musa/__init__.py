@@ -6,7 +6,7 @@ import sys
 import warnings
 import os
 import re
-from typing import Set, Type
+from typing import Set, Type, Union
 import contextlib
 
 from packaging.version import Version
@@ -23,17 +23,17 @@ def _autoload():
 
 import torch
 
-TORCH_MIN_VERSION = Version("2.9.0")
+TORCH_MIN_VERSION = Version("2.9.1")
 TORCH_VERSION = Version(torch.__version__).base_version
 if Version(TORCH_VERSION) < TORCH_MIN_VERSION:
     raise RuntimeError(
-        "torch version must not be less than v2.9.0 when using torch_musa,",
+        "torch version must not be less than v2.9.1 when using torch_musa,",
         " but now torch version is " + torch.__version__,
     )
 
-if "2.9.0" not in torch.__version__:
+if "2.9.1" not in torch.__version__:
     warnings.warn(
-        "torch version should be v2.9.0 when using torch_musa, but now torch version is "
+        "torch version should be v2.9.1 when using torch_musa, but now torch version is "
         + torch.__version__,
         UserWarning,
     )
@@ -46,6 +46,13 @@ try:
     import torch_musa._MUSAC
 except ImportError as err:
     raise ImportError("Please try running Python from a different directory!") from err
+
+# Resolve TORCH_RNG_ALIGN to TORCH_ARCH_MP_COUNT/TORCH_ARCH_MAXTHREADS_PER_MP env vars
+# before any C++ code reads device properties.
+# pylint: disable=wrong-import-order
+from .core.random import align_rng_to_nv_gpu  # noqa: E402
+
+align_rng_to_nv_gpu()
 
 torch.__setattr__("musa", sys.modules[__name__])
 
@@ -243,7 +250,8 @@ parseEnvForUMM()
 
 @contextlib.contextmanager
 def use_unified_cpu_allocator():
-    r"""A context manager that use unified cpu allocator.
+    r"""A context manager that use unified cpu allocator,
+    enabling GPU access to CPU-allocated memory.
 
     Args:
       None
@@ -255,6 +263,30 @@ def use_unified_cpu_allocator():
     os.environ["CPU_UNIFIED_FLAG"] = "True"
     try:
         yield
+    finally:
+        torch_musa._MUSAC._musa_reset_unified_cpu_allocator()
+        os.environ["CPU_UNIFIED_FLAG"] = "False"
+
+
+@contextlib.contextmanager
+def use_unified_allocator():
+    r"""A context manager that use unified allocator.
+    enabling GPU and CPU access GPU-allocated and CPU-allocated
+    memory.
+
+    Args:
+      None
+
+    .. note::
+        unified allocator works in context
+    """
+    torch_musa._MUSAC._musa_register_unified_cpu_allocator()
+    os.environ["CPU_UNIFIED_FLAG"] = "True"
+    try:
+        alloc = torch_musa._MUSAC._get_musa_unified_allocator()
+        pool = torch.musa.MemPool(alloc)
+        with torch.musa.use_mem_pool(pool):
+            yield
     finally:
         torch_musa._MUSAC._musa_reset_unified_cpu_allocator()
         os.environ["CPU_UNIFIED_FLAG"] = "False"

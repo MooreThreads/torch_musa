@@ -35,7 +35,9 @@
 #include <c10/util/Exception.h>
 #include <torch/library.h>
 
+#include "torch_musa/csrc/aten/mudnn/Interpolate.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 #include <mudnn.h>
@@ -108,12 +110,9 @@ Tensor& UpSampleNdOut(
   muTensor out = CreateMUTensor(out_);
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Interpolate op;
-  CHECK_MUDNN_STATUS(op.SetMode(mode), "SetMode");
-  CHECK_MUDNN_STATUS(op.SetAntialias(antialias), "SetAntialias");
-  if constexpr (
-      mode == INTERPOLATE_MODE::LINEAR || mode == INTERPOLATE_MODE::BICUBIC) {
-    CHECK_MUDNN_STATUS(op.SetAlignCorners(align_corners), "SetAlignCorners");
-  }
+
+  bool should_set_align_corners =
+      (mode == INTERPOLATE_MODE::LINEAR || mode == INTERPOLATE_MODE::BICUBIC);
 
   if constexpr (Nd == 1) {
     // Since pytorch only support channelslast for 4D tensor and
@@ -127,7 +126,12 @@ Tensor& UpSampleNdOut(
     const float width_scale = at::native::compute_scales_value<float>(
         scales_w, input_width, output_width);
 
-    CHECK_MUDNN_STATUS(op.SetScaleInfo({width_scale}), "SetScaleInfo");
+    ::at::musa::SetInterpolate(
+        op,
+        mode,
+        antialias,
+        should_set_align_corners ? align_corners : false,
+        {width_scale});
     CHECK_MUDNN_STATUS(op.Run(h, out, in), "Run");
   } else if constexpr (Nd == 2) {
     int input_height = self.size(2);
@@ -139,8 +143,12 @@ Tensor& UpSampleNdOut(
     const float width_scale = at::native::compute_scales_value<float>(
         scales_w, input_width, output_width);
 
-    CHECK_MUDNN_STATUS(
-        op.SetScaleInfo({height_scale, width_scale}), "SetScaleInfo");
+    ::at::musa::SetInterpolate(
+        op,
+        mode,
+        antialias,
+        should_set_align_corners ? align_corners : false,
+        {height_scale, width_scale});
     CHECK_MUDNN_STATUS(op.Run(h, out, in), "Run");
 
   } else if constexpr (Nd == 3) {
@@ -158,9 +166,12 @@ Tensor& UpSampleNdOut(
     const auto width_scale = native::compute_scales_value<float>(
         scales_w, input_width, output_width);
 
-    CHECK_MUDNN_STATUS(
-        op.SetScaleInfo({depth_scale, height_scale, width_scale}),
-        "SetScaleInfo");
+    ::at::musa::SetInterpolate(
+        op,
+        mode,
+        antialias,
+        should_set_align_corners ? align_corners : false,
+        {depth_scale, height_scale, width_scale});
     CHECK_MUDNN_STATUS(op.Run(h, out, in), "Run");
 
   } else {
@@ -202,11 +213,8 @@ Tensor& UpSampleNdBwdOut(
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Interpolate op;
-  CHECK_MUDNN_STATUS(
-      op.SetMode(::musa::dnn::Interpolate::Mode::NEAREST), "SetMode");
-  if constexpr (mode == INTERPOLATE_MODE::LINEAR) {
-    CHECK_MUDNN_STATUS(op.SetAlignCorners(align_corners), "SetAlignCorners");
-  }
+
+  bool should_set_align_corners = (mode == INTERPOLATE_MODE::LINEAR);
 
   if constexpr (Nd == 1) {
     // Since pytorch only support channelslast for 4D tensor and
@@ -221,7 +229,12 @@ Tensor& UpSampleNdBwdOut(
     const auto width_scale =
         ComputeScalesValueBwd(scales_w, output_width, input_width);
 
-    CHECK_MUDNN_STATUS(op.SetScaleInfo({width_scale}), "SetScaleInfo");
+    ::at::musa::SetInterpolate(
+        op,
+        ::musa::dnn::Interpolate::Mode::NEAREST,
+        antialias,
+        should_set_align_corners ? align_corners : false,
+        {width_scale});
     CHECK_MUDNN_STATUS(op.RunBackward(h, out, in), "RunBackward");
   } else if constexpr (Nd == 2) {
     int64_t output_height = output_size[0];
@@ -235,8 +248,12 @@ Tensor& UpSampleNdBwdOut(
     const auto width_scale =
         ComputeScalesValueBwd(scales_w, output_width, input_width);
 
-    CHECK_MUDNN_STATUS(
-        op.SetScaleInfo({height_scale, width_scale}), "SetScaleInfo");
+    ::at::musa::SetInterpolate(
+        op,
+        ::musa::dnn::Interpolate::Mode::NEAREST,
+        antialias,
+        should_set_align_corners ? align_corners : false,
+        {height_scale, width_scale});
     CHECK_MUDNN_STATUS(op.RunBackward(h, out, in), "RunBackward");
   } else if constexpr (Nd == 3) {
     int64_t output_depth = output_size[0];
@@ -254,9 +271,12 @@ Tensor& UpSampleNdBwdOut(
     const auto width_scale =
         ComputeScalesValueBwd(scales_w, output_width, input_width);
 
-    CHECK_MUDNN_STATUS(
-        op.SetScaleInfo({depth_scale, height_scale, width_scale}),
-        "SetScaleInfo");
+    ::at::musa::SetInterpolate(
+        op,
+        ::musa::dnn::Interpolate::Mode::NEAREST,
+        antialias,
+        should_set_align_corners ? align_corners : false,
+        {depth_scale, height_scale, width_scale});
     CHECK_MUDNN_STATUS(op.RunBackward(h, out, in), "RunBackward");
   }
 

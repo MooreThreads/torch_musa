@@ -12,6 +12,8 @@
 #include <ATen/NativeFunctions.h>
 
 #include <torch/library.h>
+#include "torch_musa/csrc/aten/mudnn/Concat.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 #include "torch_musa/csrc/utils/register_wrapper.h"
@@ -244,7 +246,7 @@ Tensor CatQuantizedMusaImpl(
     }
     // set q-scale and q-zero-point
     SetMudnnQuantizationInfo(mu_qx, qx.q_scale(), qx.q_zero_point());
-    mu_tensors.emplace_back(mu_qx);
+    mu_tensors.push_back(std::move(mu_qx));
   }
 
   // create output tensor
@@ -273,9 +275,9 @@ Tensor CatQuantizedMusaImpl(
       out_.SetQuantizationInfo(scale_m), "Set quantization info");
 
   // run mudnn op
-  at::musa::muHandle& h = at::GetMudnnHandle();
+  auto& h = at::GetMudnnHandle();
   ::musa::dnn::Concat op;
-  CHECK_MUDNN_STATUS(op.SetAxis(dim), "Set concat axis");
+  ::at::musa::SetConcat(op, static_cast<int>(dim));
   CHECK_MUDNN_STATUS(
       op.Run(h, out_, elements, mu_tensors.data()), "Run concat");
 
@@ -364,16 +366,16 @@ Tensor QuantizedCatOut(const c10::List<Tensor>& qxs, int64_t dim, Tensor out) {
     // set q-scale and q-zero-point
     at::musa::muTensor mu_qx = at::musa::CreateMUTensor(qx);
     SetMudnnQuantizationInfo(mu_qx, qx.q_scale(), qx.q_zero_point());
-    mu_tensors.emplace_back(mu_qx);
+    mu_tensors.push_back(std::move(mu_qx));
   }
 
   at::musa::muTensor out_m = at::musa::CreateMUTensor(out);
   SetMudnnQuantizationInfo(out_m, out.q_scale(), out.q_zero_point());
 
   // run mudnn op
-  at::musa::muHandle& h = at::GetMudnnHandle();
+  auto& h = at::GetMudnnHandle();
   ::musa::dnn::Concat op;
-  CHECK_MUDNN_STATUS(op.SetAxis(dim), "Set concat axis");
+  ::at::musa::SetConcat(op, static_cast<int>(dim));
   CHECK_MUDNN_STATUS(
       op.Run(h, out_m, elements, mu_tensors.data()), "Run concat");
 

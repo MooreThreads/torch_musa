@@ -8,10 +8,12 @@
 #include <c10/core/TensorOptions.h>
 #include <torch/library.h>
 
-#include <mudnn.h>
+#include "torch_musa/csrc/aten/mudnn/Permute.h"
+#include "torch_musa/csrc/aten/mudnn/Unary.h"
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/aten/ops/Copy.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/CachingHostAllocator.h"
 #include "torch_musa/csrc/core/MUSAEvent.h"
@@ -235,8 +237,7 @@ void mtgpu_impl_copy_d2d(
       // performance
       muHandle& h = GetMudnnHandle();
       ::musa::dnn::Unary op;
-      CHECK_MUDNN_STATUS(
-          op.SetMode(::musa::dnn::Unary::Mode::IDENTITY), "SetMode");
+      SetUnary(op, ::musa::dnn::Unary::Mode::IDENTITY);
       auto in = CreateMUTensor(tensor_src);
       auto out = CreateMUTensor(tensor_self);
       CHECK_MUDNN_STATUS(op.Run(h, out, in), "Run Copy by Identity");
@@ -296,7 +297,7 @@ void mtgpu_impl_datacast(const Tensor& tensor_self, const Tensor& tensor_src) {
   auto contiguous_in = CreateMUTensor(contiguous_tensor_src);
   auto contiguous_out = CreateMUTensor(tensor_self);
 
-  CHECK_MUDNN_STATUS(op.SetMode(::musa::dnn::Unary::Mode::CAST), "SetMode");
+  SetUnary(op, ::musa::dnn::Unary::Mode::CAST);
   CHECK_MUDNN_STATUS(op.Run(h, contiguous_out, contiguous_in), "Run");
 }
 

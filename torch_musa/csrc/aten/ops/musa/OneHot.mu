@@ -5,6 +5,7 @@
 #include <ATen/Dispatch_v2.h>
 
 #include "torch_musa/csrc/aten/musa/Exceptions.h"
+#include "torch_musa/csrc/aten/musa/MUSAContextLight.h"
 #include "torch_musa/csrc/aten/musa/MUSADtype.muh"
 #include "torch_musa/csrc/aten/musa/MUSAMath.muh"
 #include "torch_musa/csrc/aten/utils/Utils.h"
@@ -62,11 +63,8 @@ __global__ void OneHotOutNotAlign(
 
 template <typename T>
 void LaunchOneHotKernel(Tensor& o, const Tensor& i, int depth) {
-  auto& h = GetMudnnHandle();
-  musaDeviceProp device_prop;
-  int device_id = h.GetDeviceId();
-  C10_MUSA_CHECK(musaGetDeviceProperties(&device_prop, device_id));
-  const int mp_num = device_prop.multiProcessorCount;
+  const auto* device_prop = at::musa::getCurrentDeviceProperties();
+  const int mp_num = device_prop->multiProcessorCount;
 
   T* o_dptr = o.data_ptr<T>();
   const T* i_dptr = i.const_data_ptr<T>();

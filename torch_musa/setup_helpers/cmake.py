@@ -351,6 +351,8 @@ class CMake:
             "--config",
             build_type.build_type_string,
         ]
+        if not check_negative_env_flag("VERBOSE"):
+            build_args.append("--verbose")
 
         # Determine the parallelism according to the following
         # priorities:

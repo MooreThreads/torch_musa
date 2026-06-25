@@ -8,6 +8,7 @@
 #else
 #include <ATen/ops/_addmm_activation_native.h>
 #include <ATen/ops/_efficientzerotensor.h>
+#include <ATen/ops/dot_native.h>
 #include <ATen/ops/vdot_native.h>
 #include <ATen/ops/view_as_complex.h>
 #include <ATen/ops/zeros.h>
@@ -21,10 +22,12 @@
 #include "c10/core/ScalarType.h"
 #include "c10/util/Exception.h"
 
+#include "torch_musa/csrc/aten/mudnn/BatchMatMul.h"
 #include "torch_musa/csrc/aten/musa/MUSABlas.h"
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Context.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 namespace at {
@@ -44,42 +47,6 @@ bool is_broadcasted_except_last_dim(const at::Tensor& t) {
   }
   return choose;
 }
-} // namespace
-
-at::Tensor& DotOut(const at::Tensor& l, const at::Tensor& r, at::Tensor& out) {
-  TORCH_CHECK(l.sizes() == r.sizes(), "dot tensors' shape don't match");
-  TORCH_CHECK(
-      l.dim() == r.dim() && l.dim() == 1, "dot inputs must be 1-D tensors");
-  const c10::musa::MUSAGuard device_guard(l.device());
-
-  muHandle& h = GetMudnnHandle();
-  if (l.numel() == 0 || r.numel() == 0) {
-    out.zero_().squeeze_();
-    return out;
-  }
-  auto rst = CreateMUTensor(out);
-  Tensor contiguous_l = l.contiguous();
-  Tensor contiguous_r = r.contiguous();
-  auto lmt = CreateMUTensor(contiguous_l);
-  auto rmt = CreateMUTensor(contiguous_r);
-
-  ::musa::dnn::Dot op;
-  op.SetComputeMode(at::musa::GetMatmulComputeModeFromCtx(l.scalar_type()));
-  CHECK_MUDNN_STATUS(op.Run(h, rst, lmt, rmt, InternalMemAlloc), "Run")
-
-  out.squeeze_();
-  return out;
-}
-
-at::Tensor Dot(const at::Tensor& l, const at::Tensor& r) {
-  Tensor out =
-      at::empty({1}, l.options().memory_format(at::MemoryFormat::Contiguous));
-
-  DotOut(l, r, out);
-  return out;
-}
-
-namespace {
 
 void DotCheck(const Tensor& self, const Tensor& other) {
   TORCH_CHECK(
@@ -113,7 +80,97 @@ void DotCheck(const Tensor& self, const Tensor& other) {
       INT_MAX);
 }
 
-} // anonymous namespace
+void MmCheck(const Tensor& self, const Tensor& other) {
+  TORCH_CHECK(
+      self.scalar_type() == other.scalar_type(),
+      "mat1 and mat2 must have the same dtype, got ",
+      self.scalar_type(),
+      " and ",
+      other.scalar_type());
+
+  const auto self_dim = self.dim();
+  const auto other_dim = other.dim();
+
+  // Support mm/mv (2D x 2D/1D) and bmm (3D x 3D)
+  TORCH_CHECK(
+      (self_dim == 2 && (other_dim == 2 || other_dim == 1)) ||
+          (self_dim == 3 && other_dim == 3),
+      "mat1 and mat2 must be 2D x (2D or 1D), or 3D x 3D, got ",
+      self_dim,
+      "D and ",
+      other_dim,
+      "D");
+
+  if (self_dim == 2) {
+    TORCH_CHECK(
+        self.size(1) == other.size(0),
+        "mat1 and mat2 shapes cannot be multiplied: (",
+        self.size(0),
+        ", ",
+        self.size(1),
+        ") and (",
+        other.size(0),
+        ", ...)");
+  } else {
+    TORCH_CHECK(
+        self.size(0) == other.size(0),
+        "batch dimensions must match for bmm, got ",
+        self.size(0),
+        " and ",
+        other.size(0));
+    TORCH_CHECK(
+        self.size(2) == other.size(1),
+        "mat1 and mat2 shapes cannot be multiplied for bmm: (",
+        self.size(0),
+        ", ",
+        self.size(1),
+        ", ",
+        self.size(2),
+        ") and (",
+        other.size(0),
+        ", ",
+        other.size(1),
+        ", ",
+        other.size(2),
+        ")");
+  }
+}
+
+void AddMmCheck(const Tensor& self, const Tensor& mat1, const Tensor& mat2) {
+  TORCH_CHECK(mat1.dim() == 2, "mat1 must be a 2D tensor, got ", mat1.dim());
+  TORCH_CHECK(
+      mat2.dim() == 2 || mat2.dim() == 1,
+      "mat2 must be a 1D or 2D tensor, got ",
+      mat2.dim());
+  TORCH_CHECK(
+      mat1.size(1) == mat2.size(0),
+      "mat1 and mat2 shapes cannot be multiplied: (",
+      mat1.size(0),
+      ", ",
+      mat1.size(1),
+      ") and (",
+      mat2.size(0),
+      ", ...");
+  TORCH_CHECK(
+      self.scalar_type() == mat1.scalar_type() &&
+          self.scalar_type() == mat2.scalar_type(),
+      "self, mat1 and mat2 must have the same dtype, got ",
+      self.scalar_type(),
+      ", ",
+      mat1.scalar_type(),
+      ", ",
+      mat2.scalar_type());
+}
+
+} // namespace
+
+at::Tensor Dot(const at::Tensor& l, const at::Tensor& r) {
+  Tensor out =
+      at::empty({1}, l.options().memory_format(at::MemoryFormat::Contiguous));
+
+  DotOut(l, r, out);
+  return out;
+}
 
 at::Tensor VDot(const Tensor& l, const Tensor& r) {
   DotCheck(l, r);
@@ -177,8 +234,21 @@ void BlasBGEMM(
   bool lT = (l.stride(1) == 1 && l.stride(2) == l.size(1));
   bool rT = (r.stride(1) == 1 && r.stride(2) == r.size(1));
 
-  char transl = lT ? 't' : 'n';
-  char transr = rT ? 't' : 'n';
+  // Set BLAS transpose flags
+  // 'n' = no transpose, 't' = transpose, 'c' = conjugate transpose
+  // Handles lazy conjugates or non-contiguous tensors
+  char transl = lT ? (l.is_conj() ? 'c' : 't') : 'n';
+  char transr = rT ? (r.is_conj() ? 'c' : 't') : 'n';
+
+  // For contiguous tensors with lazy conjugate, resolve to actual conjugate
+  Tensor cl = l;
+  Tensor cr = r;
+  if (l.is_conj() && l.is_contiguous()) {
+    cl = l.resolve_conj();
+  }
+  if (r.is_conj() && r.is_contiguous()) {
+    cr = r.resolve_conj();
+  }
 
   auto ldl = lT ? l.stride(2) : l.stride(1);
   auto ldr = rT ? r.stride(2) : r.stride(1);
@@ -198,10 +268,10 @@ void BlasBGEMM(
             m,
             k,
             alpha_value,
-            r.const_data_ptr<scalar_t>(),
+            cr.const_data_ptr<scalar_t>(),
             ldr,
             strider,
-            l.const_data_ptr<scalar_t>(),
+            cl.const_data_ptr<scalar_t>(),
             ldl,
             stridel,
             beta_value,
@@ -297,11 +367,7 @@ void MmCall(
   auto rst = CreateMUTensor(out_contig);
 
   ::musa::dnn::MatMul mm;
-  CHECK_MUDNN_STATUS(
-      mm.SetComputeMode(
-          at::musa::GetMatmulComputeModeFromCtx(l_alias.scalar_type())),
-      "SetComputeMode");
-  CHECK_MUDNN_STATUS(mm.SetTranspose(trans_l, trans_r), "SetTranspose");
+  const auto mode = at::musa::GetMatmulComputeModeFromCtx(l.scalar_type());
 
   // For bias that have shape (s0, s1, s2, ... , sn) and stride (0, 0, 0, ...,
   // 1), we can delegate this case into second if block to reduce memory
@@ -315,8 +381,8 @@ void MmCall(
     const auto bias_ =
         FormatContiguous(bias.value(), out.suggest_memory_format());
     auto bmt = CreateMUTensor(bias_);
-    CHECK_MUDNN_STATUS(mm.SetAlpha(alpha.to<double>()), "SetAlpha");
-    CHECK_MUDNN_STATUS(mm.SetBeta(beta.to<double>()), "SetBeta");
+    SetMatMul(
+        mm, mode, trans_l, trans_r, alpha.to<double>(), beta.to<double>(), 1.0);
     CHECK_MUDNN_STATUS(
         mm.RunWithBiasAdd(h, rst, lmt, rmt, bmt, muTensor(), InternalMemAlloc),
         "RunWithBiasAdd");
@@ -330,15 +396,15 @@ void MmCall(
     const auto bias_t_ =
         bias_t.as_strided({bias_t.size(-1)}, {bias_t.stride(-1)});
     auto bmt = CreateMUTensor(bias_t_);
-    CHECK_MUDNN_STATUS(mm.SetAlpha(alpha.to<double>()), "SetAlpha");
-    CHECK_MUDNN_STATUS(mm.SetGamma(beta.to<double>()), "SetGamma");
+    SetMatMul(
+        mm, mode, trans_l, trans_r, alpha.to<double>(), 0.0, beta.to<double>());
     CHECK_MUDNN_STATUS(
         mm.RunWithBiasAdd(h, rst, lmt, rmt, rst, bmt, InternalMemAlloc),
         "RunWithBiasAdd");
   } else {
     // Run muDNN with `c = alpha * a @ b + beta * c`, then `c += gamma * bias`
     // if bias is given (scalar or [M, 1] for gemm)
-    CHECK_MUDNN_STATUS(mm.SetAlpha(alpha.to<double>()), "SetAlpha");
+    SetMatMul(mm, mode, trans_l, trans_r, alpha.to<double>(), 0.0, 1.0);
     CHECK_MUDNN_STATUS(mm.Run(h, rst, lmt, rmt, InternalMemAlloc), "Run");
     if (bias.has_value()) {
       out.add_(bias.value(), beta);
@@ -378,13 +444,9 @@ void BmmCall(
 
   // Run muDNN BMM with `c = alpha * a @ b + beta * c`
   ::musa::dnn::BatchMatMul bmm;
-  CHECK_MUDNN_STATUS(
-      bmm.SetComputeMode(
-          at::musa::GetMatmulComputeModeFromCtx(l.scalar_type())),
-      "SetComputeMode");
-  CHECK_MUDNN_STATUS(bmm.SetTranspose(trans_l, trans_r), "SetTranspose");
-  CHECK_MUDNN_STATUS(bmm.SetAlpha(alpha.to<double>()), "SetAlpha");
-  CHECK_MUDNN_STATUS(bmm.SetBeta(beta.to<double>()), "SetBeta");
+  const auto mode = at::musa::GetMatmulComputeModeFromCtx(l.scalar_type());
+  SetBatchMatMul(
+      bmm, mode, trans_l, trans_r, alpha.to<double>(), beta.to<double>(), 1.0);
   CHECK_MUDNN_STATUS(bmm.Run(h, rst, lmt, rmt, InternalMemAlloc), "Run");
 }
 
@@ -396,14 +458,7 @@ at::Tensor& AddMmOut(
     const at::Scalar& alpha,
     at::Tensor& out) {
   const auto device_guard = c10::musa::MUSAGuard(self.device());
-  TORCH_CHECK(
-      mat1.dim() == 2 && mat2.dim() == 2 && mat1.size(1) == mat2.size(0),
-      "mat1 and mat2 must be a matrix and mat1_shape[1](",
-      mat1.size(1),
-      ") must equal to "
-      "mat2_shape[0](",
-      mat2.size(0),
-      ")");
+  AddMmCheck(self, mat1, mat2);
   TORCH_CHECK(
       self.dim() != 1 || self.size(0) == out.size(1),
       "bias with dim=1 should match out_shape[1]");
@@ -442,15 +497,9 @@ at::Tensor& AddMvOut(
     const at::Scalar& alpha,
     at::Tensor& out) {
   TORCH_CHECK(
-      mat.dim() == 2 && vec.dim() == 1 && mat.size(1) == vec.size(0),
-      "mat and vec must be a matrix and mat1_shape[1] must equal to "
-      "vec[0]");
-  TORCH_CHECK(
-      out.dim() == 1 && out.size(0) == mat.size(0),
-      "out shape doesn't match mat[0]");
-  TORCH_CHECK(
       self.dim() != 1 || self.size(0) == 1 || self.size(0) == mat.size(0),
       "addmv bias with dim=1 should have size of [1] of mat_size[0]");
+  AddMmCheck(self, mat, vec);
   if (self.dim() == 0 && self.numel() == 1) {
     MmCall(mat, vec, self.view({-1}), out, alpha, beta);
   } else {
@@ -482,10 +531,7 @@ at::Tensor AddMv(
 
 Tensor& MmOut(const Tensor& self, const Tensor& mat2, Tensor& out) {
   const auto device_guard = c10::musa::MUSAGuard(self.device());
-  TORCH_CHECK(
-      self.dim() == 2 && mat2.dim() == 2 && self.size(1) == mat2.size(0),
-      "self and mat2 must be a matrix and self_shape[1] must equal to "
-      "mat2_shape[0]");
+  MmCheck(self, mat2);
   if (out.scalar_type() == ScalarType::Double ||
       out.scalar_type() == ScalarType::ComplexFloat ||
       out.scalar_type() == ScalarType::ComplexDouble) {
@@ -506,6 +552,7 @@ Tensor Mm(const Tensor& self, const Tensor& mat2) {
 
 Tensor& MvOut(const Tensor& self, const Tensor& vec, Tensor& out) {
   const auto device_guard = c10::musa::MUSAGuard(self.device());
+  MmCheck(self, vec);
   TORCH_CHECK(
       self.dim() == 2 && vec.dim() == 1 && self.size(1) == vec.size(0),
       "self and vec must be a matrix and a vector, and self_shape[1] must equal to "
@@ -524,11 +571,7 @@ Tensor Mv(const Tensor& self, const Tensor& vec) {
 
 Tensor& BmmOut(const Tensor& self, const Tensor& mat2, Tensor& out) {
   const auto device_guard = c10::musa::MUSAGuard(self.device());
-  TORCH_CHECK(self.dim() == 3 && mat2.dim() == 3, "self must be a 3D matrix");
-  TORCH_CHECK(
-      self.size(0) == mat2.size(0) && self.size(2) == mat2.size(1),
-      "self_shape[0] must equal to mat2_shape[0], and self_shape[2] "
-      "must equal to mat2_shape[1]");
+  MmCheck(self, mat2);
   if (out.scalar_type() == ScalarType::ComplexFloat ||
       out.scalar_type() == ScalarType::ComplexDouble) {
     BlasBGEMM(self, mat2, out);
@@ -676,16 +719,15 @@ Tensor& ScaledMatmulOut(
   muTensor amax_ = CreateMUTensor(amax);
 
   ::musa::dnn::BatchMatMul op;
-  CHECK_MUDNN_STATUS(
-      op.SetComputeMode(
-          at::musa::GetMatmulComputeModeFromCtx(mat1.scalar_type())),
-      "SetComputeMode");
-  CHECK_MUDNN_STATUS(op.SetTranspose(trans_l, trans_r), "SetTranspose");
+  const auto mode = at::musa::GetMatmulComputeModeFromCtx(mat1.scalar_type());
 
   ::musa::dnn::MatMulLtParam param;
-  CHECK_MUDNN_STATUS(param.SetScale(sa, sb, muTensor(), sr), "SetScale");
+  CHECK_MUDNN_STATUS(
+      param.SetScale(std::move(sa), std::move(sb), muTensor(), std::move(sr)),
+      "SetScale");
   CHECK_MUDNN_STATUS(param.SetAmaxD(amax_), "SetAmax");
 
+  SetBatchMatMul(op, mode, trans_l, trans_r);
   CHECK_MUDNN_STATUS(
       op.RunLt(h, rst, lmt, rmt, rst, bmt, param, InternalMemAlloc), "RunLt");
 
@@ -734,6 +776,98 @@ TORCH_IMPL_FUNC(addmm_activation_out_musa)
   } else {
     at::musa::Relu_(const_cast<at::Tensor&>(result));
   }
+}
+
+Tensor& _BmmDtypeOut(
+    const Tensor& batch1,
+    const Tensor& batch2,
+    const at::ScalarType out_dtype,
+    Tensor& out) {
+  MmCheck(batch1, batch2);
+
+  Scalar beta(0.0);
+  Scalar alpha(1.0);
+  { BmmCall(batch1, batch2, out, beta, alpha); }
+
+  return out;
+}
+
+Tensor _BmmDtype(
+    const Tensor& batch1,
+    const Tensor& batch2,
+    const at::ScalarType out_dtype) {
+  IntArrayRef batch1_sizes = batch1.sizes();
+  IntArrayRef batch2_sizes = batch2.sizes();
+
+  Tensor out = at::empty(
+      {batch1_sizes[0], batch1_sizes[1], batch2_sizes[2]},
+      batch1.options().dtype(out_dtype));
+  return _BmmDtypeOut(batch1, batch2, out_dtype, out);
+}
+
+Tensor& _MmDtypeOut(
+    const Tensor& self,
+    const Tensor& mat2,
+    const at::ScalarType out_dtype,
+    Tensor& out) {
+  TORCH_CHECK(
+      out_dtype == out.scalar_type(),
+      "out_dtype must be the same as the dtype of the provided out tensor");
+  TORCH_CHECK(
+      out_dtype == self.scalar_type() ||
+          (out_dtype == at::ScalarType::Float &&
+           (self.scalar_type() == at::ScalarType::Half ||
+            self.scalar_type() == at::ScalarType::BFloat16)),
+      "out_dtype must be the same as input dtype or fp32 for fp16/bf16 inputs");
+  MmCheck(self, mat2);
+
+  MmCall(self, mat2, c10::nullopt, out, 0, 1);
+
+  return out;
+}
+
+Tensor _MmDtype(
+    const Tensor& self,
+    const Tensor& mat2,
+    const at::ScalarType out_dtype) {
+  Tensor result =
+      at::empty({self.size(0), mat2.size(1)}, self.options().dtype(out_dtype));
+  return _MmDtypeOut(self, mat2, out_dtype, result);
+}
+
+Tensor& _AddMmDtypeOut(
+    const Tensor& self,
+    const Tensor& mat1,
+    const Tensor& mat2,
+    const at::ScalarType out_dtype,
+    const Scalar& beta,
+    const Scalar& alpha,
+    Tensor& out) {
+  TORCH_CHECK(
+      out_dtype == out.scalar_type(),
+      "out_dtype must be the same as the dtype of the provided out tensor");
+  TORCH_CHECK(
+      out_dtype == self.scalar_type() ||
+          (out_dtype == at::ScalarType::Float &&
+           (self.scalar_type() == at::ScalarType::Half ||
+            self.scalar_type() == at::ScalarType::BFloat16)),
+      "out_dtype must be the same as input dtype or fp32 for fp16/bf16 inputs");
+  AddMmCheck(self, mat1, mat2);
+
+  AddMmOut(self, mat1, mat2, beta, alpha, out);
+
+  return out;
+}
+
+Tensor _AddMmDtype(
+    const Tensor& self,
+    const Tensor& mat1,
+    const Tensor& mat2,
+    const at::ScalarType out_dtype,
+    const Scalar& beta,
+    const Scalar& alpha) {
+  Tensor result = at::empty(self.sizes(), self.options().dtype(out_dtype));
+  return _AddMmDtypeOut(self, mat1, mat2, out_dtype, beta, alpha, result);
 }
 
 } // namespace musa

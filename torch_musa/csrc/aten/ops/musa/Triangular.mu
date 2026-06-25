@@ -1,7 +1,7 @@
 #include <ATen/ATen.h>
 #include <ATen/core/Tensor.h>
 
-#include "torch_musa/csrc/aten/mudnn/Handle.h"
+#include "torch_musa/csrc/aten/musa/MUSAContextLight.h"
 #include "torch_musa/csrc/aten/musa/MUSADtype.muh"
 #include "torch_musa/csrc/aten/musa/MUSAMath.muh"
 #include "torch_musa/csrc/aten/ops/Triangular.h"
@@ -216,7 +216,6 @@ bool CheckParams(const Tensor& o, const Tensor& i) {
 
 void TriuRun(Tensor& o, const Tensor& i, const int64_t diag) {
   TORCH_CHECK(CheckParams(o, i), "CheckParams fail");
-  at::musa::muHandle& h = GetMudnnHandle();
   const int ndim = o.dim();
   const int elements = o.numel();
   const int M = o.size(ndim - 2);
@@ -224,12 +223,9 @@ void TriuRun(Tensor& o, const Tensor& i, const int64_t diag) {
   const int MxN = M * N;
 
   // device info
-  musaDeviceProp device_prop;
-  int device_id = h.GetDeviceId();
-  TORCH_CHECK(
-      musaSuccess == musaGetDeviceProperties(&device_prop, device_id),
-      "musaGetDeviceProperties error");
-  const int mp_num = device_prop.multiProcessorCount;
+  const auto* device_prop = at::musa::getCurrentDeviceProperties();
+  const int mp_num = device_prop->multiProcessorCount;
+
   const int block_size = 1024;
   const int max_blocks = INT32_MAX;
   const int block_num =
@@ -243,7 +239,6 @@ void TriuRun(Tensor& o, const Tensor& i, const int64_t diag) {
 
 void TrilRun(Tensor& o, const Tensor& i, const int64_t diag) {
   TORCH_CHECK(CheckParams(o, i), "CheckParams fail");
-  at::musa::muHandle& h = GetMudnnHandle();
   const int ndim = o.dim();
   const int elements = o.numel();
   const int M = o.size(ndim - 2);
@@ -251,12 +246,9 @@ void TrilRun(Tensor& o, const Tensor& i, const int64_t diag) {
   const int MxN = M * N;
 
   // device info
-  musaDeviceProp device_prop;
-  int device_id = h.GetDeviceId();
-  TORCH_CHECK(
-      musaSuccess == musaGetDeviceProperties(&device_prop, device_id),
-      "musaGetDeviceProperties error");
-  const int mp_num = device_prop.multiProcessorCount;
+  const auto* device_prop = at::musa::getCurrentDeviceProperties();
+  const int mp_num = device_prop->multiProcessorCount;
+
   const int block_size = 1024;
   const int max_blocks = INT32_MAX;
   const int block_num =

@@ -59,17 +59,11 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 option(ENABLE_COMPILE_FP64 "Enable FP64" OFF)
 option(USE_ASAN "Use Address Sanitizer" OFF)
 option(USE_TSAN "Use Thread Sanitizer" OFF)
-option(USE_MUSA "Use MUSA" ON)
 option(USE_MCCL "USE MCCL" ON)
 option(MUSA_VERBOSE_BUILD "Print Building details of musa compiling unit." OFF)
 include(CMakeDependentOption)
 
-cmake_dependent_option(
-  USE_MUDNN
-  "Use muDNN"
-  ON
-  "USE_MUSA"
-  OFF)
+option(USE_MUDNN_C_API "Use muDNN C API" OFF)
 
 cmake_dependent_option(
   USE_CCACHE
@@ -240,6 +234,16 @@ list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/modules")
 # parse the version of MUSA, the version number is incorrect before MUSA 4.3.0
 parse_real_musa_version(REAL_MUSA_VERSION)
 
+# Determine USE_MUDNN_C_API based on mudnn version (>= 3.3.0 uses C API)
+parse_mudnn_version(MUDNN_VERSION)
+message(STATUS "Detected MUDNN_VERSION: ${MUDNN_VERSION}")
+if(MUDNN_VERSION GREATER_EQUAL 3300)
+  set(USE_MUDNN_C_API ON CACHE BOOL "Use muDNN C API" FORCE)
+else()
+  set(USE_MUDNN_C_API OFF CACHE BOOL "Use muDNN C API" FORCE)
+endif()
+message(STATUS "USE_MUDNN_C_API: ${USE_MUDNN_C_API}")
+
 find_package(MUSA REQUIRED)
 
 if(MUSA_FOUND)
@@ -281,8 +285,8 @@ if(MUSA_FOUND)
 
   find_package(MUDNN REQUIRED)
 
-  list(APPEND DEPENDENT_INCLUDE_DIRS ${MUSAToolkit_INCLUDE_DIR}
-       ${MUDNN_INCLUDE_DIRS})
+  list(APPEND DEPENDENT_INCLUDE_DIRS ${MUDNN_INCLUDE_DIRS}
+       ${MUSAToolkit_INCLUDE_DIR})
   list(APPEND DEPENDENT_LIBRARIES ${MUSA_LIBRARIES} ${MUDNN_LIBRARIES})
 
   if(USE_MCCL)
@@ -377,6 +381,10 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/torch_musa/csrc)
 set(CPP_SRCS ${MUSA_CSRCS})
 add_library(${PLUGIN_NAME} SHARED ${CPP_SRCS})
 
+# Add MUTLASS headers dir
+target_include_directories(
+  ${MUSA_KERNELS_LIB} PRIVATE ${PROJECT_SOURCE_DIR}/third_party/mutlass/include)
+
 # add torch 3rd party library (static link)
 set(FORMAT_ROOT ${BUILD_PYTORCH_REPO_PATH}/third_party/fmt)
 add_library(fmt STATIC ${FORMAT_ROOT}/src/format.cc)
@@ -397,12 +405,33 @@ target_compile_definitions(${MUSA_KERNELS_LIB}
                            PUBLIC -DREAL_MUSA_VERSION=${REAL_MUSA_VERSION})
 target_compile_definitions(${PLUGIN_NAME}
                            PUBLIC -DREAL_MUSA_VERSION=${REAL_MUSA_VERSION})
+target_compile_definitions(${MUSA_KERNELS_LIB} PUBLIC -DNO_MUDNN_DESTROY_HANDLE)
 
-set(MUSA_COMP_VERSION "10400")
-target_compile_definitions(${MUSA_KERNELS_LIB}
-                           PUBLIC -DMUSA_COMP_VERSION=${MUSA_COMP_VERSION})
-target_compile_definitions(${PLUGIN_NAME}
-                           PUBLIC -DMUSA_COMP_VERSION=${MUSA_COMP_VERSION})
+if(USE_MUDNN_C_API)
+  target_compile_definitions(${MUSA_KERNELS_LIB}
+                             PUBLIC TORCH_MUSA_USE_MUDNN_C_API)
+  # Quantized/mudnn C++ interfaces live in the plugin library target, so they
+  # also need the macro to select the C-API wrapper implementations.
+  target_compile_definitions(${PLUGIN_NAME} PUBLIC TORCH_MUSA_USE_MUDNN_C_API)
+endif()
+
+if(REAL_MUSA_VERSION GREATER_EQUAL "5010")
+  set(MUSA_COMP_VERSION "12080")
+  set(MUSPARSE_VERSION "12000")
+  target_compile_definitions(${MUSA_KERNELS_LIB}
+                             PUBLIC -DCUB_WRAPPED_NAMESPACE=at_cuda_detail)
+else()
+  set(MUSA_COMP_VERSION "10400")
+  set(MUSPARSE_VERSION "11400")
+endif()
+configure_file(${PROJECT_SOURCE_DIR}/cmake/musa_versions.json.in
+               ${PROJECT_SOURCE_DIR}/torch_musa/share/musa_versions.json @ONLY)
+target_compile_definitions(
+  ${MUSA_KERNELS_LIB} PUBLIC -DMUSA_COMP_VERSION=${MUSA_COMP_VERSION}
+                             -DMUSPARSE_VERSION=${MUSPARSE_VERSION})
+target_compile_definitions(
+  ${PLUGIN_NAME} PUBLIC -DMUSA_COMP_VERSION=${MUSA_COMP_VERSION}
+                        -DMUSPARSE_VERSION=${MUSPARSE_VERSION})
 
 add_dependencies(${MUSA_KERNELS_LIB} ${CODEGEN_TARGET})
 
@@ -415,6 +444,8 @@ set_source_files_properties(
 target_link_libraries(${PLUGIN_NAME} PUBLIC ${DEPENDENT_LIBRARIES})
 target_link_libraries(${PLUGIN_NAME} PUBLIC ${MUSA_KERNELS_LIB})
 target_link_libraries(${PLUGIN_NAME} PRIVATE fmt)
+find_package(Threads REQUIRED)
+target_link_libraries(${PLUGIN_NAME} PRIVATE Threads::Threads)
 
 if(LINUX)
   target_link_libraries(${PLUGIN_NAME} PRIVATE dl)
@@ -454,6 +485,9 @@ configure_file(${PROJECT_SOURCE_DIR}/cmake/TorchMusaConfig.cmake.in
                ${PROJECT_BINARY_DIR}/TorchMusaConfig.cmake COPYONLY)
 install(FILES ${PROJECT_BINARY_DIR}/TorchMusaConfig.cmake
         DESTINATION share/cmake/TorchMusa)
+
+install(FILES ${PROJECT_SOURCE_DIR}/torch_musa/share/musa_versions.json
+        DESTINATION share)
 
 install(FILES ${PROJECT_SOURCE_DIR}/cmake/modules/FindMUDNN.cmake
               ${PROJECT_SOURCE_DIR}/cmake/modules/FindMUSAToolkits.cmake

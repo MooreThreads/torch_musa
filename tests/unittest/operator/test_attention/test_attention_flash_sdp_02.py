@@ -67,6 +67,11 @@ def test_flash_sdp(case, dtype, func, mask_type, is_causal, explicit_scale):
     """
     Flash SDP test.
     """
+    head_dim = case[-3] // case[-2]
+    if testing.get_musa_arch() < 31 and head_dim > 128:
+        pytest.skip(
+            reason="Flash SDP with head dim > 128 is only supported on arch 31."
+        )
     with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.FLASH_ATTENTION):
         input_data = gen_input_data(case, mask_type, dtype, is_causal, explicit_scale)
         function(input_data, func)

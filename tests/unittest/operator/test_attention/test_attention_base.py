@@ -27,6 +27,17 @@ def sdp_cases(part):
         [(64, 32, 1024), 1024, 16, 4],
     ]
 
+    cases.extend(
+        [
+            # head_dim = 256: embedding_dim=2048, q_head_num=8 -> 2048//8=256
+            [(2, 64, 2048), 2048, 8, 8],
+            # head_dim = 384: embedding_dim=3072, q_head_num=8 -> 3072//8=384
+            # [(2, 64, 3072), 3072, 8, 8],
+            # head_dim = 512: embedding_dim=4096, q_head_num=8 -> 4096//8=512
+            [(2, 64, 4096), 4096, 8, 8],
+        ]
+    )
+
     device_arch_name = torch.musa.get_device_properties(
         torch.musa.current_device()
     ).name

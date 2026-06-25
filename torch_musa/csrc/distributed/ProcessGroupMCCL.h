@@ -1,20 +1,16 @@
-#ifndef TORCH_MUSA_CSRC_DISTRIBUTED_PROCESSGROUPMCCL_H_
-#define TORCH_MUSA_CSRC_DISTRIBUTED_PROCESSGROUPMCCL_H_
-
-//#ifdef USE_C10D_MCCL
+#pragma once
 
 #include <mccl.h>
-#include <pybind11/cast.h>
-#include <pybind11/chrono.h>
 #include <pybind11/pybind11.h>
 #include <torch/csrc/distributed/c10d/Backend.hpp>
 #include <chrono>
 #include <exception>
 #include <future>
-#include <iostream>
 #include <map>
+#include <mutex>
 #include <string>
 #include <thread>
+#include "c10/util/intrusive_ptr.h"
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/core/MUSAEvent.h"
 #include "torch_musa/csrc/core/MUSAException.h"
@@ -22,75 +18,27 @@
 #include "torch_musa/csrc/core/MUSAGuard.h"
 #include "torch_musa/csrc/core/MUSAStream.h"
 #include "torch_musa/csrc/distributed/MCCLUtils.h"
+#include "torch_musa/csrc/distributed/MUSAEventCache.h"
 
-#include <torch/csrc/distributed/c10d/NCCLUtils.hpp>
 #include <torch/csrc/distributed/c10d/ParamCommsUtils.hpp>
-#include <torch/csrc/distributed/c10d/PrefixStore.hpp>
 #include <torch/csrc/distributed/c10d/ProcessGroup.hpp>
 #include <torch/csrc/distributed/c10d/Store.hpp>
-#include <torch/csrc/distributed/c10d/TraceUtils.h>
 #include <torch/csrc/distributed/c10d/Types.hpp>
 #include <torch/csrc/distributed/c10d/Utils.hpp>
 #include <torch/csrc/distributed/c10d/Work.hpp>
 #include <torch/csrc/distributed/c10d/logger.hpp>
 
-#if defined(MARCH_TYPE) && (MARCH_TYPE >= 220)
-#define MCCL_BF16_SUPPORTED 1
-#else
-#define MCCL_BF16_SUPPORTED 0
-#endif
-
-#if defined(MARCH_TYPE) && (MARCH_TYPE >= 310)
-#define MCCL_FP8_SUPPORTED 1
-#else
-#define MCCL_FP8_SUPPORTED 0
-#endif
-
 namespace c10d {
 
-struct DumpPipe {
-  DumpPipe(int rank) {
-    std::string fileStem =
-        getCvarString({"TORCH_MCCL_DEBUG_INFO_PIPE_FILE"}, "");
-    if (fileStem.empty() ||
-        getCvarInt({"TORCH_MCCL_TRACE_BUFFER_SIZE"}, 0) <= 0) {
-      return;
-    }
-    TORCH_CHECK(!fileStem.empty(), "TORCH_MCCL_DEBUG_INFO_TEMP_FILE is empty");
-    std::string filename = c10::str(fileStem, rank, ".pipe");
-    TORCH_CHECK(
-        unlink(filename.c_str()) != -1 || errno == ENOENT,
-        "Error removing existing named pipe ",
-        filename);
-    TORCH_CHECK(
-        mkfifo(filename.c_str(), 0666) != -1,
-        "Error creating named pipe ",
-        filename);
-    fd_ = open(filename.c_str(), O_RDONLY | O_NONBLOCK);
-    LOG(INFO) << "Pipe file " << filename
-              << " has been opened, write to it to trigger MCCL Debug Dump.";
-    TORCH_CHECK(fd_ != -1, "Error opening named pipe ", filename);
-  }
-  bool shouldDump() {
-    if (fd_ == -1) {
-      return false;
-    }
-    char buf[128];
-    // non-blocking from O_NONBLOCK above.
-    // Ignore EINTR because we already will poll this
-    // again later.
-    ssize_t bytesRead = read(fd_, &buf, 128);
-    return bytesRead > 0;
-  }
-  ~DumpPipe() {
-    if (fd_ != -1) {
-      close(fd_);
-    }
-  }
+// Control broadcasting of MCCL uniqueId.
+// Note: currently ProcessGroupMCCL only supports the broadcast-based path.
+static std::vector<std::string> TORCH_MCCL_BCAST_UNIQUEID = {
+    "TORCH_MCCL_BCAST_UNIQUEID"};
 
- private:
-  int fd_ = -1;
-};
+// Control EagerInit P2P serialization warning
+static std::vector<std::string>
+    TORCH_MCCL_SHOW_EAGER_INIT_P2P_SERIALIZATION_WARNING = {
+        "TORCH_MCCL_SHOW_EAGER_INIT_P2P_SERIALIZATION_WARNING"};
 
 // Control whether to always use high priority streams
 static std::vector<std::string> TORCH_MCCL_HIGH_PRIORITY = {
@@ -155,16 +103,6 @@ static std::vector<std::string> TORCH_MCCL_RETHROW_MUSA_ERRORS = {
 static std::vector<std::string> TORCH_MCCL_TRACE_BUFFER_SIZE = {
     "TORCH_MCCL_TRACE_BUFFER_SIZE"};
 
-// If set, ProcessGroupMCCL doesn't use recordStream calls to ensure
-// caching allocator safety for tensors used on both user-facing and
-// internal comm streams.
-// This environment variable maybe helpful for avoiding allocator thrashing,
-// cause recordStream prevents the caching allocator from repurposing
-// allocations passed to collectives until those collectives finish from
-// the host's perspective.
-static std::vector<std::string> TORCH_MCCL_AVOID_RECORD_STREAMS = {
-    "TORCH_MCCL_AVOID_RECORD_STREAMS"};
-
 // Control how much extra time we will wait for dumping the debugging info
 // before we exit and throws timeout exception.
 static std::vector<std::string> TORCH_MCCL_WAIT_TIMEOUT_DUMP_MILSEC = {
@@ -222,10 +160,109 @@ enum ErrorHandlingMode {
 
 #define SHOULD_TEAR_DOWN(a) (a != NoHandling && a != CleanUpOnly)
 
+#define PRINT_COLLECTIVE_HASH_SIGNATURE(phase, opType, numel, hashValue)      \
+  LOG(WARNING) << logPrefix() << "Hash of " << phase << " to MCCL " << opType \
+               << " with size " << numel << " is " << hashValue;
+
+// If set, ProcessGroupMCCL doesn't use recordStream calls to ensure
+// caching allocator safety for tensors used on both user-facing and
+// internal comm streams.
+// This environment variable maybe helpful for avoiding allocator thrashing,
+// cause recordStream prevents the caching allocator from repurposing
+// allocations passed to collectives until those collectives finish from
+// the host's perspective.
+static std::vector<std::string> TORCH_MCCL_AVOID_RECORD_STREAMS = {
+    "TORCH_MCCL_AVOID_RECORD_STREAMS"};
+
+// If set, ProcessGroupMCCL registers post-alloc and pre-free hooks to the
+// MUSA caching allocator so that cache segments can be registered and
+// deregistered on all available MCCL communicators.
+static std::vector<std::string> TORCH_MCCL_USE_TENSOR_REGISTER_ALLOCATOR_HOOK =
+    {"TORCH_MCCL_USE_TENSOR_REGISTER_ALLOCATOR_HOOK",
+     "MCCL_USE_TENSOR_REGISTER_ALLOCATOR_HOOK"};
+
+struct DumpPipe {
+  DumpPipe(int rank) {
+    std::string fileStem =
+        getCvarString({"TORCH_MCCL_DEBUG_INFO_PIPE_FILE"}, "");
+    if (fileStem.empty() ||
+        getCvarInt({"TORCH_MCCL_TRACE_BUFFER_SIZE"}, 0) <= 0) {
+      return;
+    }
+    TORCH_CHECK(!fileStem.empty(), "TORCH_MCCL_DEBUG_INFO_TEMP_FILE is empty");
+    std::string filename = c10::str(fileStem, rank, ".pipe");
+    TORCH_CHECK(
+        unlink(filename.c_str()) != -1 || errno == ENOENT,
+        "Error removing existing named pipe ",
+        filename,
+        ", Error: ",
+        std::strerror(errno));
+    TORCH_CHECK(
+        mkfifo(filename.c_str(), 0666) != -1,
+        "Error creating named pipe ",
+        filename,
+        ", Error: ",
+        std::strerror(errno));
+    fd_ = open(filename.c_str(), O_RDONLY | O_NONBLOCK);
+    LOG(INFO) << "Pipe file " << filename
+              << " has been opened, write to it to trigger MCCL Debug Dump.";
+    TORCH_CHECK(fd_ != -1, "Error opening named pipe ", filename);
+  }
+  bool shouldDump() {
+    if (fd_ == -1) {
+      return false;
+    }
+    char buf[128];
+    // non-blocking from O_NONBLOCK above.
+    // Ignore EINTR because we already will poll this
+    // again later.
+    ssize_t bytesRead = read(fd_, &buf, 128);
+    return bytesRead > 0;
+  }
+  ~DumpPipe() {
+    if (fd_ != -1) {
+      close(fd_);
+    }
+  }
+
+ private:
+  int fd_ = -1;
+};
+
+// A shelf for stashing tensors between op call and `work.wait()`.
+// Used in case of async ops.
+class TensorShelf {
+ public:
+  // Stash tensors so that CachingAllocator cannot recycle them prematurely.
+  void stash(std::vector<at::Tensor>& tensors);
+  // Stash tensors from another shelf.
+  void stash(TensorShelf& other);
+  // Unstage the stashed tensors so that CachingAllocator can recycle them.
+  // Same as `clear()`.
+  void unstash();
+  // Whether shelf is empty.
+  bool empty();
+  // Clear the shelf.
+  void clear();
+
+ protected:
+  // Get the inner tensor vector. Use with caution as it is not protected by
+  // mutex.
+  std::vector<at::Tensor>& get();
+
+ private:
+  std::vector<at::Tensor> tVector_;
+  // Need a mutex to protect `tVector_` because it can be potentially accessed
+  // from both main thread and watchdog thread.
+  std::mutex mutex_;
+};
+
 class TORCH_API ProcessGroupMCCL : public Backend {
  public:
   class WorkMCCL : public Work, public std::enable_shared_from_this<WorkMCCL> {
    public:
+    friend struct WorkInfo;
+
     // Constructor takes a list of MUSA devices
     WorkMCCL(
         std::string pgUID,
@@ -237,7 +274,6 @@ class TORCH_API ProcessGroupMCCL : public Backend {
         bool isP2P = false,
         const char* profilingTitle = nullptr,
         const std::optional<std::vector<at::Tensor>>& inputs = std::nullopt,
-        bool desyncDebug = false,
         bool enableTiming = false,
         bool musaEventCacheEnabled = false,
         DebugLevel distDebugLevel = DebugLevel::Off);
@@ -260,6 +296,10 @@ class TORCH_API ProcessGroupMCCL : public Backend {
 
     // Same as calling synchronize() for MCCL work.
     bool wait(std::chrono::milliseconds timeout = kNoTimeout) override;
+
+    void blockCurrentStream() override {
+      synchronize();
+    }
 
     void abort() override;
 
@@ -303,6 +343,8 @@ class TORCH_API ProcessGroupMCCL : public Backend {
     // Print the traceback of the collective at call time
     void printTraceback() const;
 
+    std::string getTraceback() const;
+
     std::vector<at::Tensor> result() override;
 
    protected:
@@ -331,9 +373,6 @@ class TORCH_API ProcessGroupMCCL : public Backend {
     // Clone of blockingWait_ from ProcessGroupMCCL.
     bool blockingWait_{false};
 
-    // Clone of avoidRecordStreams_ from ProcessGroupMCCL.
-    bool avoidRecordStreams_{false};
-
     // Clone of opTimeout_ from ProcessGroupMCCL.
     std::chrono::milliseconds opTimeout_{};
 
@@ -357,8 +396,8 @@ class TORCH_API ProcessGroupMCCL : public Backend {
 
     // Record collective sizes for debug. We only record the size on the first
     // device as multi-device per process is deprecated
-    size_t numelIn_ = -1;
-    size_t numelOut_ = -1;
+    size_t numelIn_ = 0;
+    size_t numelOut_ = 0;
 
     // Wrapper method for the static checkForMCCLErrors which can be overridden
     // for tests.
@@ -368,7 +407,7 @@ class TORCH_API ProcessGroupMCCL : public Backend {
         std::ostream& output,
         const WorkMCCL& workMCCL);
 
-   private:
+   protected:
     // Checks for MCCL errors and sets an appropriate exception_ptr.
     void checkAndSetException();
 
@@ -380,6 +419,7 @@ class TORCH_API ProcessGroupMCCL : public Backend {
     // exception_ptr.
     bool finishedGPUExecutionInternal() const;
 
+   private:
     // Reference to the store so that we can write aborted communicators
     // to the store.
     c10::intrusive_ptr<Store> store_;
@@ -398,7 +438,7 @@ class TORCH_API ProcessGroupMCCL : public Backend {
     // caching allocator safety without any recordStream calls.
     // For in-place collectives, some refs stashed here may alias outputs_,
     // but that doesn't do any harm.
-    std::shared_ptr<std::vector<at::Tensor>> stashed_for_allocator_safety_;
+    std::shared_ptr<TensorShelf> stashed_for_allocator_safety_;
 
     // The future returned by getFuture.
     c10::intrusive_ptr<at::ivalue::Future> future_;
@@ -415,23 +455,6 @@ class TORCH_API ProcessGroupMCCL : public Backend {
     friend class ProcessGroupMCCL;
   };
 
-  class MUSAEventCache
-      : public std::enable_shared_from_this<ProcessGroupMCCL::MUSAEventCache> {
-   public:
-    MUSAEventCache();
-    std::shared_ptr<at::musa::MUSAEvent> create(bool timing);
-    static std::shared_ptr<ProcessGroupMCCL::MUSAEventCache> get(
-        at::DeviceIndex device);
-
-   private:
-    std::mutex cacheMutex_;
-    // NOTE: We intentionally store raw pointers so that
-    // we do not attempt to destroy the event objects on process exit,
-    // because musa may be gone.
-    std::array<std::deque<at::musa::MUSAEvent*>, 2>
-        eventsArray_; // 0 for timing=false, 1 for timing=true
-  };
-
   struct Options : Backend::Options {
     // NOTE: timeout in ProcessGroupMCCL::Options denote the timeout for
     // operations. This is only used when blockingWait_ is enabled.
@@ -446,13 +469,18 @@ class TORCH_API ProcessGroupMCCL : public Backend {
     // Schedule MCCL operations on high priority MUSA streams
     bool is_high_priority_stream;
 
+#ifdef MCCL_HAS_CONFIG
+    // Configure ranks
+    mcclConfig_t config = MCCL_CONFIG_INITIALIZER;
+#endif
+
     // Optional "parent" backend and color to create communicators from
-    // via `ncclCommSplit`
-    std::shared_ptr<ProcessGroupMCCL> split_from;
-    // Color to use for `ncclCommSplit`, values:
+    // via `mcclCommSplit`
+    c10::intrusive_ptr<ProcessGroupMCCL> split_from;
+    // Color to use for `mcclCommSplit`, values:
     // * Non-negative value: in group;
-    // * NCCL_SPLIT_NOCOLOR (-1): not in group;
-    // * NCCL_SPLIT_NOCOLOR - 1: uninitialized.
+    // * MCCL_SPLIT_NOCOLOR (-1): not in group;
+    // * MCCL_SPLIT_NOCOLOR - 1: uninitialized.
     // [Note 1]: the type must be `int` instead of `int64_t` because MCCL API
     // accepts int. Otherwise, an implicit conversion may happen at the API call
     // and the value may become negative.
@@ -461,16 +489,26 @@ class TORCH_API ProcessGroupMCCL : public Backend {
     // raise a RuntimeError saying type is incompatible. See also
     // `_process_group_color` in `distributed_c10d.py`.
 
+#ifdef MCCL_HAS_COMM_SPLIT
+    int split_color{MCCL_SPLIT_NOCOLOR - 1};
+#else
+    // [Note 3]: for older MCCL versions, MCCL_SPLIT_NOCOLOR is not defined.
+    // But `split_color` is pybinded to Python, so we need to define it. So we
+    // use the int value of `MCCL_SPLIT_NOCOLOR` (-1) instead.
     int split_color{-2};
-    std::vector<uint64_t> global_ranks_in_group;
-    std::string group_name;
+#endif
   };
 
   // Helper class related to TORCH_MCCL_DESYNC_DEBUG
   class DesyncDebugger {
    public:
     // Initialize and enable DesyncDebugger
-    void init(int rank, int size, c10::intrusive_ptr<Store> store);
+    void init(
+        int rank,
+        int size,
+        int globalRank,
+        int pgId,
+        c10::intrusive_ptr<Store> store);
 
     // Run desync debug. This function is called by watchdog at time of timeout.
     void run();
@@ -489,6 +527,8 @@ class TORCH_API ProcessGroupMCCL : public Backend {
     // From ProcessGroupMCCL
     int rank_;
     int size_;
+    int globalRank_;
+    int pgId_;
 
     // Reference to the store so that we can log start/end event.
     c10::intrusive_ptr<Store> store_;
@@ -498,6 +538,162 @@ class TORCH_API ProcessGroupMCCL : public Backend {
     // cause analysis.
     std::string traceKeyStart_;
     std::string traceKeyEnd_;
+  };
+
+  // Class that runs as a separate thread aside from watchdog
+  // thread because we need to check the heartbeat from watchdog thread
+  // so that when we get stuck in some MCCL/MUSA calls,
+  // we can dump the debugging information and abort the process.
+  class HeartbeatMonitor {
+   public:
+    HeartbeatMonitor(ProcessGroupMCCL* pg);
+    virtual ~HeartbeatMonitor() = default;
+
+    // Start the heartbeat monitor thread.
+    void start();
+
+    // Join the heartbeat monitor thread.
+    void join();
+
+    // Run the actual loop to check watchdog heartbeat.
+    virtual void runLoop();
+
+    // Set the terminal flag and notify the heartbeat monitor thread to stop.
+    void stop();
+
+    // Set the last update time of watchdog thread.
+    void setLastWorkListUpdateTime(
+        std::chrono::time_point<std::chrono::steady_clock> time);
+
+    int getDumpTimeout() const;
+
+    // Util function to get the timeout error message
+    std::string getMCCLWatchdogTimeoutErrorMsg(const std::string& extraMsg);
+
+    // Util function to get the timeout exit message
+    std::string getMCCLWatchdogTimeoutExitMsg(const std::string& exitReason);
+
+   protected:
+    // We need to keep a reference to the PG instance so that we can access
+    // the member functions of the PG instance. We store a raw pointer on
+    // purpose because the heartbeat monitor thread now still lives within the
+    // lifetime of the PG instance.
+    ProcessGroupMCCL* pg_;
+
+   private:
+    // Whether or not to print C++ stack traces to logs on unclean shutdown.
+    bool logCppStackOnUncleanShutdown_;
+
+    // The time interval used for deciding whether there is no watchdog
+    // heartbeat.
+    int heartbeatTimeoutInSec_;
+
+    // timeout for the dump to finish.
+    int waitTimeoutDumpInMilSec_;
+
+    // Interval of check coordinated signals in ProcessGroupMCCL from other
+    // ranks e.g., trigger the dump of the debugging info for timeout when
+    // notified.
+    int coordCheckIntervalMilSec_;
+
+    // We gate the heartbeat monitor thread so that we can roll it out
+    // gradually.
+    bool watchdogHeartbeatMonitorEnabled_;
+
+    // Monitor thread which checks the heartbeat of Watchdog thread.
+    // If the monitor thread finds there is no heartbeat, it will dump debug
+    // info and then kill the watchdog thread to avoid hang.
+    std::thread mcclHeartbeatMonitorThread_;
+
+    // Whether or not we should terminate the heartbeat monitoring threads.
+    std::atomic<bool> terminateHeartbeatMonitorThread_{false};
+
+    // Condition Variable for monitor thread to wake up early
+    std::condition_variable monitorWakeUpCV_;
+
+    // Whether or not to dump debug info on exception including both watchdog
+    // timeout and mccl errors.
+    bool dumpOnTimeoutOrEx_;
+
+    // Mutex to Guard monitorWakeUpCV_
+    std::mutex monitorMutex_;
+
+    // The last update time of WorkList inside watchdog thread.
+    std::chrono::time_point<std::chrono::steady_clock> lastWorkListUpdateTime_;
+  };
+
+  // Class that runs as a side thread to check whether the MCCL collective
+  // is timed out or errors on the cached MCCL communicators.
+  class Watchdog {
+   public:
+    Watchdog(ProcessGroupMCCL* pg);
+    virtual ~Watchdog() = default;
+
+    // Start the watchdog thread.
+    void start();
+
+    // Join the watchdog thread.
+    void join();
+
+    // Function that runs as part of a separate thread and checks for errors on
+    // MCCL communicators. We need a separate thread to check for MCCL errors
+    // since we can't rely on the user calling certain methods like wait(),
+    // isCompleted() etc. to detect and remediate errors. In addition to this,
+    // we need a mechanism to safely abort and remove MCCL communicators from
+    // our cache. This can be done cleanly by having a thread for the
+    // ProcessGroupMCCL class. Attempting to modify the communicator cache from
+    // the WorkMCCL class might run into issues with object lifetime since the
+    // ProcessGroupMCCL object might get destroyed before the WorkMCCL object.
+    void run();
+
+    // Watchdog's inside loop.
+    // Takes care of cleaning up completed work, and aborting upon failure or
+    // timeout.
+    void runLoop();
+
+    // Notify the loop inside watchdog.
+    void notify();
+
+    void checkAndSetRemoteError();
+
+    // A helper function to get the src rank of a signal from the Store. This
+    // is nonblocking function returning -1 if the signal is not available yet.
+    int getSignalSrcRank(
+        c10::intrusive_ptr<Store>& store,
+        const std::string& signal);
+
+    uint64_t getHeartbt() const;
+
+    void setDesyncDebug(bool desyncDebug);
+
+   private:
+    std::thread mcclCommWatchdogThread_;
+
+    // We need to keep a reference to the PG instance so that we can access
+    // the member functions of the PG instance. We store a raw pointer on
+    // purpose because the watchdog thread now still lives within the
+    // lifetime of the PG instance.
+    ProcessGroupMCCL* pg_;
+
+    // Whether the MCCL watchdog should rethrow MUSA errors.
+    bool rethrowMUSAErrors_ = false;
+
+    std::exception_ptr watchDogException_ = nullptr;
+
+    // Condition Variable for watchdog thread sleep
+    std::condition_variable workMetaListCV_;
+
+    // Heartbeat of watchdog thread.
+    std::atomic_uint64_t heartbeat_{};
+
+    // Whether or not to propagate detected errors to all ranks in the same PG
+    // through TCPStore.
+    bool propagatePgError_;
+
+    // Whether or not to enable timeout root cause analysis.
+    bool desyncDebug_;
+
+    DesyncDebugger desyncDebugger_;
   };
 
   // If you wish to create multiple process groups, each with a potentially
@@ -539,19 +735,22 @@ class TORCH_API ProcessGroupMCCL : public Backend {
   }
 
   static c10::intrusive_ptr<Backend> MCCLcreator(
-      const c10::intrusive_ptr<::c10d::Store>& store,
-      int rank,
-      int size,
-      std::chrono::milliseconds op_time_out);
+      const c10d::DistributedBackendOptions& dist_opts,
+      c10::intrusive_ptr<c10d::ProcessGroupMCCL::Options>& backend_opts);
 
   c10::intrusive_ptr<Options> getOptions() {
     return options_;
+  }
+
+  c10::intrusive_ptr<Backend::Options> getBackendOptions() override {
+    return c10::static_intrusive_pointer_cast<Backend::Options>(options_);
   }
 
   const std::string getBackendName() const override {
     return std::string(MCCL_BACKEND_NAME);
   }
 
+  // TODO: Enable splitting later.
   bool supportsSplitting() const override {
     return false;
   }
@@ -560,9 +759,25 @@ class TORCH_API ProcessGroupMCCL : public Backend {
     return true;
   }
 
+  bool supportsTimeEstimation() const override {
+#ifdef MCCL_SIM_INFO_INITIALIZER
+    return true;
+#else
+    return false;
+#endif
+  }
+
+  void setTimeout(std::chrono::milliseconds timeout) override {
+    options_->timeout = timeout;
+  }
+
   void startCoalescing() override;
 
   c10::intrusive_ptr<Work> endCoalescing() override;
+
+  void startTimeEstimate();
+
+  float endTimeEstimate();
 
   // For specifying a composite optype, such as ALLGATHER and REDUCE_SCATTER
   c10::intrusive_ptr<Work> endCoalescing(OpType optype);
@@ -658,13 +873,14 @@ class TORCH_API ProcessGroupMCCL : public Backend {
       int srcRank,
       int tag) override;
 
-  static void groupStart();
+  int64_t getCommPtr();
 
-  static void groupEnd();
+  void groupStart();
+
+  void groupEnd();
 
   void groupEndNonblocking(const std::shared_ptr<MCCLComm>& comm);
 
-  // Unsupported Ops
   c10::intrusive_ptr<Work> gather(
       std::vector<std::vector<at::Tensor>>& outputTensors,
       std::vector<at::Tensor>& inputTensors,
@@ -675,6 +891,7 @@ class TORCH_API ProcessGroupMCCL : public Backend {
       std::vector<std::vector<at::Tensor>>& inputTensors,
       const ScatterOptions& opts = ScatterOptions()) override;
 
+  // Unsupported Ops
   c10::intrusive_ptr<Work> recvAnysource(
       std::vector<at::Tensor>& tensors,
       int tag) override;
@@ -692,14 +909,27 @@ class TORCH_API ProcessGroupMCCL : public Backend {
   // group have performed.  Counts ncclCommCreateFromRanks() for ncclx v2.21.5+
   uint64_t getCommSplitCounter() const;
 
+  void registerOnCompletionHook(
+      std::function<void(std::shared_ptr<WorkInfo>)>&& hook) override;
+  void waitForPendingWorks() override;
+
   void enableCollectivesTiming() override;
+
+  c10::intrusive_ptr<Backend> split(
+      const c10::intrusive_ptr<Store>& store,
+      const std::vector<int>& ranks,
+      const c10::intrusive_ptr<Backend::Options>& opts) override;
+
+  c10::intrusive_ptr<Backend> merge(
+      const c10::intrusive_ptr<Store>& store,
+      const c10::intrusive_ptr<Backend::Options>& opts,
+      const int& rank,
+      const int& size) override;
 
   // Helper function for iteratively aborting communicators in the provided map
   void abortCommsFromMap(
       std::unordered_map<std::string, std::shared_ptr<MCCLComm>>& mcclCommsMap,
       const std::optional<std::string>& abortReason);
-
-  int initIntraNodeComm();
 
   // Destroy (shutdown) this backend -- normal exit.
   void shutdown() override;
@@ -717,22 +947,27 @@ class TORCH_API ProcessGroupMCCL : public Backend {
 
   ErrorType getError() override;
 
-  //   std::shared_ptr<c10::Allocator> getMemAllocator() override;
+  // getMemAllocator
+  std::shared_ptr<c10::Allocator> getMemAllocator() override;
 
-  //   // Allocate tensor from communication-optimized memory pool
-  //   at::Tensor allocateTensor(long size, at::TensorOptions options = {})
-  //   override;
+  // Allocate tensor from communication-optimized memory pool
+  at::Tensor allocateTensor(long size, at::TensorOptions options = {}) override;
 
-  //   // Whether tensor allocation from MCCL memory pool is supported
-  //   bool supportsTensorAlloc(c10::DeviceIndex deviceIdx) override;
+  // Whether tensor allocation from MCCL memory pool is supported
+  bool supportsTensorAlloc(c10::DeviceIndex deviceIdx) override {
+    // On the current PH1 architecture we do not yet enable the default
+    // user-buffer registration path, since NVLS-like communication is
+    // not supported/validated there.
+    (void)deviceIdx;
+    return false;
+  }
+  // Performs MCCL communication-buffer registration for all buffers in
+  // the given MemPool.
+  void registerMemPool(c10::musa::MemPool* pool, bool symm = false);
 
-  //   // Performs MCCL user buffer registration for all buffers in
-  //   // the given MemPool
-  //   void registerMemPool(c10::musa::MemPool* pool);
-
-  //   // Performs MCCL user buffer de-registration for all buffers in
-  //   // the given MemPool
-  //   void deregisterMemPool(c10::musa::MemPool* pool);
+  // Performs MCCL user buffer de-registration for all buffers in
+  // the given MemPool.
+  void deregisterMemPool(c10::musa::MemPool* pool);
 
   // This method adds a temporary extension for the timeout period,
   // applying to all collectives between the calling of this API and
@@ -752,7 +987,17 @@ class TORCH_API ProcessGroupMCCL : public Backend {
       const c10::intrusive_ptr<Work>& work,
       const std::chrono::milliseconds& timeout);
 
+  void setEnableNanCheck(bool enableNanCheck);
+
  protected:
+  uint64_t getWatchdogHeartbt() const;
+
+  // Instance of the heartbeat monitor thread.
+  std::unique_ptr<HeartbeatMonitor> heartbeatMonitor_;
+
+  // Instance of the watchdog thread.
+  std::unique_ptr<Watchdog> watchdog_;
+
   // Helper that broadcasts mccl unique ID to all ranks through the store
   void broadcastUniqueMCCLID(
       mcclUniqueId* mcclID,
@@ -804,9 +1049,14 @@ class TORCH_API ProcessGroupMCCL : public Backend {
   // Use this helper instead of directly checking `useNonblocking_` variable.
   bool useNonblocking();
 
+ protected:
+  int globalRankStart_;
+  int globalRankStride_;
+
  private:
-  int globalRankStart;
-  int globalRankStride;
+  bool eagerInit_{false};
+  bool showSerializationWarning_{true};
+
   // Helper that encapsulates work shared across all collective communication
   // primitives.  The callbacks have the following signatures:
   //
@@ -819,8 +1069,8 @@ class TORCH_API ProcessGroupMCCL : public Backend {
       at::Tensor& output,
       Fn fn,
       OpType opType,
+      bool asyncOp,
       const char* profilingTitle = nullptr,
-      bool avoidRecordStreams = false,
       bool nanCheck = true);
 
   template <typename Fn, typename PreProcess, typename PostProcess>
@@ -831,8 +1081,8 @@ class TORCH_API ProcessGroupMCCL : public Backend {
       PreProcess pre,
       PostProcess post,
       OpType opType,
+      bool asyncOp,
       const char* profilingTitle = nullptr,
-      bool avoidRecordStreams = false,
       bool nanCheck = true);
 
   template <typename Fn, typename PreProcess, typename PostProcess>
@@ -843,8 +1093,8 @@ class TORCH_API ProcessGroupMCCL : public Backend {
       PreProcess pre,
       PostProcess post,
       OpType opType,
+      bool asyncOp,
       const char* profilingTitle = nullptr,
-      bool avoidRecordStreams = false,
       bool nanCheck = true);
 
   template <typename Fn>
@@ -853,8 +1103,8 @@ class TORCH_API ProcessGroupMCCL : public Backend {
       std::vector<at::Tensor>& output,
       Fn fn,
       OpType opType,
-      const char* profilingTitle = nullptr,
-      bool avoidRecordStreams = false);
+      bool asyncOp,
+      const char* profilingTitle = nullptr);
 
   // Helper that encapsulates work shared across point-to-point communication
   // primitives. It is the same structure as the helper used for collective
@@ -887,22 +1137,6 @@ class TORCH_API ProcessGroupMCCL : public Backend {
   static std::exception_ptr checkForMCCLErrorsInternal(
       std::shared_ptr<MCCLComm>& mcclComm);
 
-  // Function that runs as part of a separate thread and checks for errors on
-  // MCCL communicators. We need a separate thread to check for MCCL errors
-  // since we can't rely on the user calling certain methods like wait(),
-  // isCompleted() etc. to detect and remediate errors. In addition to this, we
-  // need a mechanism to safely abort and remove MCCL communicators from our
-  // cache. This can be done cleanly by having a thread for the ProcessGroupMCCL
-  // class. Attempting to modify the communicator cache from the WorkMCCL class
-  // might run into issues with object lifetime since the ProcessGroupMCCL
-  // object might get destroyed before the WorkMCCL object.
-  void mcclCommWatchdog();
-
-  // Watchdog's inside loop.
-  // Takes care of cleaning up completed work, and aborting upon failure or
-  // timeout.
-  void watchdogHandler();
-
   void runHookLoop();
 
   // Generates a prefix that is unique to this process group and rank, for
@@ -917,6 +1151,8 @@ class TORCH_API ProcessGroupMCCL : public Backend {
   // devices. It is called in the constructor of ProcessGroupMCCL, so it always
   // return the rank_ of the the very first PG created, aka, default global PG.
   const int& globalRank() const;
+
+  const c10::intrusive_ptr<Store>& globalStore() const;
 
   // Returns the global ranks of a PG.
   const std::vector<uint64_t>& groupRanks() const;
@@ -936,28 +1172,10 @@ class TORCH_API ProcessGroupMCCL : public Backend {
       const std::string& signal,
       int srcRank);
 
-  // A helper function to get the src rank of a signal from the Store. This is
-  // nonblocking function returning -1 if the signal is not available yet.
-  int getSignalSrcRank(
-      c10::intrusive_ptr<Store>& store,
-      const std::string& signal);
-
-  std::string dump_mccl_trace(
-      bool includeCollectives,
-      bool includeStackTraces,
-      bool onlyActive);
-
  protected:
-  // Function that runs as part of a separate thread aside from watchdog
-  // thread because we need to check the heartbeat from watchdog thread
-  // so that when we get stuck in some MCCL/MUSA calls,
-  // we can dump the debugging information and abort the process.
-  virtual void heartbeatMonitor();
-
   // Function that directly trigger std::abort so that the whole process
   // gets terminated.
   virtual void terminateProcess(const std::string& errMsg);
-
   // A helper function to wait for a future to complete or timeout.
   // Returns true if the future completes before timeout, false otherwise.
   bool waitForFutureOrTimeout(
@@ -967,25 +1185,14 @@ class TORCH_API ProcessGroupMCCL : public Backend {
       ::c10d::C10dLoggingData& debugLog,
       bool throwException = false);
 
-  std::string getMCCLWatchdogTimeoutErrorMsg(const std::string& extraMsg);
-
-  std::string getMCCLWatchdogTimeoutExitMsg(const std::string& exitReason);
-
-  void checkAndSetRemoteError();
-
   // A helper function to guess the device id of the current rank, based on
   // bounded device or used device. Do not use this function if you already know
   // the device id to operate on.
   c10::DeviceIndex guessDeviceId() const;
 
   static const int64_t kWatchdogThreadSleepMillis;
-  static const int64_t kWorkCleanupThreadSleepMillis;
-  static const int64_t kHeartBeatThreadSleepMillis;
-
   // The store is used to broadcast the MCCL unique ID of rank 0.
   c10::intrusive_ptr<Store> store_;
-
-  bool storeError_{false};
 
   // Reference to the store without prefix so that keys are same across all
   // ProcessGroup MCCL instances and (key, value) pairs written to the store are
@@ -994,7 +1201,7 @@ class TORCH_API ProcessGroupMCCL : public Backend {
 
   // The lock which protects the write/read of
   // ephemeralTimeoutActive_/ephemeralTimeoutInflight_.
-  // TODO(fduwjj): We need to have an audit on all mutexes we are adding here.
+  // TODO: We need to have an audit on all mutexes we are adding here.
   // And consolidate them if possible.
   std::mutex mtxTimeoutExtension_;
 
@@ -1013,12 +1220,6 @@ class TORCH_API ProcessGroupMCCL : public Backend {
   // the lifetime of this process group. This sequence number is
   // used to scope keys used in the store.
   uint64_t mcclCommCounter_{0};
-
-  // The store keys to trace the last MCCL collective kernel MUSA events - start
-  // event and end event respectively. These are used to do desync root cause
-  // analysis.
-  const std::string traceKeyStart_;
-  const std::string traceKeyEnd_;
 
   // The MCCL communicator that the process group has cached.
   //
@@ -1057,46 +1258,16 @@ class TORCH_API ProcessGroupMCCL : public Backend {
   // Mutex to guard maps like devMCCLCommMap_ and mcclIdToCommMap_.
   std::mutex mutex_;
 
-  // Heartbeat of watchdog thread.
-  std::atomic_uint64_t heartbeat_{};
-
-  // The time interval used for deciding whether there is no watchdog heartbeat.
-  int heartbeatTimeoutInSec_{60 * 8}; // 8 min
-
-  // timeout for the dump to finish.
-  int waitTimeoutDumpInMilSec_;
-
-  // promise to coordinate flight recorder dump.
-  std::promise<void> promiseFlightRecorderDump_;
-
-  // Interval of check coordinated signals in ProcessGroupMCCL from other ranks
-  // e.g., trigger the dump of the debugging info for timeout when notified.
-  int coordCheckIntervalMilSec_;
-
   // Size of ring buffer where we store MCCL Traces for debugging.
   int traceBufferSize_;
 
-  // We gate the heartbeat monitor thread so that we can roll it out gradually.
-  std::atomic<bool> monitorThreadEnabled_{};
-
   // We gate the cudaEventCache so that we can roll it out gradually.
   std::atomic<bool> musaEventCacheEnabled_{};
-
-  // Monitor thread which checks the heartbeat of Watchdog thread.
-  // If the monitor thread finds there is no heartbeat, it will dump debug info
-  // and then kill the watchdog thread to avoid hang.
-  std::thread mcclHeartbeatMonitorThread_;
-
-  // Watchdog thread which looks for errors on the cached MCCL communicators.
-  std::thread mcclCommWatchdogThread_;
 
   std::thread onCompletionHookThread_;
 
   // Whether or not we should terminate the watchdog and workCleanup threads.
   std::atomic<bool> terminateProcessGroup_;
-
-  // Whether or not we should terminate the heartbeat monitoring threads.
-  std::atomic<bool> terminateHeartbeatMonitorThread_;
 
   // Whether there are hooks pending to be fired
   std::atomic<bool> hasPendingHooks_{};
@@ -1117,21 +1288,10 @@ class TORCH_API ProcessGroupMCCL : public Backend {
   // Mutex to Guard workMetaList_
   std::mutex workMetaListMutex_;
 
-  // Mutex to Guard monitorWakeUpCV_
-  std::mutex monitorMutex_;
-
   bool writeDebugInfo_ = false;
 
-  // Condition Variable for timeout thread sleep
-  std::condition_variable workMetaListCV_;
-
-  // Condition Variable for monitor thread to wake up early
-  std::condition_variable monitorWakeUpCV_;
-
-  // Vector to Store WorkMCCL pointers
+  // Vector to store WorkMCCL pointers
   std::list<ProcessGroupMCCL::WorkMCCL> workMetaList_;
-
-  std::chrono::time_point<std::chrono::steady_clock> lastWorkListUpdateTime_;
 
   // Mutex to Guard workMetaList_
   std::mutex completedWorkListMutex_;
@@ -1162,24 +1322,25 @@ class TORCH_API ProcessGroupMCCL : public Backend {
   // Stores communicators for all collectives run inside a coalescing block
   std::shared_ptr<MCCLComm> coalescedComm_ = nullptr;
 
-  // map from group name to the pg counter (ID) within that group
-  //
-  // For each group with the "group name" (which is the key), we need to
-  // keep track of a unique process group ID when creating a new
-  // ProcessGroupMCCL for this "group name". Therefore, the value of this
-  // map keeps the unique ProcessGroupMCCL's ID for a specific group with
-  // the "group name". The reason we need a per-group process group ID counter
-  // is that different group can have different ranks and we need ensure that
-  // each group has its own uniform process group ID for all its ranks.
-  static std::unordered_map<std::string, ssize_t> processGroupCounterMap_;
+  // Whether the coalesced calls are sync or async.
+  bool coalescedAsync_;
+
+  // keeps track of input and output tensors when coalescing is in flight.  Will
+  // hand over these tensors to WorkMCCL's stash when coalescing is ended.
+  TensorShelf coalescedTensors_;
+
+  // Some ops may have completed, but user still hasn't called `work.wait()`.
+  // When watchdog detects this, it transfers the TensorShelf from `work` to
+  // this `shelves` structure. Next time we execute ProcessGroupMCCL's methods
+  // on main thread, we clear the `shelves` in one shot. This is mainly because
+  // watchdog (a side thread) unstashing the shelf directly seems to cause some
+  // problem.
+  std::vector<std::shared_ptr<TensorShelf>> shelvesToUnstash_;
+  std::mutex shelvesMutex_;
 
   // Whether or not wait() and synchronize() are blocking operations that wait
   // for the operation to complete.
   bool blockingWait_ = false;
-
-  // Whether or not to hook the cache allocator to register all allocated
-  // tensors
-  bool useTensorRegisterAllocatorHook_ = false;
 
   // Whether or not the workCleanupThread is used to perform async error
   // handling.
@@ -1189,26 +1350,11 @@ class TORCH_API ProcessGroupMCCL : public Backend {
 
   std::mutex errorMutex_;
 
-  // Whether or not to enable timeout root cause analysis.
-  bool desyncDebug_;
-  DesyncDebugger desyncDebugger_;
-
-  // Whether or not to dump debug info on exception including both watchdog
-  // timeout and mccl errors.
-  bool dumpOnTimeoutOrEx_;
-
-  // Whether or not to propagate detected errors to all ranks in the same PG
-  // through TCPStore.
-  bool propagatePgError_;
-
-  // Whether or not to sleep after an exception is thrown in the watchdog.
+  // may be useless now
   bool sleepAfterException_{};
 
   // Whether or not to enable nan check for input tensors to collectives.
   bool enableNanCheck_;
-
-  // Whether or not to print C++ stack traces to logs on unclean shutdown.
-  bool logCppStackOnUncleanShutdown_;
 
   // Whether or not to create start MUSAEvent and enable timing for start
   // and end events. Note that enableTiming_ is always true if desyncDebug_
@@ -1217,13 +1363,10 @@ class TORCH_API ProcessGroupMCCL : public Backend {
 
   // Flag to enable the print of hash value of input/output of collectives for
   // verification.
-  std::atomic<bool> enableCollecticeHashDebug_{};
+  std::atomic<bool> enableCollectiveHashDebug_{};
 
-  // Whether or not TORCH_MCCL_AVOID_RECORD_STREAMS was set
+  // Whether or not TORCH_MCCL_AVOID_RECORD_STREAMS path is enabled.
   bool avoidRecordStreams_ = false;
-
-  // Whether the MCCL watchdog should rethrow MUSA errors.
-  bool rethrowMUSAErrors_ = false;
 
   // The number of active mcclGroupStart() calls. This counter will be increased
   // by 1 when mcclGroupStart() is called and decreased by 1 when mcclGroupEnd()
@@ -1242,21 +1385,13 @@ class TORCH_API ProcessGroupMCCL : public Backend {
   // the ProcessGroup
   uint64_t op_id_{0};
 
-  std::exception_ptr watchDogException_ = nullptr;
-
   // The number of ProcessGroupMCCL created on the current rank.
   size_t local_id_{0};
 
   std::string logPrefix_;
 
-  // a placeholder for intraNodeComm
-  int intraNodeComm_{-1};
-
   // Number of devices on this node.
   int localDeviceCount_{0};
-
-  // the flag of heartbeat monitor for mccl status
-  bool mcclHeartBeatMonitor_{false};
 
   std::shared_ptr<ProcessGroupStatus> pgStatus_ =
       std::make_shared<ProcessGroupStatus>();
@@ -1265,10 +1400,29 @@ class TORCH_API ProcessGroupMCCL : public Backend {
   // Use `useNonblocking()` method instead of accessing this variable directly.
   std::optional<bool> useNonblocking_{std::nullopt};
 
-  // Communication-optimized memory pool associated with this PG
+  // communication-optimized memory pool associated with this PG
   std::unique_ptr<c10::musa::MemPool> memPool_ = nullptr;
 
 }; // class ProcessGroupMCCL
+
+// Dumps the MCCL comm traces and additional information about the Process
+// Group.
+TORCH_API std::string dump_mccl_trace(
+    bool includeCollectives,
+    bool includeStackTraces,
+    bool onlyActive);
+
+// Dumps the MCCL comm traces and additional information about the Process
+// Group in JSON formatted string.
+TORCH_API std::string dump_mccl_trace_json(
+    bool includeCollectives,
+    bool onlyActive);
+
+// Gets a mutable reference to a global optional function. Heartbeat monitor
+// will use this function to dump traces, if available.
+TORCH_API std::optional<
+    std::function<void(std::function<void(const std::string&)>)>>&
+get_cpp_trace_dumper();
 
 // Similar to get_cpp_trace_dumper, this stores a function defined in
 // torch-python layer that lets us check whether the GIL can be acquired,
@@ -1279,6 +1433,3 @@ TORCH_API gil_checker_t& get_gil_checker();
 } // namespace c10d
 
 void registerProcessGroupMCCL(PyObject* mod);
-//#endif // USE_C10D_MCCL
-
-#endif // TORCH_MUSA_CSRC_DISTRIBUTED_PROCESSGROUPMCCL_H_

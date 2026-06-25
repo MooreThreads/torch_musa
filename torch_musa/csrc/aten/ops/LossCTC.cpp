@@ -8,10 +8,10 @@
 #include <numeric>
 #include <vector>
 
+#include "torch_musa/csrc/aten/mudnn/CTCLoss.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
-
-#include <mudnn.h>
 
 namespace at {
 namespace musa {
@@ -82,11 +82,7 @@ namespace musa {
   auto mt_neg_log_likelihood = CreateMUTensor(neg_log_likelihood);
   auto mt_log_alpha = CreateMUTensor(log_alpha);
 
-  CHECK_MUDNN_STATUS(op.SetBlank(blank), "SetBlank");
-  CHECK_MUDNN_STATUS(op.SetZeroInfinity(zero_infinity), "SetZeroInfinity");
-  CHECK_MUDNN_STATUS(
-      op.SetMaxTargetLength(max_target_length), "SetMaxTargetLenght");
-
+  SetCTCLoss(op, blank, zero_infinity, max_target_length);
   CHECK_MUDNN_STATUS(
       op.Run(
           h,
@@ -174,11 +170,7 @@ Tensor CtcLossBackwardImpl(
 
   auto mt_grad_input = CreateMUTensor(result);
 
-  CHECK_MUDNN_STATUS(op.SetBlank(blank), "SetBlank");
-  CHECK_MUDNN_STATUS(op.SetZeroInfinity(zero_infinity), "SetZeroInfinity");
-  CHECK_MUDNN_STATUS(
-      op.SetMaxTargetLength(max_target_length), "SetMaxTargetLength");
-
+  SetCTCLoss(op, blank, zero_infinity, max_target_length);
   CHECK_MUDNN_STATUS(
       op.RunBwd(
           h,

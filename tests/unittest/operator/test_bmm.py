@@ -75,3 +75,35 @@ def test_bmm_complex(input_data):
     test.check_result()
     test.check_out_ops()
     test.check_grad_fn()
+
+
+input_data_complex_mh = [
+    {
+        "input": torch.randn(4, 5, 5, dtype=torch.complex64).mH,
+        "mat2": torch.randn(4, 5, 10, dtype=torch.complex64),
+    },
+    {
+        "input": torch.randn(4, 5, 10, dtype=torch.complex64),
+        "mat2": torch.randn(4, 5, 10, dtype=torch.complex64).mH,
+    },
+    {
+        "input": torch.randn(4, 5, 5, dtype=torch.complex64).mH,
+        "mat2": torch.randn(4, 5, 5, dtype=torch.complex64).mH,
+    },
+    {
+        "input": torch.randn(4, 5, 5, dtype=torch.complex128).mH,
+        "mat2": torch.randn(4, 5, 10, dtype=torch.complex128),
+    },
+]
+
+
+@pytest.mark.parametrize("input_data", input_data_complex_mh)
+def test_bmm_complex_mh(input_data):
+    input_cpu, mat2_cpu = input_data['input'], input_data['mat2']
+    input_musa = input_cpu.musa()
+    mat2_musa = mat2_cpu.musa()
+
+    out_musa = torch.bmm(input_musa, mat2_musa)
+    out_cpu = torch.bmm(input_cpu, mat2_cpu)
+
+    torch.allclose(out_musa.cpu(), out_cpu)

@@ -87,7 +87,7 @@ index 9e466133004..c824df11740 100644
  
  def get_cpp_wrapper_config() -> dict[str, object]:
      if config.triton.cudagraphs:
-+        from torch_musa._inductor.musagraph_utils import ( 
++        from torch_musa._inductor.musagraph_utils import (
 +            format_default_skip_message as format_default_skip_message_musa
 +        )
          log_cudagraph_skip_and_bump_counter(

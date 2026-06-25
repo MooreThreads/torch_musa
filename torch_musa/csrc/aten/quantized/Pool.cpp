@@ -11,11 +11,12 @@
 
 #include "torch_musa/csrc/aten/mudnn/Handle.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 #include <vector>
 
-#include <mudnn.h>
+#include "torch_musa/csrc/aten/mudnn/Pooling.h"
 
 at::SmallVector<int64_t, 4> MakePool2dOutputShape(
     int N, // batch size
@@ -46,12 +47,10 @@ void QuantizedMaxPool2dImpl(
     const double scale,
     const int64_t zero_point) {
   // mudnn handle and op
-  at::musa::muHandle& h = at::GetMudnnHandle();
+  auto& h = at::GetMudnnHandle();
   ::musa::dnn::Pooling op;
 
   // op settings
-  CHECK_MUDNN_STATUS(
-      op.SetMode(::musa::dnn::Pooling::Mode::MAXPOOL), "Set MaxPooling mode");
   std::vector<int> kernel = {
       static_cast<int>(kernel_size[0]), static_cast<int>(kernel_size[1])};
   std::vector<int> pad_ = {
@@ -60,14 +59,13 @@ void QuantizedMaxPool2dImpl(
       static_cast<int>(stride[0]), static_cast<int>(stride[1])};
   std::vector<int> dilation_ = {
       static_cast<int>(dilation[0]), static_cast<int>(dilation[1])};
-  CHECK_MUDNN_STATUS(
-      op.SetNdInfo(
-          static_cast<int>(kernel_size.size()),
-          kernel.data(),
-          pad_.data(),
-          stride_.data(),
-          dilation_.data()),
-      "Set MaxPooling Nd info");
+  ::at::musa::SetPooling(
+      op,
+      ::musa::dnn::Pooling::Mode::MAXPOOL,
+      {kernel[0], kernel[1]},
+      {pad_[0], pad_[1]},
+      {stride_[0], stride_[1]},
+      {dilation_[0], dilation_[1]});
 
   // muTensor create and settings
   at::Tensor input_ = input.permute({0, 2, 3, 1}); // permute to NHWC shape
@@ -97,13 +95,11 @@ void QuantizedAvgPool2dImpl(
     const double scale,
     const int64_t zero_point) {
   // mudnn handle and op
-  at::musa::muHandle& h = at::GetMudnnHandle();
+  auto& h = at::GetMudnnHandle();
   ::musa::dnn::Pooling op;
 
   // op settings
-  CHECK_MUDNN_STATUS(
-      op.SetMode(::musa::dnn::Pooling::Mode::ADAPTIVE_AVGPOOL),
-      "Set AdaptiveAvgPooling mode");
+  ::at::musa::SetPooling(op, ::musa::dnn::Pooling::Mode::ADAPTIVE_AVGPOOL);
 
   // muTensor create and settings
   at::Tensor input_ = input.permute({0, 2, 3, 1}); // permute to NHWC shape

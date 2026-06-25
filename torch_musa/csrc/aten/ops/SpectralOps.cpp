@@ -116,7 +116,8 @@ Tensor StftCenter(
       self.device(),
       " and window on ",
       window.device())
-  TORCH_CHECK(!center || !align_to_windowOpt.has_value(),
+  TORCH_CHECK(
+      !center || !align_to_windowOpt.has_value(),
       "stft align_to_window should only be set when center = false.")
 
   // default_init hop_length and win_length
@@ -207,10 +208,12 @@ Tensor StftCenter(
   const bool align_to_window = align_to_windowOpt.value_or(false);
   int64_t n_frames;
   if (!center && align_to_window) {
-    // Calculate n_frames based on window length, since we are aligning start of window with t = 0.
+    // Calculate n_frames based on window length, since we are aligning start of
+    // window with t = 0.
     n_frames = 1 + (len - win_length) / hop_length;
     // Window-based padding.
-    input = at::pad(input, {(n_fft - win_length) / 2, (n_fft - win_length) / 2}, mode);
+    input = at::pad(
+        input, {(n_fft - win_length) / 2, (n_fft - win_length) / 2}, mode);
   } else {
     n_frames = 1 + (len - n_fft) / hop_length;
   }

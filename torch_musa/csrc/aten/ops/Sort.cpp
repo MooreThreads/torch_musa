@@ -12,8 +12,12 @@
 #include <ATen/ops/sort_ops.h>
 #endif
 
+#include "torch_musa/csrc/aten/mudnn/Sort.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+
+using namespace ::at::musa;
 
 #include <mudnn.h>
 
@@ -41,10 +45,7 @@ void SortCall(
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Sort mSort;
-  CHECK_MUDNN_STATUS(mSort.SetDim(dim), "Sort set dim param failed");
-  CHECK_MUDNN_STATUS(
-      mSort.SetDescending(descending), "Sort set descending flag failed");
-  CHECK_MUDNN_STATUS(mSort.SetStable(stable), "Sort set stable flag failed");
+  ::at::musa::SetSort(mSort, dim, descending, stable);
   CHECK_MUDNN_STATUS(
       mSort.Run(h, values_, indices_, input_, InternalMemAlloc),
       "Sort run kernel failed");

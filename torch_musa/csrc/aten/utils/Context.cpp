@@ -15,30 +15,6 @@ Context& GlobalContext() {
   return global_context_;
 }
 
-// Check if a type is a tensor core type.
-inline bool IsTensorCoreType(const at::ScalarType& dtype) {
-  return dtype == at::ScalarType::Half || dtype == at::ScalarType::BFloat16 ||
-      dtype == at::ScalarType::QInt8 || dtype == at::ScalarType::QUInt8 ||
-      dtype == at::ScalarType::Float8_e5m2 ||
-      dtype == at::ScalarType::Float8_e4m3fn;
-}
-
-::musa::dnn::Convolution::ComputeMode GetComputeModeFromCtx(
-    const at::ScalarType& dtype) {
-  auto& ctx = GlobalContext();
-  auto is_tensor_mode = ctx.GetAllowTF32() || IsTensorCoreType(dtype);
-  return is_tensor_mode ? ::musa::dnn::Convolution::ComputeMode::TENSOR
-                        : ::musa::dnn::Convolution::ComputeMode::SCALAR;
-}
-
-::musa::dnn::Convolution::ComputeMode GetMatmulComputeModeFromCtx(
-    const at::ScalarType& dtype) {
-  auto& ctx = GlobalContext();
-  auto is_tensor_mode = ctx.GetAllowMublasTF32() || IsTensorCoreType(dtype);
-  return is_tensor_mode ? ::musa::dnn::Convolution::ComputeMode::TENSOR
-                        : ::musa::dnn::Convolution::ComputeMode::SCALAR;
-}
-
 bool Context::GetAllowTF32() const {
   return allow_tf32_;
 }

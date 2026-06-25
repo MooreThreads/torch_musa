@@ -1,5 +1,6 @@
 #define TORCH_ASSERT_ONLY_METHOD_OPERATORS
 
+#include <ATen/Dispatch.h>
 #include "torch_musa/csrc/aten/musa/MUSAContextLight.h"
 #include "torch_musa/csrc/aten/musa/MUSAMath.muh"
 #include "torch_musa/csrc/aten/ops/musa/EmbeddingBag.muh"

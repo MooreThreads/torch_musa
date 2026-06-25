@@ -4,15 +4,15 @@
 #include <ATen/native/Pool.h>
 #include <torch/library.h>
 
+#include "torch_musa/csrc/aten/mudnn/TopK.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 #include <mudnn.h>
 
 namespace at {
 namespace musa {
-
-using Status = ::musa::dnn::Status;
 
 std::tuple<Tensor&, Tensor&> TopkOut(
     const Tensor& self,
@@ -64,10 +64,7 @@ std::tuple<Tensor&, Tensor&> TopkOut(
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::TopK mTopk;
-  CHECK_MUDNN_STATUS(mTopk.SetK(k), "SetK");
-  CHECK_MUDNN_STATUS(mTopk.SetDim(wraped_dim), "SetDim");
-  CHECK_MUDNN_STATUS(mTopk.SetLargest(largest), "SetLargest");
-  CHECK_MUDNN_STATUS(mTopk.SetSorted(sorted), "SetSorted");
+  ::at::musa::SetTopK(mTopk, k, wraped_dim, largest, sorted);
 
   CHECK_MUDNN_STATUS(
       mTopk.Run(h, mt_values, mt_indices, mt_input, InternalMemAlloc), "Run");

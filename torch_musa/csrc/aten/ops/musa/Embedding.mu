@@ -8,8 +8,11 @@
 #include "torch_musa/csrc/aten/musa/MUSAAtomic.muh"
 #include "torch_musa/csrc/aten/musa/MUSADtype.muh"
 #include "torch_musa/csrc/aten/ops/musa/EmbeddingBackwardKernel.muh"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/MUSAStream.h"
+
+#include "torch_musa/csrc/aten/mudnn/Sort.h"
 
 namespace at {
 namespace native {
@@ -134,7 +137,7 @@ Tensor EmbeddingDenseBwdMUSA(
 
   {
     int64_t numel = contiguous_indices.numel();
-    at::musa::muHandle& h = GetMudnnHandle();
+    auto& h = GetMudnnHandle();
     auto indices_ = at::musa::CreateMUTensor(contiguous_indices);
     indices_.SetNdInfo({numel});
     auto orig_indices_ = at::musa::CreateMUTensor(orig_indices);
@@ -142,9 +145,7 @@ Tensor EmbeddingDenseBwdMUSA(
     auto sorted_indices_ = at::musa::CreateMUTensor(sorted_indices);
     sorted_indices_.SetNdInfo({numel});
     ::musa::dnn::Sort op;
-    op.SetDim(0);
-    op.SetDescending(false);
-    op.SetStable(true);
+    ::at::musa::SetSort(op, 0, false, true);
     CHECK_MUDNN_STATUS(
         op.Run(
             h,

@@ -9,13 +9,19 @@
 #include <ATen/ops/_scaled_dot_product_attention_math_musa_backward_native.h>
 #include <ATen/ops/_scaled_dot_product_attention_math_musa_native.h>
 #include <ATen/ops/empty.h>
+#include <ATen/ops/empty_cpu_dispatch.h>
 #include <ATen/ops/empty_like.h>
 #include <ATen/ops/ones.h>
 #include <ATen/ops/sum_musa_dispatch.h>
 #endif
 
+#include <mudnn.h>
+
+#include "torch_musa/csrc/aten/mudnn/ScaledDotProductAttention.h"
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
+#include "torch_musa/csrc/aten/musa/MUSAGeneratorImpl.h"
 #include "torch_musa/csrc/aten/utils/Context.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Numeric.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 
@@ -242,6 +248,84 @@ Proxy AffineBatch(const Tensor& orig, bool no_batch) {
   return Proxy::borrowed(orig);
 }
 
+Tensor PackRNGState(double dropout_p) {
+  using CType = std::uintptr_t;
+  constexpr auto SType = c10::CppTypeToScalarType<CType>::value;
+
+  // Always return a defined tensor so downstream consumers (autograd,
+  // FakeTensor, DTensor sharding) see a stable schema regardless of
+  // whether dropout is actually active.
+  if (!(dropout_p > 0.0)) {
+    auto state_tensor = at::cpu::empty(
+        {2}, SType, std::nullopt, std::nullopt, std::nullopt, std::nullopt);
+    auto* rng_state = state_tensor.data_ptr<CType>();
+    rng_state[0] = 0;
+    rng_state[1] = 0;
+    return state_tensor;
+  }
+
+  auto gen = get_generator_or_default<MUSAGeneratorImpl>(
+      std::nullopt, musa::detail::getDefaultMUSAGenerator());
+  PhiloxMusaState rng_engine_inputs;
+  constexpr uint64_t counter_offset = 4;
+  {
+    std::lock_guard<std::mutex> lock(gen->mutex_);
+    rng_engine_inputs = gen->philox_musa_state(counter_offset);
+  }
+
+  auto state_tensor = at::cpu::empty(
+      {rng_engine_inputs.captured_ ? 3 : 2},
+      SType,
+      std::nullopt,
+      std::nullopt,
+      std::nullopt,
+      std::nullopt);
+  auto* rng_state = state_tensor.data_ptr<CType>();
+
+  if (rng_engine_inputs.captured_) {
+    rng_state[0] = reinterpret_cast<CType>(rng_engine_inputs.seed_.ptr);
+    rng_state[1] = reinterpret_cast<CType>(rng_engine_inputs.offset_.ptr);
+    rng_state[2] = static_cast<CType>(rng_engine_inputs.offset_intragraph_);
+  } else {
+    rng_state[0] = static_cast<CType>(rng_engine_inputs.seed_.val);
+    rng_state[1] = static_cast<CType>(rng_engine_inputs.offset_.val);
+  }
+
+  return state_tensor;
+}
+
+void UnpackRNGStateToMUDNN(
+    ::musa::dnn::ScaledDotProductAttention& sdpa,
+    const Tensor& state_tensor) {
+  if (!state_tensor.defined()) {
+    return;
+  }
+  using CType = std::uintptr_t;
+  auto* rng_state = state_tensor.data_ptr<CType>();
+
+  if (state_tensor.numel() == 2) {
+    CHECK_MUDNN_STATUS(
+        sdpa.SetSeed(
+            static_cast<uint64_t>(rng_state[0]),
+            static_cast<uint64_t>(rng_state[1]),
+            0, /* kHostSeed */
+            nullptr,
+            nullptr,
+            0),
+        "SetSeed");
+  } else {
+    CHECK_MUDNN_STATUS(
+        sdpa.SetSeed(
+            0,
+            0,
+            1, /* kDeviceSeed  */
+            reinterpret_cast<const uint64_t*>(rng_state[0]),
+            reinterpret_cast<const uint64_t*>(rng_state[1]),
+            static_cast<uint64_t>(rng_state[2])),
+        "SetSeed");
+  }
+}
+
 } // anonymous namespace
 
 // query shape: [N, H_q, L, E]
@@ -321,7 +405,8 @@ std::tuple<Tensor, Tensor, Tensor> MuDNNMathSDPAFwd(
   ::musa::dnn::ScaledDotProductAttention sdpa;
 
   CHECK_MUDNN_STATUS(
-      sdpa.SetComputeMode(musa::GetComputeModeFromCtx(query.scalar_type())),
+      sdpa.SetComputeMode(
+          musa::GetMatmulComputeModeFromCtx(query.scalar_type())),
       "SetComputeMode");
   CHECK_MUDNN_STATUS(sdpa.SetEmbedDim(H_q * E_v), "SetEmbedDim");
   CHECK_MUDNN_STATUS(sdpa.SetHeadsNum(H_q), "SetHeadsNum");
@@ -432,7 +517,8 @@ std::tuple<Tensor, Tensor, Tensor, Tensor> MuDNNMathSDPABwd(
   const auto mask_type = ParseMaskType(attn_mask, is_causal, N, H_q, L, S);
 
   CHECK_MUDNN_STATUS(
-      sdpa.SetComputeMode(musa::GetComputeModeFromCtx(query.scalar_type())),
+      sdpa.SetComputeMode(
+          musa::GetMatmulComputeModeFromCtx(query.scalar_type())),
       "SetComputeMode");
   CHECK_MUDNN_STATUS(sdpa.SetEmbedDim(H_q * E_v), "SetEmbedDim");
   CHECK_MUDNN_STATUS(sdpa.SetHeadsNum(H_q), "SetHeadsNum");
@@ -471,13 +557,14 @@ std::tuple<Tensor, Tensor, Tensor, Tensor> MuDNNMathSDPABwd(
       contig_grad_q, contig_grad_k, contig_grad_v, attn_mask_grad);
 }
 
-std::tuple<Tensor, Tensor, Tensor> MuDNNFlashSDPAFwd(
+std::tuple<Tensor, Tensor, Tensor, Tensor> MuDNNFlashSDPAFwd(
     const Tensor& _query,
     const Tensor& _key,
     const Tensor& _value,
     const std::optional<Tensor>& attn_mask,
     double dropout_p,
     bool is_causal,
+    bool return_debug_mask,
     std::optional<double> scale) {
   const c10::musa::MUSAGuard device_guard(_query.device());
 
@@ -545,11 +632,15 @@ std::tuple<Tensor, Tensor, Tensor> MuDNNFlashSDPAFwd(
   CHECK_MUDNN_STATUS(sdpa.SetMaskMode(IsPadMask(mask_type)), "SetMaskMode");
   MaybeSetScale(sdpa, scale);
 
-  auto contig_dropout_mask = at::empty({0}, query_opt.dtype(at::kBool));
+  auto contig_dropout_mask = at::empty({0}, query_opt.dtype(at::kFloat));
+  auto rng_state = PackRNGState(dropout_p);
   if (dropout_p > 0.0) {
-    contig_dropout_mask.resize_({N, H_q, L, S});
     CHECK_MUDNN_STATUS(sdpa.SetDropoutP(dropout_p), "SetDropoutP");
     CHECK_MUDNN_STATUS(sdpa.SetTraining(true), "SetTraining");
+    if (return_debug_mask) {
+      contig_dropout_mask.resize_({N, H_q, L, S});
+    }
+    UnpackRNGStateToMUDNN(sdpa, rng_state);
   }
   auto musa_dropout_mask = CreateMUTensor(contig_dropout_mask);
 
@@ -569,9 +660,12 @@ std::tuple<Tensor, Tensor, Tensor> MuDNNFlashSDPAFwd(
   if (no_batch) {
     output.squeeze_(0);
     contig_logsumexp.squeeze_(0);
-    contig_dropout_mask.squeeze_(0);
+    if (dropout_p > 0.0 && return_debug_mask) {
+      contig_dropout_mask.squeeze_(0);
+    }
   }
-  return std::make_tuple(output, contig_logsumexp, contig_dropout_mask);
+  return std::make_tuple(
+      output, contig_logsumexp, contig_dropout_mask, rng_state);
 }
 
 std::tuple<Tensor, Tensor, Tensor, Tensor> MuDNNFlashSDPABwd(
@@ -582,9 +676,12 @@ std::tuple<Tensor, Tensor, Tensor, Tensor> MuDNNFlashSDPABwd(
     const Tensor& _output,
     const Tensor& _logsumexp,
     const Tensor& _dropout_mask,
+    const Tensor& rng_state,
+    double dropout_p,
     bool is_causal,
     const std::optional<Tensor>& attn_mask,
     std::optional<double> scale) {
+  (void)_dropout_mask;
   const c10::musa::MUSAGuard device_guard(_query.device());
 
   const auto no_batch = (_query.dim() == 3);
@@ -594,7 +691,6 @@ std::tuple<Tensor, Tensor, Tensor, Tensor> MuDNNFlashSDPABwd(
   Proxy batch_go = AffineBatch(_grad_output, no_batch);
   Proxy batch_o = AffineBatch(_output, no_batch);
   Proxy batch_lse = AffineBatch(_logsumexp, no_batch);
-  Proxy batch_dm = AffineBatch(_dropout_mask, no_batch);
 
   const auto& query = (*batch_q);
   const auto& key = (*batch_k);
@@ -602,7 +698,6 @@ std::tuple<Tensor, Tensor, Tensor, Tensor> MuDNNFlashSDPABwd(
   const auto& grad_output = (*batch_go);
   const auto& output = (*batch_o);
   const auto& logsumexp = (*batch_lse);
-  const auto& dropout_mask = (*batch_dm);
 
   auto musa_q = CreateMUTensor(query);
   auto musa_k = CreateMUTensor(key);
@@ -622,9 +717,6 @@ std::tuple<Tensor, Tensor, Tensor, Tensor> MuDNNFlashSDPABwd(
 
   const auto contig_logsumexp = logsumexp.contiguous();
   auto musa_logsumexp = CreateMUTensor(contig_logsumexp);
-
-  const auto contig_dropout_mask = dropout_mask.contiguous();
-  auto musa_dropout_mask = CreateMUTensor(contig_dropout_mask);
 
   auto musa_output = CreateMUTensor(output);
 
@@ -650,9 +742,15 @@ std::tuple<Tensor, Tensor, Tensor, Tensor> MuDNNFlashSDPABwd(
   CHECK_MUDNN_STATUS(sdpa.SetEmbedDim(H_q * E_v), "SetEmbedDim");
   CHECK_MUDNN_STATUS(sdpa.SetHeadsNum(H_q), "SetHeadsNum");
   CHECK_MUDNN_STATUS(sdpa.SetTraining(true), "SetTraining");
+  CHECK_MUDNN_STATUS(sdpa.SetDropoutP(dropout_p), "SetDropoutP");
   CHECK_MUDNN_STATUS(sdpa.SetCausal(is_causal), "SetCausal");
   CHECK_MUDNN_STATUS(sdpa.SetMaskMode(IsPadMask(mask_type)), "SetMaskMode");
   MaybeSetScale(sdpa, scale);
+
+  if (dropout_p > 0.0) {
+    UnpackRNGStateToMUDNN(sdpa, rng_state);
+  }
+  auto musa_dropout_mask = CreateEmptyMUTensor();
 
   CHECK_MUDNN_STATUS(
       sdpa.RunFlashBwd(
@@ -695,6 +793,11 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> MuDNNFlashVarlenFwd(
     std::optional<double> scale,
     bool is_causal) {
   const c10::musa::MUSAGuard device_guard(query.device());
+
+  TORCH_CHECK(
+      at::musa::getMUSAArch() != 220,
+      "MUSA Flash Attention Varlen (variable-length / nested tensors) is not "
+      "supported on mp22 (arch 2.2). Please run on mp31 (arch 3.1) or newer.");
 
   TORCH_CHECK(query.dim() == 3, "query's layout should be [total_seq_q, H, D]");
   TORCH_CHECK(key.dim() == 3, "key's layout should be [total_seq_q, H, D]");
@@ -790,6 +893,11 @@ MuDNNFlashVarlenBwd(
     std::optional<double> scale,
     bool is_causal) {
   const c10::musa::MUSAGuard device_guard(query.device());
+
+  TORCH_CHECK(
+      at::musa::getMUSAArch() != 220,
+      "MUSA Flash Attention Varlen (variable-length / nested tensors) is not "
+      "supported on mp22 (arch 2.2). Please run on mp31 (arch 3.1) or newer.");
 
   at::musa::muTensor musa_q = at::musa::CreateMUTensor(query);
   at::musa::muTensor musa_k = at::musa::CreateMUTensor(key);

@@ -1,0 +1,12 @@
+diff --git a/tools/autograd/gen_python_functions.py b/tools/autograd/gen_python_functions.py
+index 5a003ca..65bdb8f 100644
+--- a/tools/autograd/gen_python_functions.py
++++ b/tools/autograd/gen_python_functions.py
+@@ -136,6 +136,7 @@ _SKIP_PYTHON_BINDINGS = [
+     "item",
+     "_local_scalar_dense",
+     "to",
++    "lazy_to",
+     "_to_copy",
+     "_to_copy_out",
+     "_reshape_copy",

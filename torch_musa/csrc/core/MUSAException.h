@@ -62,13 +62,6 @@
     }                                                           \
   } while (0)
 
-#define CHECK_MUDNN_STATUS(rst, msg)       \
-  TORCH_CHECK(                             \
-      rst == ::musa::dnn::Status::SUCCESS, \
-      __FUNCTION__,                        \
-      " MUDNN failed in: ",                \
-      msg);
-
 namespace c10 {
 namespace musa {
 void c10_musa_check_implementation(

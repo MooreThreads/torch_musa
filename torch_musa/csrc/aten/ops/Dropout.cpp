@@ -11,10 +11,12 @@
 #include <ATen/ops/zeros_like.h>
 #endif
 
+#include "torch_musa/csrc/aten/mudnn/Dropout.h"
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/aten/musa/MUSAGeneratorImpl.h"
 #include "torch_musa/csrc/aten/musa/MUSAGraphsUtils.muh"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 namespace at::musa {

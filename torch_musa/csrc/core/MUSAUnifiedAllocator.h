@@ -19,6 +19,7 @@ std::shared_ptr<c10::musa::MUSACachingAllocator::MUSAAllocator>
 get_pluggable_allocator();
 
 void register_unified_allocator();
+
 } // namespace c10
 
 #ifdef __cplusplus

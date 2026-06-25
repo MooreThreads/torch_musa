@@ -1,13 +1,15 @@
 #include "torch_musa/csrc/distributed/Register.h"
+#include <torch/csrc/distributed/c10d/Types.hpp>
+#include "c10/util/Exception.h"
+#include "pybind11/pybind11.h"
+#include "torch/csrc/distributed/c10d/Types.hpp"
 #include "torch_musa/csrc/distributed/ProcessGroupMCCL.h"
 
 #include <c10/util/intrusive_ptr.h>
 #include <pybind11/cast.h>
 #include <pybind11/chrono.h>
-#include <torch/library.h>
-#include <thread>
-#include "mccl.h"
-#include "torch_musa/csrc/utils/register_wrapper.h"
+#include <pybind11/stl.h>
+#include <optional>
 
 namespace {
 
@@ -78,15 +80,66 @@ void registerProcessGroupMCCL(PyObject* mod) {
   register_backend(
       "mccl",
       py::cpp_function(
-          &c10d::ProcessGroupMCCL::MCCLcreator,
-          py::arg("store"),
-          py::arg("rank"),
-          py::arg("world_size"),
-          py::arg("timeout")),
-      false,
+          [](const c10d::DistributedBackendOptions& dist_opts,
+             py::object backend_opts_obj) {
+            c10::intrusive_ptr<c10d::ProcessGroupMCCL::Options> backend_opts;
+            if (!backend_opts_obj.is_none()) {
+              backend_opts = backend_opts_obj.cast<
+                  c10::intrusive_ptr<c10d::ProcessGroupMCCL::Options>>();
+            }
+            return c10d::ProcessGroupMCCL::MCCLcreator(dist_opts, backend_opts);
+          },
+          py::arg("dist_opts"),
+          py::arg("backend_opts") = py::none()),
+      /* extended_api */ true,
       "musa"); // returns a python ProcessGroupMCCL
-  auto backend =
-      py::module::import("torch._C._distributed_c10d").attr("Backend");
+  auto distributed_c10d = py::module::import("torch._C._distributed_c10d");
+  auto backend = distributed_c10d.attr("Backend");
+
+  if (!py::hasattr(distributed_c10d, "_dump_mccl_trace_json")) {
+    distributed_c10d.def(
+        "_dump_mccl_trace_json",
+        [](std::optional<bool> includeCollectives,
+           std::optional<bool> onlyActive) {
+          return py::bytes(::c10d::dump_mccl_trace_json(
+              includeCollectives.value_or(true), onlyActive.value_or(false)));
+        },
+        py::arg("includeCollectives") = std::optional<bool>(),
+        py::arg("onlyActive") = std::optional<bool>(),
+        R"(
+        Arguments:
+              includeCollectives(bool, optional): Whether to include collective work traces. Default is True.
+              onlyActive (bool, optional): Whether to only include active collective work traces. Default is False.
+        Returns:
+              Stringified json work traces.
+              Default settings return everything.
+      )");
+  }
+
+  if (!py::hasattr(distributed_c10d, "_dump_mccl_trace")) {
+    distributed_c10d.def(
+        "_dump_mccl_trace",
+        [](std::optional<bool> includeCollectives,
+           std::optional<bool> includeStackTraces,
+           std::optional<bool> onlyActive) {
+          return py::bytes(::c10d::dump_mccl_trace(
+              includeCollectives.value_or(true),
+              includeStackTraces.value_or(true),
+              onlyActive.value_or(false)));
+        },
+        py::arg("includeCollectives") = std::optional<bool>(),
+        py::arg("includeStackTraces") = std::optional<bool>(),
+        py::arg("onlyActive") = std::optional<bool>(),
+        R"(
+        Arguments:
+              includeCollectives(bool, optional): Whether to include collective work traces. Default is True.
+              includeStackTraces(bool, optional): Whether to include stacktraces in the collective work traces. Default is True.
+              onlyActive (bool, optional): Whether to only include active collective work traces. Default is False.
+        Returns:
+              Stringified pickle work traces.
+              Default settings return everything.
+      )");
+  }
 
   auto processGroupMCCL =
       intrusive_ptr_no_gil_destructor_class_<::c10d::ProcessGroupMCCL>(
@@ -132,8 +185,24 @@ void registerProcessGroupMCCL(PyObject* mod) {
           py::arg("size"),
           py::arg("timeout") = ::c10d::kProcessGroupMCCLDefaultTimeout,
           R"(Create a new ProcessGroupMCCL instance.)")
+      .def(
+          "_comm_ptr",
+          &::c10d::ProcessGroupMCCL::getCommPtr,
+          R"(
+            Get the communicator of the current device.
+
+            .. warning ::
+                Unsafe to use. The collectives launched into the communicator
+                externally outside ProcessGroupMCCL are not monitored by the
+                watchdog. Please do not modify or free the communicator as the
+                communicator is managed by the ProcessGroupMCCL. Please also
+                check the readiness of the communicator before launching any
+                collectives into the communicator.
+            )")
       .def("_group_start", &::c10d::ProcessGroupMCCL::groupStart)
       .def("_group_end", &::c10d::ProcessGroupMCCL::groupEnd)
+      .def("_start_time_estimate", &::c10d::ProcessGroupMCCL::startTimeEstimate)
+      .def("_end_time_estimate", &::c10d::ProcessGroupMCCL::endTimeEstimate)
       .def("comm_split_count", &::c10d::ProcessGroupMCCL::getCommSplitCounter)
       .def(
           "_set_default_timeout",
@@ -173,10 +242,12 @@ void registerProcessGroupMCCL(PyObject* mod) {
       .def(
           "perform_nocolor_split",
           &::c10d::ProcessGroupMCCL::performNocolorSplit)
-      // .def("register_mem_pool", &::c10d::ProcessGroupMCCL::registerMemPool)
-      // .def(
-      //     "deregister_mem_pool",
-      //     &::c10d::ProcessGroupMCCL::deregisterMemPool)
+      .def(
+          "register_mem_pool",
+          &::c10d::ProcessGroupMCCL::registerMemPool,
+          py::arg("pool"),
+          py::arg("symm") = false)
+      .def("deregister_mem_pool", &::c10d::ProcessGroupMCCL::deregisterMemPool)
       .def(
           "_is_initialized",
           &::c10d::ProcessGroupMCCL::isInitialized,
@@ -184,7 +255,54 @@ void registerProcessGroupMCCL(PyObject* mod) {
       .def(
           "get_error",
           &::c10d::ProcessGroupMCCL::getError,
+          py::call_guard<py::gil_scoped_release>())
+      .def(
+          "_set_enable_nan_check",
+          [](const c10::intrusive_ptr<::c10d::ProcessGroupMCCL>& self,
+             bool enable_nan_check) {
+            self->setEnableNanCheck(enable_nan_check);
+          },
+          py::arg("enable_nan_check"),
           py::call_guard<py::gil_scoped_release>());
+
+#ifdef MCCL_HAS_CTA_POLICY
+  processGroupMCCL.def_property_readonly_static(
+      "MCCL_CTA_POLICY_DEFAULT",
+      [](const py::object&) { return MCCL_CTA_POLICY_DEFAULT; });
+  processGroupMCCL.def_property_readonly_static(
+      "MCCL_CTA_POLICY_EFFICIENCY",
+      [](const py::object&) { return MCCL_CTA_POLICY_EFFICIENCY; });
+  processGroupMCCL.def_property_readonly_static(
+      "MCCL_CTA_POLICY_ZERO",
+      [](const py::object&) { return MCCL_CTA_POLICY_ZERO; });
+#endif // MCCL_HAS_CTA_POLICY
+
+#ifdef MCCL_HAS_CONFIG
+  py::class_<mcclConfig_t>(
+      processGroupMCCL,
+      "MCCLConfig",
+      R"(mcclConfig_t data type for configuring MCCL communicators.)")
+      .def(py::init([]() {
+        mcclConfig_t defaultCfg = MCCL_CONFIG_INITIALIZER;
+        return std::make_unique<mcclConfig_t>(defaultCfg);
+      }))
+      .def_readwrite("blocking", &mcclConfig_t::blocking)
+      .def_readwrite("cga_cluster_size", &mcclConfig_t::cgaClusterSize)
+      .def_readwrite("min_ctas", &mcclConfig_t::minCTAs)
+      .def_readwrite("max_ctas", &mcclConfig_t::maxCTAs)
+#ifdef MCCL_HAS_CTA_POLICY
+      .def_readwrite("cta_policy", &mcclConfig_t::CTAPolicy)
+#endif
+      .def(
+          "__copy__",
+          [](const mcclConfig_t& self) { return mcclConfig_t(self); })
+      .def(
+          "__deepcopy__",
+          [](const mcclConfig_t& self, const py::dict& memo) {
+            return mcclConfig_t(self);
+          },
+          py::arg("memo"));
+#endif // MCCL_HAS_CONFIG
 
   auto backendOptions = backend.attr("Options");
 
@@ -194,17 +312,14 @@ void registerProcessGroupMCCL(PyObject* mod) {
       backendOptions,
       R"(ProcessGroup options for the MCCL backend)")
       .def(py::init<bool>(), py::arg("is_high_priority_stream") = false)
-      // .def_readwrite("config", &::c10d::ProcessGroupNCCL::Options::config)
+#ifdef MCCL_HAS_CONFIG
+      .def_readwrite("config", &::c10d::ProcessGroupMCCL::Options::config)
+#endif
       .def_readwrite(
           "is_high_priority_stream",
           &::c10d::ProcessGroupMCCL::Options::is_high_priority_stream)
       .def_readwrite(
           "split_from", &::c10d::ProcessGroupMCCL::Options::split_from)
       .def_readwrite(
-          "split_color", &::c10d::ProcessGroupMCCL::Options::split_color)
-      .def_readwrite(
-          "global_ranks_in_group",
-          &::c10d::ProcessGroupMCCL::Options::global_ranks_in_group)
-      .def_readwrite(
-          "group_name", &::c10d::ProcessGroupMCCL::Options::group_name);
+          "split_color", &::c10d::ProcessGroupMCCL::Options::split_color);
 }

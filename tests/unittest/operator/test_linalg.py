@@ -3,9 +3,9 @@
 # pylint: disable=missing-function-docstring,redefined-outer-name,unused-import,not-callable,invalid-name
 import torch
 import pytest
-import torch_musa
 
 from torch_musa import testing
+
 
 input_data = [
     torch.randn(16, 100, 16, 16),
@@ -26,6 +26,7 @@ vector_norm_dtype = [torch.float32]
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.skipif(not torch._C.has_lapack, reason="torch doesn't build with lapack")
 @pytest.mark.parametrize("input_data", input_data)
 @pytest.mark.parametrize("dim", dim)
 @pytest.mark.parametrize("order", order)
@@ -53,6 +54,7 @@ def test_linalg_vector_norm(input_data, dim, order, dtype):
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.skipif(not torch._C.has_lapack, reason="torch doesn't build with lapack")
 @pytest.mark.parametrize("input_data", [torch.randn(4, 4), torch.randn(2, 3, 4, 4)])
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_linalg_inv(input_data, dtype):
@@ -65,6 +67,7 @@ def test_linalg_inv(input_data, dtype):
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.skipif(not torch._C.has_lapack, reason="torch doesn't build with lapack")
 @pytest.mark.parametrize("input_data", [torch.randn(4, 4), torch.randn(2, 3, 4, 4)])
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_inverse(input_data, dtype):
@@ -95,6 +98,7 @@ inverse_origin_input_list = [
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.skipif(not torch._C.has_lapack, reason="torch doesn't build with lapack")
 @pytest.mark.parametrize("input_data", [torch.tensor(inverse_origin_input_list)])
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_inverse_from_nocontiguous(input_data, dtype):
@@ -109,6 +113,7 @@ def test_inverse_from_nocontiguous(input_data, dtype):
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.skipif(not torch._C.has_lapack, reason="torch doesn't build with lapack")
 @pytest.mark.parametrize(
     "input_data", [{"A": torch.randn(1, 3, 3), "B": torch.randn(2, 3, 3)}]
 )
@@ -142,6 +147,7 @@ input_data = [
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.skipif(not torch._C.has_lapack, reason="torch doesn't build with lapack")
 @pytest.mark.parametrize("input_data", input_data)
 def test_linalg_cholesky(input_data):
     m = torch.linalg.cholesky
@@ -160,6 +166,7 @@ input_data = [
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.skipif(not torch._C.has_lapack, reason="torch doesn't build with lapack")
 @pytest.mark.parametrize("input_data", input_data)
 def test_cholesky_inverse(input_data):
     m = torch.cholesky_inverse
@@ -183,6 +190,7 @@ def test_cholesky_inverse(input_data):
         # {"A": torch.randn(128, 128, 128), "B": torch.randn(128, 128, 64)},
     ],
 )
+@pytest.mark.skipif(not torch._C.has_lapack, reason="torch doesn't build with lapack")
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 def test_linalg_solve(input_data, dtype):
@@ -205,6 +213,7 @@ def test_linalg_solve(input_data, dtype):
         {"A": torch.randn(3, 3)},
     ],
 )
+@pytest.mark.skipif(not torch._C.has_lapack, reason="torch doesn't build with lapack")
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 def test_linalg_lu_factor(input_data, dtype):
@@ -225,6 +234,7 @@ def test_linalg_lu_factor(input_data, dtype):
         {"A": torch.randn(3, 3)},
     ],
 )
+@pytest.mark.skipif(not torch._C.has_lapack, reason="torch doesn't build with lapack")
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 def test_linalg_det(input_data, dtype):
@@ -236,6 +246,7 @@ def test_linalg_det(input_data, dtype):
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.skipif(not torch._C.has_lapack, reason="torch doesn't build with lapack")
 @pytest.mark.parametrize(
     "input_data",
     [
@@ -265,6 +276,7 @@ def test_qr(input_data):
         {"A": [3, 3], "B": [3, 3, 4]},
     ],
 )
+@pytest.mark.skipif(not torch._C.has_lapack, reason="torch doesn't build with lapack")
 @pytest.mark.parametrize("dtype", [torch.float32])
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 def test_linalg_lu_solve(input_data, dtype):
@@ -349,6 +361,7 @@ MUSA_DEVICE_DECORATOR = testing.test_on_nonzero_card_if_multiple_musa_device(1)
         },
     ],
 )
+@pytest.mark.skipif(not torch._C.has_lapack, reason="torch doesn't build with lapack")
 @pytest.mark.parametrize("dtype", [torch.float32])
 @MUSA_DEVICE_DECORATOR
 def test_triangular_solve(input_config, dtype):
@@ -397,6 +410,7 @@ def test_triangular_solve(input_config, dtype):
     "A_shape",
     [[3, 3], [5, 5], [4, 3], [6, 4], [3, 4], [4, 6], [2, 3, 3], [3, 5, 5]],
 )
+@pytest.mark.skipif(not torch._C.has_lapack, reason="torch doesn't build with lapack")
 @pytest.mark.parametrize("dtype", [torch.float32])
 @MUSA_DEVICE_DECORATOR
 def test_linalg_lu(A_shape, dtype):
@@ -424,6 +438,7 @@ def test_linalg_lu(A_shape, dtype):
         [2, 4, 3],
     ],
 )
+@pytest.mark.skipif(not torch._C.has_lapack, reason="torch doesn't build with lapack")
 @pytest.mark.parametrize("dtype", [torch.float32])
 @MUSA_DEVICE_DECORATOR
 def test_linalg_lu_out(A_shape, dtype):
@@ -474,6 +489,7 @@ def test_linalg_lu_out(A_shape, dtype):
     "A_shape",
     [[3, 3], [5, 5], [4, 4], [6, 6], [2, 3, 3], [3, 5, 5]],
 )
+@pytest.mark.skipif(not torch._C.has_lapack, reason="torch doesn't build with lapack")
 @pytest.mark.parametrize("dtype", [torch.float32])
 @MUSA_DEVICE_DECORATOR
 def test_linalg_ldl_factor_ex(A_shape, dtype):
@@ -519,6 +535,7 @@ def test_linalg_ldl_factor_ex(A_shape, dtype):
     "A_shape",
     [[3, 3], [5, 5], [4, 4], [6, 6], [2, 3, 3], [3, 5, 5]],
 )
+@pytest.mark.skipif(not torch._C.has_lapack, reason="torch doesn't build with lapack")
 @pytest.mark.parametrize("dtype", [torch.float32])
 @MUSA_DEVICE_DECORATOR
 def test_linalg_ldl_solve(A_shape, dtype):
@@ -562,6 +579,7 @@ def test_linalg_ldl_solve(A_shape, dtype):
     "A_shape",
     [[3, 3], [5, 5], [4, 4], [6, 6], [2, 3, 3], [3, 5, 5]],
 )
+@pytest.mark.skipif(not torch._C.has_lapack, reason="torch doesn't build with lapack")
 @pytest.mark.parametrize("dtype", [torch.float32])
 @MUSA_DEVICE_DECORATOR
 def test_linalg_slogdet(A_shape, dtype):
@@ -587,6 +605,7 @@ def test_linalg_slogdet(A_shape, dtype):
 @pytest.mark.parametrize(
     "A_shape", [[3, 3], [5, 5], [4, 4], [6, 6], [2, 3, 3], [3, 5, 5]]
 )
+@pytest.mark.skipif(not torch._C.has_lapack, reason="torch doesn't build with lapack")
 @pytest.mark.parametrize("uplo", ["L", "U"])
 @pytest.mark.parametrize("compute_v", [True, False])
 @pytest.mark.parametrize("dtype", [torch.float32])
@@ -617,6 +636,7 @@ def test_linalg_eigh(A_shape, uplo, compute_v, dtype):
     "A_shape",
     [[3, 3], [5, 5], [4, 6], [6, 4], [2, 3, 3], [3, 4, 5]],  # 包含非方阵和批量
 )
+@pytest.mark.skipif(not torch._C.has_lapack, reason="torch doesn't build with lapack")
 @pytest.mark.parametrize("full_matrices", [True, False])
 @pytest.mark.parametrize("compute_uv", [True, False])
 @pytest.mark.parametrize("dtype", [torch.float32])
@@ -651,6 +671,7 @@ def test_linalg_svd(A_shape, full_matrices, compute_uv, dtype):
         [4, 2, 1],  # batch
     ],
 )
+@pytest.mark.skipif(not torch._C.has_lapack, reason="torch doesn't build with lapack")
 @pytest.mark.parametrize("upper", [True, False])
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_cholesky_solve_helper(A_shape, upper, dtype):
@@ -693,6 +714,7 @@ def test_cholesky_solve_helper(A_shape, upper, dtype):
         [3, 5, 2],  # Batch M > N
     ],
 )
+@pytest.mark.skipif(not torch._C.has_lapack, reason="torch doesn't build with lapack")
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_geqrf(A_shape, dtype):
     """
@@ -716,6 +738,7 @@ def test_geqrf(A_shape, dtype):
         (2, 6, 4),  # Batch M=6, N=4
     ],
 )
+@pytest.mark.skipif(not torch._C.has_lapack, reason="torch doesn't build with lapack")
 @pytest.mark.parametrize("left", [True, False])
 @pytest.mark.parametrize("transpose", [True, False])
 @pytest.mark.parametrize("dtype", [torch.float32])
@@ -753,6 +776,7 @@ def test_ormqr(shape, left, transpose, dtype):
         (2, 4, 4),
     ],
 )
+@pytest.mark.skipif(not torch._C.has_lapack, reason="torch doesn't build with lapack")
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_linalg_eig(shape, dtype):
     """
@@ -777,6 +801,7 @@ def test_linalg_eig(shape, dtype):
         (2, 4, 4),
     ],
 )
+@pytest.mark.skipif(not torch._C.has_lapack, reason="torch doesn't build with lapack")
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_linalg_eigvals(shape, dtype):
     """
@@ -807,6 +832,7 @@ def test_linalg_eigvals(shape, dtype):
         (2, 5, 3),
     ],
 )
+@pytest.mark.skipif(not torch._C.has_lapack, reason="torch doesn't build with lapack")
 @pytest.mark.parametrize("dtype", [torch.float32])
 def test_linalg_householder_product(shape, dtype):
     """
@@ -825,6 +851,29 @@ def test_linalg_householder_product(shape, dtype):
     )
     test.check_result()
     test.check_out_ops()
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (4, 4),
+        (2, 3, 3),
+    ],
+)
+@pytest.mark.skipif(not torch._C.has_lapack, reason="torch doesn't build with lapack")
+@pytest.mark.parametrize("dtype", [torch.float32])
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_linalg_matrix_exp(shape, dtype):
+    """
+    UT for torch.linalg.matrix_exp, comparing CPU and MUSA.
+    """
+    A = torch.randn(*shape, dtype=dtype)
+
+    cpu_res = torch.linalg.matrix_exp(A)
+    musa_res = torch.linalg.matrix_exp(A.to("musa")).cpu()
+
+    comparator = testing.DefaultComparator(abs_diff=1e-5, rel_diff=1e-4)
+    assert comparator(cpu_res, musa_res)
 
 
 # TODO: torch_musa already implements linalg_solve_triangular,

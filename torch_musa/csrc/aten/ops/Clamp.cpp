@@ -16,20 +16,24 @@
 #include <ATen/TensorIterator.h>
 
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
-#include <mudnn.h>
 #include "Binary.h"
+#include "torch_musa/csrc/aten/mudnn/Ternary.h"
+#include "torch_musa/csrc/aten/mudnn/Unary.h"
 
 namespace at {
 namespace musa {
 using TERNARY_MODE = ::musa::dnn::Ternary::Mode;
 
+template <typename T>
 void CallCLIP(
     const std::string& op_name,
     Tensor& o,
     const Tensor& i,
-    std::function<void(::musa::dnn::Unary&)> func) {
+    T min_val,
+    T max_val) {
   if (C10_UNLIKELY(i.numel() == 0)) {
     return;
   }
@@ -37,7 +41,7 @@ void CallCLIP(
   auto out = CreateMUTensor(o);
 
   ::musa::dnn::Unary op;
-  func(op);
+  SetUnary(op, ::musa::dnn::Unary::Mode::CLIP, min_val, max_val);
 
   muHandle& h = GetMudnnHandle();
   CHECK_MUDNN_STATUS(op.Run(h, out, in), "Run " + op_name);
@@ -69,12 +73,7 @@ void ClampScalarCall(
 
       const double max_val = has_max ? max.value().to<double>()
                                      : std::numeric_limits<double>::max();
-      CallCLIP(op_name, out, self, [&](::musa::dnn::Unary& op) {
-        CHECK_MUDNN_STATUS(op.SetAlpha(min_val), "SetAlpha");
-        CHECK_MUDNN_STATUS(op.SetBeta(max_val), "SetBeta");
-        CHECK_MUDNN_STATUS(
-            op.SetMode(::musa::dnn::Unary::Mode::CLIP), "SetMode");
-      });
+      CallCLIP(op_name, out, self, min_val, max_val);
       break;
     }
     case ScalarType::Long: {
@@ -83,12 +82,7 @@ void ClampScalarCall(
                                       : std::numeric_limits<int64_t>::min();
       const int64_t max_val = has_max ? max.value().to<int64_t>()
                                       : std::numeric_limits<int64_t>::max();
-      CallCLIP(op_name, out, self, [&](::musa::dnn::Unary& op) {
-        CHECK_MUDNN_STATUS(op.SetAlpha(min_val), "SetAlpha");
-        CHECK_MUDNN_STATUS(op.SetBeta(max_val), "SetBeta");
-        CHECK_MUDNN_STATUS(
-            op.SetMode(::musa::dnn::Unary::Mode::CLIP), "SetMode");
-      });
+      CallCLIP(op_name, out, self, min_val, max_val);
       break;
     }
     case ScalarType::Int: {
@@ -99,12 +93,7 @@ void ClampScalarCall(
                                       : std::numeric_limits<int32_t>::max();
       int64_t min_val_ = (int64_t)min_val;
       int64_t max_val_ = (int64_t)max_val;
-      CallCLIP(op_name, out, self, [&](::musa::dnn::Unary& op) {
-        CHECK_MUDNN_STATUS(op.SetAlpha(min_val_), "SetAlpha");
-        CHECK_MUDNN_STATUS(op.SetBeta(max_val_), "SetBeta");
-        CHECK_MUDNN_STATUS(
-            op.SetMode(::musa::dnn::Unary::Mode::CLIP), "SetMode");
-      });
+      CallCLIP(op_name, out, self, min_val_, max_val_);
       break;
     }
     default:
@@ -132,7 +121,7 @@ void ClampTensorCall(
   auto self_mt = CreateMUTensor(self);
   // output should be contiguous, caller should be responsible for this
   auto om_mt = CreateMUTensor(output);
-  CHECK_MUDNN_STATUS(top.SetMode(m), "SetMode");
+  SetTernary(top, m);
   CHECK_MUDNN_STATUS(top.Run(h, om_mt, self_mt, input1_mt, input2_mt), "Run");
 }
 

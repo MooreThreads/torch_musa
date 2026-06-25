@@ -45,17 +45,26 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Distributions.cpp
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Resize.cpp
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Sorting.cpp
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Equal.cpp
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TensorModeKernel.cpp
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/nested/musa/NestedTensorTransformerFunctions.cpp
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/nested/musa/NestedTensorTransformerUtils.cpp
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/TensorAdvancedIndexing.cpp
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/FakeQuantPerChannelAffine.cpp
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/quantized/FakeQuantPerTensorAffine.cpp
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/sparse/musa/cuSPARSELtOps.cpp
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/sparse/musa/SparseMUSABlas.cpp
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/sparse/musa/SparseBlas.cpp
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/sparse/musa/SparseBlasImpl.cpp
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/sparse/musa/SparseBlasLegacy.cpp
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/sparse/musa/SparseCsrTensorMath.cpp
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/sparse/musa/SparseTensorMath.cpp
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/sparse/musa/SparseTensor.cpp
   ${GENERATED_PORTING_DIR}/aten/src/ATen/musa/CuSparseHandlePool.cpp
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/sparse/musa/SparseBlasImpl.cpp
   ${GENERATED_PORTING_DIR}/aten/src/ATen/musa/EmptyTensor.cpp
   ${GENERATED_PORTING_DIR}/aten/src/ATen/musa/MUSASparseBlas.cpp
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/musa/MUSASparseDescriptors.cpp
   ${GENERATED_PORTING_DIR}/torch/csrc/musa/comm.cpp
   ${GENERATED_PORTING_DIR}/torch/csrc/musa/Stream.cpp
   ${GENERATED_PORTING_DIR}/torch/csrc/musa/Distributions.cpp
@@ -115,6 +124,10 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/CumminmaxKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/CompareEQKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/CopysignKernel.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/chebyshev_polynomial_t.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/chebyshev_polynomial_u.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/chebyshev_polynomial_v.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/chebyshev_polynomial_w.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Distributions.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistributionUniform.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistributionNormal.mu
@@ -125,7 +138,6 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistributionRandomKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DilatedMaxPool3d.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistributionExponentialKernel.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Dropout.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Embedding.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/EmbeddingBag.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/EmbeddingBackwardKernel.mu
@@ -139,15 +151,28 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachPointwiseOp.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachTernaryOp.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachUnaryOp.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/FusedAdagradKernel.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/fused_adagrad_impl.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/FunctionOfAMatrixUtilsKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/group_norm_kernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/GridSampler.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/GcdLcmKernel.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/hermite_polynomial_h.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/hermite_polynomial_he.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Im2Col.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/int8mm.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/IGammaKernel.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/layer_norm_kernel.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/laguerre_polynomial_l.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/LegacyThrustHelpers.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/legendre_polynomial_p.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Lerp.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/LinearAlgebra.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Loss.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/modified_bessel_i0.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/modified_bessel_i1.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/modified_bessel_k0.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/modified_bessel_k1.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/MultiMarginLoss.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/MultiLabelMarginCriterion.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/MultinomialKernel.mu
@@ -163,8 +188,10 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ReplicationPadding.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/RNN.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ScatterGatherKernel.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/SparseBinaryOpIntersectionKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Sorting.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/SoftMax.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/SparseMM.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TensorTransformations.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TriangularOps.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryFractionKernels.mu
@@ -183,9 +210,18 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/WeightNorm.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistanceKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/LogAddExpKernel.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/scaled_modified_bessel_k0.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/scaled_modified_bessel_k1.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/shifted_chebyshev_polynomial_t.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/shifted_chebyshev_polynomial_u.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/shifted_chebyshev_polynomial_v.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/shifted_chebyshev_polynomial_w.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/spherical_bessel_j0.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/StepKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/RenormKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/MaxUnpooling.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/IndexKernel.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Indexing.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TensorCompare.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/RreluWithNoise.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ZetaKernel.mu
@@ -198,11 +234,23 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/sparse/musa/SparseMUSATensor.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/sparse/musa/SparseCsrTensorMath.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/sparse/musa/SparseMUSATensorMath.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/sparse/musa/SparseSemiStructuredApply.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/sparse/musa/SparseSemiSturcturedApply.mu # 兼容pytorch2.9.*的typo
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/sparse/musa/SparseSemiStructuredApplyDense.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/sparse/musa/SparseSemiStructuredTile.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/sparse/musa/SoftMax.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/FlattenIndicesKernel.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/nested/musa/NestedTensorTransformerFunctions.mu
   aten/quantized/musa/*.mu
   aten/ops/musa/*.mu
+  aten/ops/sparse/*.mu
   aten/ops/attention/mudnn/*.mu
   core/*.mu)
+
+if(USE_MCCL)
+  file(GLOB _MCCL_MU_SRCS distributed/*.mu)
+  list(APPEND MU_SRCS ${_MCCL_MU_SRCS})
+endif()
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/utils.cmake)
 append_cxx_flag_if_supported("-Wno-unused-parameter" CMAKE_CXX_FLAGS)

@@ -1,0 +1,31 @@
+diff --git a/torch/csrc/autograd/python_lazy_to.h b/torch/csrc/autograd/python_lazy_to.h
+new file mode 100644
+index 00000000000..dfd801bb4b5
+--- /dev/null
++++ b/torch/csrc/autograd/python_lazy_to.h
+@@ -0,0 +1,24 @@
++#pragma once
++
++#include <ATen/core/Tensor.h>
++#include <c10/core/Device.h>
++#include <c10/core/MemoryFormat.h>
++#include <c10/core/ScalarType.h>
++#include <torch/csrc/Export.h>
++
++#include <optional>
++
++namespace torch::autograd {
++
++TORCH_PYTHON_API void lazy_replace_device(
++    const at::Tensor& self,
++    c10::Device device);
++
++TORCH_PYTHON_API bool can_lazy_replace_device(
++    const at::Tensor& self,
++    std::optional<at::ScalarType> dtype,
++    std::optional<c10::Device> device,
++    bool copy,
++    std::optional<c10::MemoryFormat> optional_memory_format);
++
++} // namespace torch::autograd
+\ No newline at end of file

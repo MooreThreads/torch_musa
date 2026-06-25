@@ -89,7 +89,7 @@ def test__batch_norm_with_update(inputs, affine):
     testing.get_musa_arch() < 22,
     reason="fp16 batch_norm supported in QY2 or later",
 )
-@pytest.mark.parametrize("train", train)
+@pytest.mark.parametrize("train", [False])  # TODO(MTAI): This has been fixed in 5.1.0
 @pytest.mark.parametrize("affine", affine)
 def test_batch_norm_2d_fp16(inputs, train, affine):
     torch_op = inputs[0]

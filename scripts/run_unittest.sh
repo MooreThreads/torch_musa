@@ -24,5 +24,5 @@ do
 done
 
 end_time=$(date +%s.%N)
-runtime=$(( end_time - start_time ))
+runtime=$(awk "BEGIN {print $end_time - $start_time}")
 echo "Total runtime: $runtime seconds"

@@ -76,7 +76,8 @@ at::Tensor musa_add(at::Tensor& a, at::Tensor& b) {
 }
         """
 
-        setup_src = """
+        setup_src = """\
+# pylint: disable = missing-module-docstring, useless-parent-delegation
 from setuptools import setup
 import setuptools.command.install
 from torch_musa.utils.musa_extension import BuildExtension, MUSAExtension

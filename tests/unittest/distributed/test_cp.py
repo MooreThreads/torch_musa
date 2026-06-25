@@ -32,6 +32,7 @@ from torch.testing._internal.common_distributed import (
 from torch.testing._internal.distributed._tensor.common_dtensor import DTensorConverter
 
 from torch_musa.testing.common_fsdp import skip_if_lt_x_gpu
+from torch_musa.testing import get_musa_arch
 
 
 NUM_DEVICES = 2
@@ -172,7 +173,7 @@ class RingAttentionTest(DTensorTestBase):
                 "backend": backends,
                 "load_balance": [True, False],
                 "rotater": [_RotateMethod.ALL_TO_ALL, _RotateMethod.ALL_GATHER],
-                "test_forward_only": [True, False],
+                "test_forward_only": [True, False] if get_musa_arch() >= 31 else [True],
             },
             self._test_ring_attention_sdpa,
         )

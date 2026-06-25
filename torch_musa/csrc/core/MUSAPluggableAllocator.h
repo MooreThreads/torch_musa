@@ -14,30 +14,6 @@ namespace torch::musa::MUSAPluggableAllocator {
 using MallocFuncType = void*(size_t, int, musaStream_t);
 using FreeFuncType = void(void*, size_t, int, musaStream_t);
 
-// See Note [How UniqueVoidPtr is implemented] and look at COWDeleter'
-// implementation to know how MUSAPluggableAllocatorDeleterContext works A
-// MUSAPluggableAllocatorDeleterContext object is used as the `ctx` argument for
-// DataPtr. We need context because a user can use multiple allocators in the
-// same PyTorch program, and the allocators can have different free functions,
-// such as: free, musaFree, musaFreeAsync, mcclMemFree etc.
-struct MUSAPluggableAllocatorDeleterContext {
-  explicit MUSAPluggableAllocatorDeleterContext(
-      std::function<FreeFuncType> free_fn,
-      void* data,
-      size_t size,
-      int device,
-      musaStream_t stream);
-
-  void free();
-
- private:
-  std::function<FreeFuncType> free_fn_;
-  void* data_;
-  size_t size_;
-  int device_;
-  musaStream_t stream_;
-};
-
 using streamType = c10::musa::MUSAStream;
 using c10::musa::MUSACachingAllocator::MUSAAllocator;
 
@@ -81,7 +57,7 @@ struct MUSAPluggableAllocator : public MUSAAllocator {
   void set_record_stream_fn(
       std::function<void(void* ptr, musaStream_t stream)> record_stream_fn);
 
-  void set_begin_allocate_to_pool_fn(
+  void set_begin_allocate_to_pool(
       std::function<
           void(int, c10::musa::MempoolId_t, std::function<bool(musaStream_t)>)>
           capture_begin_fn);
@@ -89,7 +65,7 @@ struct MUSAPluggableAllocator : public MUSAAllocator {
   void set_end_allocate_to_pool_fn(
       std::function<void(int, c10::musa::MempoolId_t)> capture_about_to_end_fn);
 
-  void set_release_pool_fn(
+  void set_release_pool(
       std::function<void(int, c10::musa::MempoolId_t)> capture_destroy_fn);
 
   void* malloc(size_t size, c10::DeviceIndex device, musaStream_t stream);
@@ -102,8 +78,13 @@ struct MUSAPluggableAllocator : public MUSAAllocator {
   void raw_delete(void* ptr) override;
   void init(int device_count) override;
   bool initialized() override;
+  double getMemoryFraction(c10::DeviceIndex device) override;
   void setMemoryFraction(double fraction, c10::DeviceIndex device) override;
-  void emptyCache() override;
+  void enable(bool) override {}
+  bool isEnabled() const override {
+    return true;
+  }
+  void emptyCache(c10::musa::MempoolId_t mempool_id = {0, 0}) override;
   void cacheInfo(c10::DeviceIndex device, size_t* largestBlock) override;
   void* getBaseAllocation(void* ptr, size_t* size) override;
 
@@ -113,7 +94,8 @@ struct MUSAPluggableAllocator : public MUSAAllocator {
       c10::DeviceIndex device) override;
   void resetAccumulatedStats(c10::DeviceIndex device) override;
   void resetPeakStats(c10::DeviceIndex device) override;
-  c10::musa::MUSACachingAllocator::SnapshotInfo snapshot() override;
+  c10::musa::MUSACachingAllocator::SnapshotInfo snapshot(
+      c10::musa::MempoolId_t mempool) override;
   void beginAllocateToPool(
       c10::DeviceIndex device,
       c10::musa::MempoolId_t mempool_id,
@@ -130,7 +112,8 @@ struct MUSAPluggableAllocator : public MUSAAllocator {
       bool enabled,
       c10::musa::MUSACachingAllocator::CreateContextFn context_recorder,
       size_t alloc_trace_max_entries,
-      c10::musa::MUSACachingAllocator::RecordContext when) override;
+      c10::musa::MUSACachingAllocator::RecordContext when,
+      bool clearHistory) override;
   void attachOutOfMemoryObserver(
       c10::musa::MUSACachingAllocator::OutOfMemoryObserver observer) override;
   void attachAllocatorTraceTracker(

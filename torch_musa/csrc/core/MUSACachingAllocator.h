@@ -1,5 +1,4 @@
-#ifndef TORCH_MUSA_CSRC_CORE_MUSACACHINGALLOCATOR_H_
-#define TORCH_MUSA_CSRC_CORE_MUSACACHINGALLOCATOR_H_
+#pragma once
 
 #include <c10/core/CachingDeviceAllocator.h>
 #include <c10/musa/MUSAMacros.h>
@@ -7,7 +6,6 @@
 #include <c10/util/Exception.h>
 #include <c10/util/Registry.h>
 
-#include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -22,6 +20,8 @@
 
 namespace c10 {
 
+// Caching allocator will execute every registered callback if it unable to find
+// block inside of already allocated area.
 class C10_MUSA_API FreeMemoryCallback {
  public:
   virtual ~FreeMemoryCallback() = default;
@@ -30,18 +30,34 @@ class C10_MUSA_API FreeMemoryCallback {
 
 C10_DECLARE_REGISTRY(FreeMusaMemoryCallbacksRegistry, FreeMemoryCallback);
 #define REGISTER_FREE_MEMORY_CALLBACK(name, ...) \
-  C10_REGISTER_CLASS(FreeMusaMemoryCallbacksRegistry, name, __VA_ARGS__);
-
+  C10_REGISTER_CLASS(FreeMusaMemoryCallbacksRegistry, name, __VA_ARGS__)
 } // namespace c10
+  //
+// TODO: Turn this into an honest to goodness class. I briefly attempted to do
+// this, but it was a bit irritating to figure out how to also correctly
+// apply pimpl pattern so I didn't have to leak any internal implementation
+// details in the header (MUSACachingAllocator could be made a pimpl, but
+// you also need to appropriately define a class which is a subclass
+// of Allocator. Not impossible, but required a bit more surgery than
+// I wanted to do at the time.)
+//
+// Why is this using a namespace rather than old-style THMCachingAllocator_
+// prefix?  Mostly because it made the HIPify rules easier to write; _ is
+// not counted as a word boundary, so you would otherwise have to list each
+// of these functions.
 
 namespace c10::musa::MUSACachingAllocator {
 
+// Preserved only for BC reasons
+// NOLINTNEXTLINE(misc-unused-using-decls)
 using c10::CachingDeviceAllocator::DeviceStats;
 
 extern const size_t kLargeBuffer;
 
 typedef std::shared_ptr<GatheredContext> (*CreateContextFn)();
 
+// Struct containing info of an allocation block (i.e. a fractional part of a
+// musaMalloc)..
 struct BlockInfo {
   size_t size = 0;
   size_t requested_size = 0;
@@ -52,6 +68,7 @@ struct BlockInfo {
       context_when_allocated; // per-watcher context
 };
 
+// Struct containing info of a memory segment (i.e. one contiguous musaMalloc).
 struct SegmentInfo {
   c10::DeviceIndex device = 0;
   size_t address = 0;
@@ -99,14 +116,18 @@ struct TraceEntry {
       size_t addr,
       size_t size,
       musaStream_t stream,
+      MempoolId_t mempool,
       approx_time_t time,
-      std::shared_ptr<GatheredContext> context = nullptr)
+      std::shared_ptr<GatheredContext> context = nullptr,
+      std::string compile_context = "")
       : action_(action),
         device_(device),
         addr_(addr),
         context_(std::move(context)),
         stream_(stream),
-        size_(size) {
+        size_(size),
+        mempool_(std::move(mempool)),
+        compile_context_(std::move(compile_context)) {
     time_.approx_t_ = time;
   }
   Action action_;
@@ -115,9 +136,12 @@ struct TraceEntry {
   std::shared_ptr<GatheredContext> context_;
   musaStream_t stream_{};
   size_t size_;
+  MempoolId_t mempool_;
   trace_time_ time_{};
+  std::string compile_context_{};
 };
 
+// Calls made by record_function will save annotations
 struct AnnotationEntry {
   AnnotationEntry(c10::DeviceIndex device, approx_time_t time)
       : device_(device) {
@@ -140,6 +164,7 @@ struct AllocatorConfigInfo {
   bool expandable_segments;
   bool release_lock_on_malloc;
   bool pinned_use_host_register;
+  bool graph_capture_record_stream_reuse;
   std::string last_allocator_settings;
   std::vector<size_t> roundup_power2_divisions;
 };
@@ -151,6 +176,9 @@ struct SnapshotInfo {
   AllocatorConfigInfo config_metadata;
 };
 
+// returns the pointers freed in the pool
+// and the pointers allocated. Note: a pointer
+// may appear in both freed and allocated
 struct CheckpointDelta {
   std::vector<void*> ptrs_freed;
   std::vector<at::DataPtr> dataptrs_allocd;
@@ -176,23 +204,25 @@ struct ShareableHandle {
   std::string handle;
 };
 
-class MUSAAllocator : public Allocator {
+class MUSAAllocator : public DeviceAllocator {
  public:
   virtual void* raw_alloc(size_t nbytes) = 0;
   virtual void* raw_alloc_with_stream(size_t nbytes, musaStream_t stream) = 0;
   virtual void raw_delete(void* ptr) = 0;
   virtual void init(int device_count) = 0;
-  virtual bool initialized() = 0;
+  virtual double getMemoryFraction(c10::DeviceIndex device) = 0;
   virtual void setMemoryFraction(double fraction, c10::DeviceIndex device) = 0;
-  virtual void emptyCache() = 0;
+  virtual void enable(bool value) = 0;
+  virtual bool isEnabled() const = 0;
   virtual void cacheInfo(c10::DeviceIndex device, size_t* largestBlock) = 0;
   virtual void* getBaseAllocation(void* ptr, size_t* size) = 0;
-  virtual void recordStream(const DataPtr&, MUSAStream stream) = 0;
-  virtual c10::CachingDeviceAllocator::DeviceStats getDeviceStats(
-      c10::DeviceIndex device) = 0;
-  virtual void resetAccumulatedStats(c10::DeviceIndex device) = 0;
-  virtual void resetPeakStats(c10::DeviceIndex device) = 0;
-  virtual SnapshotInfo snapshot() = 0;
+  // Keep for BC only
+  virtual void recordStream(const DataPtr& ptr, MUSAStream stream) = 0;
+  void recordStream(const DataPtr& ptr, c10::Stream stream) override {
+    MUSAStream musa_stream = MUSAStream(stream);
+    recordStream(ptr, musa_stream);
+  }
+  virtual SnapshotInfo snapshot(MempoolId_t mempool_id = {0, 0}) = 0;
   virtual void beginAllocateToPool(
       c10::DeviceIndex device,
       MempoolId_t mempool_id,
@@ -201,11 +231,38 @@ class MUSAAllocator : public Allocator {
       c10::DeviceIndex device,
       MempoolId_t mempool_id) = 0;
   virtual void releasePool(c10::DeviceIndex device, MempoolId_t mempool_id) = 0;
+  virtual int getPoolUseCount(
+      c10::DeviceIndex /*device*/,
+      MempoolId_t /*mempool_id*/) {
+    TORCH_CHECK(
+        false,
+        name(),
+        " does not yet support getPoolUseCount. "
+        "If you need it, please file an issue describing your use case.");
+  }
+  virtual void createOrIncrefPool(
+      c10::DeviceIndex /*device*/,
+      MempoolId_t /*mempool_id*/,
+      MUSAAllocator* allocator = nullptr) {
+    TORCH_CHECK(
+        false,
+        name(),
+        " does not yet support createOrIncrefPool. "
+        "If you need it, please file an issue describing your use case.");
+  }
+  virtual void setUseOnOOM(c10::DeviceIndex device, MempoolId_t mempool_id) {
+    TORCH_CHECK(
+        false,
+        name(),
+        " does not yet support setUseOnOOM. "
+        "If you need it, please file an issue describing your use case.");
+  }
+
   // returns true if the allocated blocks are equal to expected live allocations
   virtual bool checkPoolLiveAllocations(
-      c10::DeviceIndex device,
-      MempoolId_t mempool_id,
-      const std::unordered_set<void*>& expected_live_allocations) {
+      c10::DeviceIndex /*device*/,
+      MempoolId_t /*mempool_id*/,
+      const std::unordered_set<void*>& /*expected_live_allocations*/) {
     TORCH_CHECK(
         false,
         name(),
@@ -225,9 +282,12 @@ class MUSAAllocator : public Allocator {
       bool enabled,
       CreateContextFn context_recorder,
       size_t alloc_trace_max_entries,
-      RecordContext when) = 0;
+      RecordContext when,
+      bool clearHistory) = 0;
   virtual void recordAnnotation(
-      const std::vector<std::pair<std::string, std::string>>& md){};
+      const std::vector<std::pair<std::string, std::string>>& /*md*/) {}
+  virtual void pushCompileContext(std::string& md) {}
+  virtual void popCompileContext() {}
   virtual void attachOutOfMemoryObserver(OutOfMemoryObserver observer) = 0;
 
   // Attached AllocatorTraceTracker callbacks will be called while the
@@ -292,12 +352,24 @@ inline void init(int device_count) {
   return get()->init(device_count);
 }
 
+inline double getMemoryFraction(c10::DeviceIndex device) {
+  return get()->getMemoryFraction(device);
+}
+
 inline void setMemoryFraction(double fraction, c10::DeviceIndex device) {
   return get()->setMemoryFraction(fraction, device);
 }
 
-inline void emptyCache() {
-  return get()->emptyCache();
+inline void emptyCache(MempoolId_t mempool_id = {0, 0}) {
+  return get()->emptyCache(mempool_id);
+}
+
+inline void enable(bool value) {
+  return get()->enable(value);
+}
+
+inline bool isEnabled() {
+  return get()->isEnabled();
 }
 
 inline void cacheInfo(c10::DeviceIndex device, size_t* largestBlock) {
@@ -325,8 +397,8 @@ inline void resetPeakStats(c10::DeviceIndex device) {
   return get()->resetPeakStats(device);
 }
 
-inline SnapshotInfo snapshot() {
-  return get()->snapshot();
+inline SnapshotInfo snapshot(MempoolId_t mempool_id = {0, 0}) {
+  return get()->snapshot(mempool_id);
 }
 
 inline std::shared_ptr<AllocatorState> getCheckpointState(
@@ -357,14 +429,23 @@ inline void recordHistory(
     bool enabled,
     CreateContextFn context_recorder,
     size_t alloc_trace_max_entries,
-    RecordContext when) {
+    RecordContext when,
+    bool clearHistory) {
   return get()->recordHistory(
-      enabled, context_recorder, alloc_trace_max_entries, when);
+      enabled, context_recorder, alloc_trace_max_entries, when, clearHistory);
 }
 
 inline void recordAnnotation(
     const std::vector<std::pair<std::string, std::string>>& md) {
   return get()->recordAnnotation(md);
+}
+
+inline void pushCompileContext(std::string& md) {
+  return get()->pushCompileContext(md);
+}
+
+inline void popCompileContext() {
+  return get()->popCompileContext();
 }
 
 inline bool isHistoryEnabled() {
@@ -390,6 +471,20 @@ inline void attachAllocatorTraceTracker(AllocatorTraceTracker tracker) {
 inline void releasePool(c10::DeviceIndex device, MempoolId_t mempool_id) {
   return get()->releasePool(device, mempool_id);
 }
+inline void createOrIncrefPool(
+    c10::DeviceIndex device,
+    MempoolId_t mempool_id,
+    MUSAAllocator* allocator_ptr = nullptr) {
+  get()->createOrIncrefPool(device, mempool_id, allocator_ptr);
+}
+inline void setUseOnOOM(c10::DeviceIndex device, MempoolId_t mempool_id) {
+  get()->setUseOnOOM(device, mempool_id);
+}
+
+inline int getPoolUseCount(c10::DeviceIndex device, MempoolId_t mempool_id) {
+  return get()->getPoolUseCount(device, mempool_id);
+}
+
 // Not part of MUSA_ALLOCATOR_BACKEND_INTERFACE
 inline std::shared_ptr<void> getIpcDevPtr(std::string handle) {
   return get()->getIpcDevPtr(std::move(handle));
@@ -428,10 +523,19 @@ namespace c10::musa {
 struct C10_MUSA_API MemPool {
   MemPool(
       MUSACachingAllocator::MUSAAllocator* allocator = nullptr,
-      bool is_user_created = true);
+      bool is_user_created = true,
+      bool use_on_oom = false);
+  MemPool(const MemPool&) = delete;
+  MemPool(MemPool&&) = default;
+  MemPool& operator=(const MemPool&) = delete;
+  MemPool& operator=(MemPool&&) = default;
+  ~MemPool();
 
   MempoolId_t id();
   MUSACachingAllocator::MUSAAllocator* allocator();
+  int use_count();
+  c10::DeviceIndex device();
+  static MempoolId_t graph_pool_handle(bool is_user_created = true);
 
  private:
   static std::atomic<CaptureId_t> uid_;
@@ -439,6 +543,7 @@ struct C10_MUSA_API MemPool {
   MUSACachingAllocator::MUSAAllocator* allocator_;
   bool is_user_created_;
   MempoolId_t id_;
+  c10::DeviceIndex device_;
 };
 
 struct C10_MUSA_API MemPoolContext {
@@ -453,5 +558,3 @@ struct C10_MUSA_API MemPoolContext {
 };
 
 } // namespace c10::musa
-
-#endif // TORCH_MUSA_CSRC_CORE_MUSACACHINGALLOCATOR_H_

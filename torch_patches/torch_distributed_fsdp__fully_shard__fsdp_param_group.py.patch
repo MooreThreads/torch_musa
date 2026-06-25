@@ -8,7 +8,7 @@ index 554367e..7100a32 100644
          self._all_reduce_hook: Optional[Callable[[torch.Tensor], None]] = None
 -        self._all_gather_comm: AllGather = DefaultAllGather()
          self._all_gather_output = torch.empty(0, device=self.device)
-+        # TODO(mingyuan.wang): delete this once zero copy all-gather/reduce-scatter over ACE implementation ready 
++        # TODO(mingyuan.wang): delete this once zero copy all-gather/reduce-scatter over ACE implementation ready
 +        self._forward_all_gather_comm: AllGather = DefaultAllGather()
 +        self._backward_all_gather_comm: AllGather = DefaultAllGather()
          self._reduce_scatter_comm: ReduceScatter = DefaultReduceScatter()
@@ -45,7 +45,7 @@ index 554367e..7100a32 100644
              )
  
              return
-+        
++
 +        if self._training_state == TrainingState.FORWARD:
 +            all_gather_comm = self._forward_all_gather_comm
 +        elif self._training_state == TrainingState.PRE_BACKWARD:

@@ -15,8 +15,6 @@ CUR_DIR=$(
 TORCH_MUSA_HOME=$CUR_DIR
 PYTORCH_PATH=${PYTORCH_REPO_PATH:-$(realpath ${TORCH_MUSA_HOME}/../pytorch)}
 TORCH_PATCHES_DIR=${TORCH_MUSA_HOME}/torch_patches/
-KINETO_URL=${KINETO_URL:-https://sh-code.mthreads.com/ai/kineto.git}
-KINETO_TAG=v2.7.0
 
 BUILD_WHEEL=0
 DEBUG_MODE=0
@@ -27,10 +25,12 @@ USE_KINETO=${USE_KINETO:-1}
 ONLY_PATCH=0
 CLEAN=0
 COMPILE_FP64=1
-PYTORCH_TAG=v2.9.0
+PYTORCH_TAG=v2.9.1
 PYTORCH_BUILD_VERSION="${PYTORCH_TAG:1}"
 PYTORCH_BUILD_NUMBER=0 # This is used for official torch distribution.
 USE_MCCL=${USE_MCCL:-1}
+PIP_VERBOSE_ARGS=()
+VERBOSE_ENV_VALUE=0
 
 usage() {
   echo -e "\033[1;32mThis script is used to build PyTorch and Torch_MUSA. \033[0m"
@@ -44,12 +44,13 @@ usage() {
   echo -e "\033[32m    -c/--clean    : Means cleaning everything that has been built. \033[0m"
   echo -e "\033[32m    -p/--patch    : Means applying patches only. \033[0m"
   echo -e "\033[32m    -w/--wheel    : Means generating wheel after building. \033[0m"
+  echo -e "\033[32m    -v/--verbose  : Enable verbose build and pip output. \033[0m"
   echo -e "\033[32m    -n/--no_kineto : Disable kineto. \033[0m"
   echo -e "\033[32m    -h/--help     : Help information. \033[0m"
 }
 
 # parse paremters
-parameters=$(getopt -o +mtdacpwnh --long all,fp64,musa,torch,debug,asan,clean,wheel,no_kineto,patch,help, -n "$0" -- "$@")
+parameters=$(getopt -o +mtdacpvwnh --long all,fp64,musa,torch,debug,asan,clean,wheel,verbose,no_kineto,patch,help, -n "$0" -- "$@")
 [ $? -ne 0 ] && {
   echo -e "\033[34mTry '$0 --help' for more information. \033[0m"
   exit 1
@@ -92,6 +93,11 @@ while true; do
     ;;
   -w | --wheel)
     BUILD_WHEEL=1
+    shift
+    ;;
+  -v | --verbose)
+    PIP_VERBOSE_ARGS=(-v)
+    VERBOSE_ENV_VALUE=1
     shift
     ;;
   -n | --no_kineto)
@@ -259,7 +265,7 @@ build_pytorch() {
       USE_ASAN=${ASAN_MODE} \
       USE_KINETO=${USE_KINETO} \
       USE_NCCL=0 \
-      BUILD_TEST=0 python -m pip install --no-build-isolation -v -e .
+      BUILD_TEST=0 python -m pip install --no-build-isolation "${PIP_VERBOSE_ARGS[@]}" -e .
     status=$?
   fi
   popd
@@ -294,7 +300,9 @@ build_torch_musa() {
       USE_ASAN=${ASAN_MODE} \
       ENABLE_COMPILE_FP64=${COMPILE_FP64}  \
       USE_MCCL=${USE_MCCL} \
-      USE_KINETO=${USE_KINETO} python -m pip wheel . --wheel-dir ./dist --no-build-isolation
+      USE_KINETO=${USE_KINETO} \
+      VERBOSE=${VERBOSE_ENV_VALUE} \
+      python -m pip wheel . --wheel-dir ./dist --no-build-isolation "${PIP_VERBOSE_ARGS[@]}"
     status=$?
     rm -rf torch_musa.egg-info
     pip install dist/*.whl
@@ -305,7 +313,9 @@ build_torch_musa() {
       USE_ASAN=${ASAN_MODE} \
       ENABLE_COMPILE_FP64=${COMPILE_FP64} \
       USE_MCCL=${USE_MCCL} \
-      USE_KINETO=${USE_KINETO} python -m pip install --no-build-isolation -v -e .
+      USE_KINETO=${USE_KINETO} \
+      VERBOSE=${VERBOSE_ENV_VALUE} \
+      python -m pip install --no-build-isolation "${PIP_VERBOSE_ARGS[@]}" -e .
     status=$?
   fi
   if [ $status -ne 0 ]; then

@@ -17,7 +17,10 @@
 #include <ATen/native/musa/Randperm.muh>
 #include "torch_musa/csrc/aten/mudnn/Handle.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
+
+#include "torch_musa/csrc/aten/mudnn/SortByKey.h"
 
 #include <limits>
 
@@ -100,9 +103,7 @@ Tensor& RandpermOutMusa(
           auto shuffled_mu = CreateMUTensor(shuffled);
 
           ::musa::dnn::SortByKey op;
-          op.SetDim(0);
-          op.SetDescending(false);
-          op.SetStable(true);
+          SetSortByKey(op, 0, true, false);
           CHECK_MUDNN_STATUS(
               op.Run(
                   h,
@@ -136,9 +137,7 @@ Tensor& RandpermOutMusa(
           auto shuffled_mu = CreateMUTensor(shuffled);
 
           ::musa::dnn::SortByKey op;
-          op.SetDim(0);
-          op.SetDescending(false);
-          op.SetStable(true);
+          SetSortByKey(op, 0, true, false);
           CHECK_MUDNN_STATUS(
               op.Run(
                   h,

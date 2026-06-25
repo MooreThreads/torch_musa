@@ -334,3 +334,41 @@ def test_addmm_activation(config, dtype, use_gelu, test_out):
         func=torch._addmm_activation, input_args=input_data, comparators=comparator
     )
     test.check_result(test_out=test_out)
+
+
+sspaddmm_input_data = [
+    {
+        "input": torch.randn(64, 64),
+        "mat1": torch.randn(64, 32),
+        "mat2": torch.randn(32, 64),
+        "beta": 0.8,
+        "alpha": 1.2,
+    }
+]
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", sspaddmm_input_data)
+def test_sspaddmm(input_data):
+    input_data_tmp = copy.deepcopy(input_data)
+
+    def dense_to_sparse(tensor, sparsity=0.7):
+        mask = torch.rand_like(tensor) > sparsity
+        return (tensor * mask).to_sparse()
+
+    input_data_tmp["input"] = dense_to_sparse(input_data_tmp["input"])
+    input_data_tmp["mat1"] = dense_to_sparse(input_data_tmp["mat1"])
+
+    musa_input_data = {}
+    for key in input_data_tmp:
+        if isinstance(input_data_tmp[key], torch.Tensor):
+            musa_input_data[key] = input_data_tmp[key].clone().to("musa")
+        else:
+            musa_input_data[key] = input_data_tmp[key]
+
+    # CPU path should run successfully
+    _ = torch.sspaddmm(**input_data_tmp).to_dense()
+
+    # Current backend行为：调用 MUSA 版本会抛 NYI 错误
+    with pytest.raises(RuntimeError, match="NYI: CUDA sspaddmm is not implemented"):
+        torch.sspaddmm(**musa_input_data).to_dense()

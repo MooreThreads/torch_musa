@@ -32,6 +32,25 @@ function(append_cxx_flag_if_supported flag outputvar)
   endif()
 endfunction()
 
+function(parse_mudnn_version outputvar)
+  set(_version_file "$ENV{MUSA_HOME}/include/mudnn_version.h")
+  if(NOT EXISTS "${_version_file}")
+    set(${outputvar} "0" PARENT_SCOPE)
+    return()
+  endif()
+  file(STRINGS "${_version_file}" _major_line
+       REGEX "^#define MUDNN_VERSION_MAJOR")
+  file(STRINGS "${_version_file}" _minor_line
+       REGEX "^#define MUDNN_VERSION_MINOR")
+  file(STRINGS "${_version_file}" _patch_line
+       REGEX "^#define MUDNN_VERSION_PATCH")
+  string(REGEX REPLACE ".*([0-9]+)$" "\\1" _major "${_major_line}")
+  string(REGEX REPLACE ".*([0-9]+)$" "\\1" _minor "${_minor_line}")
+  string(REGEX REPLACE ".*([0-9]+)$" "\\1" _patch "${_patch_line}")
+  math(EXPR _version "${_major} * 1000 + ${_minor} * 100 + ${_patch}")
+  set(${outputvar} "${_version}" PARENT_SCOPE)
+endfunction()
+
 function(parse_real_musa_version outputvar)
   find_program(
     MUSA_RUNTIME_VERSION_EXECUTABLE

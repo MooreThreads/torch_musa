@@ -15,6 +15,8 @@
 #include <ATen/ops/replication_pad3d_native.h>
 #endif
 
+#include "torch_musa/csrc/aten/mudnn/Pad.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 
@@ -64,12 +66,11 @@ void PadImpl(
 
   muHandle& h = GetMudnnHandle();
   Pad op;
-  CHECK_MUDNN_STATUS(op.SetMode(mode), "SetMode");
   if (constant_value.has_value()) {
-    CHECK_MUDNN_STATUS(op.SetValue(constant_value.value()), "SetValue");
+    SetPad(op, mode, constant_value.value(), pad.size(), pad.data());
+  } else {
+    SetPad(op, mode, pad.size(), pad.data());
   }
-  CHECK_MUDNN_STATUS(
-      op.SetPaddingInfo(pad.size(), pad.data()), "SetPaddingInfo");
   CHECK_MUDNN_STATUS(op.Run(h, out, in), "RunPad");
 }
 

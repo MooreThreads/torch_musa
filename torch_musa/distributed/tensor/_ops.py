@@ -48,6 +48,7 @@ def scaled_dot_product_attention_flash_musa_strategy(op_schema: OpSchema) -> OpS
         Replicate(),  # output
         Replicate(),  # logsumexp
         Replicate(),  # dropout_mask
+        Replicate(),  # rng_state
         Replicate(),  # query
         Replicate(),  # key
         Replicate(),  # value
@@ -71,6 +72,7 @@ def scaled_dot_product_attention_flash_musa_strategy(op_schema: OpSchema) -> OpS
         tp_sharding,  # output
         tp_sharding,  # logsumexp
         dropout_mask_sharding,  # dropout_mask
+        Replicate(),  # rng_state
         tp_sharding,  # query
         tp_sharding,  # key
         tp_sharding,  # value
@@ -90,6 +92,7 @@ def scaled_dot_product_attention_flash_musa_strategy(op_schema: OpSchema) -> OpS
         seq_dim_sharding,  # output
         seq_dim_sharding,  # logsumexp
         Replicate(),  # dropout_mask
+        Replicate(),  # rng_state
         seq_dim_sharding,  # query
         seq_dim_sharding,  # key
         seq_dim_sharding,  # value
@@ -100,20 +103,20 @@ def scaled_dot_product_attention_flash_musa_strategy(op_schema: OpSchema) -> OpS
     single_mesh_dim_strategies.append(seq_parallel_sharding)
 
     return expand_to_full_mesh_op_strategy(
-        mesh, op_schema, single_mesh_dim_strategies, input_index=3
+        mesh, op_schema, single_mesh_dim_strategies, input_index=4
     )
 
 
 @register_op_strategy(
     torch.ops.aten._scaled_dot_product_attention_flash_musa_backward.default,
-    schema_info=RuntimeSchemaInfo(7),
+    schema_info=RuntimeSchemaInfo(8),
 )
 def scaled_dot_product_attention_flash_musa_backward_strategy(
     op_schema: OpSchema,
 ) -> OpStrategy:
     """DTensor sharding strategy of _scaled_dot_product_attention_flash_musa_backward"""
     # args: grad_out, query, key, value, output, logsumexp,
-    # dropout_mask, is_causal, attn_mask, scale
+    # dropout_mask, rng_state, dropout_p, is_causal, attn_mask, scale
 
     # backward op does not need to validate the mesh since forward op has already done it
     mesh = op_schema.get_mesh_from_args(validate=False)
@@ -124,7 +127,7 @@ def scaled_dot_product_attention_flash_musa_backward_strategy(
     grad_out_strategy = args[0]  # grad_out
     query_strategy = args[1]  # query
 
-    attn_mask_strategy = args[8] if n_args > 8 else None
+    attn_mask_strategy = args[10] if n_args > 10 else None
 
     assert isinstance(grad_out_strategy, OpStrategy)
     assert isinstance(query_strategy, OpStrategy)
@@ -150,6 +153,7 @@ def scaled_dot_product_attention_flash_musa_backward_strategy(
         Replicate(),  # output
         Replicate(),  # logsumexp
         Replicate(),  # dropout_mask
+        Replicate(),  # rng_state
     ]
     if has_attn_mask:
         all_replicate.append(Replicate())  # attn_mask
@@ -175,6 +179,7 @@ def scaled_dot_product_attention_flash_musa_backward_strategy(
         tp_sharding,  # output
         tp_sharding,  # logsumexp
         Replicate(),  # dropout_mask
+        Replicate(),  # rng_state
     ]
     if has_attn_mask:
         num_heads_dim_sharding.append(Replicate())  # attn_mask
@@ -199,6 +204,7 @@ def scaled_dot_product_attention_flash_musa_backward_strategy(
         seq_dim_sharding,  # output
         seq_dim_sharding,  # logsumexp
         Replicate(),  # dropout_mask
+        Replicate(),  # rng_state
     ]
     if has_attn_mask:
         seq_parallel_sharding.append(Replicate())  # attn_mask

@@ -23,8 +23,10 @@
 #include <ATen/ops/zeros_like.h>
 #endif
 
+#include "torch_musa/csrc/aten/mudnn/Loss.h"
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 #include <mudnn.h>
@@ -132,12 +134,11 @@ std::tuple<at::Tensor&, at::Tensor&> NllLossOut(
     auto contiguous_weight = weight.value().contiguous();
     mt_weight = CreateMUTensor(contiguous_weight);
   }
-  CHECK_MUDNN_STATUS(
-      nll_loss_op.SetReductionMode(
-          static_cast<::musa::dnn::NLLLoss::Mode>(reduction)),
-      "SetReductionMode");
-  CHECK_MUDNN_STATUS(
-      nll_loss_op.SetIgnoreIndex(ignore_index), "SetIgnoreIndex");
+
+  SetNLLLoss(
+      nll_loss_op,
+      static_cast<::musa::dnn::NLLLoss::Mode>(reduction),
+      static_cast<int>(ignore_index));
   CHECK_MUDNN_STATUS(
       nll_loss_op.Run(
           h,
@@ -274,12 +275,11 @@ at::Tensor& NllLossBwdGradInput(
     auto contiguous_weight = weight.value().contiguous();
     mt_weight = CreateMUTensor(contiguous_weight);
   }
-  CHECK_MUDNN_STATUS(
-      nll_loss_op.SetReductionMode(
-          static_cast<::musa::dnn::NLLLoss::Mode>(reduction)),
-      "SetReductionMode");
-  CHECK_MUDNN_STATUS(
-      nll_loss_op.SetIgnoreIndex(ignore_index), "SetIgnoreIndex");
+
+  SetNLLLoss(
+      nll_loss_op,
+      static_cast<::musa::dnn::NLLLoss::Mode>(reduction),
+      static_cast<int>(ignore_index));
   CHECK_MUDNN_STATUS(
       nll_loss_op.RunBwd(
           h,
@@ -385,22 +385,23 @@ Tensor KLDiv(
 
   Tensor output;
   if (reduction == at::Reduction::Mean) {
-    kldiv.SetReductionMode(::musa::dnn::KLDivLoss::Mode::MEAN);
+    SetKLDivLoss(kldiv, ::musa::dnn::KLDivLoss::Mode::MEAN, log_target);
     output = at::empty({}, input.options());
   } else if (reduction == at::Reduction::Sum) {
-    kldiv.SetReductionMode(::musa::dnn::KLDivLoss::Mode::SUM);
+    SetKLDivLoss(kldiv, ::musa::dnn::KLDivLoss::Mode::SUM, log_target);
     output = at::empty({0}, input.options());
   } else {
-    kldiv.SetReductionMode(::musa::dnn::KLDivLoss::Mode::NONE);
+    SetKLDivLoss(kldiv, ::musa::dnn::KLDivLoss::Mode::NONE, log_target);
     output = at::empty_like(input, at::MemoryFormat::Contiguous);
   }
-  kldiv.SetLogTarget(log_target);
   Tensor contiguous_input = input.contiguous();
   auto mt_input = CreateMUTensor(contiguous_input);
   Tensor contiguous_target = target.contiguous();
   auto mt_target = CreateMUTensor(contiguous_target);
   auto mt_output = CreateMUTensor(output);
-  kldiv.Run(h, mt_output, mt_input, mt_target, InternalMemAlloc);
+  CHECK_MUDNN_STATUS(
+      kldiv.Run(h, mt_output, mt_input, mt_target, InternalMemAlloc),
+      "Run KLDiv");
   return output;
 }
 
@@ -416,13 +417,12 @@ Tensor KLDivBwd(
   ::musa::dnn::KLDivLoss kldiv;
 
   if (reduction == at::Reduction::Mean) {
-    kldiv.SetReductionMode(::musa::dnn::KLDivLoss::Mode::MEAN);
+    SetKLDivLoss(kldiv, ::musa::dnn::KLDivLoss::Mode::MEAN, log_target);
   } else if (reduction == at::Reduction::Sum) {
-    kldiv.SetReductionMode(::musa::dnn::KLDivLoss::Mode::SUM);
+    SetKLDivLoss(kldiv, ::musa::dnn::KLDivLoss::Mode::SUM, log_target);
   } else {
-    kldiv.SetReductionMode(::musa::dnn::KLDivLoss::Mode::NONE);
+    SetKLDivLoss(kldiv, ::musa::dnn::KLDivLoss::Mode::NONE, log_target);
   }
-  kldiv.SetLogTarget(log_target);
 
   Tensor grad_ = grad.contiguous();
   auto mt_grad = CreateMUTensor(grad_);
@@ -432,7 +432,8 @@ Tensor KLDivBwd(
   auto mt_target = CreateMUTensor(contiguous_target);
   auto mt_gradin = CreateMUTensor(grad_input);
 
-  kldiv.RunBwd(h, mt_gradin, mt_grad, mt_input, mt_target);
+  CHECK_MUDNN_STATUS(
+      kldiv.RunBwd(h, mt_gradin, mt_grad, mt_input, mt_target), "RunBwd");
   return grad_input;
 }
 
@@ -604,10 +605,8 @@ Tensor FusedCrossEntropyLoss2dFwd(
   muTensor lab = CreateMUTensor(*proxy_target);
   muTensor w = wt.numel() > 0 ? CreateMUTensor(wt) : muTensor();
   muTensor out = CreateMUTensor(output);
-  CHECK_MUDNN_STATUS(loss.SetReductionMode(mode), "SetReductionMode");
-  CHECK_MUDNN_STATUS(
-      loss.SetLabelSmoothing(label_smoothing), "SetLabelSmoothing");
-  CHECK_MUDNN_STATUS(loss.SetIgnoreIndex(ignore_index), "SetIgnoreIndex");
+
+  SetCrossEntropyLoss(loss, mode, label_smoothing, ignore_index);
   CHECK_MUDNN_STATUS(loss.Run(h, out, in, lab, w, InternalMemAlloc), "Run");
 
   return output;
@@ -654,10 +653,8 @@ Tensor FusedCrossEntropyLoss2dBwd(
   muTensor lab = CreateMUTensor(target.contiguous());
   muTensor w = wt.numel() > 0 ? CreateMUTensor(wt) : muTensor();
   muTensor grad_in = CreateMUTensor(grad_input);
-  CHECK_MUDNN_STATUS(loss.SetReductionMode(mode), "SetReductionMode");
-  CHECK_MUDNN_STATUS(
-      loss.SetLabelSmoothing(label_smoothing), "SetLabelSmoothing");
-  CHECK_MUDNN_STATUS(loss.SetIgnoreIndex(ignore_index), "SetIgnoreIndex");
+
+  SetCrossEntropyLoss(loss, mode, label_smoothing, ignore_index);
   CHECK_MUDNN_STATUS(
       loss.RunBwd(h, grad_in, in, grad, lab, w, InternalMemAlloc), "RunBwd");
 

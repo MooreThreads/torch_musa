@@ -1,4 +1,5 @@
 """Test dropout operators."""
+
 # pylint: disable=missing-function-docstring, unused-import, C0103
 import torch
 import numpy as np
@@ -51,6 +52,38 @@ def test_dropout_train(shape, p_value, inplace_value, dtype, coefficient):
 
     # Attention: The grad_fn of the output tensor of musa is different from both CPU and CUDA.
     # For musa, it is NativeDropoutBackward, while for both CUDA and CPU, it is MulBackward.
+
+
+@pytest.mark.parametrize("shape", [(16, 32), (32, 8, 16)])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float16, torch.bfloat16])
+@pytest.mark.parametrize("p_value", [0.5, 1.0])
+def test_fused_dropout(shape, dtype, p_value):
+    if testing.get_musa_arch() < 22 and dtype == torch.bfloat16:
+        return
+    torch.musa.manual_seed_all(123)
+    device = "musa"
+    x = torch.randn(shape, dtype=dtype, device=device)
+    with freeze_rng_state():
+        out, mask = torch._fused_dropout(x, p_value)
+
+    assert mask.dtype == torch.uint8
+    if p_value == 1.0:
+        assert torch.count_nonzero(out.cpu()) == torch.count_nonzero(x.cpu())
+        assert torch.count_nonzero(mask.cpu()) == torch.count_nonzero(x.cpu())
+
+    if 0.0 < p_value < 1.0:
+        assert torch.count_nonzero(out.cpu()) <= torch.count_nonzero(x.cpu())
+        scale = 1.0 / (1.0 - p_value)
+        mask_bool = mask.bool()
+        abs_diff = 1e-6 if dtype == torch.float32 else 1e-4
+        rel_diff = 1e-6 if dtype == torch.float32 else 1e-4
+        assert torch.allclose(
+            out[mask_bool].cpu(),
+            (x[mask_bool] * scale).cpu(),
+            atol=abs_diff,
+            rtol=rel_diff,
+        )
+
 
 @pytest.mark.parametrize("shape", [(50, 2, 20, 20), (10, 4, 2, 2, 2)])
 def test_dropoout_with_seed(shape):

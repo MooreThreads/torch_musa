@@ -11,6 +11,7 @@ include torch_musa/csrc/aten/utils/*.h
 include torch_musa/share/cmake/*.cmake
 include torch_musa/share/cmake/modules/*.cmake
 include torch_musa/share/cmake/TorchMusa/*.cmake
+include torch_musa/share/musa_versions.json
 include torch_musa/setup_helpers/*.py
 include torch_musa/utils/*.py
 include torch_musa/utils/mapping/*.json

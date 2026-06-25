@@ -39,6 +39,8 @@ def common_bert_base_uncased_run(
     model = AutoModelForSequenceClassification.from_pretrained(
         model_root,
         local_files_only=True,
+        # TODO(MTAI): mudnn does not support fp32 and p greater than 0
+        attention_probs_dropout_prob=0.0,
     )
     optimizer = torch.optim.AdamW(model.parameters(), lr=5e-5)
     lr_scheduler = get_scheduler(

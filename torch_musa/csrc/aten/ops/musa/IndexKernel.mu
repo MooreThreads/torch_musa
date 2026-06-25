@@ -38,18 +38,25 @@ struct vec_traits {
 
 enum class IndexKernelIOType { VEC_LOAD_STORE, VEC_STORE, ATOMIC, ELEMENTWISE };
 
-template <
-    typename scalar_t,
-    IndexKernelIOType IOType,
-    typename vec_dtype = typename vec_traits<scalar_t>::vec_dtype>
+template <typename T>
+struct can_vectorize_index_type : std::true_type {};
+
+template <>
+struct can_vectorize_index_type<c10::Float8_e4m3fn> : std::false_type {};
+template <>
+struct can_vectorize_index_type<c10::Float8_e5m2> : std::false_type {};
+
+template <typename scalar_t, IndexKernelIOType IOType>
 __device__ __forceinline__ void indexput_io_kernel(
     char* out_data,
     char* in_data,
     int64_t offset) {
   if constexpr (IOType == IndexKernelIOType::VEC_LOAD_STORE) {
+    using vec_dtype = typename vec_traits<scalar_t>::vec_dtype;
     vec_dtype value_reg = vec_dtype::load((scalar_t*)in_data, 0);
     vec_dtype::store((scalar_t*)(out_data + offset), 0, value_reg);
   } else if constexpr (IOType == IndexKernelIOType::VEC_STORE) {
+    using vec_dtype = typename vec_traits<scalar_t>::vec_dtype;
     vec_dtype value_reg;
     scalar_t value = *(scalar_t*)in_data;
     for (int i = 0; i < value_reg.vlen; i++) {
@@ -71,10 +78,7 @@ __device__ __forceinline__ void indexput_io_kernel(
   }
 }
 
-template <
-    typename scalar_t,
-    IndexKernelIOType IOType,
-    typename vec_dtype = typename vec_traits<scalar_t>::vec_dtype>
+template <typename scalar_t, IndexKernelIOType IOType>
 __device__ __forceinline__ void index_io_kernel(
     char* out_data,
     char* in_data,
@@ -84,6 +88,7 @@ __device__ __forceinline__ void index_io_kernel(
       IOType == IndexKernelIOType::ELEMENTWISE);
 
   if constexpr (IOType == IndexKernelIOType::VEC_LOAD_STORE) {
+    using vec_dtype = typename vec_traits<scalar_t>::vec_dtype;
     vec_dtype value_reg = vec_dtype::load((scalar_t*)(in_data + offset), 0);
     vec_dtype::store((scalar_t*)out_data, 0, value_reg);
   } else {
@@ -565,31 +570,31 @@ void IndexKernelImpl(
   GPUIndexKernel<scalar_t, max_three, no_divider, 3, false, io_type>( \
       iter, index_size, index_stride)
 
-  if (info.can_vector_load_store) {
-    if (info.no_divider) {
-      if (info.ndim == 1) {
-        DISPATCH_KERNEL(1, true, IndexKernelIOType::VEC_LOAD_STORE);
-      } else if (info.ndim == 2) {
-        DISPATCH_KERNEL(2, true, IndexKernelIOType::VEC_LOAD_STORE);
-      } else {
-        DISPATCH_KERNEL(3, true, IndexKernelIOType::VEC_LOAD_STORE);
-      }
-    } else {
-      DISPATCH_KERNEL(3, false, IndexKernelIOType::VEC_LOAD_STORE);
-    }
-  } else {
-    if (info.no_divider) {
-      if (info.ndim == 1) {
-        DISPATCH_KERNEL(1, true, IndexKernelIOType::ELEMENTWISE);
-      } else if (info.ndim == 2) {
-        DISPATCH_KERNEL(2, true, IndexKernelIOType::ELEMENTWISE);
-      } else {
-        DISPATCH_KERNEL(3, true, IndexKernelIOType::ELEMENTWISE);
-      }
-    } else {
-      DISPATCH_KERNEL(3, false, IndexKernelIOType::ELEMENTWISE);
+#define DISPATCH_KERNEL_BY_NDIM(io_type)   \
+  do {                                     \
+    if (info.no_divider) {                 \
+      if (info.ndim == 1) {                \
+        DISPATCH_KERNEL(1, true, io_type); \
+      } else if (info.ndim == 2) {         \
+        DISPATCH_KERNEL(2, true, io_type); \
+      } else {                             \
+        DISPATCH_KERNEL(3, true, io_type); \
+      }                                    \
+    } else {                               \
+      DISPATCH_KERNEL(3, false, io_type);  \
+    }                                      \
+  } while (0)
+
+  if constexpr (can_vectorize_index_type<scalar_t>::value) {
+    if (info.can_vector_load_store) {
+      DISPATCH_KERNEL_BY_NDIM(IndexKernelIOType::VEC_LOAD_STORE);
+      return;
     }
   }
+
+  DISPATCH_KERNEL_BY_NDIM(IndexKernelIOType::ELEMENTWISE);
+
+#undef DISPATCH_KERNEL_BY_NDIM
 }
 
 #undef DISPATCH_KERNEL
@@ -629,10 +634,12 @@ static void IndexKernel(
     TensorIteratorBase& iter,
     IntArrayRef index_size,
     IntArrayRef index_stride) {
-  AT_DISPATCH_ALL_TYPES_AND3(
+  AT_DISPATCH_ALL_TYPES_AND_COMPLEX_AND5(
       at::ScalarType::Half,
       at::ScalarType::BFloat16,
       at::ScalarType::Bool,
+      at::ScalarType::Float8_e4m3fn,
+      at::ScalarType::Float8_e5m2,
       iter.dtype(),
       "IndexMusa",
       [&] { IndexKernelImpl<scalar_t>(iter, index_size, index_stride); });

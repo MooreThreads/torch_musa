@@ -1,6 +1,6 @@
 """This package adds the memory utilities. These APIs are borrowed from cuda memory."""
 
-# pylint: disable=C0301, W1113, C0415, unused-import, invalid-name, too-many-statements, too-many-locals, unused-argument, unspecified-encoding
+# pylint: disable=C0301, W1113, W0246, C0415, unused-import, invalid-name, too-many-statements, too-many-locals, unused-argument, unspecified-encoding
 import sys
 import ctypes
 import contextlib
@@ -52,6 +52,7 @@ from torch_musa._MUSAC import (
     _musa_endAllocateCurrentStreamToPool,
     _MemPool,
     _MemPoolContext,
+    _musa_releasePool,
 )
 
 from ._lazy_init import _lazy_init, is_initialized
@@ -296,6 +297,9 @@ def _record_memory_history_legacy(
     trace_alloc_record_context=False,
     device: Union[Device, int] = None,
     record_context_cpp=False,
+    clear_history=False,
+    compile_context=False,
+    global_record_annotations=False,
 ):
     torch_musa._MUSAC._musa_record_memory_history_legacy(
         enabled,
@@ -303,6 +307,9 @@ def _record_memory_history_legacy(
         trace_alloc_max_entries,
         trace_alloc_record_context,
         record_context_cpp,
+        clear_history,
+        compile_context,
+        global_record_annotations,
     )
 
 
@@ -312,8 +319,19 @@ def _record_memory_history_impl(
     stacks: str = "all",
     max_entries: int = sys.maxsize,
     device: Union[Device, int] = None,
+    clear_history: bool = False,
+    compile_context: bool = False,
+    global_record_annotations: bool = False,
 ):
-    torch_musa._MUSAC._musa_record_memory_history(enabled, context, stacks, max_entries)
+    torch_musa._MUSAC._musa_record_memory_history(
+        enabled,
+        context,
+        stacks,
+        max_entries,
+        clear_history,
+        compile_context,
+        global_record_annotations,
+    )
 
 
 def _record_memory_history(enabled="all", *args, **kwargs):
@@ -624,8 +642,12 @@ class MemPool(_MemPool):
     it's just the ID of the pool object maintained in the MUSACachingAllocator.
     """
 
-    def __init__(self, allocator: Optional[_musa_MUSAAllocator] = None):
-        super().__init__(allocator, True)
+    def __init__(
+        self,
+        allocator: Optional[_musa_MUSAAllocator] = None,
+        use_on_oom: bool = False,
+    ):
+        super().__init__(allocator, True, use_on_oom)
 
     @property
     def id(self) -> Tuple[int, int]:
@@ -636,6 +658,10 @@ class MemPool(_MemPool):
     def allocator(self) -> Optional[_musa_MUSAAllocator]:
         """Returns the allocator this MemPool routes allocations to."""
         return super().allocator
+
+    def use_count(self) -> int:
+        r"""Returns the reference count of this pool."""
+        return super().use_count()
 
 
 class MemPoolContext(_MemPoolContext):
@@ -656,7 +682,6 @@ class MemPoolContext(_MemPoolContext):
 @contextlib.contextmanager
 def use_mem_pool(pool: MemPool, device: Union[Device, int] = None):
     """A context manager that routes allocations to a given pool."""
-    ctx = MemPoolContext(pool)
     device_idx = (
         torch.musa.current_device() if device is None else _get_device_index(device)
     )
@@ -665,4 +690,4 @@ def use_mem_pool(pool: MemPool, device: Union[Device, int] = None):
         yield
     finally:
         _musa_endAllocateCurrentStreamToPool(device_idx, pool.id)
-        del ctx
+        _musa_releasePool(device_idx, pool.id)

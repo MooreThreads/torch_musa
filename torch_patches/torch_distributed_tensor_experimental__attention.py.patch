@@ -11,11 +11,11 @@ index 6cd0672..c66dba8 100644
                  logsumexp=lse,
                  is_causal=is_causal_behavior.value,
                  **kwargs,
-@@ -746,6 +746,37 @@ def _scaled_dot_product_ring_cudnn_attention(
+@@ -746,6 +746,39 @@ def _scaled_dot_product_ring_cudnn_attention(
          return_debug_mask=return_debug_mask,
          scale=scale,
      )
-+    
++
 +
 +def _scaled_dot_product_ring_attention_flash_musa(
 +    mesh: DeviceMesh,
@@ -25,6 +25,7 @@ index 6cd0672..c66dba8 100644
 +    attn_mask: Optional[torch.Tensor] = None,
 +    dropout_p: float = 0.0,
 +    is_causal: bool = False,
++    return_debug_mask: bool = False,
 +    *,
 +    scale: Optional[float] = None,
 +) -> tuple[torch.Tensor, ...]:
@@ -44,12 +45,13 @@ index 6cd0672..c66dba8 100644
 +        attn_mask=attn_mask,
 +        is_causal=is_causal,
 +        dropout_p=dropout_p,
++        return_debug_mask=return_debug_mask,
 +        scale=scale,
 +    )
  
  
  def _scaled_dot_product_ring_flash_attention_backward(
-@@ -881,6 +912,44 @@ def _scaled_dot_product_ring_cudnn_attention_backward(
+@@ -881,6 +914,48 @@ def _scaled_dot_product_ring_cudnn_attention_backward(
      )
  
  
@@ -62,12 +64,14 @@ index 6cd0672..c66dba8 100644
 +    output: torch.Tensor,
 +    logsumexp: torch.Tensor,
 +    dropout_mask: torch.Tensor,
++    rng_state: torch.Tensor,
++    dropout_p: float,
 +    is_causal: bool = False,
 +    attn_mask: Optional[torch.Tensor] = None,
 +    *,
 +    scale: Optional[float] = None,
 +) -> tuple[torch.Tensor, ...]:
-+    
++
 +    if query.dim() == 3:
 +        seq_dim = 1
 +    else:
@@ -85,6 +89,8 @@ index 6cd0672..c66dba8 100644
 +        out=output,
 +        logsumexp=logsumexp,
 +        dropout_mask=dropout_mask,
++        rng_state=rng_state,
++        dropout_p=dropout_p,
 +        is_causal=is_causal,
 +        attn_mask=attn_mask,
 +        scale=scale,
@@ -94,7 +100,7 @@ index 6cd0672..c66dba8 100644
  def _sdpa_handler(
      op_call: torch._ops.OpOverload,
      args: tuple[object, ...],
-@@ -903,9 +972,11 @@ def _sdpa_handler(
+@@ -903,9 +978,11 @@ def _sdpa_handler(
          aten._scaled_dot_product_flash_attention.default: _scaled_dot_product_ring_flash_attention,
          aten._scaled_dot_product_efficient_attention.default: _scaled_dot_product_ring_efficient_attention,
          aten._scaled_dot_product_cudnn_attention.default: _scaled_dot_product_ring_cudnn_attention,
@@ -106,7 +112,7 @@ index 6cd0672..c66dba8 100644
      }
      if op_call in call_maps:
          local_results = call_maps[op_call](
-@@ -928,6 +999,8 @@ customized_ops = {
+@@ -928,6 +1005,8 @@ customized_ops = {
      aten._scaled_dot_product_efficient_attention_backward.default: _sdpa_handler,
      aten._scaled_dot_product_cudnn_attention.default: _sdpa_handler,
      aten._scaled_dot_product_cudnn_attention_backward.default: _sdpa_handler,

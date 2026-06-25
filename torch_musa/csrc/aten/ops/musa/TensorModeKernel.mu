@@ -256,8 +256,13 @@ void fused_mode(
     case 8:
     case 4:
     case 2:
-      handle_fused_mode<128, scalar_t>(
-          grid, self, ti_values, ti_indices, slice_size, slices);
+      if (at::musa::warp_size() == 128) {
+        handle_fused_mode<256, scalar_t>(
+            grid, self, ti_values, ti_indices, slice_size, slices);
+      } else {
+        handle_fused_mode<128, scalar_t>(
+            grid, self, ti_values, ti_indices, slice_size, slices);
+      }
       break;
     case 1:
     default:

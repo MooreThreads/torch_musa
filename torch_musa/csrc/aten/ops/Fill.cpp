@@ -3,11 +3,11 @@
 #include <ATen/native/Fill.h>
 #include <torch/library.h>
 
+#include "torch_musa/csrc/aten/mudnn/Fill.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/ops/musa/elemwise/Interface.muh"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/TensorIterator.h"
-
-#include <mudnn.h>
 
 namespace at {
 namespace musa {
@@ -33,18 +33,18 @@ Tensor& FillOp(
     return self;
   }
   c10::musa::MUSAGuard device_guard(self.device());
-  at::musa::muHandle& h = GetMudnnHandle();
+  auto& h = GetMudnnHandle();
   auto self_mu = at::musa::CreateMUTensor(self);
 
   ::musa::dnn::Fill op;
   const auto fill_type = self.scalar_type();
   if (fill_type == ScalarType::Bool) {
     const auto fill_value = static_cast<int64_t>(value.to<bool>());
-    CHECK_MUDNN_STATUS(op.SetValue(fill_value), "SetValue");
+    SetFill(op, fill_value);
   } else if (isIntegralType(fill_type, false)) {
-    CHECK_MUDNN_STATUS(op.SetValue(value.toLong()), "SetValue");
+    SetFill(op, value.toLong());
   } else {
-    CHECK_MUDNN_STATUS(op.SetValue(value.toDouble()), "SetValue");
+    SetFill(op, value.toDouble());
   }
   if (mask.has_value()) {
     TORCH_CHECK(

@@ -7,9 +7,11 @@
 #include <c10/util/SmallVector.h>
 #include <torch/library.h>
 
+#include "torch_musa/csrc/aten/mudnn/Convolution.h"
 #include "torch_musa/csrc/aten/mudnn/Handle.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/quantized/mudnn/Conv.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 #include <array>
@@ -99,7 +101,7 @@ void PackedConvWeightMudnn<kSpatialDim>::apply_impl_helper(
         add, accum.value().q_scale(), accum.value().q_zero_point());
   }
 
-  at::musa::muHandle& h = at::GetMudnnHandle();
+  auto& h = at::GetMudnnHandle();
   ::musa::dnn::Convolution op;
   ConfigConv(
       op, input.scalar_type(), padding(), stride(), dilation(), groups());
@@ -114,8 +116,15 @@ void PackedConvWeightMudnn<kSpatialDim>::apply_impl_helper(
     act.SetMode(::musa::dnn::Convolution::FusedActivationDesc::Mode::SILU);
   }
 
+  // Quantized conv currently uses the default forward algorithm. We still call
+  // GetRecommendForwardAlgorithm() to reuse its BuildFilterDesc() logic, but
+  // since `algorithm` is provided it will not run the algo search.
   ::musa::dnn::Convolution::Algorithm algorithm =
       static_cast<::musa::dnn::Convolution::Algorithm>(0);
+  CHECK_MUDNN_STATUS(
+      op.GetRecommendForwardAlgorithm(h, algorithm, out, in, ke),
+      "GetRecommendForwardAlgorithm");
+
   CHECK_MUDNN_STATUS(
       op.RunFusion(
           h,

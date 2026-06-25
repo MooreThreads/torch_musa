@@ -14,6 +14,8 @@
 #include <ATen/ops/empty.h>
 #endif
 
+#include "torch_musa/csrc/aten/mudnn/Convolution.h"
+#include "torch_musa/csrc/aten/mudnn/Exception.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/Context.h"
 

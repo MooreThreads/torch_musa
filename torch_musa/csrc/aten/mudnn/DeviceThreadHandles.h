@@ -84,7 +84,7 @@ struct DeviceThreadHandlePool
       release();
     }
 
-    Handle_t reserve(int device) {
+    Handle_t& reserve(int device) {
       // If this thread already has a handle for this device, return it
       if (internal_handles_.find(device) != internal_handles_.end())
         return internal_handles_[device];

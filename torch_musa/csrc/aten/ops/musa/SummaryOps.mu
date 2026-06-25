@@ -7,6 +7,7 @@
 #include <torch/library.h>
 #include <ATen/musa/Atomic.muh>
 #include <ATen/musa/MUSAApplyUtils.muh>
+#include <algorithm>
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
 
 #ifndef AT_PER_OPERATOR_HEADERS
@@ -25,7 +26,10 @@
 namespace at {
 namespace musa {
 #define THRESH_NUMBER_BINS_FOR_MULTI_BLOCK_MEM 100
-#define THRESH_NUMBER_BINS_FOR_GLOBAL_MEM 1000
+#define THRESH_NUMBER_BINS_FOR_GLOBAL_MEM 4096
+// Bound histogram grid size to limit global atomic contention and
+// keep per-block partial histogram memory tractable.
+#define HISTOGRAM_MAX_GRID_X 512
 #define FOR_KERNEL_LOOP(i, lim)                                      \
   for (IndexType i = blockIdx.x * blockDim.x + threadIdx.x; i < lim; \
        i += gridDim.x * blockDim.x)
@@ -130,7 +134,7 @@ __global__ void kernelHistogram1D(
         gpuAtomicAddNoReturn(&p.data[pOffset], getOp(linearIndex));
       }
     }
-    __SYNCTHREADS;
+    __syncthreads();
     // NOTE: atomically update output bin count.
     //   Atomic update is imp since __syncthread() will only synchronize threads
     //   in a given block, not across blocks.
@@ -244,6 +248,7 @@ bool MUSA_tensor_histogram(
   if (curDevice == -1 || !getApplyGrid(totalElements, grid, curDevice)) {
     return false;
   }
+  grid.x = std::min<uint32_t>(grid.x, HISTOGRAM_MAX_GRID_X);
 
   MUSAHistogramMemoryType memType = MUSAHistogramMemoryType::GLOBAL;
   auto maxSharedMem = getCurrentDeviceProperties()->sharedMemPerBlock;
@@ -299,6 +304,7 @@ bool MUSA_tensor_histogram(
 #undef FOR_KERNEL_LOOP
 #undef THRESH_NUMBER_BINS_FOR_GLOBAL_MEM
 #undef THRESH_NUMBER_BINS_FOR_MULTI_BLOCK_MEM
+#undef HISTOGRAM_MAX_GRID_X
 
 namespace {
 

@@ -54,7 +54,6 @@ torchvision_ops = ["`" + op + "` (torchvision op)" for op in torchvision_ops]
 # write to markdown
 with open(join(dirname(abspath(__file__)), "ops_list.md"), "w", encoding="UTF-8") as f:
     total = len(regular_ops) + len(torchvision_ops) + len(quantized_ops)
-    f.write(f"Total amount of ops: {total}\n")
     index = 0
     for op_name in sorted(chain(regular_ops, torchvision_ops, quantized_ops)):
         f.write(f"- {op_name}\n")

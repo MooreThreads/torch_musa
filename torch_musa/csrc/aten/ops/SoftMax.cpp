@@ -7,7 +7,9 @@
 #include <ATen/native/ReduceOpsUtils.h>
 #include <torch/library.h>
 
+#include "torch_musa/csrc/aten/mudnn/Softmax.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 #include <mudnn.h>
@@ -28,11 +30,11 @@ void SoftMaxCall(
   ::musa::dnn::Softmax softmax;
   auto input_m = CreateMUTensor(input);
   auto output_m = CreateMUTensor(output);
-  CHECK_MUDNN_STATUS(softmax.SetMode(mode), "SetMode");
-  CHECK_MUDNN_STATUS(softmax.SetDim(static_cast<int>(dim)), "SetDim");
-  CHECK_MUDNN_STATUS(
-      softmax.SetAlgorithm(::musa::dnn::Softmax::Algorithm::ACCURATE),
-      "SetAlgorithm");
+  int64_t _dim = dim;
+  if (_dim < 0) {
+    _dim += input.dim();
+  }
+  ::at::musa::SetSoftmax(softmax, mode, static_cast<int>(_dim));
   CHECK_MUDNN_STATUS(softmax.Run(h, output_m, input_m), "Run");
 }
 
@@ -203,11 +205,11 @@ Tensor& SoftmaxBwdInternal(
   auto mt_grad_output = CreateMUTensor(contiguous_grad_output);
   auto mt_output = CreateMUTensor(contiguous_output);
   auto mt_grad_input = CreateMUTensor(grad_input);
-  CHECK_MUDNN_STATUS(softmax.SetDim(static_cast<int>(dim)), "SetDim");
-  CHECK_MUDNN_STATUS(
-      softmax.SetAlgorithm(::musa::dnn::Softmax::Algorithm::ACCURATE),
-      "SetAlgorithm");
-  CHECK_MUDNN_STATUS(softmax.SetMode(mode), "SetMode");
+  int64_t _dim = dim;
+  if (_dim < 0) {
+    _dim += output.dim();
+  }
+  ::at::musa::SetSoftmax(softmax, mode, static_cast<int>(_dim));
   CHECK_MUDNN_STATUS(
       softmax.RunBwd(h, mt_grad_input, mt_output, mt_grad_output), "Run");
   return grad_input;
@@ -276,12 +278,7 @@ Tensor& LogSumExpOutImpl(Tensor& result, const Tensor& self, IntArrayRef dims) {
     ::musa::dnn::Softmax desc;
     auto input_m = CreateMUTensor(self_contig);
     auto output_m = CreateMUTensor(result_contig);
-    CHECK_MUDNN_STATUS(
-        desc.SetMode(::musa::dnn::Softmax::Mode::LOGSUMEXP), "SetMode");
-    CHECK_MUDNN_STATUS(desc.SetDim(dim), "SetDim");
-    CHECK_MUDNN_STATUS(
-        desc.SetAlgorithm(::musa::dnn::Softmax::Algorithm::ACCURATE),
-        "SetAlgorithm");
+    ::at::musa::SetSoftmax(desc, ::musa::dnn::Softmax::Mode::LOGSUMEXP, dim);
     CHECK_MUDNN_STATUS(desc.Run(h, output_m, input_m), "Run");
     if (!result.is_contiguous()) {
       result.copy_(result_contig);

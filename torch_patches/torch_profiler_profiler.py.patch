@@ -2,16 +2,16 @@ diff --git a/torch/profiler/profiler.py b/torch/profiler/profiler.py
 index 5735417..73cc2e6 100644
 --- a/torch/profiler/profiler.py
 +++ b/torch/profiler/profiler.py
-@@ -173,6 +173,12 @@ class _KinetoProfile:
- 
-         # user-defined metadata to be amended to the trace
-         self.preset_metadata: dict[str, str] = {}
+@@ -206,6 +206,12 @@ class _KinetoProfile:
+                 custom_trace_id_callback=self.custom_trace_id_callback,
+             )
+         self.profiler._prepare_trace()
 +        try:
 +            torch.musa.update_musa_graph_with_profile()
 +        except AttributeError:
 +            # ignore the error if musa is not installed or
 +            # update_musa_graph_with_profile is not ready in old version
 +            pass
- 
-     def start(self) -> None:
-         self.prepare_trace()
+
+     def start_trace(self) -> None:
+         if self.execution_trace_observer:

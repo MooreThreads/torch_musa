@@ -474,7 +474,7 @@ static void RegisterMusaDeviceProperties(PyObject* module) {
 
   m.def(
       "_musa_record_memory_history_legacy",
-      static_cast<void (*)(bool, bool, int64_t, bool, bool)>(
+      static_cast<void (*)(bool, bool, int64_t, bool, bool, bool, bool, bool)>(
           torch::musa::_record_memory_history));
 
   m.def(
@@ -483,7 +483,10 @@ static void RegisterMusaDeviceProperties(PyObject* module) {
           std::optional<std::string>,
           std::optional<std::string>,
           const std::string&,
-          size_t)>(torch::musa::_record_memory_history));
+          size_t,
+          bool,
+          bool,
+          bool)>(torch::musa::_record_memory_history));
 }
 
 static void BindGetDeviceProperties(PyObject* module) {
@@ -506,7 +509,7 @@ static PyObject* PyMusaRegisterUnifiedCPUAllocator(
   END_HANDLE_TH_ERRORS
 }
 
-static PyObject* PyMussResetUnifiedCPUAllocator(
+static PyObject* PyMusaResetUnifiedCPUAllocator(
     PyObject* /*unused*/,
     PyObject* /*args*/) {
   HANDLE_TH_ERRORS
@@ -515,20 +518,12 @@ static PyObject* PyMussResetUnifiedCPUAllocator(
   END_HANDLE_TH_ERRORS
 }
 
-static PyObject* PyMusaGetMUSAPluggableAllocator(
-    PyObject* /*unused*/,
-    PyObject* /*args*/) {
-  HANDLE_TH_ERRORS
-  auto alloc = c10::get_pluggable_allocator();
-  return py::cast(alloc).release().ptr();
-  END_HANDLE_TH_ERRORS
-}
-
 static PyObject* PyMusaRegisterUnifiedAllocator(
     PyObject* /*unused*/,
     PyObject* /*args*/) {
   HANDLE_TH_ERRORS
   c10::register_unified_allocator();
+  c10::uma_cpu_alloc_context.set_allocator();
   Py_RETURN_NONE;
   END_HANDLE_TH_ERRORS
 }
@@ -970,16 +965,12 @@ static PyMethodDef MusaMemoryMethods[] = {
      PyMusaRegisterUnifiedAllocator,
      METH_NOARGS,
      nullptr},
-    {"_musa_get_pluggable_allocator",
-     PyMusaGetMUSAPluggableAllocator,
-     METH_NOARGS,
-     nullptr},
     {"_musa_register_unified_cpu_allocator",
      PyMusaRegisterUnifiedCPUAllocator,
      METH_NOARGS,
      nullptr},
     {"_musa_reset_unified_cpu_allocator",
-     PyMussResetUnifiedCPUAllocator,
+     PyMusaResetUnifiedCPUAllocator,
      METH_NOARGS,
      nullptr},
     {nullptr}};
@@ -1165,14 +1156,14 @@ static void RegisterMUSAPluggableAllocator(PyObject* module) {
             self.set_record_stream_fn(func);
           })
       .def(
-          "set_begin_allocate_to_pool_fn",
+          "set_begin_allocate_to_pool",
           [](torch::musa::MUSAPluggableAllocator::MUSAPluggableAllocator& self,
              uint64_t func_ptr) {
             using FuncType = void(
                 int, c10::musa::MempoolId_t, std::function<bool(musaStream_t)>);
             std::function<FuncType> func =
                 reinterpret_cast<FuncType*>(func_ptr);
-            self.set_begin_allocate_to_pool_fn(func);
+            self.set_begin_allocate_to_pool(func);
           })
       .def(
           "set_end_allocate_to_pool_fn",
@@ -1184,13 +1175,13 @@ static void RegisterMUSAPluggableAllocator(PyObject* module) {
             self.set_end_allocate_to_pool_fn(func);
           })
       .def(
-          "set_release_pool_fn",
+          "set_release_pool",
           [](torch::musa::MUSAPluggableAllocator::MUSAPluggableAllocator& self,
              uint64_t func_ptr) {
             using FuncType = void(int, c10::musa::MempoolId_t);
             std::function<FuncType> func =
                 reinterpret_cast<FuncType*>(func_ptr);
-            self.set_release_pool_fn(func);
+            self.set_release_pool(func);
           });
 
   // NOLINTNEXTLINE(bugprone-unused-raii)
@@ -1251,6 +1242,10 @@ static void RegisterMUSAPluggableAllocator(PyObject* module) {
 
     return torch::musa::MUSAPluggableAllocator::createCustomAllocator(
         malloc_fn, free_fn);
+  });
+
+  m.def("_get_musa_unified_allocator", []() {
+    return c10::get_pluggable_allocator();
   });
 
   m.def(
@@ -1399,11 +1394,17 @@ static void RegisterMemPool(PyObject* module) {
   auto m = py::handle(module).cast<py::module>();
   py::class_<c10::musa::MemPool, std::shared_ptr<c10::musa::MemPool>>(
       m, "_MemPool")
-      .def(py::init<
-           c10::musa::MUSACachingAllocator::MUSAAllocator*,
-           bool>()) // ctor
-      .def_property_readonly("id", &c10::musa::MemPool::id)
-      .def_property_readonly("allocator", &c10::musa::MemPool::allocator);
+      .def(
+          py::init([](c10::musa::MUSACachingAllocator::MUSAAllocator* allocator,
+                      bool is_user_created,
+                      bool use_on_oom) {
+            torch::utils::device_lazy_init(at::kMUSA);
+            return std::make_shared<::c10::musa::MemPool>(
+                allocator, is_user_created, use_on_oom);
+          }))
+      .def_property_readonly("id", &::c10::musa::MemPool::id)
+      .def_property_readonly("allocator", &::c10::musa::MemPool::allocator)
+      .def("use_count", &::c10::musa::MemPool::use_count);
 
   py::class_<
       c10::musa::MemPoolContext,

@@ -11,6 +11,8 @@
 #include <ATen/ops/empty.h>
 #endif
 
+#include "torch_musa/csrc/aten/mudnn/Concat.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 namespace at::musa {
@@ -143,7 +145,7 @@ TORCH_IMPL_FUNC(CatOut)
       --axis;
     }
   }
-  CHECK_MUDNN_STATUS(op.SetAxis(axis), "Set concat axis");
+  SetConcat(op, axis);
 
   CHECK_MUDNN_STATUS(
       op.Run(h, mu_output, elements, mu_inputs.data()), "ConcatRun");

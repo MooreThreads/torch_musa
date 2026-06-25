@@ -161,6 +161,8 @@ MusaIPCSentData::MusaIPCSentData(
   //  [i.record() for i in a]
   //  ```
   //
+// #if !defined(USE_ROCM)
+#if 0
   if (musa_ipc_global_entities.sync_events_used_.load() <
       MUSA_IPC_MAXIMUM_EVENTS_TO_USE) {
     // TODO: More efficient would be to create event inside of main thread (at
@@ -181,6 +183,13 @@ MusaIPCSentData::MusaIPCSentData(
     event_ = nullptr;
     event_sync_required_ = false;
   }
+#else
+  // cuIpcGetEventHandle with HIP is not supported, so we have to sync
+  // stream instead of passing event
+  auto stream = c10::musa::getCurrentMUSAStream(device.index());
+  at::musa::stream_synchronize(stream);
+  event_sync_required_ = false;
+#endif
 }
 
 MusaIPCSentData::~MusaIPCSentData() {

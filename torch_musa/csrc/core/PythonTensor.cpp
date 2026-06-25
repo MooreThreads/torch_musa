@@ -1,15 +1,17 @@
 #include "torch_musa/csrc/core/PythonTensor.h"
 
 #include <torch/csrc/autograd/generated/VariableType.h>
+#include <torch/csrc/autograd/python_lazy_to.h>
 #include <torch/csrc/autograd/utils/wrap_outputs.h>
 #include <torch/csrc/utils/device_lazy_init.h>
 #include <torch/csrc/utils/pycfunction_helpers.h>
 #include <torch/csrc/utils/python_arg_parser.h>
 #include <torch/csrc/utils/tensor_new.h>
 #include <torch/csrc/utils/tensor_types.h>
-
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/MUSAFunctions.h"
+#include "torch_musa/csrc/core/MUSAGuard.h"
+#include "torch_musa/csrc/core/UMACPUAllocator.h"
 
 namespace torch::musa {
 
@@ -342,6 +344,51 @@ static at::Tensor dispatch_to(
   return self.to(device, dtype, non_blocking, copy, optional_memory_format);
 }
 
+static PyObject* THPVariable_lazy_musa(
+    PyObject* self,
+    PyObject* args,
+    PyObject* kwargs) {
+  HANDLE_TH_ERRORS
+  // NOTE: Keep consistent with THPVariable_musa
+  static PythonArgParser parser(
+      {"lazy_musa(Tensor temp, Device? device=None, bool non_blocking=False, *, MemoryFormat? memory_format=None)",
+       "lazy_musa(Tensor temp, Device? device=None, bool async=False, *, MemoryFormat? memory_format=None)|deprecated"});
+  ParsedArgs<4> parsed_args;
+  auto r = parser.parse(self, args, kwargs, parsed_args);
+  auto self_ = r.tensor(0);
+  if (r.has_torch_function()) {
+    return handle_torch_function(
+        r, self, args, kwargs, THPVariableClass, "torch.Tensor");
+  }
+
+  auto device =
+      r.isNone(1) ? at::Device(at::DeviceType::PrivateUse1) : r.device(1);
+  auto opt_memory_format = r.memoryformatOptional(3);
+  TORCH_CHECK(
+      device.type() == at::DeviceType::PrivateUse1,
+      "Invalid device, must be musa device");
+  torch::utils::device_lazy_init(at::musa::kMUSA);
+  TORCH_CHECK(
+      c10::uma_cpu_alloc_context.is_active(),
+      "lazy_musa requires unified memory allocator context. "
+      "Use within torch_musa.use_unified_allocator() or "
+      "torch_musa.use_unified_cpu_allocator().");
+  if (torch::autograd::can_lazy_replace_device(
+          self_, std::nullopt, device, false, opt_memory_format)) {
+    if (device.has_index() == false) {
+      device = at::Device(device.type(), c10::musa::current_device());
+    }
+    torch::autograd::lazy_replace_device(self_, device);
+    PyObject* original_tensor = PyTuple_GET_ITEM(args, 0);
+    Py_INCREF(original_tensor);
+    return original_tensor;
+  }
+
+  return THPVariable_Wrap(
+      dispatch_to(self_, device, r.toBool(2), false, opt_memory_format));
+  END_HANDLE_TH_ERRORS
+}
+
 static PyObject* THPVariable_musa(
     PyObject* self,
     PyObject* args,
@@ -390,6 +437,10 @@ static PyObject* _IsMusa(PyObject* self, PyObject* args, PyObject* kwargs) {
 static PyMethodDef MusaTensorMethods[] = {
     {"_musa",
      castPyCFunctionWithKeywords(THPVariable_musa),
+     METH_VARARGS | METH_KEYWORDS,
+     nullptr},
+    {"_lazy_musa",
+     castPyCFunctionWithKeywords(THPVariable_lazy_musa),
      METH_VARARGS | METH_KEYWORDS,
      nullptr},
     {"_is_musa",

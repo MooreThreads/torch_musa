@@ -10,7 +10,12 @@
 #include <ATen/ops/nonzero_numpy_native.h>
 #endif
 
+#include <mudnn.h>
+
+#include "torch_musa/csrc/aten/mudnn/Nonzero.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
+#include "torch_musa/csrc/aten/utils/MudnnUtils.h"
+#include "torch_musa/csrc/aten/utils/StateGuard.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 
 namespace at::musa {
@@ -50,12 +55,14 @@ at::Tensor& NonzeroOut(const at::Tensor& self, at::Tensor& out) {
       at::kLong,
       " as out, but got ",
       out.dtype());
-  out.resize_({contiguous_self.numel(), contiguous_self.dim()});
+  auto tmp = at::empty(
+      {contiguous_self.numel(), contiguous_self.dim()},
+      self.options().dtype(at::kLong));
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Nonzero op;
   auto mt_input = CreateMUTensor(contiguous_self);
-  auto mt_out = CreateMUTensor(out);
+  auto mt_out = CreateMUTensor(tmp);
   CHECK_MUDNN_STATUS(op.Run(h, mt_out, mt_input, InternalMemAlloc), "Run");
   // Note that implementation of Nonzero on MUSA is different from CUDA.
   // First we malloc sufficient memory for output tensor;
@@ -67,7 +74,14 @@ at::Tensor& NonzeroOut(const at::Tensor& self, at::Tensor& out) {
   for (const auto i : out_shape) {
     out_shape_int64.push_back(static_cast<int64_t>(i));
   }
-  out.unsafeGetTensorImpl()->set_sizes_contiguous(out_shape_int64);
+
+  if (GET_STATE(NNZ_NONE_CONTIGUOUS)) {
+    tmp = tmp.narrow(0, 0, out_shape_int64[0]);
+    out = tmp.transpose(0, 1).contiguous().transpose(0, 1);
+  } else {
+    tmp.unsafeGetTensorImpl()->set_sizes_contiguous(out_shape_int64);
+    out = tmp;
+  }
   return out;
 }
 

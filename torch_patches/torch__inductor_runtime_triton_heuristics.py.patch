@@ -1,8 +1,8 @@
 diff --git a/torch/_inductor/runtime/triton_heuristics.py b/torch/_inductor/runtime/triton_heuristics.py
-index 547fad5..db8cd38 100644
+index 547fad52224..eb8921045a7 100644
 --- a/torch/_inductor/runtime/triton_heuristics.py
 +++ b/torch/_inductor/runtime/triton_heuristics.py
-@@ -1111,7 +1111,7 @@ class CachingAutotuner(KernelInterface):
+@@ -1111,10 +1111,10 @@ class CachingAutotuner(KernelInterface):
  
          from torch._inductor.codecache import CudaKernelParamCache
  
@@ -10,7 +10,11 @@ index 547fad5..db8cd38 100644
 +        bin_type = {"hip": "hsaco", "xpu": "spv", "musa": "mubin"}.get(self.device_props.type, "mubin")
          binary = launcher.bin.asm[bin_type]
          # Also store asm code which can be used for debugging and generating cpp package
-         asm_type = {"hip": "amdgcn", "cuda": "ptx", "xpu": "spv"}.get(
+-        asm_type = {"hip": "amdgcn", "cuda": "ptx", "xpu": "spv"}.get(
++        asm_type = {"hip": "amdgcn", "cuda": "ptx", "xpu": "spv", "musa": "llir"}.get(
+             self.device_props.type, None
+         )
+         asm = launcher.bin.asm.get(asm_type, None)
 @@ -2163,6 +2163,7 @@ def triton_config(
      num_stages=1,
      num_elements_per_warp=256,
