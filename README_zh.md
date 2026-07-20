@@ -166,7 +166,7 @@ cd vision && python setup.py install
 请从 [torch 官方 audio 仓库](https://github.com/pytorch/audio) 安装 torchaudio：
 
 ```shell
-git clone https://github.com/pytorch/audio.git -b release/${version} --depth 1
+git clone https://github.com/pytorch/audio.git -b ${version} --depth 1
 cd audio && python setup.py install
 ```
 
