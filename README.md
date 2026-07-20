@@ -143,7 +143,7 @@ Otherwise, install torchvision from [torch repository](https://github.com/pytorc
 git clone https://github.com/pytorch/vision -b ${version} --depth 1
 cd vision && python setup.py install
 ```
-the `version` depends on torch version, for example you have torch v2.5.0, `${version}` should be `0.20.0`.
+the `version` depends on torch version, for example you have torch v2.5.0, `${version}` should be `v0.20.0`.
 
 ### torchaudio
 Install torchaudio from [torch source](https://github.com/pytorch/audio):
