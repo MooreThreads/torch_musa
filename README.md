@@ -148,7 +148,7 @@ the `version` depends on torch version, for example you have torch v2.5.0, `${ve
 ### torchaudio
 Install torchaudio from [torch source](https://github.com/pytorch/audio):
 ```shell
-git clone https://github.com/pytorch/audio.git -b release/${version} --depth 1
+git clone https://github.com/pytorch/audio.git -b ${version} --depth 1
 cd audio && python setup.py install
 ```
 the `version` is same as the torch version.
