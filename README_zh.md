@@ -159,7 +159,7 @@ git clone https://github.com/pytorch/vision -b ${version} --depth 1
 cd vision && python setup.py install
 ```
 
-其中 `version` 取决于你使用的 torch 版本，例如当 torch 版本为 v2.5.0 时，`${version}` 应为 `0.20.0`。
+其中 `version` 取决于你使用的 torch 版本，例如当 torch 版本为 v2.5.0 时，`${version}` 应为 `v0.20.0`。
 
 ### torchaudio
 
