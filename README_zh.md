@@ -141,6 +141,12 @@ bash build.sh -m -w
 USE_MCCL=0 bash build.sh -c
 ```
 
+PyTorch编译需要的内存较大，限制并行任务数可有效降低内存占用。社区经验建议，对于一台 32GB 内存的机器，MAX_JOBS 设置为 4 或 5 可能是上限：
+
+```bash
+MAX_JOBS=4 bash build.sh -c
+```
+
 ## MUSA 支持的仓库
 
 ### torchvision
@@ -155,22 +161,22 @@ cd vision && python setup.py install
 否则，请从 [官方 torch 仓库](https://github.com/pytorch/vision) 安装 torchvision：
 
 ```shell
-git clone https://github.com/pytorch/vision -b ${version} --depth 1
+git clone https://github.com/pytorch/vision -b v${version} --depth 1
 cd vision && python setup.py install
 ```
 
-其中 `version` 取决于你使用的 torch 版本，例如当 torch 版本为 v2.5.0 时，`${version}` 应为 `v0.20.0`。
+其中 `version` 取决于你使用的 torch 版本，例如当 torch 版本为 v2.5.0 时，`${version}` 应为 `0.20.0`。
 
 ### torchaudio
 
 请从 [torch 官方 audio 仓库](https://github.com/pytorch/audio) 安装 torchaudio：
 
 ```shell
-git clone https://github.com/pytorch/audio.git -b ${version} --depth 1
+git clone https://github.com/pytorch/audio.git -b release/${version} --depth 1
 cd audio && python setup.py install
 ```
 
-其中 `version` 与 torch 版本保持一致。
+其中 `version` 与 torch 版本保持一致，例如当 torch 版本为 v2.5.0 时，`${version}` 应为 `2.5.0`。
 
 ### 其他仓库
 

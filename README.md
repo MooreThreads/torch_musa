@@ -128,6 +128,10 @@ For **S80/S3000** users, since the MCCL library is not provided for such archite
 ```bash
 USE_MCCL=0 bash build.sh -c
 ```
+PyTorch compilation requires a significant amount of memory, and limiting the number of parallel tasks can effectively reduce memory usage. Community experience suggests that for a machine with 32GB of memory, setting MAX_JOBS to 4 or 5 may be the upper limit.
+```bash
+MAX_JOBS=4 bash build.sh -c
+```
 
 ## MUSA Supported Repositories
 
@@ -140,18 +144,18 @@ cd vision && python setup.py install
 
 Otherwise, install torchvision from [torch repository](https://github.com/pytorch/vision):
 ```shell
-git clone https://github.com/pytorch/vision -b ${version} --depth 1
+git clone https://github.com/pytorch/vision -b v${version} --depth 1
 cd vision && python setup.py install
 ```
-the `version` depends on torch version, for example you have torch v2.5.0, `${version}` should be `v0.20.0`.
+the `version` depends on torch version, for example you have torch v2.5.0, `${version}` should be `0.20.0`.
 
 ### torchaudio
 Install torchaudio from [torch source](https://github.com/pytorch/audio):
 ```shell
-git clone https://github.com/pytorch/audio.git -b ${version} --depth 1
+git clone https://github.com/pytorch/audio.git -b release/${version} --depth 1
 cd audio && python setup.py install
 ```
-the `version` is same as the torch version.
+the `version` is same as the torch version, for example you have torch v2.5.0, `${version}` should be `2.5.0`.
 
 ### Other Repositories
 Many repositories have supported MUSA backend upstream,
