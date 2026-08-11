@@ -252,6 +252,11 @@ if(USE_MCCL)
   list(APPEND MU_SRCS ${_MCCL_MU_SRCS})
 endif()
 
+# symmetric memory
+file(GLOB SYMM_MEM_MU_SRCS distributed/symm_mem/*.cpp)
+file(GLOB SYMM_MEM_CPP_SRCS distributed/symm_mem/*.mu)
+list(APPEND MU_SRCS ${SYMM_MEM_MU_SRCS})
+
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/utils.cmake)
 append_cxx_flag_if_supported("-Wno-unused-parameter" CMAKE_CXX_FLAGS)
 append_cxx_flag_if_supported("-Wno-unused-variable" CMAKE_CXX_FLAGS)
@@ -298,7 +303,8 @@ musa_add_library(
   SHARED
   ${MU_SRCS}
   ${PORTING_CPP_CSRCS}
-  ${ATEN_MUSA_CSRCS})
+  ${ATEN_MUSA_CSRCS}
+  ${SYMM_MEM_CPP_SRCS})
 
 if(NOT MUSA_KERNELS_INSTALL_LIB_DIR)
   set(MUSA_KERNELS_INSTALL_LIB_DIR lib)

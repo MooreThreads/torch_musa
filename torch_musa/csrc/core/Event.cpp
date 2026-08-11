@@ -23,17 +23,19 @@ static PyObject* THMPEvent_pynew(
   unsigned char enable_timing = 0;
   unsigned char blocking = 0;
   unsigned char interprocess = 0;
+  unsigned char external = 0;
 
   constexpr const char* kwlist[] = {
-      "enable_timing", "blocking", "interprocess", nullptr};
+      "enable_timing", "blocking", "interprocess", "external", nullptr};
   if (!PyArg_ParseTupleAndKeywords(
           args,
           kwargs,
-          "|bbb",
+          "|bbbb",
           const_cast<char**>(kwlist),
           &enable_timing,
           &blocking,
-          &interprocess)) {
+          &interprocess,
+          &external)) {
     return nullptr;
   }
 
@@ -45,7 +47,8 @@ static PyObject* THMPEvent_pynew(
   THMPEvent* self = (THMPEvent*)ptr.get();
   unsigned int flags = (blocking ? musaEventBlockingSync : musaEventDefault) |
       (enable_timing ? musaEventDefault : musaEventDisableTiming) |
-      (interprocess ? musaEventInterprocess : musaEventDefault);
+      (interprocess ? musaEventInterprocess : musaEventDefault) |
+      (external ? musaEventExternal : musaEventDefault);
 
   new (&self->musa_event) at::musa::MUSAEvent(flags);
 

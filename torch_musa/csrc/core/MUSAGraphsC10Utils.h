@@ -12,7 +12,7 @@ namespace musa {
 
 using CaptureId_t = unsigned long long;
 
-// first is set if the instance is created by CUDAGraph::capture_begin.
+// first is set if the instance is created by MUSAGraph::capture_begin.
 // second is set if the instance is created by at::musa::graph_pool_handle.
 using MempoolId_t = std::pair<CaptureId_t, CaptureId_t>;
 
@@ -21,8 +21,13 @@ struct C10_MUSA_API MUSAStreamCaptureModeGuard {
     strictness_ = desired;
     C10_MUSA_CHECK(musaThreadExchangeStreamCaptureMode(&strictness_));
   }
+  MUSAStreamCaptureModeGuard(const MUSAStreamCaptureModeGuard&) = delete;
+  MUSAStreamCaptureModeGuard(MUSAStreamCaptureModeGuard&&) = delete;
+  MUSAStreamCaptureModeGuard& operator=(const MUSAStreamCaptureModeGuard&) =
+      delete;
+  MUSAStreamCaptureModeGuard& operator=(MUSAStreamCaptureModeGuard&&) = delete;
   ~MUSAStreamCaptureModeGuard() {
-    C10_MUSA_CHECK(musaThreadExchangeStreamCaptureMode(&strictness_));
+    C10_MUSA_CHECK_WARN(musaThreadExchangeStreamCaptureMode(&strictness_));
   }
 
  private:

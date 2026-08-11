@@ -286,6 +286,82 @@ def test_set_per_process_memory_fraction():
     assert (tensor == 1).all()
 
 
+def test_get_per_process_memory_fraction():
+    torch.musa.set_per_process_memory_fraction(0.5, 0)
+    assert torch.musa.get_per_process_memory_fraction(0) == pytest.approx(0.5)
+
+
+def test_caching_allocator_raw_alloc_delete():
+    stream = torch.musa.current_stream()
+    ptr = torch.musa.caching_allocator_alloc(4, device=0, stream=stream)
+    assert isinstance(ptr, int)
+    assert ptr != 0
+    torch.musa.caching_allocator_delete(ptr)
+
+    ptr = torch.musa.caching_allocator_alloc(4, device=0, stream=stream.musa_stream)
+    assert isinstance(ptr, int)
+    assert ptr != 0
+    torch.musa.caching_allocator_delete(ptr)
+
+    with pytest.raises(TypeError, match="Invalid type for stream argument"):
+        torch.musa.caching_allocator_alloc(4, device=0, stream=object())
+
+
+def test_caching_allocator_enable():
+    torch.musa.current_stream()
+    torch.musa.caching_allocator_enable(True)
+
+
+def test_memory_cached_aliases():
+    torch.musa.empty_cache()
+    torch.musa.reset_peak_memory_stats()
+    tensor = torch.empty(1024, device="musa")
+    assert tensor.is_musa
+
+    with pytest.warns(FutureWarning):
+        memory_cached = torch.musa.memory_cached()
+    with pytest.warns(FutureWarning):
+        max_memory_cached = torch.musa.max_memory_cached()
+
+    assert memory_cached == torch.musa.memory_reserved()
+    assert max_memory_cached == torch.musa.max_memory_reserved()
+
+
+def test_memory_api_exports_align_cuda():
+    expected_exports = {
+        "host_memory_stats",
+        "host_memory_stats_as_nested_dict",
+        "reset_accumulated_host_memory_stats",
+        "reset_peak_host_memory_stats",
+        "list_gpu_processes",
+    }
+    assert expected_exports.issubset(set(torch.musa.memory.__all__))
+    for name in expected_exports:
+        assert hasattr(torch.musa, name)
+        assert hasattr(torch.musa.memory, name)
+
+
+def test_host_memory_stats_apis():
+    torch.musa._lazy_init()
+    torch.musa.reset_accumulated_host_memory_stats()
+    torch.musa.reset_peak_host_memory_stats()
+    stats = torch.musa.host_memory_stats()
+    nested_stats = torch.musa.host_memory_stats_as_nested_dict()
+
+    assert isinstance(stats, dict)
+    assert isinstance(nested_stats, dict)
+    for key in ("allocation", "allocated_bytes", "reserved_bytes"):
+        assert key in nested_stats
+    for key in ("num_host_alloc", "num_host_free"):
+        assert key in stats
+
+
+def test_list_gpu_processes():
+    processes = torch.musa.list_gpu_processes()
+    assert isinstance(processes, str)
+    assert processes
+
+
 def test_matmul_memory_use():
     def get_max_used():
         torch.musa.synchronize()

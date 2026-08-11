@@ -91,6 +91,66 @@ PyObject* PyMusaHostEmptyCache(PyObject* _unused, PyObject* noargs) {
   Py_RETURN_NONE;
 }
 
+PyObject* PyMusaHostMemoryStats(PyObject* _unused, PyObject* noargs) {
+  HANDLE_TH_ERRORS
+
+  using at::HostStats;
+  using c10::CachingAllocator::DurationStat;
+  using c10::CachingAllocator::Stat;
+
+  const auto statToDict = [](const Stat& stat) {
+    py::dict dict;
+
+    dict["current"] = stat.current;
+    dict["peak"] = stat.peak;
+    dict["allocated"] = stat.allocated;
+    dict["freed"] = stat.freed;
+    return dict;
+  };
+
+  const auto durationStatToDict = [](const DurationStat& stat) {
+    py::dict dict;
+
+    dict["total"] = stat.total;
+    dict["max"] = stat.max;
+    dict["min"] = stat.min;
+    dict["count"] = stat.count;
+    dict["avg"] = stat.count == 0 ? 0 : stat.total / stat.count;
+    return dict;
+  };
+
+  const HostStats stats = at::getHostAllocator(at::kMUSA)->get_stats();
+
+  py::dict result;
+  result["num_host_alloc"] = stats.num_host_alloc;
+  result["num_host_free"] = stats.num_host_free;
+  result["allocation"] = statToDict(stats.allocation);
+  result["segment"] = statToDict(stats.segment);
+  result["allocated_bytes"] = statToDict(stats.allocated_bytes);
+  result["reserved_bytes"] = statToDict(stats.reserved_bytes);
+  result["host_alloc_time"] = durationStatToDict(stats.host_alloc_time);
+  result["host_free_time"] = durationStatToDict(stats.host_free_time);
+
+  return result.release().ptr();
+  END_HANDLE_TH_ERRORS
+}
+
+PyObject* PyMusaResetAccumulatedHostMemoryStats(
+    PyObject* _unused,
+    PyObject* noargs) {
+  HANDLE_TH_ERRORS
+  at::getHostAllocator(at::kMUSA)->reset_accumulated_stats();
+  END_HANDLE_TH_ERRORS
+  Py_RETURN_NONE;
+}
+
+PyObject* PyMusaResetPeakHostMemoryStats(PyObject* _unused, PyObject* noargs) {
+  HANDLE_TH_ERRORS
+  at::getHostAllocator(at::kMUSA)->reset_peak_stats();
+  END_HANDLE_TH_ERRORS
+  Py_RETURN_NONE;
+}
+
 PyObject* PyMusaMemoryStats(PyObject* /* unused */, PyObject* arg) {
   HANDLE_TH_ERRORS
   TORCH_CHECK(THPUtils_checkLong(arg), "invalid argument to memory_allocated");
@@ -179,8 +239,24 @@ CapturedTraceback* getFromContext(
       "attempting to gather stack context from the wrong StackContext type.");
 }
 
-PyObject* PyMusaMemorySnapshot(PyObject* _unused, PyObject* noargs) {
+PyObject* PyMusaMemorySnapshot(PyObject* _unused, PyObject* arg) {
   HANDLE_TH_ERRORS
+  c10::musa::MempoolId_t mempool_id = {0, 0};
+  if (arg && arg != Py_None) {
+    TORCH_CHECK(PyTuple_Check(arg), "mempool_id must be a tuple");
+    Py_ssize_t size = PyTuple_Size(arg);
+    TORCH_CHECK(size == 2, "mempool_id must be a tuple of 2 integers");
+
+    auto id1 = THPObjectPtr(PyTuple_GetItem(arg, 0));
+    auto id2 = THPObjectPtr(PyTuple_GetItem(arg, 1));
+    TORCH_CHECK(
+        THPUtils_checkLong(id1) && THPUtils_checkLong(id2),
+        "mempool_id elements must be integers");
+
+    mempool_id = c10::musa::MempoolId_t(
+        static_cast<int64_t>(THPUtils_unpackLong(id1)),
+        static_cast<int64_t>(THPUtils_unpackLong(id2)));
+  }
 
   using c10::musa::MUSACachingAllocator::BlockInfo;
   using c10::musa::MUSACachingAllocator::SegmentInfo;
@@ -207,6 +283,7 @@ PyObject* PyMusaMemorySnapshot(PyObject* _unused, PyObject* noargs) {
   py::str is_expandable_s = "is_expandable";
   py::str frames_s = "frames";
   py::str time_us_s = "time_us";
+  py::str compile_context_s = "compile_context";
 
   py::list empty_frames;
   std::vector<CapturedTraceback*> to_gather_frames;
@@ -257,7 +334,7 @@ PyObject* PyMusaMemorySnapshot(PyObject* _unused, PyObject* noargs) {
     return segmentDict;
   };
 
-  auto snapshot = c10::musa::MUSACachingAllocator::snapshot();
+  auto snapshot = c10::musa::MUSACachingAllocator::snapshot(mempool_id);
 
   py::list segments;
 
@@ -321,6 +398,7 @@ PyObject* PyMusaMemorySnapshot(PyObject* _unused, PyObject* noargs) {
       trace_entry[size_s] = te.size_;
       trace_entry[stream_s] = int64_t(te.stream_);
       trace_entry[time_us_s] = te.time_.t_;
+      trace_entry[compile_context_s] = te.compile_context_;
       trace.append(trace_entry);
     }
     traces.append(trace);
@@ -346,6 +424,8 @@ PyObject* PyMusaMemorySnapshot(PyObject* _unused, PyObject* noargs) {
   py::str release_lock_on_malloc_s = "release_lock_on_musamalloc";
   py::str pinned_use_host_register_s = "pinned_use_musa_host_register";
   py::str roundup_power2_divisions_s = "roundup_power2_divisions";
+  py::str graph_capture_record_stream_reuse_s =
+      "graph_capture_record_stream_reuse";
 
   allocator_settings[last_allocator_settings_s] =
       snapshot.config_metadata.last_allocator_settings;
@@ -361,6 +441,8 @@ PyObject* PyMusaMemorySnapshot(PyObject* _unused, PyObject* noargs) {
       snapshot.config_metadata.release_lock_on_malloc;
   allocator_settings[pinned_use_host_register_s] =
       snapshot.config_metadata.pinned_use_host_register;
+  allocator_settings[graph_capture_record_stream_reuse_s] =
+      snapshot.config_metadata.graph_capture_record_stream_reuse;
   unsigned int roundup_key = 1;
   py::dict roundup_settings;
   for (const auto& v : snapshot.config_metadata.roundup_power2_divisions) {
@@ -428,6 +510,20 @@ PyObject* PyMusaSetMemoryFraction(PyObject* _unused, PyObject* args) {
   c10::musa::MUSACachingAllocator::setMemoryFraction(fraction, device);
   END_HANDLE_TH_ERRORS
   Py_RETURN_NONE;
+}
+
+PyObject* PyMusaGetMemoryFraction(PyObject* _unused, PyObject* args) {
+  HANDLE_TH_ERRORS
+  PyObject* device_o = nullptr;
+  if (!PyArg_ParseTuple(args, "O", &device_o)) {
+    THPUtils_invalidArguments(
+        args, nullptr, "get_memory_fraction", 1, "(int device);");
+    return nullptr;
+  }
+  auto device_index = THPUtils_unpackDeviceIndex(device_o);
+  return PyFloat_FromDouble(
+      c10::musa::MUSACachingAllocator::getMemoryFraction(device_index));
+  END_HANDLE_TH_ERRORS
 }
 
 PyObject* PyMusaCachingAllocatorSetAllocatorSettings(
@@ -746,6 +842,36 @@ PyObject* PyMusaGetCurrentRawStream(
   END_HANDLE_TH_ERRORS
 }
 
+PyObject* PyMusaGetStreamFromExternal(PyObject* /* unused */, PyObject* args) {
+  HANDLE_TH_ERRORS
+  PyObject* data_ptr = nullptr;
+  int64_t device_index = 0;
+  if (!PyArg_ParseTuple(args, "OL", &data_ptr, &device_index)) {
+    return nullptr;
+  }
+
+  musaStream_t ext_stream =
+      reinterpret_cast<musaStream_t>(PyLong_AsVoidPtr(data_ptr));
+  if (PyErr_Occurred()) {
+    return nullptr;
+  }
+
+  auto stream = at::musa::getStreamFromExternal(ext_stream, device_index);
+  PyObject* output_tuple = PyTuple_New(3);
+  PyTuple_SetItem(
+      output_tuple, 0, THPUtils_packInt64(static_cast<int64_t>(stream.id())));
+  PyTuple_SetItem(
+      output_tuple,
+      1,
+      THPUtils_packInt64(static_cast<int64_t>(stream.device_index())));
+  PyTuple_SetItem(
+      output_tuple,
+      2,
+      THPUtils_packInt64(static_cast<int64_t>(stream.device_type())));
+  return output_tuple;
+  END_HANDLE_TH_ERRORS
+}
+
 PyObject* PyMusaSetStream(
     PyObject* /* unused */,
     PyObject* args,
@@ -838,6 +964,45 @@ PyObject* THCPModule_musaCachingAllocator_raw_delete(
     pybind11::gil_scoped_release no_gil;
     c10::musa::MUSACachingAllocator::raw_delete(mem_ptr);
   }
+  Py_RETURN_NONE;
+  END_HANDLE_TH_ERRORS
+}
+
+PyObject* THCPModule_musaCachingAllocator_raw_alloc(
+    PyObject* _unused,
+    PyObject* args) {
+  HANDLE_TH_ERRORS
+  PyObject* size_o = nullptr;
+  PyObject* stream_o = nullptr;
+  if (!PyArg_ParseTuple(args, "OO", &size_o, &stream_o)) {
+    THPUtils_invalidArguments(
+        args,
+        nullptr,
+        "caching_allocator_alloc",
+        1,
+        "(ssize_t size, intptr_t stream);");
+    return nullptr;
+  }
+  auto size = PyLong_AsSsize_t(size_o);
+  musaStream_t stream = static_cast<musaStream_t>(PyLong_AsVoidPtr(stream_o));
+  void* mem = nullptr;
+  {
+    pybind11::gil_scoped_release no_gil;
+    mem = c10::musa::MUSACachingAllocator::raw_alloc_with_stream(size, stream);
+  }
+  return PyLong_FromVoidPtr(mem);
+  END_HANDLE_TH_ERRORS
+}
+
+PyObject* THCPModule_musaCachingAllocator_enable(
+    PyObject* _unused,
+    PyObject* arg) {
+  HANDLE_TH_ERRORS
+  TORCH_CHECK(
+      THPUtils_checkBool(arg),
+      "musaCachingAllocator_enable expects a bool, but got ",
+      THPUtils_typename(arg));
+  c10::musa::MUSACachingAllocator::enable(THPUtils_unpackBool(arg));
   Py_RETURN_NONE;
   END_HANDLE_TH_ERRORS
 }
@@ -941,18 +1106,28 @@ at::MemoryFormat DetermineBackendMemoryFormat(
 static PyMethodDef MusaMemoryMethods[] = {
     {"_musa_emptyCache", PyMusaEmptyCache, METH_NOARGS, nullptr},
     {"_host_emptyCache", PyMusaHostEmptyCache, METH_NOARGS, nullptr},
+    {"_musa_hostMemoryStats", PyMusaHostMemoryStats, METH_NOARGS, nullptr},
+    {"_musa_resetAccumulatedHostMemoryStats",
+     PyMusaResetAccumulatedHostMemoryStats,
+     METH_NOARGS,
+     nullptr},
+    {"_musa_resetPeakHostMemoryStats",
+     PyMusaResetPeakHostMemoryStats,
+     METH_NOARGS,
+     nullptr},
     {"_musa_memoryStats", PyMusaMemoryStats, METH_O, nullptr},
     {"_musa_resetAccumulatedMemoryStats",
      PyMusaResetAccumulatedMemoryStats,
      METH_O,
      nullptr},
     {"_musa_resetPeakMemoryStats", PyMusaResetPeakMemoryStats, METH_O, nullptr},
-    {"_musa_memorySnapshot", PyMusaMemorySnapshot, METH_NOARGS, nullptr},
+    {"_musa_memorySnapshot", PyMusaMemorySnapshot, METH_O, nullptr},
     {"_musa_attach_out_of_memory_observer",
      PyMusaAttachOutOfMemoryObserver,
      METH_O,
      nullptr},
     {"_musa_setMemoryFraction", PyMusaSetMemoryFraction, METH_VARARGS, nullptr},
+    {"_musa_getMemoryFraction", PyMusaGetMemoryFraction, METH_VARARGS, nullptr},
     {"_musa_musaCachingAllocator_set_allocator_settings",
      PyMusaCachingAllocatorSetAllocatorSettings,
      METH_O,
@@ -979,6 +1154,10 @@ static PyMethodDef MusaStreamMethods[] = {
     {"_musa_getDefaultStream", PyMusaGetDefaultStream, METH_O, nullptr},
     {"_musa_getCurrentStream", PyMusaGetCurrentStream, METH_O, nullptr},
     {"_musa_getCurrentRawStream", PyMusaGetCurrentRawStream, METH_O, nullptr},
+    {"_musa_getStreamFromExternal",
+     PyMusaGetStreamFromExternal,
+     METH_VARARGS,
+     nullptr},
     {"_musa_setStream",
      castPyCFunctionWithKeywords(PyMusaSetStream),
      METH_VARARGS | METH_KEYWORDS,
@@ -1003,6 +1182,14 @@ static PyMethodDef MusaDeviceMethods[] = {
      nullptr},
     {"_musa_musaCachingAllocator_raw_delete",
      THCPModule_musaCachingAllocator_raw_delete,
+     METH_O,
+     nullptr},
+    {"_musa_musaCachingAllocator_raw_alloc",
+     THCPModule_musaCachingAllocator_raw_alloc,
+     METH_VARARGS,
+     nullptr},
+    {"_musa_musaCachingAllocator_enable",
+     THCPModule_musaCachingAllocator_enable,
      METH_O,
      nullptr},
     {"_musa_clearMublasWorkspaces",
@@ -1264,6 +1451,24 @@ static void RegisterMUSAPluggableAllocator(PyObject* module) {
             device, mempool_id, [stream](musaStream_t target) {
               return target == stream;
             });
+      });
+
+  m.def(
+      "_musa_beginAllocateCurrentThreadToPool",
+      [](c10::DeviceIndex device, c10::musa::MempoolId_t mempool_id) {
+        auto tid = std::this_thread::get_id();
+
+        c10::musa::MUSACachingAllocator::beginAllocateToPool(
+            device, mempool_id, [=](musaStream_t) {
+              auto current_tid = std::this_thread::get_id();
+              return current_tid == tid;
+            });
+      });
+
+  m.def(
+      "_musa_endAllocateToPool",
+      [](c10::DeviceIndex device, c10::musa::MempoolId_t mempool_id) {
+        c10::musa::MUSACachingAllocator::endAllocateToPool(device, mempool_id);
       });
 
   m.def(

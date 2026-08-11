@@ -136,12 +136,15 @@ class Event(torch_musa._MUSAC._MusaEventBase):
             (default: ``False``)
     """
 
-    def __new__(cls, enable_timing=False, blocking=False, interprocess=False):
+    def __new__(
+        cls, enable_timing=False, blocking=False, interprocess=False, external=False
+    ):
         return super(Event, cls).__new__(
             cls,
             enable_timing=enable_timing,
             blocking=blocking,
             interprocess=interprocess,
+            external=external,
         )
 
     @classmethod
@@ -345,6 +348,32 @@ def default_stream(device: Optional[_device_t] = None) -> Stream:
         _get_musa_device_index(device, optional=True)
     )
 
+    return Stream(
+        stream_id=streamdata[0], device_index=streamdata[1], device_type=streamdata[2]
+    )
+
+
+def get_stream_from_external(data_ptr: int, device: "Device" = None) -> Stream:
+    r"""Return a :class:`Stream` from an externally allocated MUSA stream.
+
+    This function is used to wrap streams allocated in other libraries in order
+    to facilitate data exchange and multi-library interactions.
+
+    .. note:: This function doesn't manage the stream life-cycle, it is the user
+       responsibility to keep the referenced stream alive while this returned
+       stream is being used.
+
+    Args:
+        data_ptr(int): Integer representation of the `musaStream_t` value that
+            is allocated externally.
+        device(torch.device or int, optional): the device where the stream
+            was originally allocated. If device is specified incorrectly,
+            subsequent launches using this stream may fail.
+    """
+    _lazy_init()
+    streamdata = torch_musa._MUSAC._musa_getStreamFromExternal(
+        data_ptr, _get_musa_device_index(device, optional=True)
+    )
     return Stream(
         stream_id=streamdata[0], device_index=streamdata[1], device_type=streamdata[2]
     )

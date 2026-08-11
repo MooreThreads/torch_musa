@@ -12,6 +12,7 @@ If the entire network is capture safe, one can capture and replay the whole netw
 following example.
 """
 
+import gc
 import os
 import random
 import pytest
@@ -118,4 +119,120 @@ def test_musa_graph():
     res_in_graph = train_in_musa_graph()
     res_no_graph = train()
     print(res_in_graph, res_no_graph)
-    testing.DefaultComparator(res_in_graph, res_no_graph)
+    assert testing.DefaultComparator(res_in_graph, res_no_graph)
+
+
+def test_graph_pool_handle_api():
+    pool = torch.musa.graph_pool_handle()
+    assert isinstance(pool, tuple)
+    assert len(pool) == 2
+    assert torch.musa._POOL_HANDLE(pool) == pool
+
+
+class _FakeStreamContext:
+    def __enter__(self):
+        return None
+
+    def __exit__(self, *_args):
+        return None
+
+
+class _FakeGraph:
+    def capture_begin(self, *args, capture_error_mode="global"):
+        self.capture_begin_args = args
+        self.capture_error_mode = capture_error_mode
+
+    def capture_end(self):
+        self.capture_ended = True
+
+
+def _fake_graph_context():
+    ctx = torch.musa.graph.__new__(torch.musa.graph)
+    ctx.pool = ()
+    ctx.stream_ctx = _FakeStreamContext()
+    ctx.musa_graph = _FakeGraph()
+    ctx.capture_error_mode = "global"
+    return ctx
+
+
+def test_graph_gc_respects_compiler_config(monkeypatch):
+    num_gc_calls = 0
+
+    def fake_collect():
+        nonlocal num_gc_calls
+        num_gc_calls += 1
+
+    monkeypatch.setattr(torch.musa, "synchronize", lambda: None)
+    monkeypatch.setattr(torch.musa, "empty_cache", lambda: None)
+    monkeypatch.setattr(gc, "collect", fake_collect)
+
+    monkeypatch.setattr(torch.compiler.config, "force_cudagraph_gc", False)
+    with _fake_graph_context():
+        pass
+    assert num_gc_calls == 0
+
+    monkeypatch.setattr(torch.compiler.config, "force_cudagraph_gc", True)
+    with _fake_graph_context():
+        pass
+    assert num_gc_calls == 1
+
+
+def test_profiler_update_skips_uncaptured_graph(monkeypatch):
+    captured_graph = torch.musa.MUSAGraph()
+    uncaptured_graph = torch.musa.MUSAGraph()
+    captured_graph._has_capture = True
+    uncaptured_graph._has_capture = False
+    reinstantiated = []
+
+    monkeypatch.setattr(
+        torch.musa.MUSAGraph,
+        "get_latest_instance",
+        classmethod(lambda cls: [captured_graph, uncaptured_graph]),
+    )
+    monkeypatch.setattr(
+        captured_graph,
+        "reinstantiate_graph",
+        lambda: reinstantiated.append(captured_graph),
+    )
+    monkeypatch.setattr(
+        uncaptured_graph,
+        "reinstantiate_graph",
+        lambda: pytest.fail("uncaptured graph should not be reinstantiated"),
+    )
+
+    torch.musa.update_musa_graph_with_profile()
+    assert reinstantiated == [captured_graph]
+
+
+@pytest.mark.skipif(
+    testing.get_musa_arch() < 22,
+    reason="MUSAGraph is not supported on arch older than qy2",
+)
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_musa_graph_keep_graph_raw_handles():
+    stream = torch.musa.Stream()
+    graph = torch.musa.MUSAGraph(keep_graph=True)
+    static_input = torch.ones(4, device=DEVICE)
+    static_output = torch.empty_like(static_input)
+
+    torch.musa.synchronize()
+    with torch.musa.graph(graph, stream=stream):
+        static_output.copy_(static_input)
+        static_output.add_(1)
+
+    raw_graph = graph.raw_musa_graph()
+    assert isinstance(raw_graph, int)
+    assert raw_graph != 0
+
+    graph.instantiate()
+    raw_graph_exec = graph.raw_musa_graph_exec()
+    assert isinstance(raw_graph_exec, int)
+    assert raw_graph_exec != 0
+
+    static_input.fill_(3)
+    graph.replay()
+    torch.musa.synchronize()
+    assert testing.DefaultComparator(static_output.cpu(), torch.full((4,), 4.0))
+
+
+test_musa_graph()

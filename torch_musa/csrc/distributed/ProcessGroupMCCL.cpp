@@ -4717,14 +4717,10 @@ static mcclResult_t all2all_single_equal_split_impl(
   size_t rankdiff = input.nbytes() / size;
   C10D_MCCL_ASSERT(mcclGroupStart());
   for (const auto r : c10::irange(numranks)) {
-    // MCCL uses 0 byte message for synchronization
-    // Avoid send/recv when message size is zero
-    if (count != 0) {
-      C10D_MCCL_ASSERT(
-          mcclSend(sendbuff + r * rankdiff, count, type, r, comm, stream));
-      C10D_MCCL_ASSERT(
-          mcclRecv(recvbuff + r * rankdiff, count, type, r, comm, stream));
-    }
+    C10D_MCCL_ASSERT(
+        mcclSend(sendbuff + r * rankdiff, count, type, r, comm, stream));
+    C10D_MCCL_ASSERT(
+        mcclRecv(recvbuff + r * rankdiff, count, type, r, comm, stream));
   }
   C10D_MCCL_ASSERT(mcclGroupEnd());
   return mcclSuccess;
@@ -4759,26 +4755,20 @@ static mcclResult_t all2all_single_unequal_split_impl(
   C10D_MCCL_ASSERT(mcclCommCount(comm, &numranks));
   C10D_MCCL_ASSERT(mcclGroupStart());
   for (const auto r : c10::irange(numranks)) {
-    // MCCL uses 0 byte message for synchronization
-    // Avoid send/recv when message size is zero
-    if (sendcounts[r] != 0) {
-      C10D_MCCL_ASSERT(mcclSend(
-          ((char*)sendbuff) + senddispls[r] * size,
-          sendcounts[r],
-          type,
-          r,
-          comm,
-          stream));
-    }
-    if (recvcounts[r] != 0) {
-      C10D_MCCL_ASSERT(mcclRecv(
-          ((char*)recvbuff) + recvdispls[r] * size,
-          recvcounts[r],
-          type,
-          r,
-          comm,
-          stream));
-    }
+    C10D_MCCL_ASSERT(mcclSend(
+        ((char*)sendbuff) + senddispls[r] * size,
+        sendcounts[r],
+        type,
+        r,
+        comm,
+        stream));
+    C10D_MCCL_ASSERT(mcclRecv(
+        ((char*)recvbuff) + recvdispls[r] * size,
+        recvcounts[r],
+        type,
+        r,
+        comm,
+        stream));
   }
   C10D_MCCL_ASSERT(mcclGroupEnd());
 #endif // MCCL_ALLTOALLV_SUPPORTED

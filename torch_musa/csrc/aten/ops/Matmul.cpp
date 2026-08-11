@@ -352,15 +352,12 @@ void MmCall(
   Tensor contiguous_l;
   Tensor contiguous_r;
 
-  // muDNN don't support broadcast for mat1, we need to remove the broadcast:
-  Tensor l_alias = l.alias();
-  if (is_broadcasted_except_last_dim(l) && l.dim() == 2) {
-    l_alias = l.as_strided({1, l.size(-1)}, {l.size(-1), 1});
-  }
-
+  // muDNN don't support broadcast for mat1, we need to remove the broadcast
   // muDNN need origin mat shape info, so we need to transpose(-2, -1) here
-  auto lmt = trans_l ? CreateMUTensor(l_alias.transpose(-2, -1))
-                     : CreateMUTensor(ContiguousRef(l_alias, contiguous_l));
+  Tensor l_alias = l.alias();
+  l_alias = trans_l ? l_alias.transpose(-2, -1)
+                    : FormatContiguous(l_alias, at::MemoryFormat::Contiguous);
+  auto lmt = CreateMUTensor(l_alias);
   auto rmt = trans_r ? CreateMUTensor(r.transpose(-2, -1))
                      : CreateMUTensor(ContiguousRef(r, contiguous_r));
   auto out_contig = out.contiguous();

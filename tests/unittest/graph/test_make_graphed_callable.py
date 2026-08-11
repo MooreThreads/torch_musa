@@ -35,6 +35,16 @@ N, D_in, H, D_out = 640, 4096, 2048, 1024
 DEVICE = "musa"
 
 
+def _graph_supported():
+    return testing.get_musa_arch() >= 22
+
+
+pytestmark = pytest.mark.skipif(
+    not _graph_supported(),
+    reason="MUSAGraph is not supported on arch older than qy2",
+)
+
+
 def make_partial_graph():
     set_seed()
 
@@ -100,13 +110,52 @@ def no_graph():
     return loss.cpu()
 
 
-@pytest.mark.skipif(
-    testing.get_musa_arch() < 22,
-    reason="MUSAGraph is not supported on arch older than qy2",
-)
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 def test_musa_graph():
     res_in_graph = make_partial_graph()
     res_no_graph = no_graph()
     print(res_in_graph, res_no_graph)
-    testing.DefaultComparator(res_in_graph, res_no_graph)
+    assert testing.DefaultComparator(res_in_graph, res_no_graph)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_mgc_pool_no_grad_outputs():
+    pool = torch.musa.graph_pool_handle()
+    x = torch.randn(8, 4, device=DEVICE)
+
+    with torch.no_grad():
+        graphed = torch.musa.make_graphed_callables(
+            lambda inp: inp + 1,
+            (x,),
+            pool=pool,
+        )
+        result = graphed(torch.full_like(x, 2))
+
+    expected = torch.full_like(x, 3)
+    assert testing.DefaultComparator(result.cpu(), expected.cpu())
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_mgc_kwargs_eval_fallback():
+    class ScaleLinear(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear = torch.nn.Linear(4, 4)
+
+        def forward(self, x, *, scale=1.0):
+            return self.linear(x) * scale
+
+    set_seed()
+    module = ScaleLinear().musa()
+    eager = ScaleLinear().musa()
+    eager.load_state_dict(module.state_dict())
+
+    x = torch.randn(8, 4, device=DEVICE)
+    graphed = torch.musa.make_graphed_callables(module, (x,))
+    graphed.eval()
+    eager.eval()
+    real_input = torch.randn_like(x)
+
+    result = graphed(real_input, scale=2.0)
+    expected = eager(real_input, scale=2.0)
+    assert testing.DefaultComparator(result.cpu(), expected.cpu())

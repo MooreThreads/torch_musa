@@ -21,8 +21,7 @@ static bool _musa_graphs_debug = false;
 MempoolId_t graph_pool_handle() {
   // Sets just the second value, to distinguish it from MempoolId_ts created
   // from musaStreamGetCaptureInfo id_s in capture_begin.
-  auto new_pool = c10::musa::MemPool();
-  return new_pool.id();
+  return c10::musa::MemPool::graph_pool_handle();
 }
 
 /**
@@ -46,30 +45,10 @@ MempoolId_t graph_pool_handle() {
  * describes memory management for captures.
  */
 
-std::atomic<int> MUSAGraph::pending_event_queries = 0;
-
-// Track any outstanding event queries that could happen e.g., in a NCCL
-// watchdog so that they can be resolved before the capture begins. Note that
-// event queries are not allowed during a graph capture in the default capture
-// mode.
-void MUSAGraph::inc_pending_event_queries() {
-  pending_event_queries++;
-}
-
-void MUSAGraph::dec_pending_event_queries() {
-  TORCH_INTERNAL_ASSERT(
-      pending_event_queries > 0,
-      "Attempted to decrement the number of outstanding events to be queried, but it was <= 0.");
-  pending_event_queries--;
-}
-
-int MUSAGraph::num_pending_event_queries() {
-  return pending_event_queries;
-}
-
-MUSAGraph::MUSAGraph()
+MUSAGraph::MUSAGraph(bool keep_graph)
     // may not be default-constructed.
-    : capture_stream_(at::musa::getCurrentMUSAStream()) {}
+    : capture_stream_(at::musa::getCurrentMUSAStream()),
+      keep_graph_(keep_graph) {}
 
 void MUSAGraph::register_generator_state(
     c10::intrusive_ptr<at::MUSAGeneratorState> state) {
@@ -91,12 +70,7 @@ void MUSAGraph::capture_begin(
       "This MUSAGraph instance already owns a captured graph. "
       "To capture a new graph, create a new instance.");
 
-  // For now, a MUSAGraph instance only accommodates the default generator on
-  // the device that's current when capture begins. If any op in the captured
-  // region uses a non-default generator, or a generator on another device, the
-  // offending generator will throw an error. These restrictions simplify
-  // MUSAGraph, but could be relaxed in the future: in principle, the underlying
-  // Cuda calls do permit cross-device ops to be captured.
+  // default generator is always registered
   auto* gen = get_generator_or_default<MUSAGeneratorImpl>(
       c10::nullopt, musa::detail::getDefaultMUSAGenerator());
   gen->register_graph(this);
@@ -126,11 +100,10 @@ void MUSAGraph::capture_begin(
     TORCH_INTERNAL_ASSERT(!(pool.first && pool.second));
     mempool_id_ = pool;
   } else {
-    // User did not ask us to share a mempool. Use our own id_ as our
-    // mempool_id_. Sets just the first value, to distinguish it from
+    // User did not ask us to share a mempool. Create graph pool handle using
+    // is_user_created=false. Sets just the first value, to distinguish it from
     // MempoolId_ts created by graph_pool_handle().
-    auto mempool = c10::musa::MemPool({}, false);
-    mempool_id_ = mempool.id();
+    mempool_id_ = c10::musa::MemPool::graph_pool_handle(false);
     TORCH_INTERNAL_ASSERT(mempool_id_.first > 0);
   }
 
@@ -139,9 +112,13 @@ void MUSAGraph::capture_begin(
   // triggering an invalid musaEventRecord in the caching allocator due to the
   // capture status being updated _after_ a capture had already started.
   c10::musa::MUSACachingAllocator::beginAllocateToPool(
-      capture_dev_, mempool_id_, [this](musaStream_t stream) {
-        musaStreamCaptureStatus status;
-        CaptureId_t stream_capture_id;
+      // TODO(MUSA runtime): Confirm musaStreamGetCaptureInfo_v2's capture id
+      // is stable and comparable with the id recorded after begin capture.
+      capture_dev_,
+      mempool_id_,
+      [this](musaStream_t stream) {
+        musaStreamCaptureStatus status{};
+        CaptureId_t stream_capture_id = 0;
         AT_MUSA_CHECK(musaStreamGetCaptureInfo_v2(
             stream, &status, &stream_capture_id, nullptr, nullptr, nullptr));
         return status ==
@@ -149,22 +126,11 @@ void MUSAGraph::capture_begin(
             stream_capture_id == capture_id_;
       });
 
-  // At this point, any NCCL watchdogs should be aware that we are in capture
-  // mode and therefore should not enqueue any additional work that could be
-  // event-queried. We still must wait on any existing work that has not been
-  // cleaned up.
-  while (num_pending_event_queries()) {
-    TORCH_WARN_ONCE(
-        "Waiting for pending NCCL work to finish before starting graph capture.");
-    std::this_thread::sleep_for(
-        std::chrono::milliseconds(kSynchronizeBusyWaitMillis));
-  }
-
   // musaStreamCaptureModeGlobal is the most conservative option to
   // prevent potentially unsafe MUSA API calls during capture.
   AT_MUSA_CHECK(musaStreamBeginCapture(capture_stream_, capture_mode));
 
-  musaStreamCaptureStatus status;
+  musaStreamCaptureStatus status{};
   AT_MUSA_CHECK(musaStreamGetCaptureInfo_v2(
       stream, &status, &capture_id_, nullptr, nullptr, nullptr));
   TORCH_INTERNAL_ASSERT(
@@ -181,11 +147,7 @@ void MUSAGraph::capture_end() {
 
   c10::musa::MUSACachingAllocator::endAllocateToPool(capture_dev_, mempool_id_);
 
-  TORCH_CHECK(graph_ != NULL, "Invalid capture.");
-  has_graph_ = true;
-
-  AT_MUSA_CHECK(musaGraphInstantiate(&graph_exec_, graph_, NULL, NULL, 0));
-  has_graph_exec_ = true;
+  TORCH_CHECK(graph_ != nullptr, "Invalid capture.");
 
   for (auto& [generator_state, wholegraph_increments] :
        captured_generator_states_) {
@@ -193,42 +155,77 @@ void MUSAGraph::capture_end() {
   }
 
   size_t numMUSAGraphNodes = 0;
-  AT_MUSA_CHECK(musaGraphGetNodes(graph_, NULL, &numMUSAGraphNodes));
+  AT_MUSA_CHECK(musaGraphGetNodes(graph_, nullptr, &numMUSAGraphNodes));
   if (numMUSAGraphNodes == 0) {
     TORCH_WARN(
         "The MUSA Graph is empty. This usually means that the graph was ",
         "attempted to be captured on wrong device or stream.");
   }
 
-  // Unlike the cuda implementation, we can't destroy the graph_
-  // check if debug path is set
-  // if (!_musa_graphs_debug) {
-  //   // Now that we've instantiated graph_ into graph_exec_,
-  //   // we don't need graph_ anymore.
-  //   // AT_MUSA_CHECK(musaGraphDestroy(graph_));
-  //   // has_graph_ = false;
-  // } else {
-  //   TORCH_WARN(
-  //       "DEBUG: TORCH_MUSAGRAPHS_DEBUG_PATH detected. graph_ will not be
-  //       freed until debug_dump is called.");
-  // }
+  capture_ended_ = true;
+  has_graph_ = true;
+  if (!keep_graph_) {
+    instantiate();
+    // TODO(MUSA runtime): Confirm whether musaGraphExec_t is independent from
+    // musaGraph_t after instantiation. CUDA destroys graph_ here when debug is
+    // off. Unlike the cuda implementation, we can't destroy the graph_ if
+    // (!_musa_graphs_debug) {
+    //   AT_CUDA_CHECK(musaGraphDestroy(graph_));
+    // }
+    // has_graph_ = false;
+  }
+}
+
+void MUSAGraph::instantiate() {
+  TORCH_CHECK(
+      capture_ended_,
+      "capture_end() must have been called before calling instantiate");
+
+  if (has_graph_exec_) {
+    TORCH_CHECK(
+        keep_graph_,
+        "instantiate() is intended to be called by the user only when keep_graph=true");
+    AT_MUSA_CHECK(musaGraphExecDestroy(graph_exec_));
+    graph_exec_ = nullptr;
+  }
+
+  // TODO(MUSA runtime): Check whether MUSA has an instantiate-with-flags API
+  // equivalent to cudaGraphInstantiateFlagAutoFreeOnLaunch.
+  AT_MUSA_CHECK(musaGraphInstantiate(&graph_exec_, graph_, NULL, NULL, 0));
+  has_graph_exec_ = true;
 }
 
 void MUSAGraph::reinstantiate_graph() {
+  // TODO(MUSA profiler/runtime): Confirm why profiling requires
+  // re-instantiating graph_exec_ and whether this depends on keeping graph_
+  // alive.
   TORCH_CHECK(
-      graph_ != NULL && graph_exec_ != NULL && has_graph_ && has_graph_exec_,
-      "The graph_ and graph_exec_ musa have been created in the graph capture stage");
-  // we need to reinstantiate graph_exec, let mupti perceive more infos about
-  // the graph, when enable profile.
-  C10_MUSA_CHECK_WARN(musaGraphExecDestroy(graph_exec_));
-  graph_exec_ = NULL;
+      capture_ended_ && graph_ != nullptr && has_graph_,
+      "The graph_ musa has been created in the graph capture stage");
+  if (has_graph_exec_) {
+    // TODO(MUSA runtime): Confirm musaGraphExecDestroy releases resources
+    // synchronously and does not require a device sync before graph memory is
+    // released.
+    C10_MUSA_CHECK_WARN(musaGraphExecDestroy(graph_exec_));
+    has_graph_exec_ = false;
+    graph_exec_ = nullptr;
+  }
+  // TODO(MUSA runtime): Check whether MUSA has an instantiate-with-flags API
+  // equivalent to cudaGraphInstantiateFlagAutoFreeOnLaunch.
   AT_MUSA_CHECK(musaGraphInstantiate(&graph_exec_, graph_, NULL, NULL, 0));
+  has_graph_exec_ = true;
 }
 
 void MUSAGraph::replay() {
   TORCH_CHECK(
-      has_graph_exec_,
+      capture_ended_,
       "Called MUSAGraph::replay without a preceding successful capture.");
+
+  if (!has_graph_exec_) {
+    TORCH_INTERNAL_ASSERT(keep_graph_);
+    instantiate();
+  }
+
   c10::OptionalDeviceGuard device_guard{capture_stream_.device()};
 
   for (auto& [generator_state, wholegraph_increments] :
@@ -238,9 +235,6 @@ void MUSAGraph::replay() {
 
   // graph_exec_ may be replayed in any stream.
   AT_MUSA_CHECK(musaGraphLaunch(graph_exec_, at::musa::getCurrentMUSAStream()));
-
-  // Unlike the cuda implementation, we need not musaDeviceSynchronize after
-  // launch. AT_MUSA_CHECK(musaDeviceSynchronize());
 }
 
 void MUSAGraph::enable_debug_mode() {
@@ -248,18 +242,42 @@ void MUSAGraph::enable_debug_mode() {
 }
 
 void MUSAGraph::debug_dump(const std::string& debug_path) {
-  if (_musa_graphs_debug) {
+  if (_musa_graphs_debug || keep_graph_) {
     TORCH_WARN("DEBUG: calling debug_dump()");
     if (has_graph_) {
       TORCH_WARN("DEBUG: calling musaGraphDebugDotPrint() with ", debug_path);
+      // TODO(MUSA runtime): Replace 1 << 10 with the official verbose flag if
+      // MUSA exposes a cudaGraphDebugDotFlagsVerbose equivalent.
       C10_MUSA_CHECK_WARN(musaGraphDebugDotPrint(
           graph_, debug_path.c_str(), 1 << 10)); // most verbose output
-      AT_MUSA_CHECK(musaGraphDestroy(graph_));
+      // TODO(MUSA runtime): If musaGraphExec_t depends on musaGraph_t, this
+      // destroy is unsafe and debug_dump should keep graph_ alive.
+      if (!keep_graph_) {
+        AT_MUSA_CHECK(musaGraphDestroy(graph_));
+        has_graph_ = false;
+      }
     }
   } else {
     TORCH_WARN(
-        "MUSA Graphs debug not enabled, set with torch._C._musa_enable_graphs_debug_mode");
+        "MUSA Graphs debug not enabled, set with [graph].enable_debug_mode()");
   }
+}
+
+musaGraph_t MUSAGraph::raw_musa_graph() {
+  TORCH_CHECK(
+      keep_graph_,
+      "You cannot access the raw musaGraph_t instance unless MUSAGraph was initialized with keep_graph=true");
+  TORCH_CHECK(
+      has_graph_,
+      "You cannot access the raw musaGraph_t instance until capture_end() has been called");
+  return graph_;
+}
+
+musaGraphExec_t MUSAGraph::raw_musa_graph_exec() {
+  TORCH_CHECK(
+      has_graph_exec_,
+      "You cannot access the raw musaGraphExec_t instance until instantiate() has been called");
+  return graph_exec_;
 }
 
 void MUSAGraph::reset() {
@@ -284,19 +302,22 @@ void MUSAGraph::reset() {
   // failure exception in a script, or is running in REPL or (god forbid) a
   // Jupyter notebook, I don't see an easy way for reset() to gracefully fix all
   // such possible error states.
-  // if (has_graph_ || has_graph_exec_) {
-  //   // notifyCaptureDestroy may throw. How should we handle this?
-  //   c10::musa::MUSACachingAllocator::releasePool(capture_dev_, mempool_id_);
-  // }
+  if (capture_ended_) {
+    // notifyCaptureDestroy may throw. How should we handle this?
+    // TODO(MUSA allocator/runtime): Confirm graph private pools should be
+    // released at reset/destruction with the same ordering as CUDA.
+    c10::musa::MUSACachingAllocator::releasePool(capture_dev_, mempool_id_);
+    capture_ended_ = false;
+  }
   if (has_graph_) {
     C10_MUSA_CHECK_WARN(musaGraphDestroy(graph_));
     has_graph_ = false;
-    graph_ = NULL;
+    graph_ = nullptr;
   }
   if (has_graph_exec_) {
     C10_MUSA_CHECK_WARN(musaGraphExecDestroy(graph_exec_));
     has_graph_exec_ = false;
-    graph_exec_ = NULL;
+    graph_exec_ = nullptr;
   }
 }
 
@@ -304,7 +325,7 @@ void MUSAGraph::reset() {
 // pool as this graph.
 MempoolId_t MUSAGraph::pool() {
   TORCH_CHECK(
-      has_graph_exec_,
+      capture_ended_,
       "Called MUSAGraph::pool() without a preceding successful capture.");
   return mempool_id_;
 }

@@ -110,6 +110,15 @@ input_data = [
         "alpha": 1,
     },
     {
+        # input is broadcasted, m != 1
+        "input": torch.as_strided(torch.randn(1, 256), (4, 256), (0, 1), 0),
+        # mat1 is broadcasted, m != 1
+        "mat1": torch.as_strided(torch.randn(1, 256), (4, 256), (0, 1), 0),
+        "mat2": torch.randn(256, 256),
+        "beta": 1,
+        "alpha": 1,
+    },
+    {
         "input": torch.randn(1, 1),
         # mat1 is broadcasted
         "mat1": torch.as_strided(torch.randn(1, 256), (1, 256), (0, 1), 0),

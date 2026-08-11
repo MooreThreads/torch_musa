@@ -664,11 +664,14 @@ def _use_musa_memory_pool_manager(
     stream.wait_stream(torch.musa.current_stream())
 
     with torch.musa.stream(stream), torch.device(device):
-        torch_musa._MUSAC._musa_beginAllocateCurrentStreamToPool(device, mem_pool)
+        # Begin allocate to mem pool for all memory allocation on the current thread.
+        # This is thread safe since a thread can only warmup or record 1 musagraph
+        # at the same time.
+        torch_musa._MUSAC._musa_beginAllocateCurrentThreadToPool(device, mem_pool)
         try:
             yield
         finally:
-            torch_musa._MUSAC._musa_endAllocateCurrentStreamToPool(device, mem_pool)
+            torch_musa._MUSAC._musa_endAllocateToPool(device, mem_pool)
             torch_musa._MUSAC._musa_releasePool(device, mem_pool)
 
     torch.musa.current_stream().wait_stream(stream)

@@ -20,7 +20,7 @@
 #include "torch_musa/csrc/core/MUSAStream.h"
 
 namespace at {
-namespace native {
+namespace musa {
 
 using at::musa::FastDivmod;
 using at::musa::VecType;
@@ -193,8 +193,10 @@ __global__ void SumAndScatterVector(
     const index_t* idx,
     const index_t* segment_offsets,
     const index_t* partials_per_segment_offset,
+    bool scale_grad_by_freq,
     const int num_of_segments,
     const int num_of_partial_segments,
+    const int64_t numel,
     const int stride,
     FastDivmod stride_warped_fastdv,
     const int padding_idx) {
@@ -216,7 +218,13 @@ __global__ void SumAndScatterVector(
   const int idx_end = (id == num_of_segments - 1)
       ? num_of_partial_segments
       : partials_per_segment_offset[id + 1];
-  index_t target_row = idx[segment_offsets[id]];
+  const int seg_start = segment_offsets[id];
+  const int seg_end =
+      (id == num_of_segments - 1) ? numel : segment_offsets[id + 1];
+  index_t target_row = idx[seg_start];
+  const accscalar_t scale_inv = scale_grad_by_freq
+      ? accscalar_t(1.0) / static_cast<accscalar_t>(seg_end - seg_start)
+      : accscalar_t(1.0);
   if (feature_offset_vlen + vlen <= stride) {
     vec_acc_dtype weight_acc;
     vec_dtype weight;
@@ -230,14 +238,10 @@ __global__ void SumAndScatterVector(
     }
 #pragma unroll
     for (int k = 0; k < vlen; k++) {
-      weight.val_.elem[k] += (scalar_t)weight_acc.val_.elem[k];
+      weight.val_.elem[k] =
+          static_cast<scalar_t>(weight_acc.val_.elem[k] * scale_inv);
     }
     if (target_row != padding_idx) {
-      // #pragma unroll
-      // for (int k = 0; k < vlen; k++) {
-      //   dw[target_row * stride + feature_offset_vlen + k] =
-      //   weight.val_.elem[k];
-      // }
       vec_dtype::store(dw, target_row * stride + feature_offset_vlen, weight);
     }
   } else {
@@ -247,7 +251,8 @@ __global__ void SumAndScatterVector(
         weight += dw_segments[idx * stride + feature_offset_vlen];
       }
       if (target_row != padding_idx) {
-        dw[target_row * stride + feature_offset_vlen] = weight;
+        dw[target_row * stride + feature_offset_vlen] =
+            static_cast<scalar_t>(weight * scale_inv);
       }
       feature_offset_vlen++;
     }
@@ -261,11 +266,14 @@ __global__ void SumAndScatter(
     const index_t* idx,
     const index_t* segment_offsets,
     const index_t* partials_per_segment_offset,
+    bool scale_grad_by_freq,
     const int num_of_segments,
     const int num_of_partial_segments,
+    const int64_t numel,
     const int stride,
     FastDivmod stride_warped_fastdv,
     const int padding_idx) {
+  using accscalar_t = acc_type<scalar_t, true>;
   const uint32_t gid = blockIdx.x * blockDim.x + threadIdx.x;
   uint32_t id, feature_offset; // quotient, remainder
   stride_warped_fastdv(id, feature_offset, gid);
@@ -279,13 +287,20 @@ __global__ void SumAndScatter(
   const int idx_end = (id == num_of_segments - 1)
       ? num_of_partial_segments
       : partials_per_segment_offset[id + 1];
-  acc_type<scalar_t, true> weight = 0;
+  const int seg_start = segment_offsets[id];
+  const int seg_end =
+      (id == num_of_segments - 1) ? numel : segment_offsets[id + 1];
+  accscalar_t weight = 0;
   for (int idx = idx_start; idx < idx_end; idx++) {
     weight += dw_segments[idx * stride + feature_offset];
   }
-  index_t target_row = idx[segment_offsets[id]];
+  index_t target_row = idx[seg_start];
   if (target_row != padding_idx) {
-    dw[target_row * stride + feature_offset] = weight;
+    const accscalar_t scale_inv = scale_grad_by_freq
+        ? accscalar_t(1.0) / static_cast<accscalar_t>(seg_end - seg_start)
+        : accscalar_t(1.0);
+    dw[target_row * stride + feature_offset] =
+        static_cast<scalar_t>(weight * scale_inv);
   }
 }
 } // namespace
@@ -295,7 +310,8 @@ Tensor EmbeddingBackwardMUSAKernel(
     const Tensor& orig_indices,
     const Tensor& sorted_indices,
     int64_t num_weights,
-    int padding_idx) {
+    int padding_idx,
+    bool scale_grad_by_freq) {
   auto stream = at::musa::getCurrentMUSAStream();
   const ptrdiff_t numel = sorted_indices.numel();
   Tensor grad_weight = at::zeros({num_weights, grad.size(-1)}, grad.options());
@@ -436,8 +452,10 @@ Tensor EmbeddingBackwardMUSAKernel(
             sorted_indices.data_ptr<index_t>(),              \
             segment_offsets.data_ptr<index_t>(),             \
             partials_per_segment_offset.data_ptr<index_t>(), \
+            scale_grad_by_freq,                              \
             num_of_segments,                                 \
             num_of_partial_segments,                         \
+            numel,                                           \
             tbl_w,                                           \
             stride_warped_fastdv,                            \
             padding_idx);                                    \
@@ -474,8 +492,10 @@ Tensor EmbeddingBackwardMUSAKernel(
                     sorted_indices.data_ptr<index_t>(),
                     segment_offsets.data_ptr<index_t>(),
                     partials_per_segment_offset.data_ptr<index_t>(),
+                    scale_grad_by_freq,
                     num_of_segments,
                     num_of_partial_segments,
+                    numel,
                     tbl_w,
                     stride_warped_fastdv,
                     padding_idx);
@@ -487,5 +507,5 @@ Tensor EmbeddingBackwardMUSAKernel(
   return grad_weight;
 }
 
-} // namespace native
+} // namespace musa
 } // namespace at

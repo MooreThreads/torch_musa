@@ -6,7 +6,7 @@ import sys
 import warnings
 import os
 import re
-from typing import Set, Type, Union
+from typing import NewType, Set, Type, Union
 import contextlib
 
 from packaging.version import Version
@@ -96,6 +96,7 @@ from .core.stream import (
     set_stream,
     current_stream,
     default_stream,
+    get_stream_from_external,
     ExternalStream,
     StreamContext,
     stream,
@@ -129,6 +130,8 @@ torch.random.fork_rng = fork_rng
 
 from .core.mudnn import *
 from .core.musa import *
+
+_POOL_HANDLE = NewType("_POOL_HANDLE", tuple[int, int])
 
 from .musa_graph import *
 

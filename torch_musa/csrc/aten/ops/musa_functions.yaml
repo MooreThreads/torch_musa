@@ -649,6 +649,18 @@
 - func: special_spherical_bessel_j0
 - func: special_spherical_bessel_j0.out
 
+- func: cumsum
+- func: cumsum_
+- func: cumsum.out
+  dispatch:
+    PrivateUse1: CumSumOut
+
+- func: cumprod
+- func: cumprod_
+- func: cumprod.out
+  dispatch:
+    PrivateUse1: CumProdOut
+
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 #
@@ -2053,8 +2065,10 @@
     NestedTensorPrivateUse1: native_dropout_backward
 
 - func: embedding_dense_backward
+  device_check: ExactSame
+  device_guard: True
   dispatch:
-    PrivateUse1: EmbeddingDenseBwd
+    PrivateUse1: EmbeddingDenseBwdMUSA
 
 - func: _embedding_bag
   dispatch:
@@ -3407,28 +3421,6 @@
   structured: false
   dispatch:
     PrivateUse1: NormDtypeOut
-
-- func: cumsum
-  dispatch:
-    PrivateUse1: CumSum
-- func: cumsum_
-  dispatch:
-    PrivateUse1: CumSum_
-- func: cumsum.out
-  structured: false
-  dispatch:
-    PrivateUse1: CumSumOut
-
-- func: cumprod
-  dispatch:
-    PrivateUse1: CumProd
-- func: cumprod_
-  dispatch:
-    PrivateUse1: CumProd_
-- func: cumprod.out
-  structured: false
-  dispatch:
-    PrivateUse1: CumProdOut
 
 - func: _cummin_helper
   dispatch:

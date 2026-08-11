@@ -39,3 +39,7 @@ def _apply_distributed_patch():
     from .fsdp._fully_shard import _apply_fully_shard_patch
 
     _apply_fully_shard_patch()
+
+    from ._symmetric_memory import _apply_symmetric_memory_patch
+
+    _apply_symmetric_memory_patch()

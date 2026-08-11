@@ -109,34 +109,108 @@ if testing.get_musa_arch() >= 22:
     float_dtypes.append(torch.bfloat16)
 
 
-@testing.test_on_nonzero_card_if_multiple_musa_device(1)
-@pytest.mark.parametrize("input_shape", gen_shape_of_indices_for_bwd())
-@pytest.mark.parametrize("dtype", float_dtypes)
-def test_embedding_bwd(input_shape, dtype):
-    global m, n
-    comparator = testing.DefaultComparator(abs_diff=1e-6)
+def get_embedding_bwd_comparator(dtype):
     if dtype == torch.float16:
-        comparator = testing.DefaultComparator(abs_diff=5e-2, rel_diff=1e-3)
+        return testing.DefaultComparator(abs_diff=5e-2, rel_diff=1e-3)
     if dtype == torch.bfloat16:
-        # In contrast to MUSA's implementation, there is no accumulation of
-        # intermediate computation in CPU's implementation, so relax the rel error.
-        comparator = testing.DefaultComparator(abs_diff=6e-2, rel_diff=1e-2)
-    grad_output = torch.randn((*input_shape, m), dtype=dtype)
-    indices = torch.randint(low=0, high=n, size=input_shape)
+        return testing.DefaultComparator(abs_diff=6e-2, rel_diff=1e-2)
+    return testing.DefaultComparator(abs_diff=1e-6)
+
+
+def gen_scale_grad_by_freq_indices_cases():
+    return [
+        (
+            "partial_duplicate",
+            torch.tensor(
+                [
+                    [4, 6, 5, 6],
+                    [9, 6, 5, 5],
+                ],
+                dtype=torch.long,
+            ),
+        ),
+        (
+            "all_same",
+            torch.zeros((8, 512), dtype=torch.long),
+        ),
+        (
+            "all_unique",
+            torch.arange(8 * 512, dtype=torch.long).reshape(8, 512),
+        ),
+    ]
+
+
+def gen_embedding_bwd_cases():
+    cases = [
+        pytest.param(
+            False,
+            input_shape,
+            None,
+            id=f"dense_backward_{input_shape}",
+        )
+        for input_shape in gen_shape_of_indices_for_bwd()
+    ]
+    cases.extend(
+        pytest.param(
+            True,
+            None,
+            indices,
+            id=f"scale_grad_by_freq_{case_id}",
+        )
+        for case_id, indices in gen_scale_grad_by_freq_indices_cases()
+    )
+    return cases
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("dtype", float_dtypes)
+@pytest.mark.parametrize(
+    "scale_grad_by_freq,input_shape,fixed_indices",
+    gen_embedding_bwd_cases(),
+)
+def test_embedding_bwd(dtype, scale_grad_by_freq, input_shape, fixed_indices):
+    global m, n
+    comparator = get_embedding_bwd_comparator(dtype)
+
+    if fixed_indices is None:
+        embedding_dim = m
+        num_weights = n
+        indices = torch.randint(low=0, high=num_weights, size=input_shape)
+    else:
+        embedding_dim = 128
+        indices = fixed_indices
+        num_weights = int(indices.max()) + 1
+
+    grad = torch.randn((*indices.shape, embedding_dim), dtype=dtype)
 
     input_args = {
-        "grad_output": grad_output,
+        "grad": grad,
         "indices": indices,
-        "num_weights": n,
+        "num_weights": num_weights,
         "padding_idx": -1,
-        "scale_grad_by_freq": False,
+        "scale_grad_by_freq": scale_grad_by_freq,
+        "sparse": False,
     }
     test = testing.OpTest(
-        func=torch.ops.aten.embedding_dense_backward,
+        func=torch.ops.aten.embedding_backward,
         input_args=input_args,
         comparators=comparator,
     )
     test.check_result()
+
+    if scale_grad_by_freq:
+        unscaled_input_args = {
+            **input_args,
+            "scale_grad_by_freq": False,
+        }
+        scaled_result = torch.ops.aten.embedding_backward(**input_args)
+        unscaled_result = torch.ops.aten.embedding_backward(**unscaled_input_args)
+
+        if (
+            torch.count_nonzero(torch.bincount(indices.reshape(-1))).item()
+            < indices.numel()
+        ):
+            assert not comparator(scaled_result.float(), unscaled_result.float())
 
 
 float_dtypes = [torch.float32]

@@ -1,9 +1,12 @@
 """Test device features."""
 
-# pylint: disable=invalid-name, comparison-with-itself, unused-variable, unused-import, C0415, C0121, C2801, W0611, C0116
+# pylint: disable=invalid-name, comparison-with-itself, unused-variable, unused-import, C0415, C0121, C2801, W0611, C0116, C0115
+import contextlib
+import ctypes
 import queue
 import threading
 import torch
+from torch.testing._internal.common_utils import TestCase
 import pytest
 import torch_musa
 from torch_musa import testing
@@ -907,3 +910,103 @@ def test_bf16_tf32_supported():
     else:
         assert not torch_musa.is_bf16_supported(False)  # pylint: disable=E1123, E1121
         assert not torch_musa.is_tf32_supported()
+
+
+class TestExternalStream(TestCase):
+    """Test external stream functions"""
+
+    @contextlib.contextmanager
+    def _get_external_stream(self, device):
+        musart = torch.musa.musart()
+        stream = ctypes.c_ulonglong(0)
+        stream_p = ctypes.POINTER(ctypes.c_void_p)(stream)
+        stream_p_int = ctypes.cast(stream_p, ctypes.c_void_p).value
+        with device:
+            try:
+                out = musart.musaStreamCreate(stream_p_int)
+                self.assertEqual(out, 0)
+                self.assertNotEqual(stream.value, 0)
+                yield stream.value
+            finally:
+                out = musart.musaStreamDestroy(stream.value)
+                self.assertEqual(out, 0)
+
+    def test_external_streams(self):
+        device = torch.musa.device(0)
+        with self._get_external_stream(device) as stream_v:
+            ext_stream = torch.musa.ExternalStream(stream_v)
+            self.assertEqual(stream_v, ext_stream.musa_stream)
+            self.assertEqual(ext_stream.device.index, device.idx)
+            ext_stream = torch.musa.get_stream_from_external(stream_v, device)
+            self.assertEqual(stream_v, ext_stream.musa_stream)
+            self.assertEqual(ext_stream.device.index, device.idx)
+
+    @testing.skip_if_not_multiple_musa_device
+    def test_external_streams_multi_device(self):
+        device = torch.musa.device(1)
+        with self._get_external_stream(device) as stream_v:
+            ext_stream = torch.musa.ExternalStream(stream_v, device=device)
+            self.assertEqual(stream_v, ext_stream.musa_stream)
+            self.assertEqual(ext_stream.device.index, device.idx)
+            ext_stream = torch.musa.get_stream_from_external(stream_v, device)
+            self.assertEqual(stream_v, ext_stream.musa_stream)
+            self.assertEqual(ext_stream.device.index, device.idx)
+
+
+@pytest.mark.skip(reason="Waiting musart import")
+def test_graph_external_event_timing():
+    torch.musa.empty_cache()
+    x = torch.ones(1024 * 1024, device="musa")
+    y = torch.ones_like(x)
+    g = torch.musa.MUSAGraph()
+    start_event = torch.musa.Event(enable_timing=True, external=True)
+    end_event = torch.musa.Event(enable_timing=True, external=True)
+    with torch.musa.graph(g):
+        start_event.record()
+        z = x + y
+        end_event.record()
+    torch.musa.synchronize()
+    g.replay()
+    torch.musa.synchronize()
+    assert start_event.elapsed_time(end_event) > 0
+
+
+@pytest.mark.skip(reason="Waiting musart import")
+def test_graph_external_event_block():
+    torch.musa.empty_cache()
+    torch.musa.synchronize()
+
+    x = torch.zeros(128, device="musa")
+    y = torch.zeros_like(x)
+    event = torch.musa.Event(external=True)
+
+    # Materialize the underlying musaEvent_t before capture. MUSAEvent::block
+    # only inserts a wait if the event has already been created.
+    event.record()
+    torch.musa.synchronize()
+
+    g = torch.musa.MUSAGraph()
+    capture_stream = torch.musa.Stream()
+
+    with torch.musa.graph(g, stream=capture_stream):
+        event.wait()
+        y.copy_(x)
+
+    torch.musa.synchronize()
+    x.fill_(0)
+    y.fill_(0)
+
+    producer_stream = torch.musa.Stream()
+    consumer_stream = torch.musa.Stream()
+
+    with torch.musa.stream(producer_stream):
+        torch.musa._sleep(FIVE_HUNDRED_MIL_CYCLES)
+        x.fill_(1)
+        event.record()
+
+    with torch.musa.stream(consumer_stream):
+        g.replay()
+
+    consumer_stream.synchronize()
+
+    assert torch.equal(y, torch.ones_like(y))

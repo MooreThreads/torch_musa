@@ -192,8 +192,14 @@ static std::map<at::ScalarType, mcclDataType_t> mcclDataType = {
     {at::kBFloat16, mcclBfloat16},
 #endif
 #if MCCL_FP8_SUPPORTED
+#if defined(MCCL_VERSION_CODE) && defined(MCCL_VERSION) && \
+    MCCL_VERSION_CODE >= MCCL_VERSION(2, 30, 4)
+    {at::kFloat8_e5m2, mcclFloat8e5m2},
+    {at::kFloat8_e4m3fn, mcclFloat8e4m3},
+#else
     {at::kFloat8_e5m2, mcclFp8E5M2},
     {at::kFloat8_e4m3fn, mcclFp8E4M3},
+#endif
 #endif
 };
 

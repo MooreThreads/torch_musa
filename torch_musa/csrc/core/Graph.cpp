@@ -13,7 +13,7 @@ void THCPGraph_init(PyObject* module) {
   torch_C_m.def("_graph_pool_handle", &::at::musa::graph_pool_handle);
 
   shared_ptr_class_<::at::musa::MUSAGraph>(torch_C_m, "_MUSAGraph")
-      .def(py::init<>())
+      .def(py::init<bool>(), py::arg("keep_graph") = false)
       .def(
           "capture_begin",
           [](::at::musa::MUSAGraph& self,
@@ -44,6 +44,17 @@ void THCPGraph_init(PyObject* module) {
           "capture_end",
           torch::wrap_pybind_function_no_gil(&at::musa::MUSAGraph::capture_end))
       .def(
+          "instantiate",
+          torch::wrap_pybind_function_no_gil(&at::musa::MUSAGraph::instantiate))
+      .def(
+          "register_generator_state",
+          [](::at::musa::MUSAGraph& self, py::handle raw_generator) {
+            auto generator = THPGenerator_Unwrap(raw_generator.ptr());
+            py::gil_scoped_release release;
+            return self.register_generator_state(generator);
+          },
+          py::arg("generator"))
+      .def(
           "reinstantiate_graph",
           torch::wrap_pybind_function_no_gil(
               &at::musa::MUSAGraph::reinstantiate_graph))
@@ -68,5 +79,19 @@ void THCPGraph_init(PyObject* module) {
           "debug_dump",
           torch::wrap_pybind_function_no_gil(
               &::at::musa::MUSAGraph::debug_dump),
-          py::arg("debug_path"));
+          py::arg("debug_path"))
+      .def(
+          "raw_musa_graph",
+          [](::at::musa::MUSAGraph& self) {
+            musaGraph_t graph = self.raw_musa_graph();
+            return reinterpret_cast<uintptr_t>(graph);
+          },
+          py::call_guard<py::gil_scoped_release>())
+      .def(
+          "raw_musa_graph_exec",
+          [](::at::musa::MUSAGraph& self) {
+            musaGraphExec_t graph_exec = self.raw_musa_graph_exec();
+            return reinterpret_cast<uintptr_t>(graph_exec);
+          },
+          py::call_guard<py::gil_scoped_release>());
 }

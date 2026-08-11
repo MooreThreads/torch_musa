@@ -25,7 +25,8 @@ def update_musa_graph_with_profile():
     """
     graphs_ = MUSAGraph.get_latest_instance()
     for instance_ in graphs_:
-        instance_.reinstantiate_graph()
+        if instance_._has_capture:
+            instance_.reinstantiate_graph()
 
 
 # Python shim helps Sphinx process docstrings more reliably.
@@ -37,7 +38,7 @@ def graph_pool_handle():
     .. warning::
         This API is in beta and may change in future releases.
     """
-    return torch_musa._MUSAC._graph_pool_handle()
+    return torch_musa._POOL_HANDLE(torch_musa._MUSAC._graph_pool_handle())
 
 
 # Python shim helps Sphinx process docstrings more reliably.
@@ -50,8 +51,9 @@ class MUSAGraph(torch_musa._MUSAC._MUSAGraph):
 
     _graph_instances = weakref.WeakSet()
 
-    def __new__(cls):
-        instance = super().__new__(cls)
+    def __new__(cls, keep_graph=False):
+        instance = super().__new__(cls, keep_graph)
+        instance._has_capture = False
         # save the latest MUSAGraph instance for profile.
         cls._graph_instances.add(instance)
         return instance
@@ -89,6 +91,19 @@ class MUSAGraph(torch_musa._MUSAC._MUSAGraph):
         which call ``capture_end`` internally.
         """
         super().capture_end()
+        self._has_capture = True
+
+    def instantiate(self):
+        r"""Instantiate the MUSA graph."""
+        super().instantiate()
+
+    def raw_musa_graph(self):
+        r"""Return the raw musaGraph_t pointer as an integer."""
+        return super().raw_musa_graph()
+
+    def raw_musa_graph_exec(self):
+        r"""Return the raw musaGraphExec_t pointer as an integer."""
+        return super().raw_musa_graph_exec()
 
     def reinstantiate_graph(self):
         r"""Replay the MUSA work captured by this graph."""
@@ -101,6 +116,7 @@ class MUSAGraph(torch_musa._MUSAC._MUSAGraph):
     def reset(self):
         r"""Delete the graph currently held by this instance."""
         super().reset()
+        self._has_capture = False
 
     def pool(self):
         r"""Return an opaque token representing the id of this graph's memory pool.
@@ -198,7 +214,10 @@ class graph:
     def __enter__(self):
         # Free as much memory as we can for the graph
         torch.musa.synchronize()
-        gc.collect()
+
+        if torch.compiler.config.force_cudagraph_gc:
+            gc.collect()
+
         torch.musa.empty_cache()
 
         # Stackoverflow seems comfortable with this pattern
@@ -217,7 +236,7 @@ class graph:
 
 
 def make_graphed_callables(
-    callables, sample_args, num_warmup_iters=3, allow_unused_input=False
+    callables, sample_args, num_warmup_iters=3, allow_unused_input=False, pool=None
 ):
     r"""Accept callables (functions or :class:`nn.Module<torch.nn.Module>`\ s) and returns graphed
       versions.
@@ -250,6 +269,9 @@ def make_graphed_callables(
           ``DataDistributedParallel`` needs 11 iterations for warm up. Default: ``3``.
         allow_unused_input (bool): If False, specifying inputs that were not used when computing
           outputs (and therefore their grad is always zero) is an error. Defaults to False.
+        pool (optional): Token returned by :func:`~torch.musa.graph_pool_handle` or
+          :meth:`other_Graph_instance.pool()<torch.musa.MUSAGraph.pool>`. If supplied,
+          the graph captures will use this pool. Defaults to None.
 
     .. note::
         The ``requires_grad`` state of each Tensor in ``sample_args`` must match the state
@@ -298,11 +320,13 @@ def make_graphed_callables(
     if not isinstance(callables, tuple):
         just_one_callable = True
         callables = (callables,)
-        sample_args = (sample_args,)
+        _sample_args = (sample_args,)
+    else:
+        _sample_args = sample_args
 
     flatten_sample_args = []
 
-    for c, args in zip(callables, sample_args):
+    for c, args in zip(callables, _sample_args):
         if isinstance(c, torch.nn.Module):
             assert (
                 len(c._backward_hooks) == 0
@@ -340,7 +364,7 @@ def make_graphed_callables(
     fwd_graphs = [torch.musa.MUSAGraph() for _ in range(len(callables))]
     bwd_graphs = [torch.musa.MUSAGraph() for _ in range(len(callables))]
 
-    mempool = graph_pool_handle()
+    mempool = graph_pool_handle() if pool is None else pool
 
     # Warmup
     # Hopefully prevents cudnn benchmarking and other lazy-initialization musa work
@@ -348,20 +372,25 @@ def make_graphed_callables(
     torch.musa.synchronize()
     with torch.musa.stream(torch.musa.Stream()):
         for func, args, static_input_surface in zip(
-            callables, sample_args, per_callable_static_input_surfaces
+            callables, _sample_args, per_callable_static_input_surfaces
         ):
+            grad_inputs, outputs, outputs_grad = None, None, None
             for _ in range(num_warmup_iters):
                 outputs = _pytree.tree_leaves(func(*args))
-                grad_inputs = torch.autograd.grad(
-                    outputs=tuple(o for o in outputs if o.requires_grad),
-                    inputs=tuple(i for i in static_input_surface if i.requires_grad),
-                    grad_outputs=tuple(
-                        torch.empty_like(o) for o in outputs if o.requires_grad
-                    ),
-                    only_inputs=True,
-                    allow_unused=allow_unused_input,
-                )
-            del outputs, grad_inputs
+                outputs_grad = tuple(o for o in outputs if o.requires_grad)
+                if len(outputs_grad) > 0:
+                    grad_inputs = torch.autograd.grad(
+                        outputs=outputs_grad,
+                        inputs=tuple(
+                            i for i in static_input_surface if i.requires_grad
+                        ),
+                        grad_outputs=tuple(
+                            torch.empty_like(o) for o in outputs if o.requires_grad
+                        ),
+                        only_inputs=True,
+                        allow_unused=allow_unused_input,
+                    )
+            del outputs, outputs_grad, grad_inputs
     torch.musa.synchronize()
 
     # All captures here share a mempool. To avoid replays corrupting each other's memory,
@@ -371,22 +400,21 @@ def make_graphed_callables(
     # Capture forward graphs
     per_callable_static_outputs = []
     per_callable_output_unflatten_spec = []
-    for func, args, fwd_graph in zip(callables, sample_args, fwd_graphs):
+    for func, args, fwd_graph in zip(callables, _sample_args, fwd_graphs):
         with torch.musa.graph(fwd_graph, pool=mempool):
-            outputs = func(*args)
+            func_outputs = func(*args)
 
-        flatten_outputs, spec = _pytree.tree_flatten(outputs)
+        flatten_outputs, spec = _pytree.tree_flatten(func_outputs)
         per_callable_static_outputs.append(tuple(flatten_outputs))
         per_callable_output_unflatten_spec.append(spec)
 
     # Capture backward graphs in reverse order
     per_callable_static_grad_outputs = []
     per_callable_static_grad_inputs = []
-    for static_input_surface, static_outputs, bwd_graph, _ in zip(
+    for static_input_surface, static_outputs, bwd_graph in zip(
         reversed(per_callable_static_input_surfaces),
         reversed(per_callable_static_outputs),
         reversed(bwd_graphs),
-        reversed(per_callable_module_params),
     ):
         # For now, assumes all static_outputs require grad
         # assert all(o.requires_grad for o in static_outputs), "Outputs of graphed callables
@@ -395,14 +423,17 @@ def make_graphed_callables(
             torch.empty_like(o) if o.requires_grad else None for o in static_outputs
         )
 
-        with torch.musa.graph(bwd_graph, pool=mempool):
-            grad_inputs = torch.autograd.grad(
-                outputs=tuple(o for o in static_outputs if o.requires_grad),
-                inputs=tuple(i for i in static_input_surface if i.requires_grad),
-                grad_outputs=tuple(o for o in static_grad_outputs if o is not None),
-                only_inputs=True,
-                allow_unused=allow_unused_input,
-            )
+        outputs_grad = tuple(o for o in static_outputs if o.requires_grad)
+        grad_inputs = None
+        if len(outputs_grad) > 0:
+            with torch.musa.graph(bwd_graph, pool=mempool):
+                grad_inputs = torch.autograd.grad(
+                    outputs=outputs_grad,
+                    inputs=tuple(i for i in static_input_surface if i.requires_grad),
+                    grad_outputs=tuple(o for o in static_grad_outputs if o is not None),
+                    only_inputs=True,
+                    allow_unused=allow_unused_input,
+                )
 
         # Constructs a tuple suitable for returning from Graphed.backward:
         # Pads out the actually-needed grads with Nones in gradient slots for inputs that
@@ -410,7 +441,7 @@ def make_graphed_callables(
         static_grad_inputs = []
         grad_idx = 0
         for arg in static_input_surface:
-            if arg.requires_grad:
+            if arg.requires_grad and grad_inputs is not None:
                 static_grad_inputs.append(grad_inputs[grad_idx])
                 grad_idx += 1
             else:
@@ -421,8 +452,8 @@ def make_graphed_callables(
         per_callable_static_grad_inputs.append(static_grad_inputs)
 
     # Reverses the most recent two lists
-    per_callable_static_grad_outputs = list(reversed(per_callable_static_grad_outputs))
-    per_callable_static_grad_inputs = list(reversed(per_callable_static_grad_inputs))
+    per_callable_static_grad_outputs.reverse()
+    per_callable_static_grad_inputs.reverse()
     # Now for every per_callable list, per_callable_*[i] holds the stuff for the ith callable.
 
     def make_graphed_autograd_function(
@@ -493,12 +524,12 @@ def make_graphed_callables(
         if isinstance(func, torch.nn.Module):
 
             def make_graphed_forward(func, graph_training_state, graphed, orig_fwd):
-                def new_fwd(*user_args):
+                def new_fwd(*user_args, **user_kwargs):
                     # If the module's training-or-eval state matches what we graphed,
                     # run the graph, otherwise run the original forward method
                     if func.training == graph_training_state:
-                        return graphed(*user_args)
-                    return orig_fwd(*user_args)
+                        return graphed(*user_args, **user_kwargs)
+                    return orig_fwd(*user_args, **user_kwargs)
 
                 return new_fwd
 

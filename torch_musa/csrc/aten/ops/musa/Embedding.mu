@@ -15,9 +15,7 @@
 #include "torch_musa/csrc/aten/mudnn/Sort.h"
 
 namespace at {
-namespace native {
-
-namespace {
+namespace musa {
 
 template <typename scalar_t, typename index_t>
 __global__ void EmbeddingDenseBwdAtomicKernel(
@@ -66,10 +64,6 @@ Tensor EmbeddingDenseBwdMUSA(
       grad_output.device(),
       " indices on ",
       indices.device());
-  TORCH_CHECK(
-      !scale_grad_by_freq,
-      "scale grad by the frequency of the words in the mini-batch is not "
-      "supported yet");
 
   auto contiguous_indices = indices.contiguous();
   auto num_indices = indices.numel();
@@ -161,11 +155,9 @@ Tensor EmbeddingDenseBwdMUSA(
       orig_indices,
       sorted_indices,
       num_weights,
-      padding_idx);
+      padding_idx,
+      scale_grad_by_freq);
 }
-} // namespace
 
-REGISTER_MUSA_DISPATCH(embedding_dense_backward_stub, &EmbeddingDenseBwdMUSA);
-
-} // namespace native
+} // namespace musa
 } // namespace at

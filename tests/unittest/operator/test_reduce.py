@@ -483,6 +483,9 @@ def test_cumulative_int(case, op):
             getattr(musa_in, op.__name__ + "_")(dim)
             getattr(cpu_in, op.__name__ + "_")(dim)
             do_assert(musa_in, cpu_in, i_t)
+        else:
+            with pytest.raises(RuntimeError):
+                getattr(musa_in, op.__name__ + "_")(dim)
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)

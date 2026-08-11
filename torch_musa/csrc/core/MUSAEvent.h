@@ -11,6 +11,8 @@
 #include "torch_musa/csrc/core/MUSAGuard.h"
 #include "torch_musa/csrc/core/MUSAStream.h"
 
+#define musaEventExternal 0x08
+
 namespace at::musa {
 
 namespace detail {
@@ -147,7 +149,12 @@ struct MUSAEvent {
         stream.device_index(),
         ".");
     const MUSAGuard guard(device_index_);
-    C10_MUSA_CHECK(musaEventRecord(event_, stream));
+    unsigned int flags = (c10::musa::currentStreamCaptureStatusMayInitCtx() !=
+                              c10::musa::CaptureStatus::None &&
+                          external_)
+        ? musaEventRecordExternal
+        : musaEventRecordDefault;
+    C10_MUSA_CHECK(musaEventRecordWithFlags(event_, stream, flags));
     const c10::impl::PyInterpreter* interp = c10::impl::GPUTrace::get_trace();
     if (C10_UNLIKELY(interp)) {
       (*interp)->trace_gpu_event_record(
@@ -163,7 +170,12 @@ struct MUSAEvent {
   void block(const MUSAStream& stream) {
     if (is_created_) {
       const MUSAGuard guard(stream.device_index());
-      C10_MUSA_CHECK(musaStreamWaitEvent(stream, event_, 0));
+      unsigned int flags = (c10::musa::currentStreamCaptureStatusMayInitCtx() !=
+                                c10::musa::CaptureStatus::None &&
+                            external_)
+          ? musaEventWaitExternal
+          : musaEventWaitDefault;
+      C10_MUSA_CHECK(musaStreamWaitEvent(stream, event_, flags));
       const c10::impl::PyInterpreter* interp = c10::impl::GPUTrace::get_trace();
       if (C10_UNLIKELY(interp)) {
         (*interp)->trace_gpu_event_wait(
@@ -176,9 +188,16 @@ struct MUSAEvent {
 
   // Note: musaEventElapsedTime can be safely called from any device
   float elapsed_time(const MUSAEvent& other) const {
-    TORCH_CHECK(
+    TORCH_CHECK_VALUE(
+        !(flags_ & musaEventDisableTiming) &&
+            !(other.flags_ & musaEventDisableTiming),
+        "Both events must be created with argument 'enable_timing=True'.");
+    TORCH_CHECK_VALUE(
         is_created_ && other.isCreated(),
         "Both events must be recorded before calculating elapsed time.");
+    TORCH_CHECK(
+        query() && other.query(),
+        "Both events must be completed before calculating elapsed time.");
     float time_ms = 0;
     const MUSAGuard guard(device_index_);
     // raise musaErrorNotReady if either event is recorded but not yet completed
@@ -213,10 +232,13 @@ struct MUSAEvent {
   unsigned int flags_ = musaEventDisableTiming;
   bool is_created_ = false;
   bool was_recorded_ = false;
+  bool external_ = false;
   DeviceIndex device_index_ = -1;
   musaEvent_t event_{};
 
   void createEvent(DeviceIndex device_index) {
+    external_ = (flags_ & musaEventExternal) != 0;
+    flags_ &= ~musaEventExternal;
     device_index_ = device_index;
     const MUSAGuard guard(device_index_);
     C10_MUSA_CHECK(musaEventCreateWithFlags(&event_, flags_));

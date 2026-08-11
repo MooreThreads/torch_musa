@@ -1,8 +1,9 @@
 """Test MemPool"""
 
 import ctypes
-
 import threading
+
+import pytest
 import torch
 
 from torch_musa.utils.musa_extension import load_inline
@@ -104,6 +105,12 @@ def _get_dummy_allocator():
     return dummy_allocator, allocator
 
 
+def _assert_segments_belong_to_pool(segments, pool):
+    assert segments, "Expected pool snapshot to contain at least one segment"
+    for segment in segments:
+        assert segment["segment_pool_id"] == pool.id
+
+
 @spawn_isolated_test
 def test_mempool_with_allocator():
     pool = torch.musa.MemPool()
@@ -123,6 +130,92 @@ def test_mempool_with_allocator():
         # will route to custom malloc logic
         _ = torch.randn((1,), device="musa")
         assert alloc_called_flag.value == 1
+
+
+@spawn_isolated_test
+def test_memory_snapshot_with_mempool_id():
+    torch.musa.empty_cache()
+    pool = torch.musa.MemPool()
+    data = []
+
+    with torch.musa.use_mem_pool(pool):
+        data.append(torch.empty(1024, device="musa"))
+
+    segments = torch.musa.memory_snapshot(pool.id)
+    _assert_segments_belong_to_pool(segments, pool)
+
+    all_segment_addresses = {
+        segment["address"] for segment in torch.musa.memory_snapshot()
+    }
+    pool_segment_addresses = {segment["address"] for segment in segments}
+    assert pool_segment_addresses.issubset(all_segment_addresses)
+
+
+@spawn_isolated_test
+def test_mempool_snapshot():
+    torch.musa.empty_cache()
+    pool = torch.musa.MemPool()
+    data = []
+
+    with torch.musa.use_mem_pool(pool):
+        data.append(torch.empty(1024, device="musa"))
+
+    assert pool.snapshot() == torch.musa.memory_snapshot(pool.id)
+    _assert_segments_belong_to_pool(pool.snapshot(), pool)
+
+
+@spawn_isolated_test
+def test_use_mem_pool_current_thread():
+    torch.musa.empty_cache()
+    pool = torch.musa.MemPool()
+    data = []
+
+    with torch.musa.use_mem_pool(pool):
+        data.append(torch.empty(1024, device="musa"))
+        snapshot_before = pool.snapshot()
+
+        def allocate_outside_current_thread():
+            data.append(torch.empty(2048, device="musa"))
+            torch.musa.synchronize()
+
+        thread = threading.Thread(target=allocate_outside_current_thread)
+        thread.start()
+        thread.join()
+
+        assert pool.snapshot() == snapshot_before
+
+
+@spawn_isolated_test
+def test_use_mem_pool_current_thread_all_streams():
+    torch.musa.empty_cache()
+    pool = torch.musa.MemPool()
+    data = []
+
+    with torch.musa.use_mem_pool(pool):
+        stream = torch.musa.Stream()
+        with torch.musa.stream(stream):
+            data.append(torch.empty(1024, device="musa"))
+        stream.synchronize()
+
+    _assert_segments_belong_to_pool(pool.snapshot(), pool)
+
+
+@spawn_isolated_test
+def test_use_mem_pool_device_argument():
+    torch.musa.empty_cache()
+    data = []
+    devices = [0, "musa:0", torch.device("musa:0")]
+
+    for device in devices:
+        pool = torch.musa.MemPool()
+        with torch.musa.use_mem_pool(pool, device=device):
+            data.append(torch.empty(16, device="musa"))
+        _assert_segments_belong_to_pool(pool.snapshot(), pool)
+
+    pool = torch.musa.MemPool()
+    with pytest.raises(ValueError, match="Expected a musa device"):
+        with torch.musa.use_mem_pool(pool, device=torch.device("cpu")):
+            pass
 
 
 @spawn_isolated_test

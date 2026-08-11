@@ -22,12 +22,9 @@ namespace musa {
 C10_EXPORT MempoolId_t graph_pool_handle();
 
 struct C10_EXPORT MUSAGraph {
-  MUSAGraph();
+  MUSAGraph(bool keep_graph = false);
   ~MUSAGraph();
 
-  static void inc_pending_event_queries();
-  static void dec_pending_event_queries();
-  static int num_pending_event_queries();
   // See Note [Explicit Registration of Generators to the MUSA Graph]
   void register_generator_state(
       c10::intrusive_ptr<at::MUSAGeneratorState> state);
@@ -36,24 +33,28 @@ struct C10_EXPORT MUSAGraph {
       MempoolId_t pool = {0, 0},
       musaStreamCaptureMode capture_mode = musaStreamCaptureModeGlobal);
   void capture_end();
+  void instantiate();
   void reinstantiate_graph();
   void replay();
   void reset();
   MempoolId_t pool();
   void enable_debug_mode();
   void debug_dump(const std::string& debug_path);
+  musaGraph_t raw_musa_graph();
+  musaGraphExec_t raw_musa_graph_exec();
 
  protected:
-  musaGraph_t graph_ = NULL;
-  musaGraphExec_t graph_exec_ = NULL;
-
-  static std::atomic<int> pending_event_queries;
+  musaGraph_t graph_ = nullptr;
+  musaGraphExec_t graph_exec_ = nullptr;
 
   // internal states so reset() can do its best cleaning up
+
   // Set to true in capture_end if musaStreamEndCapture succeeded
-  // Set back to false soon after, when graph_ is consumed by
-  // MUSAGraphInstantiate to create graph_exec_, then graph_ is deleted
+  // Set back to false after instantiate() unless keep_graph=True or
+  // enable_debug_mode() was called on any CUDAGraph instance.
   bool has_graph_ = false;
+  // Set to true in capture_end if musaStreamEndCapture succeeded
+  bool capture_ended_ = false;
   // Set to true in capture_end if MUSAGraphInstantiate succeeded
   bool has_graph_exec_ = false;
 
@@ -88,7 +89,10 @@ struct C10_EXPORT MUSAGraph {
   // ops in a capture to run on the same device, but this is a limitation of
   // MUSAGraph, not MUSA itself.  We can straightforwardly modify MUSAGraph to
   // support multi-device captures if needed.
-  int capture_dev_;
+  static constexpr c10::DeviceIndex UNDEFINED_DEVICE = -1;
+  c10::DeviceIndex capture_dev_{UNDEFINED_DEVICE};
+
+  bool keep_graph_;
 };
 
 } // namespace musa
