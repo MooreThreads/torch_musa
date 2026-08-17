@@ -97,7 +97,7 @@ def _lazy_init():
 
     Does nothing if the Torch MUSA state is already initialized.
     """
-    global _initialized, _queue_calls
+    global _initialized
     if is_initialized() or hasattr(_tls, "is_initializing"):
         return
     with _initialization_lock:
