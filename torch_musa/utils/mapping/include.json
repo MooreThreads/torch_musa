@@ -110,5 +110,6 @@
     "nvfunctional": "mtfunctional",
     "SparseCUDAApplyUtils": "SparseMUSAApplyUtils",
     "cutlass.h": "mutlass.h",
-    "<cutlass": "<mutlass"
+    "<cutlass": "<mutlass",
+    "cuda_fp8.h": "musa_fp8.h"
 }

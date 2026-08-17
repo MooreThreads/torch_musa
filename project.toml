@@ -10,7 +10,7 @@ requires = [
     "pre-commit == 3.5.0",
     "black == 23.12.1",
     "openpyxl",
-    "pyahocorasick",
+    "pyahocorasick == 2.3.0",
     "pyyaml",
     "requests",
     "six",  # dependency chain: NNPACK -> PeachPy -> six
@@ -21,7 +21,7 @@ build-backend = "setuptools.build_meta"
 # follows pytorch
 [project]
 name = "torch_musa"
-version = "2.9.1.post1"
+version = "2.11.0.post1"
 description = "A PyTorch backend extension for Moore Threads MUSA"
 readme = "README.md"
 license = { text = "BSD-3-Clause" }

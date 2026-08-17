@@ -92,6 +92,7 @@ class TritonBenchmarker(Benchmarker):
         this is the first requested quantile. Else, if `kwargs["return_mode"]` is specified,
         this is the requested return mode. Otherwise, this is the median.
         """
+        kwargs.pop("is_vetted_benchmarking", None)
         if "quantiles" in kwargs:
             return self.triton_do_bench(_callable, **kwargs)[0]
         if "return_mode" in kwargs:
@@ -131,6 +132,7 @@ def aot_inductor_launcher(so_path: str, device: str):
         """
     raise RuntimeError(f"Unsupported device: {device}")
 
+
 @functools.cache
 def is_big_gpu(index_or_device: Union[int, torch.device] = 0) -> bool:
     if isinstance(index_or_device, torch.device):
@@ -156,6 +158,7 @@ def is_big_gpu(index_or_device: Union[int, torch.device] = 0) -> bool:
         )
         return False
     return True
+
 
 def _apply_util_patches():
     torch._inductor.utils.is_gpu = is_gpu

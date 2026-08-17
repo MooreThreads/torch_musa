@@ -422,6 +422,14 @@ Tensor& SumIntListOut(
       musa_infer_dtype_from_optional(self, opt_dtype, output);
   ResizeReduction(output, self, dim, keepdim, output_dtype);
 
+  if (self.is_complex()) {
+    // use real & imag float instead of complex compute.
+    auto out_r = at::sum(at::real(self), dim, keepdim, c10::nullopt);
+    auto out_i = at::sum(at::imag(self), dim, keepdim, c10::nullopt);
+    output.copy_(at::complex(out_r, out_i));
+    return output;
+  }
+
   if (C10_UNLIKELY(self.numel() == 0)) {
     output.zero_();
     return output;

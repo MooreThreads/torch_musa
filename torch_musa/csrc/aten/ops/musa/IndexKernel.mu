@@ -825,7 +825,7 @@ void FlipKernel(TensorIterator& iter, const bool quantized) {
 }
 
 template <typename scalar_t>
-void index_copy_kernel_impl(
+void MusaIndexCopyKernelImpl(
     TensorIterator& iter,
     const int64_t dim,
     const int64_t self_dim_size,
@@ -836,7 +836,7 @@ void index_copy_kernel_impl(
 
   if (!iter.can_use_32bit_indexing()) {
     for (auto& sub_iter : iter.with_32bit_indexing()) {
-      index_copy_kernel_impl<scalar_t>(
+      MusaIndexCopyKernelImpl<scalar_t>(
           sub_iter, dim, self_dim_size, self_dim_stride);
     }
     return;
@@ -848,8 +848,12 @@ void index_copy_kernel_impl(
       reinterpret_cast<char*>(iter.data_ptr(2));
 
   const auto offset_calc = make_offset_calculator<3>(iter);
-
-  const auto loop = [=] C10_DEVICE(int i) {
+  const auto loop = [self_dim_size,
+                     self_dim_stride,
+                     self_ptr,
+                     idx_ptr,
+                     source_ptr,
+                     offset_calc] C10_DEVICE(int i) {
     const auto offsets = offset_calc.get(i);
 
     auto* const __restrict__ self_data =
@@ -884,7 +888,7 @@ static void IndexCopyKernel(
       "index_copy_musa",
       [&] {
         using dtype = OpaqueType<sizeof(scalar_t)>;
-        index_copy_kernel_impl<dtype>(
+        MusaIndexCopyKernelImpl<dtype>(
             iter, dim, self_dim_size, self_dim_stride);
       });
 }

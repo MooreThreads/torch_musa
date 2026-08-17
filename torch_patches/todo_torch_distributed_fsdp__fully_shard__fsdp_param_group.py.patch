@@ -1,37 +1,40 @@
 diff --git a/torch/distributed/fsdp/_fully_shard/_fsdp_param_group.py b/torch/distributed/fsdp/_fully_shard/_fsdp_param_group.py
-index 554367e..7100a32 100644
+index 14046f70742..7d811e2a8c1 100644
 --- a/torch/distributed/fsdp/_fully_shard/_fsdp_param_group.py
 +++ b/torch/distributed/fsdp/_fully_shard/_fsdp_param_group.py
-@@ -165,8 +165,10 @@ class FSDPParamGroup:
+@@ -170,8 +170,9 @@ class FSDPParamGroup:
          self._module_to_pre_save_state_dict_hook_handle: _ModuleToHandleDict = {}
          self._module_to_pre_load_state_dict_hook_handle: _ModuleToHandleDict = {}
-         self._all_reduce_hook: Optional[Callable[[torch.Tensor], None]] = None
+         self._all_reduce_hook: Callable[[torch.Tensor], None] | None = None
 -        self._all_gather_comm: AllGather = DefaultAllGather()
          self._all_gather_output = torch.empty(0, device=self.device)
-+        # TODO(mingyuan.wang): delete this once zero copy all-gather/reduce-scatter over ACE implementation ready
 +        self._forward_all_gather_comm: AllGather = DefaultAllGather()
 +        self._backward_all_gather_comm: AllGather = DefaultAllGather()
          self._reduce_scatter_comm: ReduceScatter = DefaultReduceScatter()
          # Optional stream to run the user-defined all-reduce hook in
          # Saved here and not in the comm. context because we allow the user to
-@@ -271,12 +273,23 @@ class FSDPParamGroup:
+@@ -274,13 +275,27 @@ class FSDPParamGroup:
          the staging buffers for collective comms.
          """
-         assert isinstance(
--            self._all_gather_comm, (DefaultAllGather, ProcessGroupAllocAllGather)
-+            self._forward_all_gather_comm, (DefaultAllGather, ProcessGroupAllocAllGather)
-         ), (
-             "cannot call set_allocate_memory_from_process_group() "
--            f"when all gather comm is custom: {self._all_gather_comm.__class__.__name__}"
-+            f"when all gather comm is custom: {self._forward_all_gather_comm.__class__.__name__}"
-         )
+         if not isinstance(
+-            self._all_gather_comm, (DefaultAllGather | ProcessGroupAllocAllGather)
++            self._forward_all_gather_comm,
++            (DefaultAllGather | ProcessGroupAllocAllGather),
+         ):
+             raise AssertionError(
+                 "cannot call set_allocate_memory_from_process_group() "
+-                f"when all gather comm is custom: {self._all_gather_comm.__class__.__name__}"
++                f"when all gather comm is custom: {self._forward_all_gather_comm.__class__.__name__}"
+             )
 -        self._all_gather_comm = (
-+        assert isinstance(
-+            self._backward_all_gather_comm, (DefaultAllGather, ProcessGroupAllocAllGather)
-+        ), (
-+            "cannot call set_allocate_memory_from_process_group() "
-+            f"when all gather comm is custom: {self._backward_all_gather_comm.__class__.__name__}"
-+        )
++        if not isinstance(
++            self._backward_all_gather_comm,
++            (DefaultAllGather | ProcessGroupAllocAllGather),
++        ):
++            raise AssertionError(
++                "cannot call set_allocate_memory_from_process_group() "
++                f"when all gather comm is custom: {self._backward_all_gather_comm.__class__.__name__}"
++            )
 +        self._forward_all_gather_comm = (
 +            ProcessGroupAllocAllGather(self._all_gather_process_group)
 +            if enable
@@ -41,21 +44,21 @@ index 554367e..7100a32 100644
              ProcessGroupAllocAllGather(self._all_gather_process_group)
              if enable
              else DefaultAllGather()
-@@ -326,6 +339,13 @@ class FSDPParamGroup:
-             )
+@@ -335,6 +350,13 @@ class FSDPParamGroup:
  
              return
-+
+ 
 +        if self._training_state == TrainingState.FORWARD:
 +            all_gather_comm = self._forward_all_gather_comm
 +        elif self._training_state == TrainingState.PRE_BACKWARD:
 +            all_gather_comm = self._backward_all_gather_comm
 +        else:
 +            raise RuntimeError(f"Illegal training state: {self._training_state}")
- 
++
          with record_function(self._with_fqn("FSDP::all_gather")):
              self._all_gather_result = foreach_all_gather(
-@@ -334,7 +354,7 @@ class FSDPParamGroup:
+                 self.fsdp_params,
+@@ -342,7 +364,7 @@ class FSDPParamGroup:
                  async_op,
                  *self.comm_ctx.get_all_gather_streams(async_op, self._training_state),
                  self.device,

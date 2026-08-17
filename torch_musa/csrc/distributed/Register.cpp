@@ -141,6 +141,13 @@ void registerProcessGroupMCCL(PyObject* mod) {
       )");
   }
 
+  if (!py::hasattr(distributed_c10d, "_reset_fr_recording_mccl")) {
+    distributed_c10d.def(
+        "_reset_fr_recording_mccl",
+        []() { ::c10d::reset_mccl_trace(); },
+        "API to reset MCCL Flight Recorder recording.");
+  }
+
   auto processGroupMCCL =
       intrusive_ptr_no_gil_destructor_class_<::c10d::ProcessGroupMCCL>(
           module,

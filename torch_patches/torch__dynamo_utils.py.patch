@@ -1,23 +1,23 @@
 diff --git a/torch/_dynamo/utils.py b/torch/_dynamo/utils.py
-index 058a66c..78fcc33 100644
+index 210e289be2f..9dbea8b186b 100644
 --- a/torch/_dynamo/utils.py
 +++ b/torch/_dynamo/utils.py
-@@ -2218,6 +2218,9 @@ def preserve_rng_state() -> Generator[None, None, None]:
-         skip_frame_if_in_functorch_mode(rng_state)
-         if torch.cuda.is_available():
+@@ -2425,6 +2425,9 @@ def preserve_rng_state() -> Generator[None, None, None]:
              cuda_rng_state = torch.clone(torch.cuda.get_rng_state())
-+        elif custom_backend_mod := getattr(torch, torch._C._get_privateuse1_backend_name(), None):
-+            if custom_backend_mod is not None and custom_backend_mod.is_available():
-+                gpu_rng_state = torch.clone(custom_backend_mod.get_rng_state())
+         if torch.xpu.is_available():
+             xpu_rng_state = torch.clone(torch.xpu.get_rng_state())
++        custom_backend_mod = getattr(torch, torch._C._get_privateuse1_backend_name(), None)
++        if custom_backend_mod is not None and custom_backend_mod.is_available():
++            gpu_rng_state = torch.clone(custom_backend_mod.get_rng_state())
      try:
          yield
      finally:
-@@ -2225,6 +2228,8 @@ def preserve_rng_state() -> Generator[None, None, None]:
-             torch.random.set_rng_state(rng_state)
-             if torch.cuda.is_available():
+@@ -2434,6 +2437,8 @@ def preserve_rng_state() -> Generator[None, None, None]:
                  torch.cuda.set_rng_state(cuda_rng_state)  # type: ignore[possibly-undefined]
-+            elif custom_backend_mod is not None and custom_backend_mod.is_available():
-+                custom_backend_mod.set_rng_state(gpu_rng_state)
+             if torch.xpu.is_available():
+                 torch.xpu.set_rng_state(xpu_rng_state)  # type: ignore[possibly-undefined]
++            if custom_backend_mod is not None and custom_backend_mod.is_available():
++                custom_backend_mod.set_rng_state(gpu_rng_state)  # type: ignore[possibly-undefined]
  
  
  def is_jit_model(

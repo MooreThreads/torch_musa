@@ -182,7 +182,15 @@ Tensor& IndexSelectOut(
     const Tensor& index,
     Tensor& out) {
   uint64_t numIndices = index.numel();
-  dim = at::maybe_wrap_dim(dim, self);
+  const auto selfDims = self.dim() == 0 ? 1 : self.dim();
+  dim = at::maybe_wrap_dim(dim, selfDims);
+  TORCH_CHECK(
+      index.dim() <= 1, "Index is supposed to be an empty tensor or a vector");
+  TORCH_CHECK(
+      !(self.dim() == 0 && numIndices != 1),
+      "index_select(): Index to scalar can have only 1 value, got ",
+      numIndices,
+      " value(s)");
   std::vector<int64_t> newSize = self.sizes().vec();
   if (self.dim() > 0) {
     newSize[dim] = numIndices;
@@ -216,20 +224,11 @@ Tensor& IndexSelectOut(
 }
 
 Tensor IndexSelect(const Tensor& self, int64_t dim, const Tensor& index) {
-  auto out_shape = std::vector<int64_t>(self.sizes().vec());
-  int64_t index_len = index.numel();
-  dim = (dim + self.dim()) % self.dim();
-  out_shape[dim] = index_len;
   Tensor out;
   if (self.is_quantized()) {
-    out = at::empty_quantized(
-        out_shape, self, self.options().dtype(self.scalar_type()));
+    out = at::empty_quantized({0}, self);
   } else {
-    out = at::empty(
-        out_shape,
-        self.options()
-            .dtype(self.scalar_type())
-            .memory_format(at::MemoryFormat::Contiguous));
+    out = at::empty({0}, self.options());
   }
   out = IndexSelectOut(self, dim, index, out);
   return out;

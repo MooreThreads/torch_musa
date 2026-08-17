@@ -1,8 +1,17 @@
-diff --git a/torch/distributed/tensor/experimental/_attention.py b/torch/distributed/tensor/experimental/_attention.py
-index 6cd0672..c66dba8 100644
---- a/torch/distributed/tensor/experimental/_attention.py
-+++ b/torch/distributed/tensor/experimental/_attention.py
-@@ -565,7 +565,7 @@ def _templated_ring_attention_backward(
+diff --git a/torch/distributed/tensor/experimental/_context_parallel/_attention.py b/torch/distributed/tensor/experimental/_context_parallel/_attention.py
+index 88ed34d2744..de799a9d206 100644
+--- a/torch/distributed/tensor/experimental/_context_parallel/_attention.py
++++ b/torch/distributed/tensor/experimental/_context_parallel/_attention.py
+@@ -7,7 +7,7 @@ from collections.abc import Callable, Generator, Mapping, Sequence
+ from dataclasses import dataclass
+ from enum import auto, Enum
+ from functools import partial
+-from typing import Any, cast, Protocol, TypeAlias
++from typing import Any, cast, Optional, Protocol, TypeAlias
+
+ import torch
+ import torch.distributed as dist
+@@ -568,7 +568,7 @@ def _templated_ring_attention_backward(
                  query=q,
                  key=k,
                  value=v,
@@ -11,12 +20,10 @@ index 6cd0672..c66dba8 100644
                  logsumexp=lse,
                  is_causal=is_causal_behavior.value,
                  **kwargs,
-@@ -746,6 +746,39 @@ def _scaled_dot_product_ring_cudnn_attention(
-         return_debug_mask=return_debug_mask,
-         scale=scale,
+@@ -752,6 +752,33 @@ def _scaled_dot_product_ring_cudnn_attention(
      )
-+
-+
+
+
 +def _scaled_dot_product_ring_attention_flash_musa(
 +    mesh: DeviceMesh,
 +    query: torch.Tensor,
@@ -25,15 +32,10 @@ index 6cd0672..c66dba8 100644
 +    attn_mask: Optional[torch.Tensor] = None,
 +    dropout_p: float = 0.0,
 +    is_causal: bool = False,
-+    return_debug_mask: bool = False,
 +    *,
 +    scale: Optional[float] = None,
 +) -> tuple[torch.Tensor, ...]:
-+
-+    if query.dim() == 3:
-+        seq_dim = 1
-+    else:
-+        seq_dim = 2
++    seq_dim = 1 if query.dim() == 3 else 2
 +    group = mesh.get_group()
 +    return _templated_ring_attention(
 +        group,
@@ -45,16 +47,17 @@ index 6cd0672..c66dba8 100644
 +        attn_mask=attn_mask,
 +        is_causal=is_causal,
 +        dropout_p=dropout_p,
-+        return_debug_mask=return_debug_mask,
 +        scale=scale,
 +    )
- 
- 
++
++
  def _scaled_dot_product_ring_flash_attention_backward(
-@@ -881,6 +914,48 @@ def _scaled_dot_product_ring_cudnn_attention_backward(
+     mesh: DeviceMesh,
+     grad_out: torch.Tensor,
+@@ -885,6 +912,44 @@ def _scaled_dot_product_ring_cudnn_attention_backward(
      )
- 
- 
+
+
 +def _scaled_dot_product_ring_attention_flash_musa_backward(
 +    mesh: DeviceMesh,
 +    grad_out: torch.Tensor,
@@ -71,11 +74,7 @@ index 6cd0672..c66dba8 100644
 +    *,
 +    scale: Optional[float] = None,
 +) -> tuple[torch.Tensor, ...]:
-+
-+    if query.dim() == 3:
-+        seq_dim = 1
-+    else:
-+        seq_dim = 2
++    seq_dim = 1 if query.dim() == 3 else 2
 +    group = mesh.get_group()
 +    return _templated_ring_attention_backward(
 +        group,
@@ -100,7 +99,7 @@ index 6cd0672..c66dba8 100644
  def _sdpa_handler(
      op_call: torch._ops.OpOverload,
      args: tuple[object, ...],
-@@ -903,9 +978,11 @@ def _sdpa_handler(
+@@ -907,9 +972,11 @@ def _sdpa_handler(
          aten._scaled_dot_product_flash_attention.default: _scaled_dot_product_ring_flash_attention,
          aten._scaled_dot_product_efficient_attention.default: _scaled_dot_product_ring_efficient_attention,
          aten._scaled_dot_product_cudnn_attention.default: _scaled_dot_product_ring_cudnn_attention,
@@ -112,12 +111,12 @@ index 6cd0672..c66dba8 100644
      }
      if op_call in call_maps:
          local_results = call_maps[op_call](
-@@ -928,6 +1005,8 @@ customized_ops = {
+@@ -932,6 +999,8 @@ custom_ops = {
      aten._scaled_dot_product_efficient_attention_backward.default: _sdpa_handler,
      aten._scaled_dot_product_cudnn_attention.default: _sdpa_handler,
      aten._scaled_dot_product_cudnn_attention_backward.default: _sdpa_handler,
 +    aten._scaled_dot_product_attention_flash_musa.default: _sdpa_handler,
 +    aten._scaled_dot_product_attention_flash_musa_backward.default: _sdpa_handler,
  }
- 
- 
+ existing_custom_ops = DTensor._op_dispatcher._custom_op_handlers
+

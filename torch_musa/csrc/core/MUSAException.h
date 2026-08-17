@@ -68,7 +68,7 @@ void c10_musa_check_implementation(
     const int32_t err,
     const char* filename,
     const char* function_name,
-    const int line_number,
+    const uint32_t line_number,
     const bool include_device_assertions);
 } // namespace musa
 } // namespace c10

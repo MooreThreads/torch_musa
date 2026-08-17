@@ -1,13 +1,13 @@
 diff --git a/c10/util/C++17.h b/c10/util/C++17.h
-index 359774b..b9aca70 100644
+index 98cdffcbef4..b5b025f5ef1 100644
 --- a/c10/util/C++17.h
 +++ b/c10/util/C++17.h
-@@ -45,7 +45,7 @@ constexpr bool is_pod_v = is_pod<T>::value;
+@@ -34,7 +34,7 @@
  
- namespace guts {
+ namespace c10::guts {
  
--#if defined(__cpp_lib_apply) && !defined(__CUDA_ARCH__) && !defined(__HIP__)
-+#if 0
+-#if defined(__HIP__)
++#if defined(__HIP__) || defined(__MUSACC__)
  
- template <class F, class Tuple>
- C10_HOST_DEVICE inline constexpr decltype(auto) apply(F&& f, Tuple&& t) {
+ // Implementation from http://en.cppreference.com/w/cpp/utility/apply (but
+ // modified)

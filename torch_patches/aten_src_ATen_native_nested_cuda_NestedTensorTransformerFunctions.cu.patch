@@ -1,12 +1,12 @@
 diff --git a/aten/src/ATen/native/nested/cuda/NestedTensorTransformerFunctions.cu b/aten/src/ATen/native/nested/cuda/NestedTensorTransformerFunctions.cu
-index 742769e..0db100f 100644
+index 9267532..f71dcb7 100644
 --- a/aten/src/ATen/native/nested/cuda/NestedTensorTransformerFunctions.cu
 +++ b/aten/src/ATen/native/nested/cuda/NestedTensorTransformerFunctions.cu
-@@ -19,7 +19,7 @@
+@@ -22,7 +22,7 @@
  #include <ATen/native/nested/NestedTensorTransformerFunctions.h>
  #include <ATen/native/nested/NestedTensorUtils.h>
  
--#if !defined(USE_ROCM) && !defined(_WIN32) && (defined(CUDA_VERSION) && CUDA_VERSION > 12000)
+-#if !defined(USE_ROCM) && !defined(_WIN32) && defined(CUDA_VERSION)
 +#if !defined(USE_ROCM) && !defined(_WIN32) && 0
  #define build_grouped_gemm
  #endif

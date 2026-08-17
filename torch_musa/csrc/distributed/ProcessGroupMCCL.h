@@ -117,6 +117,11 @@ static std::vector<std::string> TORCH_MCCL_COORD_CHECK_MILSEC = {
 static std::vector<std::string> TORCH_MCCL_LOG_CPP_STACK_ON_UNCLEAN_SHUTDOWN = {
     "TORCH_MCCL_LOG_CPP_STACK_ON_UNCLEAN_SHUTDOWN"};
 
+// Whether to trigger an extra Flight Recorder dump when watchdog/abort observes
+// an exception outside MCCL itself (default false).
+static std::vector<std::string> TORCH_MCCL_EXTRA_DUMP_ON_EXEC = {
+    "TORCH_MCCL_EXTRA_DUMP_ON_EXEC"};
+
 // Control whether to use CudaEventCache for the collective in watchdog thread.
 // We noticed in the past when musa global lock is held, destroying CudaEvent
 // can cause a hang.
@@ -185,8 +190,9 @@ struct DumpPipe {
   DumpPipe(int rank) {
     std::string fileStem =
         getCvarString({"TORCH_MCCL_DEBUG_INFO_PIPE_FILE"}, "");
-    if (fileStem.empty() ||
-        getCvarInt({"TORCH_MCCL_TRACE_BUFFER_SIZE"}, 0) <= 0) {
+    // NOTE: This default value (2000) is duplicated in FlightRecorder.hpp.
+    // Keep in sync. See FlightRecorder.hpp for details.
+    if (fileStem.empty() || getCvarInt({"TORCH_FR_BUFFER_SIZE"}, 2000) <= 0) {
       return;
     }
     TORCH_CHECK(!fileStem.empty(), "TORCH_MCCL_DEBUG_INFO_TEMP_FILE is empty");
@@ -450,6 +456,7 @@ class TORCH_API ProcessGroupMCCL : public Backend {
     // unique id used to tell the trace buffer that this
     // work has completed
     std::optional<uint64_t> trace_id_;
+    std::optional<uint64_t> trace_reset_epoch_;
     DebugLevel distDebugLevel_;
 
     friend class ProcessGroupMCCL;
@@ -459,6 +466,11 @@ class TORCH_API ProcessGroupMCCL : public Backend {
     // NOTE: timeout in ProcessGroupMCCL::Options denote the timeout for
     // operations. This is only used when blockingWait_ is enabled.
     explicit Options(bool is_high_priority_stream = false);
+    Options(const Options&) = default;
+    Options(Options&&) noexcept = default;
+    Options& operator=(const Options&) = delete;
+    Options& operator=(Options&&) noexcept = delete;
+    ~Options() override = default;
 
     // return intrusive_ptr of the object
     static c10::intrusive_ptr<Options> create(
@@ -684,7 +696,7 @@ class TORCH_API ProcessGroupMCCL : public Backend {
     std::condition_variable workMetaListCV_;
 
     // Heartbeat of watchdog thread.
-    std::atomic_uint64_t heartbeat_{};
+    std::atomic_uint64_t heartbeat_;
 
     // Whether or not to propagate detected errors to all ranks in the same PG
     // through TCPStore.
@@ -947,6 +959,19 @@ class TORCH_API ProcessGroupMCCL : public Backend {
 
   ErrorType getError() override;
 
+  bool supportsShrinking() const override {
+    // MCCL currently has no communicator-shrink API corresponding to
+    // NCCL's ncclCommShrink, so the Backend shrink hook is deliberately
+    // advertised as unsupported.
+    return false;
+  }
+
+  c10::intrusive_ptr<Backend> shrink(
+      const std::vector<int64_t>& ranks_to_exclude,
+      int shrink_flags = 0,
+      const c10::intrusive_ptr<Backend::Options>& opts_override =
+          nullptr) override;
+
   // getMemAllocator
   std::shared_ptr<c10::Allocator> getMemAllocator() override;
 
@@ -1021,6 +1046,13 @@ class TORCH_API ProcessGroupMCCL : public Backend {
       int p2pRank = 0,
       bool isSendRecvSelf = false);
 
+  // Initialize device-specific state (comm, stream, event, bookkeeping) for a
+  // given communicator on this process group instance. This is kept in parity
+  // with ProcessGroupNCCL, although MCCL shrink is currently unsupported.
+  void initializeDeviceStateForComm(
+      const at::Device& device,
+      std::shared_ptr<MCCLComm> comm);
+
   // Wrapper method which can be overridden for tests.
   virtual std::exception_ptr checkForMCCLErrors(
       std::shared_ptr<MCCLComm>& mcclComm);
@@ -1040,7 +1072,11 @@ class TORCH_API ProcessGroupMCCL : public Backend {
   // In the timeout case and we will dump debug info such as the MCCL flight
   // recorder to storage. Down the road, if we have more complicated or blocking
   // operations, we might need to use a side thread to do it.
-  bool dumpDebuggingInfo(bool includeStackTrace = true);
+  bool dumpDebuggingInfo(
+      bool includeStackTrace = true,
+      bool onlyActive = false);
+
+  void dumpExtraDebuggingInfo();
 
   // Abort all communicators on this rank.
   bool abortComms(const std::optional<std::string>& abortReason = std::nullopt);
@@ -1050,8 +1086,8 @@ class TORCH_API ProcessGroupMCCL : public Backend {
   bool useNonblocking();
 
  protected:
-  int globalRankStart_;
-  int globalRankStride_;
+  int globalRankStart_{};
+  int globalRankStride_{};
 
  private:
   bool eagerInit_{false};
@@ -1149,7 +1185,7 @@ class TORCH_API ProcessGroupMCCL : public Backend {
   // Returns the global rank of the device. This function assumes that users
   // always create a default global process group(PG) which includes all
   // devices. It is called in the constructor of ProcessGroupMCCL, so it always
-  // return the rank_ of the the very first PG created, aka, default global PG.
+  // return the rank_ of the very first PG created, aka, default global PG.
   const int& globalRank() const;
 
   const c10::intrusive_ptr<Store>& globalStore() const;
@@ -1302,7 +1338,7 @@ class TORCH_API ProcessGroupMCCL : public Backend {
   std::list<ProcessGroupMCCL::WorkMCCL> completedWorkList_;
 
   // Add Work Pointer to workVector
-  void workEnqueue(c10::intrusive_ptr<ProcessGroupMCCL::WorkMCCL>);
+  void workEnqueue(c10::intrusive_ptr<ProcessGroupMCCL::WorkMCCL> /*work*/);
 
   // The MUSA streams used by MCCL kernels
   std::unordered_map<std::string, at::musa::MUSAStream> mcclStreams_;
@@ -1323,7 +1359,7 @@ class TORCH_API ProcessGroupMCCL : public Backend {
   std::shared_ptr<MCCLComm> coalescedComm_ = nullptr;
 
   // Whether the coalesced calls are sync or async.
-  bool coalescedAsync_;
+  bool coalescedAsync_{};
 
   // keeps track of input and output tensors when coalescing is in flight.  Will
   // hand over these tensors to WorkMCCL's stash when coalescing is ended.
@@ -1417,6 +1453,9 @@ TORCH_API std::string dump_mccl_trace(
 TORCH_API std::string dump_mccl_trace_json(
     bool includeCollectives,
     bool onlyActive);
+
+// Reset the flight recorder recordings for the current rank.
+TORCH_API void reset_mccl_trace();
 
 // Gets a mutable reference to a global optional function. Heartbeat monitor
 // will use this function to dump traces, if available.

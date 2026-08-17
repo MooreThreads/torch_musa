@@ -9,7 +9,7 @@ repos:
     rev: 24.2.0
     hooks:
       - id: black
-        exclude: ^(benchmark/operator_benchmark/|torch_musa/distributed/fsdp/)
+        exclude: ^(benchmark/operator_benchmark/|torch_musa/distributed/fsdp/|tests/cpp_extension/)
   - repo: local
     hooks:
       - id: pylint

@@ -5,6 +5,7 @@
 
 #include <torch_musa/csrc/core/MUSAGuard.h>
 #include <torch_musa/csrc/core/MUSAStream.h>
+#include "torch_musa/csrc/core/MUSACachingAllocator.h"
 
 AOTITorchError aoti_torch_create_musa_guard(
     int32_t device_index,
@@ -55,7 +56,31 @@ aoti_torch_get_current_musa_stream(int32_t device_index, void** ret_stream) {
   });
 }
 
-// shim_common file: add aoti_torch_device_type_musa impl
-int32_t aoti_torch_device_type_musa() {
-  return (int32_t)c10::DeviceType::PrivateUse1;
+AOTITorchError aoti_torch_musa_caching_allocator_raw_alloc(
+    uint64_t nbytes,
+    void** ret_ptr) {
+  AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
+    if (nbytes == 0) {
+      *ret_ptr = nullptr;
+      return AOTI_TORCH_SUCCESS;
+    }
+
+    *ret_ptr = c10::musa::MUSACachingAllocator::raw_alloc(nbytes);
+
+    if (*ret_ptr == nullptr) {
+      TORCH_CHECK(
+          false,
+          "Failed to allocate ",
+          nbytes,
+          " bytes from MUSA caching allocator");
+    }
+  });
+}
+
+AOTITorchError aoti_torch_musa_caching_allocator_raw_delete(void* ptr) {
+  AOTI_TORCH_CONVERT_EXCEPTION_TO_ERROR_CODE({
+    if (ptr != nullptr) {
+      c10::musa::MUSACachingAllocator::raw_delete(ptr);
+    }
+  });
 }

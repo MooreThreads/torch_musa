@@ -15,6 +15,8 @@
 #include <ATen/ops/cumsum_native.h>
 #endif
 
+#include <ATen/native/musa/ScanKernels.h>
+
 #include "torch_musa/csrc/aten/mudnn/Cum.h"
 #include "torch_musa/csrc/aten/mudnn/Tensor.h"
 #include "torch_musa/csrc/aten/utils/MudnnUtils.h"
@@ -92,7 +94,22 @@ void CumulativeImpl(const Tensor& self, int64_t dim, const Tensor& result) {
     result.zero_();
   } else {
     dim = maybe_wrap_dim(dim, self.dim());
-    CumulativeKernel(result, self, dim, mode);
+    if (self.is_complex() || result.is_complex()) {
+      // use porting kernel
+      const c10::musa::MUSAGuard device_guard(self.device());
+      auto contig_in = self.to(result.scalar_type());
+      auto contig_out = result.contiguous();
+      if constexpr (mode == CUM_MODE::ADD) {
+        at::native::launch_cumsum_cuda_kernel(contig_out, contig_in, dim);
+      } else {
+        at::native::launch_cumprod_cuda_kernel(contig_out, contig_in, dim);
+      }
+      if (!result.is_same(contig_out)) {
+        result.copy_(contig_out);
+      }
+    } else {
+      CumulativeKernel(result, self, dim, mode);
+    }
   }
 }
 

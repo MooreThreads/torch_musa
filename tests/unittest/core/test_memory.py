@@ -350,7 +350,7 @@ def test_host_memory_stats_apis():
 
     assert isinstance(stats, dict)
     assert isinstance(nested_stats, dict)
-    for key in ("allocation", "allocated_bytes", "reserved_bytes"):
+    for key in ("allocations", "active_requests", "allocated_bytes", "active_bytes"):
         assert key in nested_stats
     for key in ("num_host_alloc", "num_host_free"):
         assert key in stats

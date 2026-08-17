@@ -251,7 +251,7 @@ class MUSADeviceOpOverrides(DeviceOpOverrides):
         if workspace.size > 0:
             size_array = f"int64_t {var_name}_size[] = {{{workspace.size}}};"
             stride_array = f"int64_t {var_name}_stride[] = {{1}};"
-            device_type = "cached_torch_device_type_musa"
+            device_type = "cached_torch_device_type_privateuse1"
             device_idx = "device_idx_"
 
             return (

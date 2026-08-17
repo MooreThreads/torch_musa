@@ -119,10 +119,6 @@ size_t MUSASymmetricMemory::get_buffer_size() {
   return pai_->buffer_size_;
 }
 
-size_t MUSASymmetricMemory::get_signal_pad_size() {
-  return signal_pad_size;
-}
-
 bool MUSASymmetricMemory::has_multicast_support() {
   return pai_->mc_addr_ != nullptr;
 }

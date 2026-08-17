@@ -1,25 +1,25 @@
 diff --git a/torch/_inductor/compile_fx.py b/torch/_inductor/compile_fx.py
-index 9e466133004..c824df11740 100644
+index 95b777eab5a..8ab25808872 100644
 --- a/torch/_inductor/compile_fx.py
 +++ b/torch/_inductor/compile_fx.py
-@@ -1601,12 +1601,12 @@ class _InProcessFxCompile(FxCompile):
- 
+@@ -1692,13 +1692,13 @@ class _InProcessFxCompile(FxCompile):
                      # TODO: Hoist this above V.aot_compilation
+                     # pyrefly: ignore [unbound-name]
                      if cudagraphs and not V.graph.disable_cudagraphs_reason:
 -                        from torch._inductor.cudagraph_utils import (
 -                            check_lowering_disable_cudagraph,
--                        )
 +                        from torch_musa._inductor.musagraph_utils import (
 +                            check_lowering_disable_musagraph,
-+                         )
+                         )
  
+                         # pyrefly: ignore [unbound-name]
                          V.graph.disable_cudagraphs_reason = (
 -                            check_lowering_disable_cudagraph(
 +                            check_lowering_disable_musagraph(
+                                 # pyrefly: ignore [unbound-name]
                                  V.graph.device_node_mapping
                              )
-                         )
-@@ -1742,14 +1742,14 @@ def cudagraphify(
+@@ -1845,14 +1845,14 @@ def cudagraphify(
      placeholders: Sequence[PlaceholderInfo] = (),
      mutated_input_idxs: tuple[int, ...] = (),
  ) -> Callable[..., Any]:
@@ -37,7 +37,7 @@ index 9e466133004..c824df11740 100644
              device_index=device_index,
              stack_traces=stack_traces,
              is_backward=is_backward,
-@@ -1760,7 +1760,7 @@ def cudagraphify(
+@@ -1863,7 +1863,7 @@ def cudagraphify(
              compile_id=torch._guards.CompileContext.current_compile_id(),
          )
      else:
@@ -46,7 +46,7 @@ index 9e466133004..c824df11740 100644
  
      compiled_fn = None
  
-@@ -1792,7 +1792,7 @@ def index_expanded_dims_and_copy_(
+@@ -1895,7 +1895,7 @@ def index_expanded_dims_and_copy_(
      dst.copy_(src)
  
  
@@ -55,7 +55,7 @@ index 9e466133004..c824df11740 100644
      model: Callable[..., Any],
      inputs: list[torch.Tensor],
      static_input_idxs: Sequence[int] = (),
-@@ -1831,19 +1831,18 @@ def cudagraphify_impl(
+@@ -1935,19 +1935,19 @@ def cudagraphify_impl(
              index_expanded_dims_and_copy_(static_inputs[idx], x, expanded_dims)
  
      # warmup
@@ -72,9 +72,9 @@ index 9e466133004..c824df11740 100644
      stream.synchronize()
 -    torch.cuda.current_stream().wait_stream(stream)
 -    torch.cuda.synchronize()
--
 +    torch.musa.current_stream().wait_stream(stream)
 +    torch.musa.synchronize()
+ 
      # record
 -    graph = torch.cuda.CUDAGraph()
 -    with torch.cuda.graph(graph, stream=stream, capture_error_mode="thread_local"):
@@ -83,13 +83,14 @@ index 9e466133004..c824df11740 100644
          static_outputs = model(list(static_inputs))
      if not isinstance(static_outputs, (list, tuple)):
          static_outputs = (static_outputs,)
-@@ -2060,8 +2059,11 @@ def fw_compiler_freezing(
+@@ -2170,8 +2170,12 @@ def fw_compiler_freezing(
  
  def get_cpp_wrapper_config() -> dict[str, object]:
      if config.triton.cudagraphs:
 +        from torch_musa._inductor.musagraph_utils import (
-+            format_default_skip_message as format_default_skip_message_musa
++            format_default_skip_message as format_default_skip_message_musa,
 +        )
++
          log_cudagraph_skip_and_bump_counter(
 -            format_default_skip_message("cpp wrapper enabled")
 +            format_default_skip_message_musa("cpp wrapper enabled")

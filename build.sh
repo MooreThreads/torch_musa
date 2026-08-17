@@ -25,8 +25,8 @@ USE_KINETO=${USE_KINETO:-1}
 ONLY_PATCH=0
 CLEAN=0
 COMPILE_FP64=1
-PYTORCH_TAG=v2.9.1
-PYTORCH_BUILD_VERSION=2.9.1.post1
+PYTORCH_TAG=v2.11.0
+PYTORCH_BUILD_VERSION=2.11.0.post1
 PYTORCH_BUILD_NUMBER=0 # This is used for official torch distribution.
 USE_MCCL=${USE_MCCL:-1}
 PIP_VERBOSE_ARGS=()
@@ -282,7 +282,8 @@ clean_pytorch() {
 clean_torch_musa() {
   echo -e "\033[34mCleaning torch_musa...\033[0m"
   pushd ${TORCH_MUSA_HOME}
-  TORCH_DEVICE_BACKEND_AUTOLOAD=0 python setup.py clean
+  TORCH_DEVICE_BACKEND_AUTOLOAD=0 \
+  PYTORCH_REPO_PATH=${PYTORCH_PATH} python setup.py clean
   rm -rf $CUR_DIR/build
   popd
 }

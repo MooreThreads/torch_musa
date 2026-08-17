@@ -1,23 +1,19 @@
 diff --git a/torch/_dynamo/variables/torch.py b/torch/_dynamo/variables/torch.py
-index 6f380ba..7c7b1e9 100644
+index 694edb4c691..2d59a3be144 100644
 --- a/torch/_dynamo/variables/torch.py
 +++ b/torch/_dynamo/variables/torch.py
-@@ -290,6 +290,9 @@ class TorchCtxManagerClassVariable(BaseTorchVariable):
-             VmapIncrementNestingCtxManagerVariable,
-         )
- 
-+        custom_backend = torch._C._get_privateuse1_backend_name()
-+        custom_backend_mod = getattr(torch, custom_backend, None)
-+
-         if self.value is torch.no_grad:
-             if len(args) == 1 and isinstance(
-                 args[0], variables.functions.BaseUserFunctionVariable
-@@ -330,7 +333,7 @@ class TorchCtxManagerClassVariable(BaseTorchVariable):
+@@ -526,6 +526,14 @@ class TorchCtxManagerClassVariable(BaseTorchVariable):
              torch.amp.autocast_mode.autocast,
              torch.cuda.amp.autocast,
              torch.cpu.amp.autocast,
--        ):
-+        ) + tuple([custom_backend_mod.amp.autocast] if custom_backend_mod else []):
++        ) or self.value is getattr(
++            getattr(
++                getattr(torch, torch._C._get_privateuse1_backend_name(), None),
++                "amp",
++                None,
++            ),
++            "autocast",
++            None,
+         ):
+             # pyrefly: ignore [bad-argument-type]
              return AutocastModeVariable.create(self.value, args, kwargs)
-         elif self.value in (
-             # NOTE any class added here must align with the semantic

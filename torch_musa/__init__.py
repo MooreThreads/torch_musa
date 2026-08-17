@@ -23,17 +23,17 @@ def _autoload():
 
 import torch
 
-TORCH_MIN_VERSION = Version("2.9.1")
+TORCH_MIN_VERSION = Version("2.11.0")
 TORCH_VERSION = Version(torch.__version__).base_version
 if Version(TORCH_VERSION) < TORCH_MIN_VERSION:
     raise RuntimeError(
-        "torch version must not be less than v2.9.1 when using torch_musa,",
+        "torch version must not be less than v2.11.0 when using torch_musa,",
         " but now torch version is " + torch.__version__,
     )
 
-if "2.9.1" not in torch.__version__:
+if "2.11.0" not in torch.__version__:
     warnings.warn(
-        "torch version should be v2.9.1 when using torch_musa, but now torch version is "
+        "torch version should be v2.11.0 when using torch_musa, but now torch version is "
         + torch.__version__,
         UserWarning,
     )

@@ -1,5 +1,5 @@
 diff --git a/aten/src/ATen/native/transformers/attention.cpp b/aten/src/ATen/native/transformers/attention.cpp
-index 7aad430..5940c78 100644
+index a83793a..21a2a43 100644
 --- a/aten/src/ATen/native/transformers/attention.cpp
 +++ b/aten/src/ATen/native/transformers/attention.cpp
 @@ -36,6 +36,8 @@
@@ -57,12 +57,11 @@ index 7aad430..5940c78 100644
    const auto convert_attn_func = backend != SDPBackend::cudnn_attention ? convert_boolean_attn_mask : convert_boolean_attn_mask_cudnn;
    auto attn_mask = convert_attn_func(attn_mask_, query_.dtype());
    switch (backend) {
-@@ -743,7 +784,7 @@ Tensor scaled_dot_product_attention(
-       return std::get<0>(out_lse_softmax);
+@@ -744,6 +785,7 @@ Tensor scaled_dot_product_attention(
      }
      case SDPBackend::flash_attention: {
--      if(query_device_type == DeviceType::CUDA){
-+      if(query_device_type == DeviceType::CUDA || query_device_type == DeviceType::PrivateUse1){
+       if(query_device_type == DeviceType::CUDA ||
++         query_device_type == DeviceType::PrivateUse1 ||
+          query_device_type == DeviceType::XPU) {
          c10::SymInt og_size = query_.sym_size(-1);
-         Tensor query_padded = pad_last_dim<8, false>(query_);
-         Tensor key_padded = pad_last_dim<8, false>(key);
+         int alignment_size = (query_device_type == DeviceType::XPU) ? 64 : 8;

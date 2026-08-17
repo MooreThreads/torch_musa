@@ -7,4 +7,6 @@
 #define __SYNCTHREADS __syncthreads()
 #endif
 
+#define MUSA_DEVICE_NOINLINE __attribute__((noinline)) __device__ static
+
 #endif // TORCH_MUSA_CSRC_ATEN_MUSA_MUSAMACROS_H

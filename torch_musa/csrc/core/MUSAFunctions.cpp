@@ -4,6 +4,8 @@
 
 #include "torch_musa/csrc/aten/musa/Exceptions.h"
 
+#include "torch_musa/csrc/core/driver_api.h"
+
 namespace c10::musa {
 
 int32_t GetDriverVersion() {
@@ -197,8 +199,8 @@ bool hasPrimaryContext(DeviceIndex device_index) {
       device_index);
   unsigned int ctx_flags;
   int ctx_is_active = 0;
-  AT_MUSA_DRIVER_CHECK(
-      muDevicePrimaryCtxGetState(device_index, &ctx_flags, &ctx_is_active));
+  C10_MUSA_DRIVER_CHECK(DriverAPI::get()->muDevicePrimaryCtxGetState_(
+      device_index, &ctx_flags, &ctx_is_active));
   return ctx_is_active == 1;
 }
 

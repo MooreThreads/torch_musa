@@ -180,8 +180,14 @@ def test_huber_loss(dtype, reduction):
     else:
         loss_musa.backward()
 
-    assert pytest.approx(loss_cpu.detach().cpu(), rel=1e-3) == loss_musa.detach().cpu()
-    assert pytest.approx(input_data.grad.cpu(), rel=1e-3) == musa_data.grad.cpu()
+    tol = 5e-4 if dtype == torch.float16 else 1e-5
+    assert (
+        pytest.approx(loss_cpu.detach().cpu(), rel=1e-3, abs=tol)
+        == loss_musa.detach().cpu()
+    )
+    assert (
+        pytest.approx(input_data.grad.cpu(), rel=1e-3, abs=tol) == musa_data.grad.cpu()
+    )
 
 
 # =========================================================

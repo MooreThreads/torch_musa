@@ -1,8 +1,8 @@
 diff --git a/cmake/Dependencies.cmake b/cmake/Dependencies.cmake
-index 5227204..b24ed4b 100644
+index dac0d1f41c3..585963d19e3 100644
 --- a/cmake/Dependencies.cmake
 +++ b/cmake/Dependencies.cmake
-@@ -1648,6 +1648,13 @@ if(USE_KINETO)
+@@ -1657,6 +1657,13 @@ if(USE_KINETO)
    message(STATUS "  KINETO_BUILD_TESTS = ${KINETO_BUILD_TESTS}")
    message(STATUS "  KINETO_LIBRARY_TYPE = ${KINETO_LIBRARY_TYPE}")
  
@@ -13,6 +13,6 @@ index 5227204..b24ed4b 100644
 +  get_target_property(MUSA_mupti_LIBRARY MUSA::mupti IMPORTED_LOCATION)
 +  get_filename_component(MUSA_SOURCE_DIR ${MUPTI_INCLUDE_DIR} DIRECTORY)
 +
-   if(NOT LIBKINETO_NOCUPTI)
-     set(CUDA_SOURCE_DIR "${CUDA_TOOLKIT_ROOT_DIR}" CACHE STRING "")
-     message(STATUS "  CUDA_SOURCE_DIR = ${CUDA_SOURCE_DIR}")
+   if(NOT LIBKINETO_NOROCTRACER)
+     if("$ENV{ROCM_SOURCE_DIR}" STREQUAL "")
+       set(ENV{ROCM_SOURCE_DIR} "/opt/rocm")

@@ -31,5 +31,9 @@
     "getCurrentCUDAStream": "getCurrentMUSAStream",
     "CUDABLAS_BGEMM_ARGTYPES": "MUSABLAS_BGEMM_ARGTYPES",
     "getDefaultCUDAStream": "getDefaultMUSAStream",
-    "setCurrentCUDAStream": "setCurrentMUSAStream"
+    "setCurrentCUDAStream": "setCurrentMUSAStream",
+    "AOTI_RUNTIME_CUDA_CHECK": "AOTI_RUNTIME_MUSA_CHECK",
+    "STD_CUDA_CHECK": "STD_MUSA_CHECK",
+    "STD_CUDA_KERNEL_LAUNCH_CHECK": "STD_MUSA_KERNEL_LAUNCH_CHECK",
+    "getCurrentCUDABlasHandle": "getCurrentMUSABlasHandle"
 }

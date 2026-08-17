@@ -20,6 +20,100 @@
 
 namespace at::native {
 
+// use force noinline inplace original impl
+template <typename scalar_t>
+MUSA_DEVICE_NOINLINE scalar_t ni_exp2(scalar_t a) {
+  return exp2_impl(a);
+}
+
+template <typename scalar_t>
+MUSA_DEVICE_NOINLINE scalar_t ni_i0(scalar_t a) {
+  using opmath_t = at::opmath_type<scalar_t>;
+  return calc_i0<opmath_t>(a);
+}
+template <typename scalar_t>
+MUSA_DEVICE_NOINLINE scalar_t ni_i0e(scalar_t a) {
+  using opmath_t = at::opmath_type<scalar_t>;
+  return calc_i0e<opmath_t>(a);
+}
+template <typename scalar_t>
+MUSA_DEVICE_NOINLINE scalar_t ni_i1(scalar_t a) {
+  using opmath_t = at::opmath_type<scalar_t>;
+  return calc_i1<opmath_t>(a);
+}
+template <typename scalar_t>
+MUSA_DEVICE_NOINLINE scalar_t ni_i1e(scalar_t a) {
+  using opmath_t = at::opmath_type<scalar_t>;
+  return calc_i1e<opmath_t>(a);
+}
+template <typename scalar_t>
+MUSA_DEVICE_NOINLINE scalar_t ni_sigmoid(scalar_t a) {
+  using opmath_t = at::opmath_type<scalar_t>;
+  const auto one = opmath_t{1};
+  return static_cast<scalar_t>(one / (one + std::exp(-opmath_t{a})));
+}
+template <typename scalar_t>
+MUSA_DEVICE_NOINLINE scalar_t ni_sinc(scalar_t a) {
+  if (a == scalar_t(0)) {
+    return scalar_t(1);
+  }
+  using opmath_t = at::opmath_type<scalar_t>;
+  opmath_t product = c10::detail::pi<opmath_t>() * opmath_t{a};
+  return static_cast<scalar_t>(std::sin(product) / product);
+}
+template <typename scalar_t, typename T_ACC>
+MUSA_DEVICE_NOINLINE scalar_t
+ni_logit(scalar_t x, T_ACC lo, T_ACC hi, bool clamp) {
+  const T_ACC x_acc = static_cast<T_ACC>(x);
+  if (!clamp) {
+    return c10::musa::compat::log(x_acc / (T_ACC(1) - x_acc));
+  }
+  T_ACC z = x_acc < lo ? lo : (x_acc > hi ? hi : x_acc);
+  return c10::musa::compat::log(z / (T_ACC(1) - z));
+}
+template <typename scalar_t>
+MUSA_DEVICE_NOINLINE scalar_t ni_ndtri(scalar_t a) {
+  return calc_ndtri(a);
+}
+template <typename scalar_t>
+MUSA_DEVICE_NOINLINE scalar_t ni_log_ndtr(scalar_t a) {
+  return calc_log_ndtr(a);
+}
+template <typename scalar_t>
+MUSA_DEVICE_NOINLINE scalar_t ni_erf(scalar_t a) {
+  return ::erf(a);
+}
+template <typename scalar_t>
+MUSA_DEVICE_NOINLINE scalar_t ni_erfc(scalar_t a) {
+  return ::erfc(a);
+}
+template <typename scalar_t>
+MUSA_DEVICE_NOINLINE scalar_t ni_erfinv(scalar_t a) {
+  return ::erfinv(a);
+}
+template <typename scalar_t>
+MUSA_DEVICE_NOINLINE scalar_t ni_erfcx(scalar_t a) {
+  return calc_erfcx(a);
+}
+template <typename scalar_t, typename opmath_t>
+MUSA_DEVICE_NOINLINE scalar_t
+ni_kaiser(scalar_t a, opmath_t inv_alpha, opmath_t beta, opmath_t inv_i0_beta) {
+  opmath_t x = static_cast<opmath_t>(a) * inv_alpha - 1;
+  opmath_t y = std::max<opmath_t>(0, 1 - x * x);
+  return calc_i0(beta * ::sqrt(y)) * inv_i0_beta;
+}
+template <typename scalar_t>
+MUSA_DEVICE_NOINLINE scalar_t ni_entr(scalar_t x) {
+  if (at::_isnan(x)) {
+    return x;
+  } else if (x > 0) {
+    return -x * std::log(x);
+  } else if (x == 0) {
+    return 0;
+  }
+  return static_cast<scalar_t>(-INFINITY);
+}
+
 constexpr char exp2_name[] = "exp2_kernel";
 void exp2_kernel_cuda(TensorIteratorBase& iter) {
   #if AT_USE_JITERATOR()
@@ -31,15 +125,17 @@ void exp2_kernel_cuda(TensorIteratorBase& iter) {
                         /*arity=*/ 1>(iter, exp2_string);
       });
   #else
-    AT_DISPATCH_FLOATING_AND_COMPLEX_TYPES_AND2(
-        ScalarType::Half, ScalarType::BFloat16,
-        iter.common_dtype(), "exp2_cuda",
-        [&]() {
-          gpu_kernel(iter, [] GPU_LAMBDA(scalar_t a) -> scalar_t {
-            return exp2_impl(a);
-          });
+  AT_DISPATCH_FLOATING_AND_COMPLEX_TYPES_AND2(
+      ScalarType::Half,
+      ScalarType::BFloat16,
+      iter.common_dtype(),
+      "exp2_cuda",
+      [&]() {
+        gpu_kernel(iter, [] GPU_LAMBDA(scalar_t a) -> scalar_t {
+          return ni_exp2<scalar_t>(a);
         });
-  #endif
+      });
+#endif
 }
 
 constexpr char i0_name[] = "i0";
@@ -52,15 +148,20 @@ void i0_kernel_cuda(TensorIteratorBase& iter) {
                         /*arity=*/ 1>(iter, i0_string);
       });
   #else
-    AT_DISPATCH_FLOATING_TYPES_AND2(ScalarType::Half, ScalarType::BFloat16, iter.common_dtype(), "i0_cuda", [&]() {
-      gpu_kernel(iter, []GPU_LAMBDA(scalar_t a) -> scalar_t {
-        using opmath_t = at::opmath_type<scalar_t>;
-        // implicit conversion of a to opmath_t will happen here,
-        //   but as far as TI is concerned, it's still a no-dynamic-cast kernel because lambda input is scalar_t
-        return calc_i0<opmath_t>(a);
+  AT_DISPATCH_FLOATING_TYPES_AND2(
+      ScalarType::Half,
+      ScalarType::BFloat16,
+      iter.common_dtype(),
+      "i0_cuda",
+      [&]() {
+        gpu_kernel(iter, [] GPU_LAMBDA(scalar_t a) -> scalar_t {
+          // implicit conversion of a to opmath_t will happen inside ni_i0,
+          //   but as far as TI is concerned, it's still a no-dynamic-cast
+          //   kernel because lambda input is scalar_t
+          return ni_i0<scalar_t>(a);
+        });
       });
-    });
-  #endif
+#endif
 }
 
 // See note [Jiterator]
@@ -74,13 +175,17 @@ void i0e_kernel_cuda(TensorIteratorBase& iter) {
                         /*arity=*/ 1>(iter, i0e_string);
     });
   #else
-    AT_DISPATCH_FLOATING_TYPES_AND2(ScalarType::Half, ScalarType::BFloat16, iter.common_dtype(), "i0e_cuda", [&]() {
-      gpu_kernel(iter, []GPU_LAMBDA(scalar_t a) -> scalar_t {
-        using opmath_t = at::opmath_type<scalar_t>;
-        return calc_i0e<opmath_t>(a);
+  AT_DISPATCH_FLOATING_TYPES_AND2(
+      ScalarType::Half,
+      ScalarType::BFloat16,
+      iter.common_dtype(),
+      "i0e_cuda",
+      [&]() {
+        gpu_kernel(iter, [] GPU_LAMBDA(scalar_t a) -> scalar_t {
+          return ni_i0e<scalar_t>(a);
+        });
       });
-    });
-  #endif
+#endif
 }
 
 // See note [Jiterator]
@@ -95,13 +200,17 @@ void i1_kernel_cuda(TensorIteratorBase& iter) {
                         /*arity=*/ 1>(iter, i1_string);
     });
   #else
-    AT_DISPATCH_FLOATING_TYPES_AND2(ScalarType::Half, ScalarType::BFloat16, iter.common_dtype(), "i1_cuda", [&]() {
-      gpu_kernel(iter, []GPU_LAMBDA(scalar_t a) -> scalar_t {
-        using opmath_t = at::opmath_type<scalar_t>;
-        return calc_i1<opmath_t>(a);
+  AT_DISPATCH_FLOATING_TYPES_AND2(
+      ScalarType::Half,
+      ScalarType::BFloat16,
+      iter.common_dtype(),
+      "i1_cuda",
+      [&]() {
+        gpu_kernel(iter, [] GPU_LAMBDA(scalar_t a) -> scalar_t {
+          return ni_i1<scalar_t>(a);
+        });
       });
-    });
-  #endif // AT_USE_JITERATOR()
+#endif // AT_USE_JITERATOR()
 }
 
 constexpr char i1e_name[] = "i1e";
@@ -114,13 +223,17 @@ void i1e_kernel_cuda(TensorIteratorBase& iter) {
                         /*arity=*/ 1>(iter, i1e_string);
     });
   #else
-    AT_DISPATCH_FLOATING_TYPES_AND2(ScalarType::Half, ScalarType::BFloat16, iter.common_dtype(), "i1e_cuda", [&]() {
-      gpu_kernel(iter, []GPU_LAMBDA(scalar_t a) -> scalar_t {
-        using opmath_t = at::opmath_type<scalar_t>;
-        return calc_i1e<opmath_t>(a);
+  AT_DISPATCH_FLOATING_TYPES_AND2(
+      ScalarType::Half,
+      ScalarType::BFloat16,
+      iter.common_dtype(),
+      "i1e_cuda",
+      [&]() {
+        gpu_kernel(iter, [] GPU_LAMBDA(scalar_t a) -> scalar_t {
+          return ni_i1e<scalar_t>(a);
+        });
       });
-    });
-  #endif
+#endif
 }
 
 constexpr char sigmoid_name[] = "sigmoid";
@@ -143,22 +256,24 @@ void sigmoid_kernel_cuda(TensorIteratorBase& iter) {
             /*arity=*/1>(iter, sigmoid_string);
       });
     #else
-      AT_DISPATCH_COMPLEX_TYPES_AND(kComplexHalf, common_dtype, "sigmoid_cuda", [&]() {
-        gpu_kernel(iter, []GPU_LAMBDA(scalar_t a) -> scalar_t {
-          using opmath_t = at::opmath_type<scalar_t>;
-          const auto one = opmath_t{1};
-          return static_cast<scalar_t>(one / (one + std::exp(-opmath_t{a})));
+    AT_DISPATCH_COMPLEX_TYPES_AND(
+        kComplexHalf, common_dtype, "sigmoid_cuda", [&]() {
+          gpu_kernel(iter, [] GPU_LAMBDA(scalar_t a) -> scalar_t {
+            return ni_sigmoid<scalar_t>(a);
+          });
         });
-      });
-    #endif
+#endif
   } else {
-    AT_DISPATCH_FLOATING_TYPES_AND2(at::ScalarType::Half, at::ScalarType::BFloat16, common_dtype, "sigmoid_cuda", [&]() {
-      gpu_kernel(iter, []GPU_LAMBDA(scalar_t a) -> scalar_t {
-        using opmath_t = at::opmath_type<scalar_t>;
-        const auto one = opmath_t{1};
-        return static_cast<scalar_t>(one/(one + std::exp(-opmath_t{a})));
-      });
-    });
+    AT_DISPATCH_FLOATING_TYPES_AND2(
+        at::ScalarType::Half,
+        at::ScalarType::BFloat16,
+        common_dtype,
+        "sigmoid_cuda",
+        [&]() {
+          gpu_kernel(iter, [] GPU_LAMBDA(scalar_t a) -> scalar_t {
+            return ni_sigmoid<scalar_t>(a);
+          });
+        });
   }
 }
 
@@ -175,22 +290,17 @@ void sinc_kernel_cuda(TensorIteratorBase& iter) {
                           /*arity=*/ 1>(iter, sinc_string);
       });
   #else
-    AT_DISPATCH_FLOATING_AND_COMPLEX_TYPES_AND2(
-        ScalarType::Half, ScalarType::BFloat16,
-        iter.common_dtype(), "sinc_cuda",
-        [&]() {
-          gpu_kernel(iter, []GPU_LAMBDA(scalar_t a) -> scalar_t {
-            if (a == scalar_t(0)) {
-              return scalar_t(1);
-            } else {
-              // NVCC says constexpr var is not accessible from device
-              using opmath_t = at::opmath_type<scalar_t>;
-              opmath_t product = c10::detail::pi<opmath_t>() * opmath_t{a};
-              return static_cast<scalar_t>(std::sin(product) / product);
-            }
-          });
+  AT_DISPATCH_FLOATING_AND_COMPLEX_TYPES_AND2(
+      ScalarType::Half,
+      ScalarType::BFloat16,
+      iter.common_dtype(),
+      "sinc_cuda",
+      [&]() {
+        gpu_kernel(iter, [] GPU_LAMBDA(scalar_t a) -> scalar_t {
+          return ni_sinc<scalar_t>(a);
         });
-  #endif
+      });
+#endif
 }
 
 void logit_kernel_cuda(TensorIteratorBase& iter, const Scalar& eps_scalar) {
@@ -204,18 +314,14 @@ void logit_kernel_cuda(TensorIteratorBase& iter, const Scalar& eps_scalar) {
         const T_ACC eps = eps_scalar.to<T_ACC>();
         if (eps < T_ACC(0)) {
           gpu_kernel(iter, [] GPU_LAMBDA(scalar_t x) -> scalar_t {
-            const T_ACC x_acc = static_cast<T_ACC>(x);
-            return c10::musa::compat::log(x_acc / (T_ACC(1) - x_acc));
+            return ni_logit<scalar_t, T_ACC>(x, T_ACC(0), T_ACC(0), false);
           });
         } else {
           const T_ACC lo = eps;
           const T_ACC hi = T_ACC(1) - eps;
-          gpu_kernel(
-              iter, [lo, hi] GPU_LAMBDA(scalar_t x) -> scalar_t {
-                const T_ACC x_acc = static_cast<T_ACC>(x);
-                T_ACC z = x_acc < lo ? lo : (x_acc > hi ? hi : x_acc);
-                return c10::musa::compat::log(z / (T_ACC(1) - z));
-              });
+          gpu_kernel(iter, [lo, hi] GPU_LAMBDA(scalar_t x) -> scalar_t {
+            return ni_logit<scalar_t, T_ACC>(x, lo, hi, true);
+          });
         }
       });
 }
@@ -230,11 +336,12 @@ void ndtri_kernel_cuda(TensorIteratorBase& iter) {
                         /*arity=*/ 1>(iter, ndtri_string);
     });
   #else
-    AT_DISPATCH_FLOATING_TYPES(iter.common_dtype(), "ndtri_cuda", [&]() {
-      gpu_kernel(
-          iter, [] GPU_LAMBDA(scalar_t a) -> scalar_t { return calc_ndtri(a); });
-      });
-  #endif
+  AT_DISPATCH_FLOATING_TYPES(iter.common_dtype(), "ndtri_cuda", [&]() {
+    gpu_kernel(iter, [] GPU_LAMBDA(scalar_t a) -> scalar_t {
+      return ni_ndtri<scalar_t>(a);
+    });
+  });
+#endif
 }
 
 constexpr char log_ndtr_name[] = "log_ndtr";
@@ -247,19 +354,25 @@ void log_ndtr_kernel_cuda(TensorIteratorBase& iter) {
                         /*arity=*/ 1>(iter, log_ndtr_string);
     });
   #else
-    AT_DISPATCH_FLOATING_TYPES(iter.common_dtype(), "log_ndtr_cuda", [&]() {
-      gpu_kernel(
-          iter, [] GPU_LAMBDA(scalar_t a) -> scalar_t { return calc_log_ndtr(a); });
-      });
-  #endif
+  AT_DISPATCH_FLOATING_TYPES(iter.common_dtype(), "log_ndtr_cuda", [&]() {
+    gpu_kernel(iter, [] GPU_LAMBDA(scalar_t a) -> scalar_t {
+      return ni_log_ndtr<scalar_t>(a);
+    });
+  });
+#endif
 }
 
 void erf_kernel_cuda(TensorIteratorBase& iter) {
-  AT_DISPATCH_FLOATING_TYPES_AND2(at::ScalarType::Half, at::ScalarType::BFloat16, iter.common_dtype(), "erf_cuda", [&]() {
-    gpu_kernel(iter, []GPU_LAMBDA(scalar_t a) -> scalar_t {
-      return ::erf(a);
-    });
-  });
+  AT_DISPATCH_FLOATING_TYPES_AND2(
+      at::ScalarType::Half,
+      at::ScalarType::BFloat16,
+      iter.common_dtype(),
+      "erf_cuda",
+      [&]() {
+        gpu_kernel(iter, [] GPU_LAMBDA(scalar_t a) -> scalar_t {
+          return ni_erf<scalar_t>(a);
+        });
+      });
 }
 
 constexpr char erfc_name[] = "erfc_kernel";
@@ -272,13 +385,17 @@ void erfc_kernel_cuda(TensorIteratorBase& iter) {
                         /*arity=*/ 1>(iter, erfc_string);
       });
   #else
-    AT_DISPATCH_FLOATING_TYPES_AND2(ScalarType::Half, ScalarType::BFloat16,
-        iter.common_dtype(), "erfc_cuda", [&]() {
-          gpu_kernel(iter, []GPU_LAMBDA(scalar_t a) -> scalar_t {
-            return ::erfc(a);
-          });
+  AT_DISPATCH_FLOATING_TYPES_AND2(
+      ScalarType::Half,
+      ScalarType::BFloat16,
+      iter.common_dtype(),
+      "erfc_cuda",
+      [&]() {
+        gpu_kernel(iter, [] GPU_LAMBDA(scalar_t a) -> scalar_t {
+          return ni_erfc<scalar_t>(a);
         });
-  #endif
+      });
+#endif
 }
 
 constexpr char erfinv_name[] = "erfinv_kernel";
@@ -291,13 +408,17 @@ void erfinv_kernel_cuda(TensorIteratorBase& iter) {
                         /*arity=*/ 1>(iter, erfinv_string);
       });
   #else
-    AT_DISPATCH_FLOATING_TYPES_AND2(ScalarType::Half, ScalarType::BFloat16,
-        iter.common_dtype(), "erfinv_cuda", [&]() {
-          gpu_kernel(iter, []GPU_LAMBDA(scalar_t a) -> scalar_t {
-            return ::erfinv(a);
-          });
+  AT_DISPATCH_FLOATING_TYPES_AND2(
+      ScalarType::Half,
+      ScalarType::BFloat16,
+      iter.common_dtype(),
+      "erfinv_cuda",
+      [&]() {
+        gpu_kernel(iter, [] GPU_LAMBDA(scalar_t a) -> scalar_t {
+          return ni_erfinv<scalar_t>(a);
         });
-  #endif
+      });
+#endif
 }
 
 constexpr char erfcx_name[] = "erfcx";
@@ -310,11 +431,12 @@ void erfcx_kernel_cuda(TensorIteratorBase& iter) {
                         /*arity=*/ 1>(iter, erfcx_string);
     });
   #else
-    AT_DISPATCH_FLOATING_TYPES(iter.common_dtype(), "erfcx_cuda", [&]() {
-      gpu_kernel(
-          iter, [] GPU_LAMBDA(scalar_t a) -> scalar_t { return calc_erfcx(a); });
+  AT_DISPATCH_FLOATING_TYPES(iter.common_dtype(), "erfcx_cuda", [&]() {
+    gpu_kernel(iter, [] GPU_LAMBDA(scalar_t a) -> scalar_t {
+      return ni_erfcx<scalar_t>(a);
     });
-  #endif
+  });
+#endif
 }
 
 constexpr char kaiser_window_name[] = "kaiser_window";
@@ -342,10 +464,8 @@ void kaiser_window_kernel_cuda(TensorIteratorBase& iter, int64_t window_length, 
       const opmath_t inv_alpha = static_cast<opmath_t>(2.0 / (window_length - 1));
       const opmath_t beta = static_cast<opmath_t>(beta_);
       const opmath_t inv_i0_beta = 1.0 / calc_i0(beta);
-      gpu_kernel(iter, [=]GPU_LAMBDA(scalar_t a) -> scalar_t {
-        opmath_t x = static_cast<opmath_t>(a) * inv_alpha - 1;
-        opmath_t y = std::max<opmath_t>(0, 1 - x * x);
-        return calc_i0(beta * ::sqrt(y)) * inv_i0_beta;
+      gpu_kernel(iter, [=] GPU_LAMBDA(scalar_t a) -> scalar_t {
+        return ni_kaiser<scalar_t, opmath_t>(a, inv_alpha, beta, inv_i0_beta);
       });
     });
   #endif
@@ -361,24 +481,17 @@ void entr_kernel_cuda(TensorIteratorBase& iter) {
                         /*arity=*/ 1>(iter, entr_string);
       });
   #else
-    AT_DISPATCH_FLOATING_TYPES_AND2(
-        ScalarType::Half,
-        ScalarType::BFloat16,
-        iter.common_dtype(),
-        "entr_cuda",
-        [&]() {
-          gpu_kernel(iter, [=] GPU_LAMBDA(scalar_t x) -> scalar_t {
-            if (at::_isnan(x)) {
-              return x;
-            } else if (x > 0) {
-              return -x * std::log(x);
-            } else if (x == 0) {
-              return 0;
-            }
-            return static_cast<scalar_t>(-INFINITY);
-          });
+  AT_DISPATCH_FLOATING_TYPES_AND2(
+      ScalarType::Half,
+      ScalarType::BFloat16,
+      iter.common_dtype(),
+      "entr_cuda",
+      [&]() {
+        gpu_kernel(iter, [=] GPU_LAMBDA(scalar_t x) -> scalar_t {
+          return ni_entr<scalar_t>(x);
         });
-  #endif
+      });
+#endif
 }
 
 REGISTER_DISPATCH(exp2_stub, &exp2_kernel_cuda)

@@ -1,11 +1,11 @@
 diff --git a/torch/_inductor/codecache.py b/torch/_inductor/codecache.py
-index 7b24208a2c5..00187a853a4 100644
+index 772536ffb34..56ea9af22f3 100644
 --- a/torch/_inductor/codecache.py
 +++ b/torch/_inductor/codecache.py
-@@ -170,6 +170,8 @@ def get_kernel_bin_format(device: str) -> str:
+@@ -155,6 +155,8 @@ def get_kernel_bin_format(device: str) -> str:
          return "cubin" if torch.version.hip is None else "hsaco"
      elif device == "xpu":
-         return "spv"
+         return XPU_KERNEL_FORMAT
 +    elif device == "musa":
 +        return "mubin"
      else:
@@ -20,7 +20,7 @@ index 7b24208a2c5..00187a853a4 100644
              # If cuda is not installed, none of the above config is relevant.
              system = {}
  
-@@ -1647,7 +1649,7 @@ class CudaKernelParamCache:
+@@ -1749,7 +1751,7 @@ class CudaKernelParamCache:
              specified_dir=split_aot_inductor_output_path(
                  config.aot_inductor.output_path
              )[0],
@@ -29,30 +29,30 @@ index 7b24208a2c5..00187a853a4 100644
          )
          # Retrieve the basename again in case it is a generated hashcode
          basename, _ = get_name_and_dir_from_output_file_path(bin_path)
-@@ -1713,7 +1715,11 @@ class AotCodeCompiler:
+@@ -1831,7 +1833,12 @@ class AotCodeCompiler:
          """
-         generated_files: list[Union[str, Weights]] = additional_files  # type: ignore[assignment]
+         generated_files: list[str | Weights] = additional_files  # type: ignore[assignment]
  
 -        _set_gpu_runtime_env()  # cpp_extension consults the env
 +        if device_type == "musa":
 +            from torch_musa.utils.musa_extension import _find_musa_home
++
 +            _find_musa_home()  # cpp_extension consults the env
 +        else:
 +            _set_gpu_runtime_env()  # cpp_extension consults the env
  
          picked_vec_isa = pick_vec_isa()
          vec_isa_cmd_gen = CppBuilder(
-@@ -1894,7 +1900,8 @@ class AotCodeCompiler:
+@@ -2012,7 +2019,7 @@ class AotCodeCompiler:
  
              # Intel compiler failed to compile this manually constructed assembly file.
              # Switch XPU to use consts cpp build.
 -            if device_type == "xpu":
-+            # MUSA also does not support asm build.
 +            if device_type in ("xpu", "musa"):
                  use_asm_build = False
  
              is_large_consts = len(consts) > 1024
-@@ -2107,13 +2114,13 @@ end
+@@ -2228,13 +2235,13 @@ end
                  if specified_artifact_name
                  else str(wrapper_path_operator.with_suffix(".so"))
              )
@@ -60,7 +60,7 @@ index 7b24208a2c5..00187a853a4 100644
 -                graph.get_original_value_of_constant(name).is_cuda
 +            all_on_device = all(
 +                graph.get_original_value_of_constant(name).device.type == device_type
-                 for name in graph.constants.keys()
+                 for name in graph.constants
                  if name not in graph.folded_constants
              )
  
@@ -69,21 +69,24 @@ index 7b24208a2c5..00187a853a4 100644
                  def _pad_to_alignment(raw_bytes: bytes) -> bytes:
                      padded_bytes = raw_bytes.ljust(
                          (len(raw_bytes) + ALIGN_BYTES - 1) // ALIGN_BYTES * ALIGN_BYTES,
-@@ -2141,11 +2148,11 @@ end
-                     ctypes.POINTER(ctypes.c_ubyte * nbytes),
+@@ -2263,14 +2270,14 @@ end
                  )
+                 # pyrefly: ignore [missing-attribute]
                  raw_bytes = bytes(raw_array.contents)
 -                return raw_bytes if all_cuda else _pad_to_alignment(raw_bytes)
 +                return raw_bytes if all_on_device else _pad_to_alignment(raw_bytes)
  
-             if config.aot_inductor.package_constants_in_so:
+             if (
+                 config.aot_inductor.package_constants_in_so
+                 or config.aot_inductor.package_constants_on_disk_format == "binary_blob"
+             ):
                  serialized_weights = b"".join(
 -                    _to_bytes(graph.get_original_value_of_constant(name), all_cuda)
 +                    _to_bytes(graph.get_original_value_of_constant(name), all_on_device)
-                     for name in graph.constants.keys()
+                     for name in graph.constants
                      if name not in graph.folded_constants
                  )
-@@ -2411,10 +2418,10 @@ end
+@@ -2591,10 +2598,10 @@ end
                          f_weights.write(struct.pack("q", magic_number))
  
                      generated_files.append(weight_file)
@@ -96,5 +99,5 @@ index 7b24208a2c5..00187a853a4 100644
 +                generated_files.append(consts_o)
 +                so_builder.save_src_to_cmake(cmake_path, consts_o)
  
-                 if config.aot_inductor.emit_multi_arch_kernel:
-                     so_builder.save_kernel_asm_to_cmake(cmake_path, asm_files)
+                 # Different CMake strategies for CUDA vs ROCm:
+                 # - CUDA: Save asm for CMake to recompile (user has nvcc)

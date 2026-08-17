@@ -1,13 +1,12 @@
 diff --git a/torch/distributed/fsdp/_fully_shard/_fully_shard.py b/torch/distributed/fsdp/_fully_shard/_fully_shard.py
-index eb348a0..fb471f7 100644
+index 64fdcf879ed..7229090819d 100644
 --- a/torch/distributed/fsdp/_fully_shard/_fully_shard.py
 +++ b/torch/distributed/fsdp/_fully_shard/_fully_shard.py
-@@ -466,7 +466,9 @@ class FSDPModule:
+@@ -466,7 +466,8 @@ class FSDPModule:
          """
          state = self._get_fsdp_state()
          if (fsdp_param_group := state._fsdp_param_group) is not None:
 -            fsdp_param_group._all_gather_comm = comm
-+            # TODO(mingyuan.wang): delete this once zero copy all-gather/reduce-scatter over ACE implementation ready
 +            fsdp_param_group._forward_all_gather_comm = comm
 +            fsdp_param_group._backward_all_gather_comm = comm
  

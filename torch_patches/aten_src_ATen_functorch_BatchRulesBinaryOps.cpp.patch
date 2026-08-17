@@ -1,16 +1,14 @@
 diff --git a/aten/src/ATen/functorch/BatchRulesBinaryOps.cpp b/aten/src/ATen/functorch/BatchRulesBinaryOps.cpp
-index 5426e50..ed457ee 100644
+index 25fe96c6cda..8d7c13da047 100644
 --- a/aten/src/ATen/functorch/BatchRulesBinaryOps.cpp
 +++ b/aten/src/ATen/functorch/BatchRulesBinaryOps.cpp
-@@ -326,7 +326,10 @@ static std::tuple<Tensor, std::optional<int64_t>> log_sigmoid_backward_batch_rul
-   // We do this because on cuda, buffer is a dummy tensor always of logical rank 1 and
-   // it becomes an issue when the rest of the inputs are scalar
+@@ -327,7 +327,8 @@ static std::tuple<Tensor, std::optional<int64_t>> log_sigmoid_backward_batch_rul
    int64_t out_logical_rank = std::max(rankWithoutBatchDim(grad, grad_bdim), rankWithoutBatchDim(self, self_bdim));
--  if (!grad.is_cuda() && !self.is_cuda() && !buffer.is_cuda()) {
-+  auto is_cuda_or_privateuseone = [](const Tensor& t) -> bool {
-+    return t.is_cuda() || t.is_privateuseone();
-+  };
-+  if (!is_cuda_or_privateuseone(grad) && !is_cuda_or_privateuseone(self) && !is_cuda_or_privateuseone(buffer)) {
+   bool inputs_on_cuda = grad.is_cuda() || self.is_cuda() || buffer.is_cuda();
+   bool inputs_on_xpu = grad.is_xpu() || self.is_xpu() || buffer.is_xpu();
+-  if (!inputs_on_cuda && !inputs_on_xpu) {
++  bool inputs_on_privateuseone = grad.is_privateuseone() || self.is_privateuseone() || buffer.is_privateuseone();
++  if (!inputs_on_cuda && !inputs_on_xpu && !inputs_on_privateuseone) {
      out_logical_rank = std::max(out_logical_rank, rankWithoutBatchDim(buffer, buffer_bdim));
    }
    Tensor out_grad = maybePadToLogicalRank(moveBatchDimToFront(grad, grad_bdim), grad_bdim, out_logical_rank);

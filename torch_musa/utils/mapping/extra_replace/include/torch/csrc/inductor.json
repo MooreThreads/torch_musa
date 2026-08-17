@@ -1,0 +1,23 @@
+{
+    "\\bUSE_CUDA\\b": "USE_MUSA",
+    "\\bCUDA\\b": "MUSA",
+    "^(?!.*AOTI_TORCH_EXPORT)(.*)\\baoti_torch_device_type_cuda\\b": "\\g<1>aoti_torch_device_type_privateuse1",
+    "\\baoti_torch_create_cuda_": "aoti_torch_create_musa_",
+    "\\baoti_torch_delete_cuda_": "aoti_torch_delete_musa_",
+    "\\baoti_torch_get_current_cuda_": "aoti_torch_get_current_musa_",
+    "\\baoti_torch_cuda_": "aoti_torch_musa_",
+    "\\bCUDAGuardOpaque\\b": "MUSAGuardOpaque",
+    "\\bCUDAGuardHandle\\b": "MUSAGuardHandle",
+    "\\bCUDAStreamGuardOpaque\\b": "MUSAStreamGuardOpaque",
+    "\\bCUDAStreamGuardHandle\\b": "MUSAStreamGuardHandle",
+    "\\bAOTICudaGuard\\b": "AOTIMusaGuard",
+    "\\bAOTICudaStreamGuard\\b": "AOTIMusaStreamGuard",
+    "\\bdelete_cuda_guard\\b": "delete_musa_guard",
+    "\\bdelete_cuda_stream_guard\\b": "delete_musa_stream_guard",
+    "\\bAOTIModelContainerRunnerCuda\\b": "AOTIModelContainerRunnerMusa",
+    "\\brun_with_cuda_stream\\b": "run_with_musa_stream",
+    "\\bcuda_stream\\b": "musa_stream",
+    "utils_cuda\\.h": "utils_musa.h",
+    "c_shim_cuda\\.h": "c_shim_musa.h",
+    "<torch/csrc/inductor/aoti_torch/generated/c_shim_musa\\.h>": "<torch_musa/csrc/inductor/aoti_torch/generated/c_shim_musa.h>"
+}

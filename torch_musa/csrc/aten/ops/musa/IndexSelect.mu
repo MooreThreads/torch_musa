@@ -233,26 +233,26 @@ void IndexSelectRun(
     Tensor& out,
     const Tensor& index,
     const Tensor& in) {
-  TORCH_CHECK(desc_dim < in.dim(), "Indexing dim is out of bounds");
+  const int64_t in_dim = in.dim();
+  const int64_t effective_dim = in_dim == 0 ? 1 : in_dim;
+  int select_dim = at::maybe_wrap_dim(desc_dim, effective_dim);
   TORCH_CHECK(
       in.scalar_type() != at::ScalarType::QInt32,
       "Unsupported dtype of IndexSelect kernel input: ",
       out.scalar_type());
 
-  int select_dim = desc_dim < 0 ? (desc_dim + in.dim()) : desc_dim;
-
   int64_t s1 = 1;
   for (int i = 0; i < select_dim; i++) {
     s1 *= in.size(i);
   }
-  int64_t r0 = in.size(select_dim);
+  int64_t r0 = in_dim == 0 ? 1 : in.size(select_dim);
   int64_t s0 = 1;
-  for (int j = select_dim + 1; j < in.dim(); j++) {
+  for (int j = select_dim + 1; j < in_dim; j++) {
     s0 *= in.size(j);
   }
   int64_t elements = out.numel();
   int64_t num_indices = index.numel();
-  bool can_vector_load = select_dim != in.dim() - 1;
+  bool can_vector_load = select_dim != effective_dim - 1;
   const int max_load_vlen = at::musa::DTypeSize(in.scalar_type()) <= 4
       ? (at::musa::DTypeSize(in.scalar_type()) <= 2 ? 8 : 4)
       : (at::musa::DTypeSize(in.scalar_type()) <= 8 ? 2 : 1);

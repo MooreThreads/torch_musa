@@ -19,6 +19,7 @@ file(
   utils/*.cpp)
 
 list(APPEND MUSA_CSRCS ${_CSRCS} ${GENERATED_MUSA_CSRCS})
+list(APPEND MUSA_CSRCS ${GENERATED_PORTING_DIR}/torch/csrc/musa/shim_common.cpp)
 
 if(USE_MCCL)
   file(GLOB _MCCL_CSRCS distributed/*.cpp)
@@ -114,7 +115,6 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/AveragePool3d.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Bucketization.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/BinaryMiscBackwardOpsKernels.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/BinaryGeometricKernels.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/BinaryMiscOpsKernels.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/BinaryBitwiseOpsKernels.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/BinaryShiftOpsKernels.mu
@@ -123,12 +123,12 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/CrossKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/CumminmaxKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/CompareEQKernel.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/CumsumKernel.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/CumprodKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/CopysignKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/chebyshev_polynomial_t.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/chebyshev_polynomial_u.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/chebyshev_polynomial_v.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/chebyshev_polynomial_w.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Distributions.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistributionUniform.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistributionNormal.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistributionBernoulli.mu
@@ -150,7 +150,6 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachBinaryOpScalarList.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachPointwiseOp.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachTernaryOp.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ForeachUnaryOp.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/FusedAdagradKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/fused_adagrad_impl.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/FunctionOfAMatrixUtilsKernel.mu
@@ -196,24 +195,17 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TriangularOps.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryFractionKernels.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnarySignKernels.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryGammaKernels.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryGeometricAsinKernel.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryGeometricAsinhKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryGeometricSinhKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryGeometricAcoshKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryGeometricAtanhKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryGeometricCoshKernel.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryLogKernels.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnfoldBackwardKernel.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/UnaryOpsKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ValidateCompressedIndicesKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/WeightNorm.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/DistanceKernel.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/LogAddExpKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/scaled_modified_bessel_k0.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/scaled_modified_bessel_k1.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/shifted_chebyshev_polynomial_t.mu
-  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/shifted_chebyshev_polynomial_u.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/shifted_chebyshev_polynomial_v.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/shifted_chebyshev_polynomial_w.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/spherical_bessel_j0.mu

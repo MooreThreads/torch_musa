@@ -16,7 +16,7 @@ ignore=CVS, _cy2, _cy3, grammar
 ignore-patterns=
 
 # TorchMusa: ignore the version file.
-ignore-paths=^docs/, ^tools/, ^benchmark, ^ci, ^examples, ^torch_musa/version.py, ^tests/unittest/miscs/musa_extension_test/
+ignore-paths=^docs/, ^tools/, ^benchmark, ^ci, ^examples, ^torch_musa/version.py, ^tests/unittest/miscs/musa_extension_test/, ^tests/cpp_extension/
 
 # Pickle collected data for later comparisons.
 persistent=yes

@@ -151,7 +151,9 @@ input_data = [
 @pytest.mark.parametrize("input_data", input_data)
 def test_linalg_cholesky(input_data):
     m = torch.linalg.cholesky
-    input_data = input_data @ input_data.mT + 1e-3
+    input_data = input_data @ input_data.mT
+    eye = torch.eye(input_data.size(-1), dtype=input_data.dtype).expand_as(input_data)
+    input_data = input_data + 0.1 * eye
     input_musa = input_data.musa()
     output = m(input_data)
     output_musa = m(input_musa)
@@ -170,7 +172,7 @@ input_data = [
 @pytest.mark.parametrize("input_data", input_data)
 def test_cholesky_inverse(input_data):
     m = torch.cholesky_inverse
-    inp = torch.mm(input_data, input_data.t()) + 1e-05 * torch.eye(
+    inp = torch.mm(input_data, input_data.t()) + 0.1 * torch.eye(
         input_data.shape[0]
     )  # make symmetric positive definite
     u = torch.linalg.cholesky(inp)  # pylint: disable=C0103
@@ -183,7 +185,11 @@ def test_cholesky_inverse(input_data):
     "input_data",
     [
         {"A": torch.randn(1, 3, 3), "B": torch.randn(1, 3, 5)},
-        {"A": torch.randn(32, 32, 32), "B": torch.randn(32, 32, 16)},
+        {
+            "A": torch.randn(32, 32, 32),
+            "B": torch.randn(32, 32, 16),
+            "make_positive_definite": True,
+        },
         {"A": torch.randn(5, 9, 9), "B": torch.randn(5, 9, 7)},
         {"A": torch.randn(3, 3), "B": torch.randn(3, 9)},
         # This size would fail!
@@ -194,13 +200,17 @@ def test_cholesky_inverse(input_data):
 @pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 def test_linalg_solve(input_data, dtype):
-    input_data["A"] = input_data["A"].to(dtype)
-    input_data["B"] = input_data["B"].to(dtype)
+    A = input_data["A"].to(dtype)
+    B = input_data["B"].to(dtype)
+    if input_data.get("make_positive_definite", False):
+        # Random 32x32 matrices can occasionally be nearly singular, which makes
+        # float32 solve results flaky across CPU and MUSA backends. Construct a
+        # well-conditioned positive definite matrix for the large batched case.
+        eye = torch.eye(A.size(-1), dtype=dtype).expand_as(A)
+        A = A @ A.mT + eye
     m = torch.linalg.solve
-    output = m(input_data["A"].clone(), input_data["B"].clone())
-    output_musa = m(
-        input_data["A"].to("musa").clone(), input_data["B"].to("musa").clone()
-    )
+    output = m(A.clone(), B.clone())
+    output_musa = m(A.to("musa").clone(), B.to("musa").clone())
     assert testing.DefaultComparator(abs_diff=1e-4, rel_diff=1e-3)(output, output_musa)
 
 

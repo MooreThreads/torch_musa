@@ -1,29 +1,29 @@
 diff --git a/torch/_functorch/partitioners.py b/torch/_functorch/partitioners.py
-index 9030cfc..16d043a 100644
+index 6327dd405c8..1e3de5e5e0e 100644
 --- a/torch/_functorch/partitioners.py
 +++ b/torch/_functorch/partitioners.py
-@@ -1315,6 +1315,9 @@ def functionalize_rng_ops(
+@@ -1631,6 +1631,9 @@ def functionalize_rng_ops(
      # Unique id to generate name
      uid = itertools.count()
  
 +    custom_backend = torch._C._get_privateuse1_backend_name()
-+    custom_backend_mod = getattr(torch, custom_backend)
++    custom_backend_mod = getattr(torch, custom_backend, None)
 +
-     def get_rng_ops(gmod):
-         random_nodes = {}
+     def get_rng_ops(gmod: fx.GraphModule) -> dict[str, fx.Node]:
+         random_nodes: dict[str, fx.Node] = {}
          for node in gmod.graph.nodes:
-@@ -1339,7 +1342,7 @@ def functionalize_rng_ops(
+@@ -1655,7 +1658,7 @@ def functionalize_rng_ops(
  
          for candidate in candidates:
              if isinstance(candidate, torch.Tensor):
 -                if candidate.device.type == "cuda":
-+                if candidate.device.type in ["cuda", custom_backend]:
++                if candidate.device.type in ("cuda", custom_backend):
                      return candidate.device
  
          return torch.device("cpu")
-@@ -1350,8 +1353,11 @@ def functionalize_rng_ops(
-         fake_mode = detect_fake_mode()
-         assert fake_mode is not None
+@@ -1667,8 +1670,12 @@ def functionalize_rng_ops(
+         if fake_mode is None:
+             raise AssertionError("fake_mode must not be None")
          with fake_mode:
 -            if device is not None and device.type == "cuda":
 -                return fake_mode.from_tensor(torch.cuda.get_rng_state())
@@ -31,6 +31,7 @@ index 9030cfc..16d043a 100644
 +                if device.type == "cuda":
 +                    return fake_mode.from_tensor(torch.cuda.get_rng_state())
 +                if device.type == custom_backend:
++                    assert custom_backend_mod is not None
 +                    return fake_mode.from_tensor(custom_backend_mod.get_rng_state())
              return fake_mode.from_tensor(torch.get_rng_state())
  

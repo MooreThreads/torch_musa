@@ -1,0 +1,21 @@
+diff --git a/torch/csrc/stable/tensor_struct.h b/torch/csrc/stable/tensor_struct.h
+index 4546121..d2acbcb 100644
+--- a/torch/csrc/stable/tensor_struct.h
++++ b/torch/csrc/stable/tensor_struct.h
+@@ -338,6 +338,16 @@ class Tensor {
+     return device_type == aoti_torch_device_type_cuda();
+   }
+ 
++  bool is_privateuseone() const {
++    int32_t device_type;
++    TORCH_ERROR_CODE_CHECK(
++        aoti_torch_get_device_type(ath_.get(), &device_type));
++    return device_type == aoti_torch_device_type_privateuse1();
++  }
++  bool is_musa() const {
++    return is_privateuseone();
++  }
++
+   /**
+    * @brief Checks if the tensor is on the CPU.
+    *

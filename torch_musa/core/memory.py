@@ -324,14 +324,14 @@ def host_memory_stats() -> Dict[str, Any]:
 
      Core statistics:
 
-     - ``"allocated.{current,peak,allocated,freed}"``:
+     - ``"allocations.{current,peak,allocated,freed}"``:
        number of allocation requests received by the memory allocator.
      - ``"allocated_bytes.{current,peak,allocated,freed}"``:
        amount of allocated memory.
-     - ``"segment.{current,peak,allocated,freed}"``:
-       number of reserved segments from ``musaHostAlloc()``.
-     - ``"reserved_bytes.{current,peak,allocated,freed}"``:
-       amount of reserved memory.
+     - ``"active_requests.{current,peak,allocated,freed}"``:
+       number of active allocation requests.
+     - ``"active_bytes.{current,peak,allocated,freed}"``:
+       amount of active allocated memory.
 
      For these core statistics, values are broken down as follows.
 

@@ -380,3 +380,32 @@ def test_index_select(config, dtype):
     test = testing.OpTest(func=torch.index_select, input_args=input_data)
     test.check_result()
     test.check_grad_fn()
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("dtype", [torch.bfloat16, torch.float32, torch.int64, torch.bool])
+@pytest.mark.parametrize("dim", [0, -1])
+def test_index_select_scalar_input(dtype, dim):
+    if testing.get_musa_arch() < 22 and dtype == torch.bfloat16:
+        pytest.skip("bf16 is not supported on arch older than qy2")
+
+    input_data = {
+        "input": torch.empty(()).uniform_(-10, 10).to(dtype),
+        "dim": dim,
+        "index": torch.tensor([0], dtype=torch.int64),
+    }
+
+    test = testing.OpTest(func=torch.index_select, input_args=input_data)
+    test.check_result()
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize(
+    "index", [torch.tensor([], dtype=torch.int64), torch.tensor([0, 0], dtype=torch.int64)]
+)
+def test_index_select_scalar_invalid_numel(index):
+    input_data = torch.randn((), device="musa")
+    index_musa = index.to("musa")
+
+    with pytest.raises(RuntimeError, match="Index to scalar can have only 1 value"):
+        torch.index_select(input_data, 0, index_musa)

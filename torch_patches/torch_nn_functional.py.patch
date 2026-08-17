@@ -1,12 +1,11 @@
 diff --git a/torch/nn/functional.py b/torch/nn/functional.py
-index 2a51e4f..a0f28b8 100644
+index 04467c65ef0..e4c34da6644 100644
 --- a/torch/nn/functional.py
 +++ b/torch/nn/functional.py
-@@ -6420,3 +6420,31 @@ def multi_head_attention_forward(
-             # squeeze the output if input was unbatched
-             attn_output = attn_output.squeeze(1)
-         return attn_output, None
-+
+@@ -6910,3 +6910,36 @@ def scaled_grouped_mm(
+     )
+ 
+     return out
 +
 +def swish_glu(input: Tensor) -> Tensor:  # noqa: D400,D402
 +    r"""swish_glu(input, inplace=False) -> Tensor
@@ -27,10 +26,16 @@ index 2a51e4f..a0f28b8 100644
 +    batch_first: bool = False,
 +    multi_latent_attention: bool = False,
 +) -> Tensor:
-+    r"""Rotary position embedding forward""
-+    """
++    r"""Rotary position embedding forward"""
 +    if has_torch_function_variadic(input, freq_cis):
 +        return handle_torch_function(
-+            rope, (input, freq_cis), input, rotary_interleaved, batch_first, multi_latent_attention
++            rope,
++            (input, freq_cis),
++            input,
++            freq_cis,
++            rotary_interleaved,
++            batch_first,
++            multi_latent_attention,
 +        )
 +    return torch.rope(input, freq_cis, rotary_interleaved, batch_first, multi_latent_attention)
++

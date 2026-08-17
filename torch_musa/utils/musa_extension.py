@@ -30,6 +30,7 @@ from torch.utils.cpp_extension import (
     get_default_build_root,
     _check_and_build_extension_h_precompiler_headers,
     remove_extension_h_precompiler_headers,
+    min_supported_cpython,
     JIT_EXTENSION_VERSIONER,
     _get_pybind11_abi_build_flags,
     SHARED_FLAG,

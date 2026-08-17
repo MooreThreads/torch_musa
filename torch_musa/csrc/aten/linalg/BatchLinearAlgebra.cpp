@@ -141,6 +141,52 @@ void linalg_eigh_kernel(
   modified_eigenvectors.copy_(eigenvectors_);
   modified_infos.copy_(infos_);
 }
+// torch.linalg.eig in PyTorch 2.11 calls linalg_eig_stub for PrivateUse1
+// tensors, then calls linalg_eig_make_complex_eigenvectors_stub to convert
+// LAPACK's real eigenvector representation to complex eigenvectors for real
+// inputs. Register both MUSA stubs here to avoid "DispatchStub: missing kernel
+// for musa".
+void linalg_eig_make_complex_eigenvectors_kernel(
+    const Tensor& complex_vectors,
+    const Tensor& complex_values,
+    const Tensor& real_vectors) {
+  auto complex_vectors_ = complex_vectors.to(Device(at::kCPU));
+  auto complex_values_ = complex_values.to(Device(at::kCPU));
+  auto real_vectors_ = real_vectors.to(Device(at::kCPU));
+
+  linalg_eig_make_complex_eigenvectors_stub(
+      complex_vectors_.device().type(),
+      complex_vectors_,
+      complex_values_,
+      real_vectors_);
+
+  Tensor& modified_complex_vectors = const_cast<Tensor&>(complex_vectors);
+  modified_complex_vectors.copy_(complex_vectors_);
+}
+
+void linalg_eig_kernel(
+    Tensor& eigenvalues,
+    Tensor& eigenvectors,
+    Tensor& infos,
+    const Tensor& input,
+    bool compute_eigenvectors) {
+  auto eigenvalues_ = eigenvalues.to(Device(at::kCPU));
+  auto eigenvectors_ = eigenvectors.to(Device(at::kCPU));
+  auto infos_ = infos.to(Device(at::kCPU));
+  auto input_ = input.to(Device(at::kCPU));
+
+  linalg_eig_stub(
+      input_.device().type(),
+      eigenvalues_,
+      eigenvectors_,
+      infos_,
+      input_,
+      compute_eigenvectors);
+
+  eigenvalues.copy_(eigenvalues_);
+  eigenvectors.copy_(eigenvectors_);
+  infos.copy_(infos_);
+}
 
 void svd_kernel(
     const Tensor& A,
@@ -201,6 +247,10 @@ REGISTER_MUSA_DISPATCH(lu_solve_stub, &lu_solve_kernel)
 REGISTER_MUSA_DISPATCH(triangular_solve_stub, &triangular_solve_kernel)
 REGISTER_MUSA_DISPATCH(ldl_solve_stub, &ldl_solve_kernel)
 REGISTER_MUSA_DISPATCH(linalg_eigh_stub, &linalg_eigh_kernel)
+REGISTER_MUSA_DISPATCH(
+    linalg_eig_make_complex_eigenvectors_stub,
+    &linalg_eig_make_complex_eigenvectors_kernel)
+REGISTER_MUSA_DISPATCH(linalg_eig_stub, &linalg_eig_kernel)
 REGISTER_MUSA_DISPATCH(svd_stub, &svd_kernel)
 
 } // namespace at::native

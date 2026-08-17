@@ -1,5 +1,6 @@
 import os
 import shutil
+import json
 import ahocorasick
 from os.path import join, dirname, abspath
 from typing import Dict, List
@@ -53,8 +54,12 @@ PORT_FILES = [
         True,
         [
             "ATen/ops",
+            "torch/csrc/inductor",
+            "torch/csrc/stable",
         ],
     ),
+    PortingFile("include/torch/csrc/inductor", True, True),
+    PortingFile("include/torch/csrc/stable", True, True),
     PortingFile("c10/core/impl", True, True),
     PortingFile("aten/src/ATen/cuda", True, True),
     PortingFile("torch/csrc/cuda", True, False),
@@ -76,6 +81,23 @@ def get_automaton(input_map: Dict[str, str]) -> ahocorasick.Automaton:
         automaton.add_word(cuda, (len(cuda), musa))
     automaton.make_automaton()
     return automaton
+
+
+def load_extra_replace_map(mapping_dir: str, dir_name: str) -> Dict[str, str]:
+    r"""Load directory-specific regex replacement rules.
+
+    The rule file path mirrors ``dir_name`` under ``extra_replace``. For example,
+    rules for ``include/torch/csrc/inductor`` live at
+    ``extra_replace/include/torch/csrc/inductor.json``.
+    """
+    extra_replace_path = join(
+        mapping_dir, "extra_replace", f"{dir_name.strip('/')}.json"
+    )
+    if not os.path.exists(extra_replace_path):
+        return {}
+
+    with open(extra_replace_path, encoding="utf-8") as handle:
+        return json.load(handle)
 
 
 def port_cuda(
@@ -192,6 +214,9 @@ def port_cuda(
     }
     # 1. Copy and cuda-port files
     for port_file in PORT_FILES:
+        dir_extra_replace_map = load_extra_replace_map(mapping_dir, port_file.dir_name)
+        file_extra_replace_map = dict(extra_replace_map)
+        file_extra_replace_map.update(dir_extra_replace_map)
         src_root = (
             pytorch_install_root
             if "include" in port_file.dir_name
@@ -235,7 +260,10 @@ def port_cuda(
 
                 dst_file = os.path.join(destination_folder, f)
                 dst_file = transform_file(
-                    dst_file, main_automaton, extra_replace_map, excluded_files_mapping
+                    dst_file,
+                    main_automaton,
+                    file_extra_replace_map,
+                    excluded_files_mapping,
                 )
 
     # 2. Copy several special files about macros files

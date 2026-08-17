@@ -18,8 +18,19 @@
     }                                                                      \
   } while (0)
 
-#define C10_LIBMUSA_DRIVER_API(_) \
-  _(muDeviceGetAttribute)         \
+#define C10_LIBMUSA_DRIVER_API(_)         \
+  _(muDeviceGetAttribute)                 \
+  _(muDevicePrimaryCtxGetState)           \
+  _(muCtxGetCurrent)                      \
+  _(muGraphCreate)                        \
+  _(muGraphInstantiateWithFlags)          \
+  _(muGraphAddMemAtomicNode)              \
+  _(muGraphAddMemAtomicValueNode)         \
+  _(muGraphAddMemTransferNode)            \
+  _(muGraphAddMemWaitWriteNode)           \
+  _(muGraphExecMemAtomicNodeSetParams)    \
+  _(muGraphExecMemTransferNodeSetParams)  \
+  _(muGraphExecMemWaitWriteNodeSetParams) \
   _(muGetErrorString)
 
 #if defined(REAL_MUSA_VERSION) && (REAL_MUSA_VERSION >= 4000)

@@ -14,18 +14,24 @@ from os.path import dirname, join
 from setuptools import setup, find_packages
 import setuptools.command.install
 
-from torch.utils.cpp_extension import CppExtension  # pylint: disable=C0411
-from torch.utils.cpp_extension import BuildExtension as Build  # pylint: disable=C0411
-from tools.cuda_porting.cuda_porting import port_cuda
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if not os.path.exists(os.path.join(BASE_DIR, "tools", "cuda_porting")):
+    BASE_DIR = os.getcwd()
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
+CLEAN_MODE = "clean" in sys.argv
+METADATA_MODE = any(arg in {"egg_info", "dist_info"} for arg in sys.argv)
+if not CLEAN_MODE:
+    from torch.utils.cpp_extension import CppExtension  # pylint: disable=C0411
+    from torch.utils.cpp_extension import (
+        BuildExtension as Build,
+    )  # pylint: disable=C0411
 
 
 if os.getenv("MAX_JOBS") is None:
     os.environ["MAX_JOBS"] = str(multiprocessing.cpu_count())
-
-CLEAN_MODE = False
-for i, arg in enumerate(sys.argv):
-    if arg == "clean":
-        CLEAN_MODE = True
 if not CLEAN_MODE:
     pytorch_root = os.getenv("PYTORCH_REPO_PATH", default="")
     if pytorch_root == "":
@@ -40,7 +46,6 @@ if not CLEAN_MODE:
 with open("version.txt", "r", encoding="utf-8") as version_file:
     version = version_file.readlines()[0].strip()
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RERUN_CMAKE = False
 
 
@@ -101,6 +106,23 @@ def build_musa_lib():
     """
     Build musa python lib.
     """
+    tools_dir = os.path.join(BASE_DIR, "tools")
+    tools_mod = sys.modules.get("tools")
+    tools_path = getattr(tools_mod, "__file__", "") if tools_mod else ""
+    if tools_mod and not os.path.abspath(tools_path).startswith(tools_dir):
+        for name in list(sys.modules):
+            if name == "tools" or name.startswith("tools."):
+                del sys.modules[name]
+    import types  # pylint: disable=import-outside-toplevel
+
+    tools_pkg = types.ModuleType("tools")
+    tools_pkg.__path__ = [tools_dir]
+    tools_pkg.__file__ = os.path.join(tools_dir, "__init__.py")
+    sys.modules["tools"] = tools_pkg
+    from tools.cuda_porting.cuda_porting import (  # pylint: disable=import-outside-toplevel
+        port_cuda,
+    )
+
     # generate code for CUDA porting
     build_dir = "build"
     gen_porting_dir = "generated_cuda_compatible"
@@ -129,7 +151,7 @@ def build_musa_lib():
     cmake.build(env)
 
 
-if not CLEAN_MODE:
+if not CLEAN_MODE and not METADATA_MODE:
     build_musa_lib()
 
 
@@ -223,6 +245,10 @@ def dump_version():
 if __name__ == "__main__":
     dump_version()
 
+    cmdclass = {"clean": Clean, "install": Install}
+    if not CLEAN_MODE:
+        cmdclass["build_ext"] = Build
+
     setup(
         name="torch_musa",
         version=version,
@@ -240,5 +266,5 @@ if __name__ == "__main__":
             ],
             "torch.backends": ["torch_musa = torch_musa:_autoload"],
         },
-        cmdclass={"build_ext": Build, "clean": Clean, "install": Install},
+        cmdclass=cmdclass,
     )

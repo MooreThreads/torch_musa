@@ -1,29 +1,18 @@
 diff --git a/torch/headeronly/macros/Macros.h b/torch/headeronly/macros/Macros.h
-index 558edb1..435d9ac 100644
+index 63aa0d20d8e..99d4332b115 100644
 --- a/torch/headeronly/macros/Macros.h
 +++ b/torch/headeronly/macros/Macros.h
-@@ -446,19 +446,11 @@ __host__ __device__
+@@ -480,7 +480,12 @@ __host__ __device__
  // a non-negligible performance impact even if the assert condition is
  // never triggered. We choose to use abort() instead which will still
  // terminate the application but without a more useful error message.
--#if !defined(C10_USE_ROCM_KERNEL_ASSERT) and defined(USE_ROCM)
--#define CUDA_KERNEL_ASSERT(cond) \
--  if C10_UNLIKELY (!(cond)) {    \
--    abort();                     \
--  }
--#define CUDA_KERNEL_ASSERT_MSG(cond, msg) \
--  if C10_UNLIKELY (!(cond)) {             \
--    abort();                              \
--  }
--#define SYCL_KERNEL_ASSERT(cond) \
--  if C10_UNLIKELY (!(cond)) {    \
--    abort();                     \
--  }
-+// MUSA disable kernel assert by default
-+#if 1
+-#if !defined(C10_USE_ROCM_KERNEL_ASSERT) && defined(USE_ROCM)
++#if defined(__MUSA_ARCH__)
 +#define CUDA_KERNEL_ASSERT(cond)
 +#define CUDA_KERNEL_ASSERT_MSG(cond, msg)
++#define CUDA_KERNEL_ASSERT_PRINTF(cond, msg, ...)
 +#define SYCL_KERNEL_ASSERT(cond)
- #else
- #define CUDA_KERNEL_ASSERT(cond)                                         \
-   if (C10_UNLIKELY(!(cond))) {                                           \
++#elif !defined(C10_USE_ROCM_KERNEL_ASSERT) && defined(USE_ROCM)
+ #define CUDA_KERNEL_ASSERT(cond) \
+   if C10_UNLIKELY (!(cond)) {    \
+     abort();                     \

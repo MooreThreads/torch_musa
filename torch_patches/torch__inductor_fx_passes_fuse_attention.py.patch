@@ -1,23 +1,27 @@
 diff --git a/torch/_inductor/fx_passes/fuse_attention.py b/torch/_inductor/fx_passes/fuse_attention.py
-index 5f449eb..03077aa 100644
+index 621f54edf1d..197f26f48df 100644
 --- a/torch/_inductor/fx_passes/fuse_attention.py
 +++ b/torch/_inductor/fx_passes/fuse_attention.py
-@@ -1127,5 +1127,18 @@ def _get_sfdp_patterns():
+@@ -1318,5 +1318,22 @@ def _get_sfdp_patterns(input_device: Optional[torch.device] = None):
  
  @functools.cache
- def _sfdp_init():
-+    # Disable SDPA fx pattern replacement passes if musa_toolkits_version < 4.2.0
+ def _sfdp_init(input_device: Optional[torch.device] = None):
 +    try:
 +        import subprocess
++
 +        from packaging import version
++
 +        musa_toolkits_version = subprocess.run(
 +            "musa_toolkits_version | grep '\"version\"' | awk '{print $2}' | tr -d '\",'",
-+            shell=True, capture_output=True, text=True, check=True
++            shell=True,
++            capture_output=True,
++            text=True,
++            check=True,
 +        ).stdout.strip()
 +        if version.parse(musa_toolkits_version) < version.parse("4.2.0"):
 +            log.warning("disable SDPA fx passes due to musa_toolkits_version < 4.2.0")
 +            return
-+    except:
++    except Exception:
 +        pass
-     for key, register_replacement_kwargs in _get_sfdp_patterns():
+     for key, register_replacement_kwargs in _get_sfdp_patterns(input_device):
          gen_register_replacement(key, **register_replacement_kwargs)

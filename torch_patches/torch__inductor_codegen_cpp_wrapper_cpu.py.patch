@@ -1,21 +1,8 @@
 diff --git a/torch/_inductor/codegen/cpp_wrapper_cpu.py b/torch/_inductor/codegen/cpp_wrapper_cpu.py
-index 83d1d06..760324b 100644
+index b04baf0..a6913bd 100644
 --- a/torch/_inductor/codegen/cpp_wrapper_cpu.py
 +++ b/torch/_inductor/codegen/cpp_wrapper_cpu.py
-@@ -179,6 +179,12 @@ class CppWrapperCpu(PythonWrapperCodegen):
- 
-     @staticmethod
-     def get_device_include_path(device: str) -> str:
-+        if device == "musa":
-+            return (
-+                "#include <torch_musa/csrc/inductor/aoti_torch/generated/"
-+                "c_shim_musa.h>\n"
-+                "#include <torch_musa/csrc/inductor/aoti_runtime/utils_musa.h>"
-+            )
-         if V.graph.aot_mode:
-             return f"#include <torch/csrc/inductor/aoti_include/{device}.h>"
-         return f"#include <torch/csrc/inductor/cpp_wrapper/{device}.h>"
-@@ -798,8 +804,8 @@ class CppWrapperCpu(PythonWrapperCodegen):
+@@ -817,8 +817,8 @@ class CppWrapperCpu(PythonWrapperCodegen):
                  )
                  self.write_input_output_info("inputs_info_", idx, name)
  
@@ -23,10 +10,10 @@ index 83d1d06..760324b 100644
 -                V.graph.get_original_value_of_constant(name).is_cuda
 +            all_on_device = all(
 +                V.graph.get_original_value_of_constant(name).device.type == self.device
-                 for name in V.graph.constants.keys()
+                 for name in V.graph.constants
                  if name not in V.graph.folded_constants
              )
-@@ -823,7 +829,7 @@ class CppWrapperCpu(PythonWrapperCodegen):
+@@ -854,7 +854,7 @@ class CppWrapperCpu(PythonWrapperCodegen):
                      else tensor.untyped_storage().nbytes()
                  )
                  self.prefix.writeline(

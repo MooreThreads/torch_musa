@@ -41,21 +41,6 @@ const char* _mublasGetErrorEnum(mublasStatus_t error);
 
 #define AT_MUSA_CHECK(EXPR) C10_MUSA_CHECK(EXPR)
 
-#define AT_MUSA_DRIVER_CHECK(EXPR)                    \
-  do {                                                \
-    MUresult __err = EXPR;                            \
-    if (__err != MUSA_SUCCESS) {                      \
-      const char* err_str;                            \
-      MUresult get_error_str_err C10_UNUSED =         \
-          muGetErrorString(__err, &err_str);          \
-      if (get_error_str_err != MUSA_SUCCESS) {        \
-        AT_ERROR("MUSA driver error: unknown error"); \
-      } else {                                        \
-        AT_ERROR("MUSA driver error: ", err_str);     \
-      }                                               \
-    }                                                 \
-  } while (0)
-
 } // namespace blas
 
 #if defined(REAL_MUSA_VERSION) && (REAL_MUSA_VERSION >= 4030)

@@ -2,7 +2,14 @@ diff --git a/torch/nn/modules/activation.py b/torch/nn/modules/activation.py
 index ed7efdb..c532955 100644
 --- a/torch/nn/modules/activation.py
 +++ b/torch/nn/modules/activation.py
-@@ -42,6 +42,8 @@ __all__ = [
+@@ -1,5 +1,6 @@
+ # mypy: allow-untyped-defs
+ import warnings
++from typing import Optional
+
+ import torch
+ import torch.nn.functional as F
+@@ -42,6 +43,8 @@ __all__ = [
      "Softmax",
      "Softmax2d",
      "LogSoftmax",

@@ -1,26 +1,22 @@
 diff --git a/aten/src/ATen/native/cuda/KernelUtils.cuh b/aten/src/ATen/native/cuda/KernelUtils.cuh
-index 6f857f9..4114146 100644
+index 9c100ca206a..6a3b2800a5a 100644
 --- a/aten/src/ATen/native/cuda/KernelUtils.cuh
 +++ b/aten/src/ATen/native/cuda/KernelUtils.cuh
-@@ -114,9 +114,7 @@ __device__ __forceinline__ void fastSpecializedAtomicAdd(
+@@ -119,7 +119,7 @@ __device__ __forceinline__ void fastSpecializedAtomicAdd(
      index_t index,
      const index_t numel,
      scalar_t value) {
--#if (                      \
--    (defined(USE_ROCM) && ROCM_VERSION < 60201) || \
--    (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ < 700)))
-+#if 1
+-#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ < 700))
++#if (defined(__MUSA_ARCH__) || (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ < 700)))
    gpuAtomicAddNoReturn(
        reinterpret_cast<at::Half*>(tensor) + index,
        static_cast<at::Half>(value));
-@@ -159,9 +157,7 @@ __device__ __forceinline__ void fastSpecializedAtomicAdd(
+@@ -162,7 +162,7 @@ __device__ __forceinline__ void fastSpecializedAtomicAdd(
      index_t index,
      const index_t numel,
      scalar_t value) {
--#if (                      \
--    (defined(USE_ROCM) && ROCM_VERSION < 60201) || \
--    (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ < 800)))
-+#if 1
+-#if (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ < 800))
++#if (defined(__MUSA_ARCH__) || (defined(__CUDA_ARCH__) && (__CUDA_ARCH__ < 800)))
    gpuAtomicAddNoReturn(
        reinterpret_cast<at::BFloat16*>(tensor) + index,
        static_cast<at::BFloat16>(value));

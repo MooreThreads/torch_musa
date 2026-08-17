@@ -2,6 +2,7 @@
 
 # pylint: disable=missing-function-docstring, redefined-outer-name
 import pytest
+from packaging.version import Version
 import torch
 
 from torch_musa import testing
@@ -124,8 +125,13 @@ def test_weight_int8pack_mm_success(dtype):
     scales = torch.rand((n,), dtype=torch.float32, device="musa") + 1e-2
 
     out = torch.ops.aten._weight_int8pack_mm(x, w_int8, scales)
+
+    expected_dtype = (x.dtype
+    if Version(torch.__version__.split("+")[0]) >= Version("2.11")
+    else torch.float32)
+
+    assert out.dtype == expected_dtype
     assert out.device.type == "musa"
-    assert out.dtype == torch.float32
     assert tuple(out.shape) == (m, n)
 
 

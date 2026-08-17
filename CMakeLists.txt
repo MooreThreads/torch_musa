@@ -405,6 +405,7 @@ target_compile_definitions(${MUSA_KERNELS_LIB}
                            PUBLIC -DREAL_MUSA_VERSION=${REAL_MUSA_VERSION})
 target_compile_definitions(${PLUGIN_NAME}
                            PUBLIC -DREAL_MUSA_VERSION=${REAL_MUSA_VERSION})
+target_compile_definitions(${PLUGIN_NAME} PUBLIC USE_MUSA)
 target_compile_definitions(${MUSA_KERNELS_LIB} PUBLIC -DNO_MUDNN_DESTROY_HANDLE)
 
 if(USE_MUDNN_C_API)

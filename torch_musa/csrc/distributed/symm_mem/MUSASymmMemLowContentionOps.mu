@@ -77,8 +77,11 @@ void pullModeAllGatherInit(ACECollCommunicator* communicator) {
   int world_size = communicator->world_size_;
   auto signal_ptrs = communicator->signal_symm_mem_->get_buffer_ptrs();
   auto& graph_all_gather_info = communicator->all_gather_pull_mode_info_;
-  C10_MUSA_DRIVER_CHECK(muCtxGetCurrent(&(graph_all_gather_info.ctx)));
-  C10_MUSA_DRIVER_CHECK(muGraphCreate(&(graph_all_gather_info.graph), 0));
+  auto* driver_api = c10::musa::DriverAPI::get();
+  C10_MUSA_DRIVER_CHECK(
+      driver_api->muCtxGetCurrent_(&(graph_all_gather_info.ctx)));
+  C10_MUSA_DRIVER_CHECK(
+      driver_api->muGraphCreate_(&(graph_all_gather_info.graph), 0));
 
   graph_all_gather_info.nodes.resize(world_size);
   // Keep params indexed by peer id so UpdateParams can safely use peer-based
@@ -113,7 +116,7 @@ void pullModeAllGatherInit(ACECollCommunicator* communicator) {
           (MUdeviceptr)(peer_ready_ptrs + rank),
           1,
           MU_ATOMIC_VALUE_TYPE_ATOMIC_ADD64};
-      C10_MUSA_DRIVER_CHECK(muGraphAddMemAtomicValueNode(
+      C10_MUSA_DRIVER_CHECK(driver_api->muGraphAddMemAtomicValueNode_(
           &nodes[rank][0], graph, nullptr, 0, &barrier_param, ctx));
     }
 
@@ -122,21 +125,21 @@ void pullModeAllGatherInit(ACECollCommunicator* communicator) {
         0,
         MU_STREAM_WAIT_VALUE_EQ,
         MU_STREAM_MEM_OP_WAIT_VALUE_64};
-    C10_MUSA_DRIVER_CHECK(muGraphAddMemWaitWriteNode(
+    C10_MUSA_DRIVER_CHECK(driver_api->muGraphAddMemWaitWriteNode_(
         &nodes[peer][1], graph, &nodes[rank][0], 1, &wait_ready_param, ctx));
 
     MUSA_MEM_TRANSFER_NODE_PARAMS transfer_param{
         (MUdeviceptr)(local_ready_ptrs + peer),
         (MUdeviceptr)(peer_ready_ptrs + peer),
         sizeof(uint64_t)};
-    C10_MUSA_DRIVER_CHECK(muGraphAddMemTransferNode(
+    C10_MUSA_DRIVER_CHECK(driver_api->muGraphAddMemTransferNode_(
         &nodes[peer][2], graph, &nodes[peer][1], 1, &transfer_param, ctx));
 
     MUSA_MEM_ATOMIC_VALUE_NODE_PARAMS complete_signal_param{
         (MUdeviceptr)(peer_complete_ptrs + rank),
         1,
         MU_ATOMIC_VALUE_TYPE_ATOMIC_ADD64};
-    C10_MUSA_DRIVER_CHECK(muGraphAddMemAtomicValueNode(
+    C10_MUSA_DRIVER_CHECK(driver_api->muGraphAddMemAtomicValueNode_(
         &nodes[peer][3],
         graph,
         &nodes[peer][2],
@@ -150,15 +153,15 @@ void pullModeAllGatherInit(ACECollCommunicator* communicator) {
         0,
         MU_STREAM_WAIT_VALUE_EQ,
         MU_STREAM_MEM_OP_WAIT_VALUE_64};
-    C10_MUSA_DRIVER_CHECK(muGraphAddMemWaitWriteNode(
+    C10_MUSA_DRIVER_CHECK(driver_api->muGraphAddMemWaitWriteNode_(
         &nodes[peer][4], graph, &nodes[peer][3], 1, &wait_complete_param, ctx));
 
     graph_all_gather_info.waitParams[peer * 2] = wait_ready_param;
     graph_all_gather_info.waitParams[peer * 2 + 1] = wait_complete_param;
     graph_all_gather_info.copyParams[peer] = transfer_param;
   }
-  C10_MUSA_DRIVER_CHECK(
-      muGraphInstantiate(&graph_all_gather_info.graphExec, graph, 1));
+  C10_MUSA_DRIVER_CHECK(driver_api->muGraphInstantiateWithFlags_(
+      &graph_all_gather_info.graphExec, graph, 1));
 }
 
 void reduceScatterInit(ACECollCommunicator* communicator, bool pull_mode) {
@@ -168,8 +171,11 @@ void reduceScatterInit(ACECollCommunicator* communicator, bool pull_mode) {
       ? communicator->reduce_scatter_pull_mode_info_
       : communicator->reduce_scatter_push_mode_info_;
   auto signal_ptrs = communicator->signal_symm_mem_->get_buffer_ptrs();
-  C10_MUSA_DRIVER_CHECK(muCtxGetCurrent(&(graph_reduce_scatter_info.ctx)));
-  C10_MUSA_DRIVER_CHECK(muGraphCreate(&(graph_reduce_scatter_info.graph), 0));
+  auto* driver_api = c10::musa::DriverAPI::get();
+  C10_MUSA_DRIVER_CHECK(
+      driver_api->muCtxGetCurrent_(&(graph_reduce_scatter_info.ctx)));
+  C10_MUSA_DRIVER_CHECK(
+      driver_api->muGraphCreate_(&(graph_reduce_scatter_info.graph), 0));
 
   graph_reduce_scatter_info.nodes.resize(world_size);
 
@@ -195,7 +201,7 @@ void reduceScatterInit(ACECollCommunicator* communicator, bool pull_mode) {
       (MUdeviceptr)(local_ready_ptrs + rank),
       1,
       MU_ATOMIC_VALUE_TYPE_ATOMIC_ADD64};
-  C10_MUSA_DRIVER_CHECK(muGraphAddMemAtomicValueNode(
+  C10_MUSA_DRIVER_CHECK(driver_api->muGraphAddMemAtomicValueNode_(
       &nodes[rank][0], graph, nullptr, 0, &barrier_param, ctx));
   for (int peer = 0; peer < world_size; peer++) {
     uint64_t* peer_ready_ptrs =
@@ -208,7 +214,7 @@ void reduceScatterInit(ACECollCommunicator* communicator, bool pull_mode) {
         0,
         MU_STREAM_WAIT_VALUE_EQ,
         MU_STREAM_MEM_OP_WAIT_VALUE_64};
-    C10_MUSA_DRIVER_CHECK(muGraphAddMemWaitWriteNode(
+    C10_MUSA_DRIVER_CHECK(driver_api->muGraphAddMemWaitWriteNode_(
         &nodes[peer][1], graph, &nodes[rank][0], 1, &wait_ready_param, ctx));
 
     // atomic reducation
@@ -224,7 +230,7 @@ void reduceScatterInit(ACECollCommunicator* communicator, bool pull_mode) {
       reduce_param.dst = (MUdeviceptr)(peer_complete_ptrs + peer);
       reduce_param.src = (MUdeviceptr)(local_ready_ptrs + peer);
     }
-    C10_MUSA_DRIVER_CHECK(muGraphAddMemAtomicNode(
+    C10_MUSA_DRIVER_CHECK(driver_api->muGraphAddMemAtomicNode_(
         &nodes[peer][2], graph, &nodes[peer][1], 1, &reduce_param, ctx));
 
     // reducation complete signal
@@ -232,7 +238,7 @@ void reduceScatterInit(ACECollCommunicator* communicator, bool pull_mode) {
         (MUdeviceptr)(peer_complete_ptrs + rank),
         1,
         MU_ATOMIC_VALUE_TYPE_ATOMIC_ADD64};
-    C10_MUSA_DRIVER_CHECK(muGraphAddMemAtomicValueNode(
+    C10_MUSA_DRIVER_CHECK(driver_api->muGraphAddMemAtomicValueNode_(
         &nodes[peer][3],
         graph,
         &nodes[peer][2],
@@ -246,15 +252,15 @@ void reduceScatterInit(ACECollCommunicator* communicator, bool pull_mode) {
         0,
         MU_STREAM_WAIT_VALUE_EQ,
         MU_STREAM_MEM_OP_WAIT_VALUE_64};
-    C10_MUSA_DRIVER_CHECK(muGraphAddMemWaitWriteNode(
+    C10_MUSA_DRIVER_CHECK(driver_api->muGraphAddMemWaitWriteNode_(
         &nodes[peer][4], graph, &nodes[peer][3], 1, &wait_complete_param, ctx));
 
     graph_reduce_scatter_info.waitParams.push_back(wait_ready_param);
     graph_reduce_scatter_info.waitParams.push_back(wait_complete_param);
     graph_reduce_scatter_info.atomicParams.push_back(reduce_param);
   }
-  C10_MUSA_DRIVER_CHECK(
-      muGraphInstantiate(&graph_reduce_scatter_info.graphExec, graph, 1));
+  C10_MUSA_DRIVER_CHECK(driver_api->muGraphInstantiateWithFlags_(
+      &graph_reduce_scatter_info.graphExec, graph, 1));
 }
 
 void pullModeGraphAllGatherUpdateParams(
@@ -269,6 +275,7 @@ void pullModeGraphAllGatherUpdateParams(
   int rank = communicator->rank_;
   int world_size = communicator->world_size_;
   auto& graph_all_gather_info = communicator->all_gather_pull_mode_info_;
+  auto* driver_api = c10::musa::DriverAPI::get();
 
   graph_all_gather_info.seqNum++;
   for (int i = 0; i < world_size; i++) {
@@ -277,7 +284,7 @@ void pullModeGraphAllGatherUpdateParams(
     auto& ready_param = graph_all_gather_info.waitParams[peer * 2];
     ready_param.value = graph_all_gather_info.seqNum;
 
-    C10_MUSA_DRIVER_CHECK(muGraphExecMemWaitWriteNodeSetParams(
+    C10_MUSA_DRIVER_CHECK(driver_api->muGraphExecMemWaitWriteNodeSetParams_(
         graph_all_gather_info.graphExec,
         graph_all_gather_info.nodes[peer][1],
         &ready_param,
@@ -290,7 +297,7 @@ void pullModeGraphAllGatherUpdateParams(
     graph_all_gather_info.copyParams[peer].src =
         (MUdeviceptr)((char*)(src[peer]) + offset);
     graph_all_gather_info.copyParams[peer].ByteCount = byte_count;
-    C10_MUSA_DRIVER_CHECK(muGraphExecMemTransferNodeSetParams(
+    C10_MUSA_DRIVER_CHECK(driver_api->muGraphExecMemTransferNodeSetParams_(
         graph_all_gather_info.graphExec,
         graph_all_gather_info.nodes[peer][2],
         &graph_all_gather_info.copyParams[peer],
@@ -298,7 +305,7 @@ void pullModeGraphAllGatherUpdateParams(
 
     auto& finish_param = graph_all_gather_info.waitParams[peer * 2 + 1];
     finish_param.value = graph_all_gather_info.seqNum;
-    C10_MUSA_DRIVER_CHECK(muGraphExecMemWaitWriteNodeSetParams(
+    C10_MUSA_DRIVER_CHECK(driver_api->muGraphExecMemWaitWriteNodeSetParams_(
         graph_all_gather_info.graphExec,
         graph_all_gather_info.nodes[peer][4],
         &finish_param,
@@ -322,12 +329,13 @@ void graphReduceScatterUpdateParams(
   auto& graph_reduce_scatter_info = pull_mode
       ? communicator->reduce_scatter_pull_mode_info_
       : communicator->reduce_scatter_push_mode_info_;
+  auto* driver_api = c10::musa::DriverAPI::get();
   graph_reduce_scatter_info.seqNum++;
 
   for (int i = 0; i < world_size; i++) {
     auto& ready_param = graph_reduce_scatter_info.waitParams[i * 2];
     ready_param.value = graph_reduce_scatter_info.seqNum;
-    C10_MUSA_DRIVER_CHECK(muGraphExecMemWaitWriteNodeSetParams(
+    C10_MUSA_DRIVER_CHECK(driver_api->muGraphExecMemWaitWriteNodeSetParams_(
         graph_reduce_scatter_info.graphExec,
         graph_reduce_scatter_info.nodes[i][1],
         &ready_param,
@@ -347,7 +355,7 @@ void graphReduceScatterUpdateParams(
     }
     reduce_param.elementCount = element_count;
     reduce_param.operation = atomic_type;
-    C10_MUSA_DRIVER_CHECK(muGraphExecMemAtomicNodeSetParams(
+    C10_MUSA_DRIVER_CHECK(driver_api->muGraphExecMemAtomicNodeSetParams_(
         graph_reduce_scatter_info.graphExec,
         graph_reduce_scatter_info.nodes[i][2],
         &reduce_param,
@@ -355,7 +363,7 @@ void graphReduceScatterUpdateParams(
 
     auto& complete_param = graph_reduce_scatter_info.waitParams[i * 2 + 1];
     complete_param.value = graph_reduce_scatter_info.seqNum;
-    C10_MUSA_DRIVER_CHECK(muGraphExecMemWaitWriteNodeSetParams(
+    C10_MUSA_DRIVER_CHECK(driver_api->muGraphExecMemWaitWriteNodeSetParams_(
         graph_reduce_scatter_info.graphExec,
         graph_reduce_scatter_info.nodes[i][4],
         &complete_param,

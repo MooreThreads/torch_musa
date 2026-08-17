@@ -1,0 +1,9 @@
+{
+    "\\bUSE_CUDA\\b": "USE_MUSA",
+    "\\btorch_get_current_cuda_blas_handle\\b": "torch_get_current_musa_blas_handle",
+    "\\btorch_set_current_cuda_stream\\b": "torch_set_current_musa_stream",
+    "\\btorch_get_cuda_stream_from_pool\\b": "torch_get_musa_stream_from_pool",
+    "\\btorch_cuda_stream_synchronize\\b": "torch_musa_stream_synchronize",
+    "\\btorch_c10_cuda_check_msg\\b": "torch_c10_musa_check_msg",
+    "\\btorch_c10_cuda_free_error_msg\\b": "torch_c10_musa_free_error_msg"
+}

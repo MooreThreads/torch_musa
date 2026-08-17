@@ -1,0 +1,38 @@
+diff --git a/aten/src/ATen/native/cuda/ScatterGatherKernel.cu b/aten/src/ATen/native/cuda/ScatterGatherKernel.cu
+index 06a2805e89f..2a13a74649e 100644
+--- a/aten/src/ATen/native/cuda/ScatterGatherKernel.cu
++++ b/aten/src/ATen/native/cuda/ScatterGatherKernel.cu
+@@ -156,7 +156,15 @@ struct _cuda_scatter_gather_internal_kernel {
+       }
+     }
+     auto offset_calc = make_offset_calculator<3>(iter);
+-    auto loop = [=]C10_DEVICE(int i) {
++    auto loop = [
++        self_ptr,
++        src_ptr,
++        index_ptr,
++        offset_calc,
++        f,
++        index_size,
++        index_stride,
++        numel] C10_DEVICE(int i) {
+       auto offsets = offset_calc.get(i);
+ 
+       int64_t idx_dim = *(index_t*)(index_ptr + offsets[2]);
+@@ -402,7 +410,15 @@ struct _cuda_scatter_fill_internal_kernel {
+     char* index_ptr = (char*)iter.data_ptr(1);
+ 
+     auto offset_calc = make_offset_calculator<2>(iter);
+-    auto loop = [=]C10_DEVICE(int i) {
++    auto loop = [
++        self_ptr,
++        index_ptr,
++        offset_calc,
++        f,
++        src_val,
++        index_size,
++        index_stride,
++        numel] C10_DEVICE(int i) {
+       auto offsets = offset_calc.get(i);
+ 
+       int64_t idx_dim = *(index_t*)(index_ptr + offsets[1]);
