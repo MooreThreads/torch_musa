@@ -19,6 +19,8 @@
   - [musa-converter](#musa-converter)
 # torch_musa utils
 
+> **Language**: English | [中文](README_zh.md)
+
 ## MUSAExtension
 MUSAExtension is a function that helps third-party libraries build MUSA extensions. It keeps the
 consistent interface with CUDAExtension. We should take care of the different parts that the `extra_compile_args` introduces `mcc` key instead of `nvcc`,
