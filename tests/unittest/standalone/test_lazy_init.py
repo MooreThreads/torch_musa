@@ -23,6 +23,21 @@ class TestLazyInit:
 
         del x
 
+    def test_initialized_attr_is_live(self):
+        """`torch_musa._initialized` must track the real lazy-init state.
+
+        PyTorch reads the flag off the backend module as
+        `getattr(device_module, "_initialized", False)` -- `torch.utils.checkpoint`
+        gates device-RNG save/restore on it -- so a stale re-exported copy silently
+        disables features instead of failing loudly.
+        """
+        x = torch.randn((8,), device="musa")
+        assert torch_musa.core._lazy_init.is_initialized()
+        assert torch_musa._initialized
+        assert torch.musa._initialized
+
+        del x
+
     def test_manual_seed(self):
         """test torch_musa's manual seed"""
         torch.musa.manual_seed(42)
