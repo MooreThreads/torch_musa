@@ -117,11 +117,35 @@ from .core.memory import *
 from .core._lazy_init import (
     _lazy_init,
     _lazy_call,
-    _initialized,
     _is_in_bad_fork,
     is_initialized,
     musart,
 )
+
+# NB: `_initialized` is deliberately absent from the import list above.  It is mutable
+# state owned by `torch_musa.core._lazy_init`, and `from ... import _initialized` binds
+# a snapshot of `False` taken at import time -- the rebinding that `_lazy_init()` does
+# can never reach that copy.  Keep a handle on the owning module instead and resolve the
+# attribute lazily in `__getattr__` below, so there is exactly one source of truth.
+from .core import _lazy_init as _lazy_init_mod
+
+
+def __getattr__(name):
+    """Resolve mutable lazy-init state against the module that owns it (PEP 562).
+
+    PyTorch probes backend modules with `getattr(device_module, "_initialized", False)`.
+    `torch.utils.checkpoint` uses that flag to decide whether to stash the device RNG
+    state in the forward pass and replay it in the backward recompute, so a value stuck
+    at `False` silently downgrades `preserve_rng_state=True` to CPU-RNG-only: every
+    stochastic op inside a checkpointed region redraws, and the gradient is wrong with
+    no error and no warning.  `torch.musa` is this module (see `torch.__setattr__`
+    above), which is why the flag has to be live here and not only in the submodule.
+    """
+    if name == "_initialized":
+        return _lazy_init_mod._initialized
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 from .core.ops import *
 
 from .core.random import *
