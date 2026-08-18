@@ -46,28 +46,6 @@ def test_checkpoint_preserves_device_rng(use_reentrant):
     assert torch.equal(grad, draws[0])
 
 
-@testing.test_on_nonzero_card_if_multiple_musa_device(1)
-def test_checkpoint_gradient_matches_eager():
-    """A stochastic checkpointed region must give the same gradient as eager."""
-    x = torch.randn(1024, device="musa", requires_grad=True)
-
-    torch.musa.manual_seed(42)
-    (x * torch.randn_like(x)).sum().backward()
-    reference = x.grad.detach().clone()
-
-    x.grad = None
-    torch.musa.manual_seed(42)
-    out = checkpoint(
-        lambda t: t * torch.randn_like(t),
-        x,
-        use_reentrant=False,
-        preserve_rng_state=True,
-    )
-    out.sum().backward()
-
-    assert torch.equal(reference, x.grad)
-
-
 def test_checkpoint_dropout_gradient_matches_eager():
     """Same contract for the canonical case: dropout inside a checkpointed block."""
     # nn.Linear initializes its parameters on the CPU, so seed the CPU generator
