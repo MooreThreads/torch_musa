@@ -114,20 +114,21 @@ from .core.serialization import register_deserialization
 from .core import memory
 from .core.memory import *
 
-from .core._lazy_init import (
-    _lazy_init,
-    _lazy_call,
-    _is_in_bad_fork,
-    is_initialized,
-    musart,
-)
-
-# NB: `_initialized` is deliberately absent from the import list above.  It is mutable
-# state owned by `torch_musa.core._lazy_init`, and `from ... import _initialized` binds
-# a snapshot of `False` taken at import time -- the rebinding that `_lazy_init()` does
-# can never reach that copy.  Keep a handle on the owning module instead and resolve the
-# attribute lazily in `__getattr__` below, so there is exactly one source of truth.
 from .core import _lazy_init as _lazy_init_mod
+
+_lazy_init = _lazy_init_mod._lazy_init
+_lazy_call = _lazy_init_mod._lazy_call
+_is_in_bad_fork = _lazy_init_mod._is_in_bad_fork
+is_initialized = _lazy_init_mod.is_initialized
+musart = _lazy_init_mod.musart
+
+# `_initialized` is deliberately not assigned above like its neighbors.  Rebinding a
+# name to a *function* is safe -- the function object never changes, only what it
+# returns -- but `_initialized` is a plain mutable `False`/`True`, so a static
+# assignment here would capture today's value, not the name, and the rebinding that
+# `_lazy_init()` performs inside `core/_lazy_init` could never reach that copy. Resolve
+# it lazily instead, in `__getattr__` below, so `core/_lazy_init` stays the single
+# source of truth.
 
 
 def __getattr__(name):
