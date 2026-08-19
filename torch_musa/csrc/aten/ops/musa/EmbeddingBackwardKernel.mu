@@ -316,6 +316,10 @@ Tensor EmbeddingBackwardMUSAKernel(
   const ptrdiff_t numel = sorted_indices.numel();
   Tensor grad_weight = at::zeros({num_weights, grad.size(-1)}, grad.options());
 
+  if (C10_UNLIKELY(numel == 0)) {
+    return grad_weight;
+  }
+
   int tbl_h = grad_weight.size(0);
   int tbl_w = grad_weight.size(1);
 
