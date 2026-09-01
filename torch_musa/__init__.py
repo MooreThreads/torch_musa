@@ -114,14 +114,39 @@ from .core.serialization import register_deserialization
 from .core import memory
 from .core.memory import *
 
-from .core._lazy_init import (
-    _lazy_init,
-    _lazy_call,
-    _initialized,
-    _is_in_bad_fork,
-    is_initialized,
-    musart,
-)
+from .core import _lazy_init as _lazy_init_mod
+
+_lazy_init = _lazy_init_mod._lazy_init
+_lazy_call = _lazy_init_mod._lazy_call
+_is_in_bad_fork = _lazy_init_mod._is_in_bad_fork
+is_initialized = _lazy_init_mod.is_initialized
+musart = _lazy_init_mod.musart
+
+# `_initialized` is deliberately not assigned above like its neighbors.  Rebinding a
+# name to a *function* is safe -- the function object never changes, only what it
+# returns -- but `_initialized` is a plain mutable `False`/`True`, so a static
+# assignment here would capture today's value, not the name, and the rebinding that
+# `_lazy_init()` performs inside `core/_lazy_init` could never reach that copy. Resolve
+# it lazily instead, in `__getattr__` below, so `core/_lazy_init` stays the single
+# source of truth.
+
+
+def __getattr__(name):
+    """Resolve mutable lazy-init state against the module that owns it (PEP 562).
+
+    PyTorch probes backend modules with `getattr(device_module, "_initialized", False)`.
+    `torch.utils.checkpoint` uses that flag to decide whether to stash the device RNG
+    state in the forward pass and replay it in the backward recompute, so a value stuck
+    at `False` silently downgrades `preserve_rng_state=True` to CPU-RNG-only: every
+    stochastic op inside a checkpointed region redraws, and the gradient is wrong with
+    no error and no warning.  `torch.musa` is this module (see `torch.__setattr__`
+    above), which is why the flag has to be live here and not only in the submodule.
+    """
+    if name == "_initialized":
+        return _lazy_init_mod._initialized
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 from .core.ops import *
 
 from .core.random import *
