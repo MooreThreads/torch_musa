@@ -354,7 +354,7 @@ class TestFusedSGD:
         with tempfile.TemporaryDirectory() as tmp_dir:
             filename = os.path.join(tmp_dir, "sgd_state_dict.pth")
             torch.save({"optimizer_state_dict": optimizer.state_dict()}, filename)
-            opt_sd = torch.load(filename)["optimizer_state_dict"]
+            opt_sd = torch.load(filename, weights_only=True)["optimizer_state_dict"]
 
             # SGD w/ momentum should have momentum_buffer for each param
             for st in opt_sd["state"].values():

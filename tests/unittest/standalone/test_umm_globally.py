@@ -20,7 +20,7 @@ def load_model():
     torch.save(state_dict, checkpoint)
     checkpoint.seek(0)
     current_allocated = torch.musa.memory_allocated()
-    state_dict_loaded = torch.load(checkpoint, map_location="musa")
+    state_dict_loaded = torch.load(checkpoint, map_location="musa", weights_only=True)
     max_allocated = torch.musa.max_memory_allocated()
     peak_memory_unified_global = max_allocated - current_allocated
     print("peak_memory", peak_memory_unified_global)

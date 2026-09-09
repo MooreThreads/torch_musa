@@ -312,7 +312,7 @@ Once an anomaly is detected, the tool offers several strategies to address and r
 
 4. **Debugging and Reproducing Issues**
 
-   For unexpected anomalies, enabling `dump_error_data` saves inputs/outputs of failing operations. The program halts at the first failed comparison test, saving the anomalous operator's input and output in `path_to_save/op_name_inputs.pkl` and `path_to_save/op_name_outputs.pkl`, respectively, facilitating unit test reproduction.
+   For unexpected anomalies, enabling `dump_error_data` saves inputs/outputs of failing operations. The program halts at the first failed comparison test, saving the anomalous operator's input and output in `path_to_save/op_name_inputs.pt` and `path_to_save/op_name_outputs.pt`, respectively, facilitating unit test reproduction.
    
     ```python
     from torch_musa.utils.compare_tool import CompareWithCPU, open_module_tracker
@@ -328,7 +328,7 @@ Once an anomaly is detected, the tool offers several strategies to address and r
     ```python
     from torch_musa.utils.compare_tool import compare_for_single_op
 
-    correct, args, kwargs, out = compare_for_single_op('path_to_save/torch.ops.aten.addmm_inputs.pkl', torch.ops.aten.addmm, atol=0.01, rtol=0.01)
+    correct, args, kwargs, out = compare_for_single_op('path_to_save/torch.ops.aten.addmm_inputs.pt', torch.ops.aten.addmm, atol=0.01, rtol=0.01)
     ```
 
     Similarly, for NaN/Inf detection:
@@ -336,7 +336,7 @@ Once an anomaly is detected, the tool offers several strategies to address and r
     ```python
     from torch_musa.utils.compare_tool import nan_inf_track_for_single_op
 
-    correct, args, kwargs, out = nan_inf_track_for_single_op('path_to_save/torch.ops.aten.addmm_inputs.pkl', torch.ops.aten.addmm)
+    correct, args, kwargs, out = nan_inf_track_for_single_op('path_to_save/torch.ops.aten.addmm_inputs.pt', torch.ops.aten.addmm)
     ```
 
 #### Step Control

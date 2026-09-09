@@ -1,6 +1,6 @@
-- [torch_musa utils](#torch_musa-utils)
+- [torch\_musa utils](#torch_musa-utils)
   - [MUSAExtension](#musaextension)
-    - [(可选) 在 *.cpp 文件中使用 half 类型的 MUSAExtension](#可选-在-cpp-文件中使用-half-类型的-musaextension)
+    - [(可选) 在 \*.cpp 文件中使用 half 类型的 MUSAExtension](#可选-在-cpp-文件中使用-half-类型的-musaextension)
   - [LOGGER](#logger)
   - [CMakeListsGenerator](#cmakelistsgenerator)
   - [SimplePorting](#simpleporting)
@@ -323,7 +323,7 @@ Element at index (0, 14) is not close: -0.84521484375(musa:0) vs -0.845013797283
    from torch_musa.utils.compare_tool import compare_for_single_op
 
    correct, args, kwargs, out = compare_for_single_op(
-       'path_to_save/torch.ops.aten.addmm_inputs.pkl',
+       'path_to_save/torch.ops.aten.addmm_inputs.pt',
        torch.ops.aten.addmm,
        atol=0.01,
        rtol=0.01
@@ -336,7 +336,7 @@ Element at index (0, 14) is not close: -0.84521484375(musa:0) vs -0.845013797283
    from torch_musa.utils.compare_tool import nan_inf_track_for_single_op
 
    correct, args, kwargs, out = nan_inf_track_for_single_op(
-       'path_to_save/torch.ops.aten.addmm_inputs.pkl',
+       'path_to_save/torch.ops.aten.addmm_inputs.pt',
        torch.ops.aten.addmm
    )
    ```

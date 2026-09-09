@@ -127,7 +127,11 @@ class Integration(ABC):
     def load_model(self) -> None:
         if self.conf.model_file != "":
             self.model.load_state_dict(
-                torch.load(self.conf.model_file, map_location=self.device)
+                torch.load(
+                    self.conf.model_file,
+                    map_location=self.device,
+                    weights_only=True,
+                )
             )
 
     def transform_model(self) -> None:

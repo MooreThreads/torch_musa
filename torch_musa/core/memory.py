@@ -5,7 +5,6 @@ import sys
 import ctypes
 import contextlib
 import collections
-import pickle
 import warnings
 from inspect import signature
 from typing import Any, Union, Tuple, Dict, Optional
@@ -51,11 +50,6 @@ __all__ = [
     "MemPool",
     "MemPoolContext",
     "use_mem_pool",
-    # remove visibility to torch.musa in the future
-    # "memory_stats_all",
-    # "_record_memory_history",
-    # "_dump_snapshot",
-    # "_set_allocator_settings",
 ]
 
 
@@ -674,20 +668,6 @@ def _snapshot(device: Union[Device, int] = None):
         The Snapshot dictionary object
     """
     return torch_musa._MUSAC._musa_memorySnapshot(None)
-
-
-def _dump_snapshot(filename="dump_snapshot.pickle"):
-    """
-    Save a pickled version of the `torch.memory._snapshot()` dictionary to a file.
-
-    This file can be opened by the interactive snapshot viewer at pytorch.org/memory_viz
-
-    Args:
-        filename (str, optional): Name of the file to create. Defaults to "dump_snapshot.pickle".
-    """
-    s = _snapshot()
-    with open(filename, "wb") as f:
-        pickle.dump(s, f)
 
 
 def _select_format_flamegraph(flamegraph_lines):

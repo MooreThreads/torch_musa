@@ -150,7 +150,7 @@ torch_musa中python api基本与PyTorch原生api接口保持一致，极大降�
   PATH = './cifar_net.pth'
   torch.save(net.state_dict(), PATH)
   
-  net.load_state_dict(torch.load(PATH))
+  net.load_state_dict(torch.load(PATH, weights_only=True))
   
   ## 5. test
   correct = 0

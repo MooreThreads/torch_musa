@@ -187,7 +187,7 @@
 
 4. **调试和复现问题**
 
-    对于不符合预期的异常，启用``dump_error_data``保存失败算子的输入/输出。程序会在第一次未通过比较测试时中断，异常算子的输入和输出分别保存在``path_to_save/op_name_inputs.pkl``和``path_to_save/op_name_outputs.pkl``中，方便单元测试复现。
+    对于不符合预期的异常，启用``dump_error_data``保存失败算子的输入/输出。程序会在第一次未通过比较测试时中断，异常算子的输入和输出分别保存在``path_to_save/op_name_inputs.pt``和``path_to_save/op_name_outputs.pt``中，方便单元测试复现。
 
     .. code-block:: python
 
@@ -204,7 +204,7 @@
 
         from torch_musa.utils.compare_tool import compare_for_single_op
 
-        correct, args, kwargs, out = compare_for_single_op('path_to_save/torch.ops.aten.addmm_inputs.pkl', torch.ops.aten.addmm, atol=0.01, rtol=0.01)
+        correct, args, kwargs, out = compare_for_single_op('path_to_save/torch.ops.aten.addmm_inputs.pt', torch.ops.aten.addmm, atol=0.01, rtol=0.01)
 
     只检测Nan/Inf时也类似：
 
@@ -212,7 +212,7 @@
 
         from torch_musa.utils.compare_tool import nan_inf_track_for_single_op
 
-        correct, args, kwargs, out = nan_inf_track_for_single_op('path_to_save/torch.ops.aten.addmm_inputs.pkl', torch.ops.aten.addmm)
+        correct, args, kwargs, out = nan_inf_track_for_single_op('path_to_save/torch.ops.aten.addmm_inputs.pt', torch.ops.aten.addmm)
 
 训练步骤控制
 -------------

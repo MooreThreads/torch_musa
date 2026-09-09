@@ -80,7 +80,7 @@ def get_imagenet2012_evaluation_small_dataset(batch_size: int) -> DataLoader:
     )
 
     def load_tensor(path):
-        return torch.load(path, map_location="cpu")
+        return torch.load(path, map_location="cpu", weights_only=True)
 
     def is_valid_file(_):
         return True
