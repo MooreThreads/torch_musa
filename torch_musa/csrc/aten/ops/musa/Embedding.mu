@@ -1,4 +1,5 @@
 #include <ATen/ATen.h>
+#include <ATen/Context.h>
 #include <ATen/Dispatch.h>
 #include <ATen/ceil_div.h>
 #include <ATen/core/Tensor.h>
@@ -72,7 +73,8 @@ Tensor EmbeddingDenseBwdMUSA(
 
   // be careful for setting this value, there may be
   // precision and efficiency drops when value gets larger.
-  if (num_indices <= 3072 && !scale_grad_by_freq) {
+  if (num_indices <= 3072 && !scale_grad_by_freq &&
+      !at::globalContext().deterministicAlgorithms()) {
     Tensor grad_weight = at::zeros(
         {num_weights, grad_output.size(-1)},
         grad_output.options().memory_format(at::MemoryFormat::Contiguous));
