@@ -1,5 +1,6 @@
 # pylint: disable=missing-function-docstring, redefined-outer-name, unused-import,invalid-name, not-callable, missing-class-docstring, unexpected-keyword-arg, abstract-method, arguments-differ, consider-using-with, unused-variable, unnecessary-lambda, pointless-statement, unused-argument, wrong-import-order, ungrouped-imports, useless-parent-delegation
 """Unittests for torch musa profiler functionality."""
+
 import collections
 import gc
 import io
@@ -936,7 +937,14 @@ class TestProfiler(TestCase):
 
         def create_musa_tensor_oom():
             device = torch.device("musa:0")
-            return torch.empty(1024, 1024, 1024, 20, dtype=torch.float32, device=device)
+            # Keep the test independent of the accelerator capacity. The old
+            # fixed 80 GiB allocation is valid on smaller cards but succeeds
+            # on cards with more memory, so no OOM event is emitted.
+            total_memory = torch.musa.get_device_properties(device).total_memory
+            numel = (
+                total_memory // torch.tensor([], dtype=torch.float32).element_size() + 1024
+            )
+            return torch.empty(numel, dtype=torch.float32, device=device)
 
         def check_trace(fname):
             prof.export_chrome_trace(fname)

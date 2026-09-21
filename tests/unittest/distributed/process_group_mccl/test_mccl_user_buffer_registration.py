@@ -97,6 +97,9 @@ class TestMCCLUserBufferRegistration(FSDPTest):
             inp = torch.arange(1024 * 1024 * 2, device=device, dtype=torch.float32)
         dist.all_gather_into_tensor(output, inp)
 
+        # Ensure no collective is still using the registered window.
+        torch.musa.synchronize(device)
+
         # de-register buffers from MCCL
         backend.deregister_mem_pool(pool)
 

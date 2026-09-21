@@ -1,0 +1,23 @@
+diff --git a/torch/_inductor/fx_passes/micro_pipeline_tp.py b/torch/_inductor/fx_passes/micro_pipeline_tp.py
+index c4d935a..13a2e0f9 100644
+--- a/torch/_inductor/fx_passes/micro_pipeline_tp.py
++++ b/torch/_inductor/fx_passes/micro_pipeline_tp.py
+@@ -625,7 +625,8 @@ def fuse_all_gather_matmul(all_gather: _AllGatherMatch) -> None:
+     """
+     if (
+         not torch.distributed.is_available()
+-        or not torch.distributed.is_nccl_available()
++        or (not torch.distributed.is_nccl_available()
++        and not torch.distributed.is_mccl_available())
+     ):
+         return
+ 
+@@ -852,6 +853,7 @@ def fuse_matmul_reduce_scatter(reduce_scatter: _ReduceScatterMatch) -> None:
+     """
+     if (
+         not torch.distributed.is_available()
+-        or not torch.distributed.is_nccl_available()
++        or (not torch.distributed.is_nccl_available()
++        and not torch.distributed.is_mccl_available())
+     ):
+         return

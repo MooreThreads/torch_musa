@@ -6,6 +6,7 @@ import textwrap
 from dataclasses import dataclass
 from typing import Dict, Sequence, Optional
 
+from torchgen.aoti.fallback_ops import aten_shimified_ops
 from torchgen.api.types import DispatcherSignature
 from torchgen.model import (
     BackendIndex,
@@ -15,7 +16,6 @@ from torchgen.model import (
     OperatorName,
 )
 from torchgen.utils import FileManager, mapMaybe
-
 from torchgen.context import method_with_native_function
 from torchgen.gen_aoti_c_shim import (
     get_backend_index_for_aoti,
@@ -23,14 +23,9 @@ from torchgen.gen_aoti_c_shim import (
     gen_static_dispatch_backend_call_signature,
     gen_declaration_and_definition,
 )
-from .fallback_ops import aten_shimified_ops, inductor_fallback_ops
-from .model import is_musa_dispatch_key
 
-# AOTI kernel rename map
-RENAME_MAP = {
-    "convolution_overrideable": "convolution",
-    "convolution_backward_overrideable": "convolution_backward",
-}
+from torchgen.aoti.fallback_ops import inductor_fallback_ops
+from .model import is_musa_dispatch_key
 
 
 def gen_static_dispatch_backend_call(
@@ -85,27 +80,17 @@ def gen_c_shim(
         backend_index,
     )
 
-    def _rewirte_kernel(op_name: str) -> str:
-        for k, v in RENAME_MAP.items():
-            if k in op_name:
-                return op_name.replace(k, v, 1)
-        return op_name
-
-    try:
-        schema.name.name.base = _rewirte_kernel(schema.name.unambiguous_name())
-    except:
-        pass
     try:
         if header:
             declaration, _ = gen_declaration_and_definition(
                 schema, device, backend_call, version_info
             )
-            return f"AOTI_TORCH_EXPORT {_rewirte_kernel(declaration)};"
+            return declaration
         else:
             _, definition = gen_declaration_and_definition(
                 schema, device, backend_call, version_info
             )
-            return _rewirte_kernel(definition)
+            return definition
 
     except NotImplementedError:
         return None
@@ -126,7 +111,7 @@ class ShimGenerator:
         func: NativeFunction,
     ) -> str | None:
         version_info = self.inductor_fallback_ops[get_fallback_op_name(func)]
-        result = gen_c_shim(
+        return gen_c_shim(
             func,
             version_info,
             self.func_group_mapping,
@@ -135,7 +120,6 @@ class ShimGenerator:
             self.header,
             self.extend_aoti_c_shim,
         )
-        return result
 
 
 def gen_aoti_c_shim(

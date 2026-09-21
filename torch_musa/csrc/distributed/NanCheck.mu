@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <torch/torch.h>
 #include <algorithm>
+#include <cassert>
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/core/MUSAException.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
@@ -12,7 +13,7 @@
 
 namespace c10d {
 
-// CUDA kernel to check if data has NAN, device side assert
+// MUSA kernel to check if data has NAN, device side assert
 // is raised if NAN is found
 
 // Using ulong2 as a "byte pack", with 16 bytes, for efficient data load
@@ -22,6 +23,7 @@ union BytePack16 {
 };
 
 typedef union BytePack16 BytePack;
+#define __trap() __assert_fail("nan detected", __FILE__, __LINE__, __func__)
 
 //// Start of templated functions for checking NaNs inside a BytePack
 
@@ -243,12 +245,6 @@ void checkForNan(const at::Tensor& tensor, at::musa::MUSAStream& stream) {
       maxNumBlocks,
       (tensor.numel() + numThreadsPerBlock - 1) / numThreadsPerBlock);
 
-  // NOTE:
-  // Relying on kernel launch + C10_MUSA_KERNEL_LAUNCH_CHECK() alone is not
-  // enough in our MUSA environment. Device-side `__trap()` errors may surface
-  // asynchronously and can be missed, which caused false negatives before.
-  // Keep the explicit stream-aligned fallback below for deterministic NaN
-  // detection.
   AT_DISPATCH_FLOATING_TYPES_AND4(
       at::ScalarType::Half,
       at::ScalarType::BFloat16,
@@ -261,18 +257,9 @@ void checkForNan(const at::Tensor& tensor, at::musa::MUSAStream& stream) {
             tensor.data_ptr<scalar_t>(), tensor.numel());
         C10_MUSA_KERNEL_LAUNCH_CHECK();
       });
-
-  // MUSA backend currently does not reliably surface device-side trap for this
-  // kernel path. Keep an explicit stream-aligned fallback for deterministic
-  // NaN detection.
-  bool has_nan = false;
-  {
-    at::musa::MUSAStreamGuard guard(stream);
-    has_nan = at::isnan(tensor).any().item<bool>();
-  }
-  TORCH_CHECK(!has_nan, "MCCL NaN check failed: found NaN in input tensor.");
 }
 
+#undef __trap()
 } // namespace c10d
 
 #endif // USE_MCCL

@@ -1,0 +1,18 @@
+diff --git a/torch/distributed/_symmetric_memory/__init__.py b/torch/distributed/_symmetric_memory/__init__.py
+index daab7ed..83914cd5 100644
+--- a/torch/distributed/_symmetric_memory/__init__.py
++++ b/torch/distributed/_symmetric_memory/__init__.py
+@@ -644,6 +644,7 @@ def _fused_all_gather_matmul_fallback(
+ 
+ 
+ @torch.library.impl(lib, "fused_all_gather_matmul", "CUDA")
++@torch.library.impl(lib, "fused_all_gather_matmul", "PrivateUse1")
+ def _fused_all_gather_matmul(
+     A_shard: torch.Tensor,
+     Bs: list[torch.Tensor],
+@@ -997,4 +998,5 @@ def restride_A_shard_for_fused_all_gather_matmul(
+ @torch.library.impl(lib, "fused_matmul_reduce_scatter", "CUDA")
++@torch.library.impl(lib, "fused_matmul_reduce_scatter", "PrivateUse1")
+ def _fused_matmul_reduce_scatter(
+     A: torch.Tensor,
+     B: torch.Tensor,

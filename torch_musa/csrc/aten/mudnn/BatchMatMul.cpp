@@ -1,5 +1,7 @@
 #include <torch_musa/csrc/aten/mudnn/BatchMatMul.h>
 
+#include <ATen/Context.h>
+
 #include <optional>
 
 #include <torch_musa/csrc/aten/mudnn/Exception.h>
@@ -21,13 +23,14 @@ void SetBatchMatMulImpl(
   const auto a = alpha.value_or(1.0f);
   const auto b = beta.value_or(0.0f);
   const auto g = gamma.value_or(1.0f);
+  const auto deterministic = at::globalContext().deterministicAlgorithms();
   CHECK_MUDNN_STATUS(
       mudnnSetBatchMatMulDescriptorEx(
           op.Desc(),
           mode,
           transa,
           transb,
-          false,
+          deterministic,
           MUDNN_MATMULLT_EPILOGUE_DEFAULT,
           0,
           a,
@@ -49,6 +52,9 @@ void SetBatchMatMulImpl(
     std::optional<double> gamma) {
   CHECK_MUDNN_STATUS(op.SetComputeMode(mode), "SetComputeMode");
   CHECK_MUDNN_STATUS(op.SetTranspose(transa, transb), "SetTranspose");
+  CHECK_MUDNN_STATUS(
+      op.SetDeterministic(at::globalContext().deterministicAlgorithms()),
+      "SetDeterministic");
   if (alpha) {
     CHECK_MUDNN_STATUS(op.SetAlpha(alpha.value()), "SetAlpha");
   }

@@ -88,8 +88,8 @@ __global__ void W8A8Conv2dBinaryKernel_FLOAT(
     }
     float conv_f32 =
         static_cast<float>(acc) * input_scale * weight_scales[oc_idx];
-    if(bias_data) {
-        conv_f32 += bias_data[oc_idx];
+    if (bias_data) {
+      conv_f32 += bias_data[oc_idx];
     }
 
     float accum_fp32 = static_cast<float>(accum[i] - accum_zp) * accum_scale;
@@ -180,8 +180,8 @@ __global__ void W8A8Conv2dBinaryKernel_UINT(
 
     float conv_f32 =
         static_cast<float>(acc) * input_scale * weight_scales[oc_idx];
-    if(bias_data) {
-        conv_f32 += bias_data[oc_idx];
+    if (bias_data) {
+      conv_f32 += bias_data[oc_idx];
     }
 
     float accum_fp32 = static_cast<float>(accum[i] - accum_zp) * accum_scale;
@@ -276,10 +276,10 @@ __global__ void W8A8Conv2dBinaryKernel_INT(
     }
     float conv_f32 =
         static_cast<float>(acc) * input_scale * weight_scales[oc_idx];
-    if(bias_data) {
-        conv_f32 += bias_data[oc_idx];
+    if (bias_data) {
+      conv_f32 += bias_data[oc_idx];
     }
-    
+
     float accum_fp32 = static_cast<float>(accum[i] - accum_zp) * accum_scale;
 
     float out_val = conv_f32 + alpha * accum_fp32;
@@ -408,7 +408,7 @@ __global__ void W8A8Conv2dBinaryKernel_INT(
                             static_cast<int32_t*>(weight_zps.data_ptr()),                                 \
                             (float)output_scale,                                                          \
                             (int)output_zero_point,                                                       \
-                            bias_ptr,                                                                      \
+                            bias_ptr,                                                                     \
                             (float)accum_scale,                                                           \
                             (int)accum_zp,                                                                \
                             (float)alpha,                                                                 \
@@ -427,7 +427,7 @@ __global__ void W8A8Conv2dBinaryKernel_INT(
                     static_cast<float*>(weight_scales.data_ptr()),                                            \
                     static_cast<int32_t*>(weight_zps.data_ptr()),                                             \
                     bias_ptr, (float)accum_scale, (int)accum_zp, (float)alpha, use_relu                      \                  
-                );                                                                                        \
+                ); \
       }                                                                                                   \
     });                                                                                                   \
   }
@@ -436,7 +436,7 @@ __global__ void W8A8Conv2dBinaryKernel_INT(
 #define REGISTER_CONV_BINARY_KERNEL(_TYPE, _CTYPE) \
   conv_binary_kernels[(int)_TYPE] = GEN_CONV_BINARY_FUNC(_CTYPE);
 
-struct ConvKernelTable {
+struct ConvBinaryKernelTable {
   using KernelFunc = std::function<void(
       at::Tensor,
       double,
@@ -465,7 +465,7 @@ struct ConvKernelTable {
   REGISTER_CONV_BINARY_KERNEL(at::ScalarType::Char, int8_t);    \
   REGISTER_CONV_BINARY_KERNEL(at::ScalarType::Byte, uint8_t);
 
-  ConvKernelTable() {
+  ConvBinaryKernelTable() {
     REGISTER_KERNEL_DTYPE;
   }
 
@@ -544,7 +544,7 @@ void conv_binary_kernel(
     int64_t accum_zero_point,
     double alpha_value,
     const std::string_view& unary_attr) {
-  ConvKernelTable kernels;
+  static ConvBinaryKernelTable kernels;
   kernels.launch(
       input,
       input_scale,

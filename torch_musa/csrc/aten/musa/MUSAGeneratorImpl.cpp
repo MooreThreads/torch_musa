@@ -114,7 +114,7 @@ void MUSAGeneratorState::increase(uint64_t increment) {
         offset_intragraph_ % 4 == 0, "RNG offset must be a multiple of 4.");
     // Ensures the increment does not cause overflow.
     TORCH_INTERNAL_ASSERT(
-        offset_intragraph_ <= std::numeric_limits<uint32_t>::max() - increment,
+        offset_intragraph_ <= std::numeric_limits<uint64_t>::max() - increment,
         "Increment causes overflow in the offset value.");
     offset_intragraph_ += increment;
   } else {
@@ -143,6 +143,12 @@ void MUSAGeneratorState::register_graph(musa::MUSAGraph* graph) {
   // and offset on the GPU.
   if (registered_graphs_.empty()) {
     auto options = at::TensorOptions().device(at::kMUSA).dtype(at::kLong);
+    // Create these tensors outside of inference mode to ensure they can be
+    // modified in-place later. If we create them as inference tensors,
+    // subsequent fill_() calls outside inference mode
+    // will fail with "Inplace update to inference tensor outside
+    // InferenceMode".
+    c10::InferenceMode guard(false);
     seed_extragraph_ = at::empty({1}, options);
     offset_extragraph_ = at::empty({1}, options);
   }
@@ -274,11 +280,18 @@ MUSAGeneratorImpl::MUSAGeneratorImpl(
  * See Note [Acquire lock when using random generators]
  */
 void MUSAGeneratorImpl::set_current_seed(uint64_t seed) {
-  at::musa::assertNotCapturing(
-      "Cannot call MUSAGeneratorImpl::set_current_seed");
-  state_->seed_ = seed;
-  state_->philox_offset_per_thread_ = 0;
-  no_reset_rnn_state_.clear();
+  if (C10_LIKELY(
+          at::musa::currentStreamCaptureStatus() ==
+          at::musa::CaptureStatus::None)) {
+    state_->seed_ = seed;
+    state_->philox_offset_per_thread_ = 0;
+    no_reset_rnn_state_.clear();
+  } else {
+    TORCH_CHECK(
+        state_->seed_ == seed,
+        "MUSAGeneratorImpl::set_current_seed can be called during stream capture only if new seed is the same as the original seed.");
+    // no-op case
+  }
 }
 
 /**
@@ -307,9 +320,6 @@ uint64_t MUSAGeneratorImpl::get_offset() const {
  * Gets the current seed of MUSAGeneratorImpl.
  */
 uint64_t MUSAGeneratorImpl::current_seed() const {
-  // Debatable if current_seed() should be allowed in captured regions.
-  // Conservatively disallow it for now.
-  at::musa::assertNotCapturing("Cannot call MUSAGeneratorImpl::current_seed");
   return state_->seed_;
 }
 
@@ -333,17 +343,17 @@ uint64_t MUSAGeneratorImpl::seed() {
  */
 c10::intrusive_ptr<c10::TensorImpl> MUSAGeneratorImpl::get_state() const {
   // The RNG state comprises the seed, and an offset used for Philox.
-  static const size_t seed_size = sizeof(uint64_t);
-  static const size_t offset_size = sizeof(int64_t);
-  static const size_t total_size = seed_size + offset_size;
+  constexpr size_t seed_size = sizeof(uint64_t);
+  constexpr size_t offset_size = sizeof(int64_t);
+  constexpr size_t total_size = seed_size + offset_size;
 
   auto state_tensor = at::detail::empty_cpu(
-      {(int64_t)total_size},
+      {static_cast<int64_t>(total_size)},
       ScalarType::Byte,
-      c10::nullopt,
-      c10::nullopt,
-      c10::nullopt,
-      c10::nullopt);
+      std::nullopt,
+      std::nullopt,
+      std::nullopt,
+      std::nullopt);
   auto rng_state = state_tensor.data_ptr<uint8_t>();
   auto current_seed = this->current_seed();
   auto offset = static_cast<int64_t>(
@@ -362,11 +372,9 @@ c10::intrusive_ptr<c10::TensorImpl> MUSAGeneratorImpl::get_state() const {
  * and size of the internal state.
  */
 void MUSAGeneratorImpl::set_state(const c10::TensorImpl& new_state) {
-  at::musa::assertNotCapturing(
-      "Please ensure to utilize the MUSAGeneratorImpl::set_state_index method during capturing.");
-  static const size_t seed_size = sizeof(uint64_t);
-  static const size_t offset_size = sizeof(int64_t);
-  static const size_t total_size = seed_size + offset_size;
+  constexpr size_t seed_size = sizeof(uint64_t);
+  constexpr size_t offset_size = sizeof(int64_t);
+  constexpr size_t total_size = seed_size + offset_size;
 
   detail::check_rng_state(new_state);
 
@@ -419,14 +427,26 @@ c10::intrusive_ptr<c10::GeneratorImpl> MUSAGeneratorImpl::graphsafe_get_state()
 void MUSAGeneratorImpl::set_philox_offset_per_thread(uint64_t offset) {
   // see Note [Why enforce RNG offset % 4 == 0?]
   TORCH_CHECK(offset % 4 == 0, "offset must be a multiple of 4");
-  state_->philox_offset_per_thread_ = offset;
+  if (C10_LIKELY(
+          at::musa::currentStreamCaptureStatus() ==
+          at::musa::CaptureStatus::None)) {
+    state_->philox_offset_per_thread_ = offset;
+  } else {
+    state_->offset_intragraph_ = offset;
+  }
 }
 
 /**
  * Gets the current philox_offset_per_thread_ of MUSAGeneratorImpl.
  */
 uint64_t MUSAGeneratorImpl::philox_offset_per_thread() const {
-  return state_->philox_offset_per_thread_;
+  if (C10_LIKELY(
+          at::musa::currentStreamCaptureStatus() ==
+          at::musa::CaptureStatus::None)) {
+    return state_->philox_offset_per_thread_;
+  } else {
+    return state_->offset_intragraph_;
+  }
 }
 
 /**
@@ -467,7 +487,7 @@ void MUSAGeneratorImpl::unregister_graph(musa::MUSAGraph* graph) {
  */
 PhiloxMusaState MUSAGeneratorImpl::philox_musa_state(uint64_t increment) {
   if (at::musa::currentStreamCaptureStatus() != at::musa::CaptureStatus::None) {
-    uint32_t offset = state_->offset_intragraph_;
+    uint64_t offset = state_->offset_intragraph_;
     state_->increase(increment);
     return PhiloxMusaState(
         state_->seed_extragraph_.data_ptr<int64_t>(),

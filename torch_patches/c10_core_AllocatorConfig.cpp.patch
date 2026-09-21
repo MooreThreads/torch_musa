@@ -1,0 +1,14 @@
+diff --git a/c10/core/AllocatorConfig.cpp b/c10/core/AllocatorConfig.cpp
+index 3f9cee10ad5..1e4e777df81 100644
+--- a/c10/core/AllocatorConfig.cpp
++++ b/c10/core/AllocatorConfig.cpp
+@@ -20,7 +20,8 @@ AcceleratorAllocatorConfig& AcceleratorAllocatorConfig::instance() {
+     // (PYTORCH_ALLOC_CONF) should be used going forward.
+     // Note: keep the parsing order and logic stable to avoid potential
+     // performance regressions in internal tests.
+-    constexpr std::array<const char*, 3> vars{
++    constexpr std::array<const char*, 4> vars{
++        "PYTORCH_MUSA_ALLOC_CONF",
+         "PYTORCH_CUDA_ALLOC_CONF",
+         "PYTORCH_HIP_ALLOC_CONF",
+         "PYTORCH_ALLOC_CONF"};

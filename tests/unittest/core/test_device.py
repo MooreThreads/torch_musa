@@ -18,6 +18,42 @@ TEN_HUNDRED_MIL_CYCLES = 1000000000
 TEST_MUSAMALLOCASYNC = False
 
 
+def test_get_gencode_flags():
+    """Test MUSA architecture flags used for compilation."""
+    arch_list = torch.musa.get_arch_list()
+    if not arch_list:
+        return
+    flags = torch.musa.get_gencode_flags()
+    for arch in arch_list:
+        assert f"--offload-arch=mp_{arch.removeprefix('mp_')}" in flags
+
+
+@testing.skip_if_musa_unavailable
+def test_sync_debug_mode():
+    """Test setting, querying, and validating MUSA sync debug modes."""
+    original_mode = torch.musa.get_sync_debug_mode()
+    try:
+        for mode, expected in (("default", 0), ("warn", 1), ("error", 2)):
+            torch.musa.set_sync_debug_mode(mode)
+            assert torch.musa.get_sync_debug_mode() == expected
+
+        torch.musa.set_sync_debug_mode(0)
+        assert torch.musa.get_sync_debug_mode() == 0
+
+        with pytest.raises(
+            RuntimeError,
+            match="invalid value of debug_mode, expected one of `default`, `warn`, `error`",
+        ):
+            torch.musa.set_sync_debug_mode("invalid")
+
+        with pytest.raises(
+            RuntimeError, match="invalid value of debug_mode, expected one of 0,1,2"
+        ):
+            torch.musa.set_sync_debug_mode(3)
+    finally:
+        torch.musa.set_sync_debug_mode(original_mode)
+
+
 @testing.skip_if_not_multiple_musa_device
 def test_musa_set_device():
     """Test cases include set_device and device context"""
@@ -146,6 +182,73 @@ def test_musa_get_device_capability():
     # Testing the behaviour for No argument
     device_capability_no_argument = torch.musa.get_device_capability()
     assert current_device_capability, device_capability_no_argument
+
+
+@testing.skip_if_musa_unavailable
+def test_musa_get_device_properties():
+    """Testing the behaviour with None and no argument."""
+    current_device = torch.musa.current_device()
+    current_device_properties = torch.musa.get_device_properties(current_device)
+    device_properties_None = torch.musa.get_device_properties(None)
+    assert current_device_properties == device_properties_None
+
+    device_properties_no_argument = torch.musa.get_device_properties()
+    assert current_device_properties == device_properties_no_argument
+
+
+@testing.skip_if_musa_unavailable
+def test_musa_device_properties_attrs():
+    """Testing fields aligned with torch.cuda._CudaDeviceProperties."""
+    prop = torch.musa.get_device_properties(0)
+
+    assert isinstance(prop.name, str)
+    assert prop.name
+    assert isinstance(prop.major, int)
+    assert prop.major >= 0
+    assert isinstance(prop.minor, int)
+    assert prop.minor >= 0
+    assert isinstance(prop.is_multi_gpu_board, int)
+    assert prop.is_multi_gpu_board >= 0
+    assert isinstance(prop.is_integrated, int)
+    assert prop.is_integrated >= 0
+    assert isinstance(prop.multi_processor_count, int)
+    assert prop.multi_processor_count > 0
+    assert isinstance(prop.total_memory, int)
+    assert prop.total_memory > 0
+    assert isinstance(prop.max_threads_per_multi_processor, int)
+    assert prop.max_threads_per_multi_processor > 0
+    assert isinstance(prop.max_threads_per_block, int)
+    assert prop.max_threads_per_block > 0
+    assert isinstance(prop.warp_size, int)
+    assert prop.warp_size > 0
+    assert isinstance(prop.shared_memory_per_block, int)
+    assert prop.shared_memory_per_block >= 0
+    assert isinstance(prop.clock_rate, int)
+    assert prop.clock_rate >= 0
+    assert isinstance(prop.memory_clock_rate, int)
+    assert prop.memory_clock_rate >= 0
+    assert isinstance(prop.memory_bus_width, int)
+    assert prop.memory_bus_width >= 0
+    assert isinstance(prop.shared_memory_per_multiprocessor, int)
+    assert prop.shared_memory_per_multiprocessor >= 0
+    assert isinstance(prop.shared_memory_per_block_optin, int)
+    assert prop.shared_memory_per_block_optin >= 0
+    assert isinstance(prop.regs_per_multiprocessor, int)
+    assert prop.regs_per_multiprocessor >= 0
+    assert isinstance(prop.gcnArchName, str)
+    assert prop.gcnArchName == prop.name
+
+    uuid = prop.uuid
+    assert len(str(uuid)) == 36  # xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    assert len(uuid.bytes) == 16
+    assert isinstance(prop.pci_bus_id, int)
+    assert prop.pci_bus_id >= 0
+    assert isinstance(prop.pci_device_id, int)
+    assert prop.pci_device_id >= 0
+    assert isinstance(prop.pci_domain_id, int)
+    assert prop.pci_domain_id >= 0
+    assert isinstance(prop.L2_cache_size, int)
+    assert prop.L2_cache_size >= 0
 
 
 @testing.skip_if_not_multiple_musa_device
@@ -897,6 +1000,13 @@ def test_musart_register():
     r = musart.musaHostUnregister(t.data_ptr())
     assert r == 0
     assert t.is_pinned() == False
+
+
+@testing.skip_if_musa_unavailable
+def test_musart_profiler():
+    musart = torch.musa.musart()
+    assert musart.musaProfilerStart() == 0
+    assert musart.musaProfilerStop() == 0
 
 
 def test_bf16_tf32_supported():

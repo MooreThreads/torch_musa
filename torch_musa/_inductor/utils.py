@@ -4,20 +4,11 @@ __all__ = ["_apply_util_patches"]
 
 # pylint: disable=C0103,C0415,C0116,W0221
 import functools
-from functools import cached_property
 from typing import (
     Union,
 )
-from typing_extensions import (
-    Self,
-    Callable,
-    Any,
-)
 import torch
-from torch._inductor.runtime.benchmarking import (
-    time_and_count,
-    Benchmarker,
-)
+from torch._inductor.runtime.benchmarking import TritonBenchmarker
 from torch.utils._triton import has_triton_package
 from torch._inductor.runtime.hints import DeviceProperties
 from torch._inductor.utils import log
@@ -55,49 +46,6 @@ def has_triton() -> bool:
         return False
 
     return is_device_compatible_with_triton() and has_triton_package()
-
-
-class TritonBenchmarker(Benchmarker):
-    """TritonBenchmarker
-
-    once do_bench interface aligned with triton upstream, remove this class
-    """
-
-    @cached_property
-    @time_and_count
-    def triton_do_bench(self: Self) -> Callable[..., Any]:
-        """Lazily import Triton's `do_bench`."""
-        try:
-            # pylint: disable=import-outside-toplevel
-            from triton.backends.mtgpu.musa_testing import do_bench
-        except ImportError as e:
-            raise NotImplementedError("requires Triton") from e
-        return do_bench
-
-    @time_and_count
-    def benchmark_gpu(self: Self, _callable: Callable[[], Any], **kwargs: Any) -> float:
-        """Benchmark the GPU callable, `_callable`, and return the runtime, in milliseconds.
-
-        Arguments:
-        - _callable: The GPU callable to benchmark.
-
-        Keyword Arguments:
-        - quantiles: Optionally, a tuple of floats denoting the requested quantiles.
-        - return_mode: Optionally, the requested return mode. Currently, Triton's
-        `do_bench` supports min, max, mean, and median return modes.
-        - **kwargs: Additional kwargs passed to Triton's `do_bench`.
-
-        Returns:
-        - The runtime of `callable`, in milliseconds. If `kwargs["quantiles"]` is specified,
-        this is the first requested quantile. Else, if `kwargs["return_mode"]` is specified,
-        this is the requested return mode. Otherwise, this is the median.
-        """
-        kwargs.pop("is_vetted_benchmarking", None)
-        if "quantiles" in kwargs:
-            return self.triton_do_bench(_callable, **kwargs)[0]
-        if "return_mode" in kwargs:
-            return self.triton_do_bench(_callable, **kwargs)
-        return self.triton_do_bench(_callable, **kwargs, return_mode="median")
 
 
 # A utility function for easier AOTInductor testing

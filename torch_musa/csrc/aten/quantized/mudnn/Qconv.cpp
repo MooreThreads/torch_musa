@@ -108,9 +108,7 @@ static at::Tensor run_pointwise(
 
     int64_t out_c = weight.size(0);
 
-    Tensor b_raw = bias.has_value()
-        ? bias.value()
-        : at::Tensor();
+    Tensor b_raw = bias.has_value() ? bias.value() : at::Tensor();
 
     int64_t out_h =
         (in_h + 2 * padding[0] - dilation[0] * (kernel_h - 1) - 1) / stride[0] +
@@ -243,9 +241,7 @@ static at::Tensor run_pointwise_binary(
 
     int64_t out_c = weight.size(0);
 
-    Tensor b_raw = bias.has_value()
-        ? bias.value()
-        : at::Tensor();
+    Tensor b_raw = bias.has_value() ? bias.value() : at::Tensor();
 
     int64_t out_h =
         (in_h + 2 * padding[0] - dilation[0] * (kernel_h - 1) - 1) / stride[0] +

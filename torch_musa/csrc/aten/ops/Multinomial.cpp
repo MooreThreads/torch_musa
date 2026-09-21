@@ -1,6 +1,5 @@
 #include <ATen/TensorOperators.h>
 #include <ATen/core/op_registration/adaption.h>
-#include <ATen/native/DispatchStub.h>
 #include <ATen/native/UnaryOps.h>
 
 #ifndef AT_PER_OPERATOR_HEADERS
@@ -32,8 +31,8 @@
 
 #include <float.h>
 #include <math.h>
-#include <torch/library.h>
-#include <torch_musa/csrc/aten/ops/TensorFactory.h>
+#include "torch_musa/csrc/aten/musa/MUSAGraph.h"
+#include "torch_musa/csrc/aten/musa/MUSAGraphsUtils.muh"
 
 namespace at {
 
@@ -94,22 +93,24 @@ at::Tensor& MultinomialOut(
     return result;
   }
 
-  if (!replacement) {
-    // Sanity checks on `self`.
-    auto is_valid = ((self.max() < INFINITY) & (self.min() >= 0)).item();
-    TORCH_CHECK(
-        is_valid.to<bool>(),
-        "probability tensor contains either `inf`, `nan` or element < 0");
-    // NOLINTNEXTLINE(cppcoreguidelines-init-variables)
-    bool zero_prob_condition;
-    if (self.dim() == 1) {
-      zero_prob_condition = (self.sum() == 0).item().to<bool>();
-    } else {
-      zero_prob_condition = (self.sum(1) == 0).sum().item().to<bool>();
+  if (!replacement && num_samples > 1) {
+    if (currentStreamCaptureStatus() == CaptureStatus::None) {
+      // Sanity checks on `self`.
+      auto is_valid = ((self.max() < INFINITY) & (self.min() >= 0)).item();
+      TORCH_CHECK(
+          is_valid.to<bool>(),
+          "probability tensor contains either `inf`, `nan` or element < 0");
+      // NOLINTNEXTLINE(cppcoreguidelines-init-variables)
+      bool zero_prob_condition;
+      if (self.dim() == 1) {
+        zero_prob_condition = (self.sum() == 0).item().to<bool>();
+      } else {
+        zero_prob_condition = (self.sum(1) == 0).sum().item().to<bool>();
+      }
+      TORCH_CHECK(
+          !zero_prob_condition,
+          "invalid multinomial distribution (sum of probabilities <= 0)");
     }
-    TORCH_CHECK(
-        !zero_prob_condition,
-        "invalid multinomial distribution (sum of probabilities <= 0)");
 
     // The algorithm is from gumbel softmax.
     // s = argmax( logp - log(-log(eps)) ) where eps ~ U(0, 1)
@@ -126,21 +127,13 @@ at::Tensor& MultinomialOut(
     // would cause metrics degradation of LLMs, so we disable gumbel-max trick
     // thing, just call stub kernel instead.
     at::div_out(q, self, q);
-    if (num_samples == 1) {
-      // for num_samples == 1, it doesn't matter that replacement is true or
-      // false
-      // TODO(@mt-ai): we should check this "generator" thing
-      at::native::multinomial_with_replacement_stub(
-          kMUSA, result, self, num_samples, generator);
-    } else {
-      Tensor vals = at::empty(result.sizes(), self.options());
-      at::topk_out(vals, result, q, num_samples);
-    }
+    Tensor vals = at::empty(result.sizes(), self.options());
+    at::topk_out(vals, result, q, num_samples);
     return result;
   }
 
   at::native::multinomial_with_replacement_stub(
-      kMUSA, result, self, num_samples, generator);
+      kMUSA, result, self, num_samples, std::move(generator));
   return result;
 }
 

@@ -70,9 +70,15 @@ def test_flash_sdp_backward(case, dtype, func, mask_type, is_causal, explicit_sc
     """
     # embedding_dim // q_head_num
     head_dim = case[-3] // case[-2]
-    if head_dim not in (64, 128):
+    if head_dim not in (64, 128, 200, 256, 384, 512):
+        pytest.skip(reason="Flash backward doesn't support case with this head dim.")
+    if testing.get_musa_arch() < 31 and head_dim > 128:
         pytest.skip(
-            reason="Flash backward doesn't support case with head dim not equal to 64 or 128"
+            reason="Flash backward with head dim > 128 is only supported on arch 31."
+        )
+    if head_dim > 256 and not is_causal and mask_type != -1:
+        pytest.skip(
+            reason="Flash backward doesn't support explicit attn_mask with head dim in (256, 512]."
         )
     with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.FLASH_ATTENTION):
         input_data = gen_input_data(case, mask_type, dtype, is_causal, explicit_scale)

@@ -1,4 +1,5 @@
 #include <ATen/Config.h>
+#include <ATen/native/Activation.h>
 #include <ATen/native/UnaryOps.h>
 // clang-format off
 // Some classes in NativeFunctions.h require the corrosponding definition in Exception.h
@@ -72,10 +73,35 @@ static inline Tensor& UnaryOpOutImplComplex2Float(
   return result;
 }
 
+template <typename Stub>
+static inline Tensor& UnaryOpImplComplex(
+    const Tensor& self,
+    Tensor& result,
+    Stub& stub) {
+  TORCH_CHECK(
+      self.is_complex(),
+      "Unary op through musa kernel expects complex input dtype, but got ",
+      self.scalar_type());
+  auto iter = TensorIterator::unary_op(result, self);
+  stub(iter.device_type(), iter);
+  return result;
+}
+
 static inline Tensor& MusaAbsOutWithKernelComplex2Float(
     const Tensor& self,
     Tensor& result) {
   return UnaryOpOutImplComplex2Float(result, self, at::native::abs_stub);
+}
+
+static inline Tensor SiluWithKernelComplex(const Tensor& self) {
+  Tensor output = at::empty_like(self, self.options());
+  return UnaryOpImplComplex(self, output, at::native::silu_stub);
+}
+
+static inline Tensor& SiluWithKernelComplex(
+    const Tensor& self,
+    Tensor& result) {
+  return UnaryOpImplComplex(self, result, at::native::silu_stub);
 }
 
 static inline Tensor MusaAbsWithKernelComplex2Float(const Tensor& self) {
@@ -234,6 +260,9 @@ Tensor Unary(
     if (op_name == "Abs") {
       return MusaAbsWithKernelComplex2Float(input);
     }
+    if (op_name == "Silu") {
+      return SiluWithKernelComplex(input);
+    }
   }
 
   Tensor input_tmp;
@@ -257,6 +286,14 @@ void Unary_(
     const std::string& op_name,
     Tensor& input,
     std::function<void(::musa::dnn::Unary&)> func) {
+  if (C10_UNLIKELY(input.is_complex()) && op_name == "Abs_") {
+    TORCH_CHECK(false, "In-place abs is not supported for complex tensors.");
+  }
+  if (C10_UNLIKELY(input.is_complex()) && op_name == "Silu_") {
+    SiluWithKernelComplex(input, input);
+    return;
+  }
+
   const bool is_transpose_contig = IsTranspose(input, false);
   if (is_transpose_contig) {
     input.transpose_(-1, -2);
@@ -272,6 +309,17 @@ void UnaryOut(
     Tensor& output,
     const Tensor& input,
     std::function<void(::musa::dnn::Unary&)> func) {
+  if (C10_UNLIKELY(input.is_complex()) && op_name == "AbsOut") {
+    output.resize_as_(input);
+    MusaAbsOutWithKernelComplex2Float(input, output);
+    return;
+  }
+  if (C10_UNLIKELY(input.is_complex()) && op_name == "SiluOut") {
+    output.resize_as_(input);
+    SiluWithKernelComplex(input, output);
+    return;
+  }
+
   output.resize_as_(input);
   at::MemoryFormat output_memory_format;
   const bool is_transpose_contig =

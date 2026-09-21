@@ -4,6 +4,7 @@
 #include <musa_fp16.h>
 #include <musa_runtime.h>
 
+#include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 #include "torch_musa/csrc/core/MUSAStream.h"
 
@@ -349,6 +350,13 @@ at::Tensor MixedTypesLinear(
     const std::optional<at::Tensor>& bias_opt,
     const std::optional<std::string_view> activation_opt) {
   c10::musa::MUSAGuard g(input.device());
+
+  const auto arch = at::musa::getMUSAArch();
+  TORCH_CHECK(
+      arch == 310,
+      "_mixed_dtypes_linear is only supported on MP31, but got MP",
+      arch / 10,
+      ".");
 
   const auto bias = bias_opt.has_value() ? *bias_opt : Tensor{};
   const auto activation = activation_opt.has_value() ? *activation_opt : "none";

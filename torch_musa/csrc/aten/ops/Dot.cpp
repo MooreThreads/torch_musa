@@ -1,4 +1,5 @@
 #include <ATen/Config.h>
+#include <ATen/Context.h>
 #include <ATen/native/ReduceOpsUtils.h>
 
 #ifndef AT_PER_OPERATOR_HEADERS
@@ -42,6 +43,9 @@ at::Tensor& DotOut(const at::Tensor& l, const at::Tensor& r, at::Tensor& out) {
   CHECK_MUDNN_STATUS(
       op.SetComputeMode(GetMatmulComputeModeFromCtx(l.scalar_type())),
       "SetComputeMode");
+  CHECK_MUDNN_STATUS(
+      op.SetDeterministic(at::globalContext().deterministicAlgorithms()),
+      "SetDeterministic");
   CHECK_MUDNN_STATUS(op.Run(h, rst, lmt, rmt, InternalMemAlloc), "Run");
 
   out.squeeze_();

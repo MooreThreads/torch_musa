@@ -111,8 +111,8 @@ GROUP_SIZE = 128  # group size must >= 128 & % 128 == 0& % 128 == 0
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.skipif(
-    testing.get_musa_arch() < 31,
-    reason="_mixed_dtypes_linear requires MP31 or later",
+    testing.get_musa_arch() != 31,
+    reason="_mixed_dtypes_linear is only supported on MP31",
 )
 @pytest.mark.parametrize("dtype", _dtypes)
 @pytest.mark.parametrize("m, n, k", _shapes_per_group)
@@ -142,8 +142,8 @@ def test_mixed_dtypes_linear_per_group(dtype, m, n, k):
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.skipif(
-    testing.get_musa_arch() < 31,
-    reason="_mixed_dtypes_linear requires MP31 or later",
+    testing.get_musa_arch() != 31,
+    reason="_mixed_dtypes_linear is only supported on MP31",
 )
 @pytest.mark.parametrize("dtype", _dtypes)
 @pytest.mark.parametrize("m, n, k", _shapes_per_group)
@@ -172,8 +172,8 @@ def test_mixed_dtypes_linear_per_channel(dtype, m, n, k):
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.skipif(
-    testing.get_musa_arch() < 31,
-    reason="_mixed_dtypes_linear requires MP31 or later",
+    testing.get_musa_arch() != 31,
+    reason="_mixed_dtypes_linear is only supported on MP31",
 )
 @pytest.mark.parametrize("dtype", _dtypes)
 @pytest.mark.parametrize("activation", _activations)

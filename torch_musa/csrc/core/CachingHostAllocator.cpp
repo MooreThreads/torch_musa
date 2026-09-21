@@ -109,7 +109,7 @@ struct MUSACachingHostAllocatorImpl
   }
 
   bool pinned_use_background_threads() override {
-    return c10::musa::MUSACachingAllocator::MUSAAllocatorConfig::
+    return c10::CachingAllocator::AcceleratorAllocatorConfig::
         pinned_use_background_threads();
   }
 

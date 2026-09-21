@@ -68,6 +68,52 @@ static void poison_fork() {
   c10::call_once(flag, [] { pthread_atfork(nullptr, nullptr, forked_child); });
 }
 
+void MusaMemcpyAsyncTensor(
+    const at::Tensor& dst,
+    const at::Tensor& src,
+    bool use_ce = false) {
+  TORCH_CHECK(
+      dst.device().type() == c10::kPrivateUse1 &&
+          src.device().type() == c10::kPrivateUse1,
+      "_musa_memcpy_async expects MUSA tensors");
+  TORCH_CHECK(
+      dst.device() == src.device(),
+      "_musa_memcpy_async only supports same-device tensors, got dst=",
+      dst.device(),
+      " src=",
+      src.device());
+  TORCH_CHECK(
+      dst.is_contiguous() && src.is_contiguous(),
+      "_musa_memcpy_async expects contiguous tensors");
+  TORCH_CHECK(
+      dst.nbytes() == src.nbytes(),
+      "_musa_memcpy_async expects equal nbytes, got dst=",
+      dst.nbytes(),
+      " src=",
+      src.nbytes());
+
+  const auto device = src.device();
+  c10::musa::MUSAGuard guard(device);
+  auto stream = c10::musa::getCurrentMUSAStream(device.index());
+
+  void* dst_ptr = const_cast<void*>(dst.data_ptr());
+  const void* src_ptr = src.data_ptr();
+  pybind11::gil_scoped_release no_gil;
+  if (use_ce) {
+    C10_MUSA_CHECK(
+        musaMemoryTransferAsync(dst_ptr, src_ptr, src.nbytes(), stream));
+  } else {
+    C10_MUSA_CHECK(c10::musa::MUSACachingAllocator::memcpyAsync(
+        dst_ptr,
+        device.index(),
+        src_ptr,
+        device.index(),
+        src.nbytes(),
+        stream,
+        true));
+  }
+}
+
 /**
  * @brief Forward declaration of `THCPGraph_init`, which is defined at Graph.cpp
  */
@@ -229,33 +275,42 @@ PyObject* PyMusaResetPeakMemoryStats(PyObject* _unused, PyObject* arg) {
 }
 
 using torch::CapturedTraceback;
-CapturedTraceback* getFromContext(
-    const std::shared_ptr<c10::GatheredContext>& x) {
-  if (CapturedTraceback* sc = dynamic_cast<CapturedTraceback*>(x.get())) {
-    return sc;
-  }
-  TORCH_CHECK(
-      false,
-      "attempting to gather stack context from the wrong StackContext type.");
-}
 
 PyObject* PyMusaMemorySnapshot(PyObject* _unused, PyObject* arg) {
   HANDLE_TH_ERRORS
   c10::musa::MempoolId_t mempool_id = {0, 0};
+  bool include_traces = true;
+
   if (arg && arg != Py_None) {
     TORCH_CHECK(PyTuple_Check(arg), "mempool_id must be a tuple");
     Py_ssize_t size = PyTuple_Size(arg);
-    TORCH_CHECK(size == 2, "mempool_id must be a tuple of 2 integers");
 
-    auto id1 = THPObjectPtr(PyTuple_GetItem(arg, 0));
-    auto id2 = THPObjectPtr(PyTuple_GetItem(arg, 1));
-    TORCH_CHECK(
-        THPUtils_checkLong(id1) && THPUtils_checkLong(id2),
-        "mempool_id elements must be integers");
+    if (size == 2) {
+      auto id1 = THPObjectPtr(PyTuple_GetItem(arg, 0));
+      auto id2 = THPObjectPtr(PyTuple_GetItem(arg, 1));
+      TORCH_CHECK(
+          THPUtils_checkLong(id1) && THPUtils_checkLong(id2),
+          "mempool_id elements must be integers");
 
-    mempool_id = c10::musa::MempoolId_t(
-        static_cast<int64_t>(THPUtils_unpackLong(id1)),
-        static_cast<int64_t>(THPUtils_unpackLong(id2)));
+      mempool_id = c10::musa::MempoolId_t(
+          static_cast<int64_t>(THPUtils_unpackLong(id1)),
+          static_cast<int64_t>(THPUtils_unpackLong(id2)));
+    } else if (size == 3) {
+      // (int, int, bool) - mempool_id + include_traces
+      auto id1 = THPObjectPtr(PyTuple_GetItem(arg, 0));
+      auto id2 = THPObjectPtr(PyTuple_GetItem(arg, 1));
+      auto traces = THPObjectPtr(PyTuple_GetItem(arg, 2));
+      TORCH_CHECK(
+          THPUtils_checkLong(id1) && THPUtils_checkLong(id2),
+          "mempool_id elements must be integers");
+      TORCH_CHECK(
+          PyBool_Check(traces.get()), "include_traces must be a boolean");
+      mempool_id = c10::musa::MempoolId_t(
+          THPUtils_unpackLong(id1), THPUtils_unpackLong(id2));
+      include_traces = (traces.get() == Py_True);
+    } else {
+      TORCH_CHECK(false, "Expected tuple of size 2 or 3");
+    }
   }
 
   using c10::musa::MUSACachingAllocator::BlockInfo;
@@ -278,12 +333,13 @@ PyObject* PyMusaMemorySnapshot(PyObject* _unused, PyObject* arg) {
   py::str active_pending_free_s = "active_pending_free";
   py::str inactive_s = "inactive";
   py::str addr_s = "addr";
-  py::str cpp_frames_s = "cpp_frames";
   py::str blocks_s = "blocks";
   py::str is_expandable_s = "is_expandable";
   py::str frames_s = "frames";
+  py::str forward_frames_s = "forward_frames";
   py::str time_us_s = "time_us";
   py::str compile_context_s = "compile_context";
+  py::str user_metadata_s = "user_metadata";
 
   py::list empty_frames;
   std::vector<CapturedTraceback*> to_gather_frames;
@@ -292,7 +348,7 @@ PyObject* PyMusaMemorySnapshot(PyObject* _unused, PyObject* arg) {
   auto add_frame_key = [&](const py::dict& d,
                            const std::shared_ptr<c10::GatheredContext>& ctx) {
     if (ctx) {
-      auto sc = getFromContext(ctx);
+      auto sc = torch::getCapturedTracebackFromContext(ctx);
       to_gather_frames.emplace_back(sc);
       to_gather_dest.emplace_back(d);
     } else {
@@ -334,7 +390,8 @@ PyObject* PyMusaMemorySnapshot(PyObject* _unused, PyObject* arg) {
     return segmentDict;
   };
 
-  auto snapshot = c10::musa::MUSACachingAllocator::snapshot(mempool_id);
+  auto snapshot =
+      c10::musa::MUSACachingAllocator::snapshot(mempool_id, include_traces);
 
   py::list segments;
 
@@ -379,7 +436,7 @@ PyObject* PyMusaMemorySnapshot(PyObject* _unused, PyObject* arg) {
       case TraceEntry::SEGMENT_MAP:
         return segment_map_s;
     }
-    throw std::runtime_error("unreachable");
+    TORCH_CHECK(false, "unreachable");
   };
 
   for (const auto& traceInfo : snapshot.device_traces) {
@@ -388,7 +445,7 @@ PyObject* PyMusaMemorySnapshot(PyObject* _unused, PyObject* arg) {
       py::dict trace_entry;
       if (te.context_) {
         // without further compression frames can get really large on dump
-        auto sc = getFromContext(te.context_);
+        auto sc = torch::getCapturedTracebackFromContext(te.context_);
         to_gather_frames.emplace_back(sc);
         to_gather_dest.emplace_back(trace_entry);
       }
@@ -399,6 +456,7 @@ PyObject* PyMusaMemorySnapshot(PyObject* _unused, PyObject* arg) {
       trace_entry[stream_s] = int64_t(te.stream_);
       trace_entry[time_us_s] = te.time_.t_;
       trace_entry[compile_context_s] = te.compile_context_;
+      trace_entry[user_metadata_s] = te.user_metadata_;
       trace.append(trace_entry);
     }
     traces.append(trace);
@@ -461,6 +519,16 @@ PyObject* PyMusaMemorySnapshot(PyObject* _unused, PyObject* arg) {
   auto frames = py_symbolize(to_gather_frames);
   for (auto i : c10::irange(frames.size())) {
     to_gather_dest.at(i)[frames_s] = frames.at(i);
+
+    auto* tb = to_gather_frames.at(i);
+    const auto& forward_tb = tb->forward_traceback();
+    if (forward_tb.has_value() && !forward_tb->empty()) {
+      py::list forward_list;
+      for (const auto& frame_str : *forward_tb) {
+        forward_list.append(py::str(frame_str));
+      }
+      to_gather_dest.at(i)[forward_frames_s] = forward_list;
+    }
   }
 
   return result.release().ptr();
@@ -549,6 +617,15 @@ static void RegisterMusaDeviceProperties(PyObject* module) {
   // Set musa version
   m.attr("_musa_version") = py::str(std::to_string(MUSA_VERSION));
 
+  py::class_<musaUUID_t>(m, "_MusaUUID")
+      .def_property_readonly(
+          "bytes",
+          [](const musaUUID_t& uuid) {
+            return std::vector<uint8_t>(uuid.bytes, uuid.bytes + 16);
+          })
+      .def("__str__", [](const musaUUID_t& uuid) {
+        return uuid_to_string(uuid.bytes);
+      });
   py::class_<musaDeviceProp>(m, "_MusaDeviceProperties")
       .def_readonly("name", &musaDeviceProp::name)
       .def_readonly("major", &musaDeviceProp::major)
@@ -558,19 +635,75 @@ static void RegisterMusaDeviceProperties(PyObject* module) {
       .def_readonly(
           "multi_processor_count", &musaDeviceProp::multiProcessorCount)
       .def_readonly("total_memory", &musaDeviceProp::totalGlobalMem)
+      .def_readonly(
+          "max_threads_per_multi_processor",
+          &musaDeviceProp::maxThreadsPerMultiProcessor)
+      .def_readonly(
+          "max_threads_per_block", &musaDeviceProp::maxThreadsPerBlock)
+      .def_readonly("warp_size", &musaDeviceProp::warpSize)
+      .def_readonly(
+          "shared_memory_per_block", &musaDeviceProp::sharedMemPerBlock)
+      .def_property_readonly(
+          "clock_rate",
+          [](const musaDeviceProp&) {
+            int clk = 0;
+            AT_MUSA_CHECK(musaDeviceGetAttribute(
+                &clk, musaDevAttrClockRate, c10::musa::current_device()));
+            return clk;
+          })
+      .def_property_readonly(
+          "memory_clock_rate",
+          [](const musaDeviceProp&) {
+            int mem_clk = 0;
+            AT_MUSA_CHECK(musaDeviceGetAttribute(
+                &mem_clk,
+                musaDevAttrMemoryClockRate,
+                c10::musa::current_device()));
+            return mem_clk;
+          })
+      .def_readonly("memory_bus_width", &musaDeviceProp::memoryBusWidth)
+      .def_readonly(
+          "shared_memory_per_multiprocessor",
+          &musaDeviceProp::sharedMemPerMultiprocessor)
+      .def_readonly(
+          "shared_memory_per_block_optin",
+          &musaDeviceProp::sharedMemPerBlockOptin)
+      .def_readonly(
+          "regs_per_multiprocessor", &musaDeviceProp::regsPerMultiprocessor)
+      .def_readonly("gcnArchName", &musaDeviceProp::name)
+      .def_readonly("uuid", &musaDeviceProp::uuid)
+      .def_readonly("pci_bus_id", &musaDeviceProp::pciBusID)
+      .def_readonly("pci_device_id", &musaDeviceProp::pciDeviceID)
+      .def_readonly("pci_domain_id", &musaDeviceProp::pciDomainID)
+      .def_readonly("L2_cache_size", &musaDeviceProp::l2CacheSize)
       .def("__repr__", [](const musaDeviceProp& prop) {
         std::ostringstream stream;
-        stream << "_MusaDeviceProperties(name='" << prop.name << "', major='"
-               << prop.major << ", minor=" << prop.minor
-               << ", total_memory=" << prop.totalGlobalMem / (1024 * 1024)
+        stream << "_MusaDeviceProperties(name='" << prop.name
+               << "', major=" << prop.major << ", minor=" << prop.minor
+               << ", total_memory=" << prop.totalGlobalMem / (1024ull * 1024)
                << "MB, multi_processor_count=" << prop.multiProcessorCount
+               << ", uuid=" << uuid_to_string(prop.uuid.bytes)
+               << ", pci_bus_id=" << prop.pciBusID
+               << ", pci_device_id=" << prop.pciDeviceID
+               << ", pci_domain_id=" << prop.pciDomainID
+               << ", L2_cache_size=" << prop.l2CacheSize / (1024ull * 1024)
+               << "MB"
                << ")";
         return stream.str();
       });
 
   m.def(
       "_musa_record_memory_history_legacy",
-      static_cast<void (*)(bool, bool, int64_t, bool, bool, bool, bool, bool)>(
+      static_cast<void (*)(
+          bool,
+          bool,
+          int64_t,
+          bool,
+          bool,
+          bool,
+          bool,
+          bool,
+          const std::vector<std::string>&)>(
           torch::musa::_record_memory_history));
 
   m.def(
@@ -582,7 +715,9 @@ static void RegisterMusaDeviceProperties(PyObject* module) {
           size_t,
           bool,
           bool,
-          bool)>(torch::musa::_record_memory_history));
+          bool,
+          const std::vector<std::string>&)>(
+          torch::musa::_record_memory_history));
 }
 
 static void BindGetDeviceProperties(PyObject* module) {
@@ -764,6 +899,53 @@ PyObject* PyMusaSynchronize(PyObject* /* unused */, PyObject* /* unused */) {
   HANDLE_TH_ERRORS
   c10::musa::Synchronize();
   Py_RETURN_NONE;
+  END_HANDLE_TH_ERRORS
+}
+
+PyObject* PyMusaSetSyncDebugMode(PyObject* /* unused */, PyObject* arg) {
+  HANDLE_TH_ERRORS
+  TORCH_WARN_ONCE(
+      "Synchronization debug mode is a prototype feature and does not yet detect all "
+      "synchronizing operations");
+  TORCH_CHECK(
+      THPUtils_checkLong(arg), "invalid argument to set_sync_debug_mode");
+  int64_t debug_mode = THPUtils_unpackLong(arg);
+  TORCH_CHECK(
+      debug_mode >= 0 && debug_mode <= 2,
+      "invalid value of debug_mode, expected one of 0,1,2");
+  c10::musa::SyncDebugMode mode = c10::musa::SyncDebugMode::L_DISABLED;
+  switch (debug_mode) {
+    case 0:
+      mode = c10::musa::SyncDebugMode::L_DISABLED;
+      break;
+    case 1:
+      mode = c10::musa::SyncDebugMode::L_WARN;
+      break;
+    case 2:
+      mode = c10::musa::SyncDebugMode::L_ERROR;
+      break;
+    default:
+      break;
+  }
+  c10::musa::warning_state().set_sync_debug_mode(mode);
+  Py_RETURN_NONE;
+  END_HANDLE_TH_ERRORS
+}
+
+PyObject* PyMusaGetSyncDebugMode(
+    PyObject* /* unused */,
+    PyObject* /* noargs */) {
+  HANDLE_TH_ERRORS
+  switch (c10::musa::warning_state().get_sync_debug_mode()) {
+    case c10::musa::SyncDebugMode::L_DISABLED:
+      return THPUtils_packInt32(0);
+    case c10::musa::SyncDebugMode::L_WARN:
+      return THPUtils_packInt32(1);
+    case c10::musa::SyncDebugMode::L_ERROR:
+      return THPUtils_packInt32(2);
+    default:
+      return THPUtils_packInt32(-1);
+  }
   END_HANDLE_TH_ERRORS
 }
 
@@ -1197,6 +1379,8 @@ static PyMethodDef MusaDeviceMethods[] = {
      METH_NOARGS,
      nullptr},
     {"_musa_synchronize", PyMusaSynchronize, METH_NOARGS, nullptr},
+    {"_musa_set_sync_debug_mode", PyMusaSetSyncDebugMode, METH_O, nullptr},
+    {"_musa_get_sync_debug_mode", PyMusaGetSyncDebugMode, METH_NOARGS, nullptr},
     {"_mudnn_version", PyMusaMudnnVersion, METH_NOARGS, nullptr},
     {"_musa_ipc_collect", PyMusaIPCCollect, METH_NOARGS, nullptr},
     {"_musa_isInBadFork", PyMusaIsInBadFork, METH_NOARGS, nullptr},
@@ -1419,6 +1603,14 @@ static void RegisterMUSAPluggableAllocator(PyObject* module) {
     return c10::musa::MUSACachingAllocator::isHistoryEnabled();
   });
 
+  m.def("_musa_setMemoryMetadata", [](const std::string& metadata) {
+    c10::musa::MUSACachingAllocator::setUserMetadata(metadata);
+  });
+
+  m.def("_musa_getMemoryMetadata", []() {
+    return c10::musa::MUSACachingAllocator::getUserMetadata();
+  });
+
   m.def("_musa_customAllocator", [](uint64_t malloc_ptr, uint64_t free_ptr) {
     using torch::musa::MUSAPluggableAllocator::MallocFuncType;
     using torch::musa::MUSAPluggableAllocator::FreeFuncType;
@@ -1599,24 +1791,18 @@ static void RegisterMemPool(PyObject* module) {
   auto m = py::handle(module).cast<py::module>();
   py::class_<c10::musa::MemPool, std::shared_ptr<c10::musa::MemPool>>(
       m, "_MemPool")
-      .def(
-          py::init([](c10::musa::MUSACachingAllocator::MUSAAllocator* allocator,
-                      bool is_user_created,
-                      bool use_on_oom) {
+      .def(py::init(
+          [](std::shared_ptr<c10::musa::MUSACachingAllocator::MUSAAllocator>
+                 allocator,
+             bool is_user_created,
+             bool use_on_oom,
+             bool no_split) {
             torch::utils::device_lazy_init(at::kMUSA);
             return std::make_shared<::c10::musa::MemPool>(
-                allocator, is_user_created, use_on_oom);
+                std::move(allocator), is_user_created, use_on_oom, no_split);
           }))
       .def_property_readonly("id", &::c10::musa::MemPool::id)
-      .def_property_readonly("allocator", &::c10::musa::MemPool::allocator)
       .def("use_count", &::c10::musa::MemPool::use_count);
-
-  py::class_<
-      c10::musa::MemPoolContext,
-      std::shared_ptr<c10::musa::MemPoolContext>>(m, "_MemPoolContext")
-      .def(py::init<c10::musa::MemPool*>())
-      .def_static(
-          "activate_pool", &c10::musa::MemPoolContext::getActiveMemPool);
 }
 
 static PyObject* module;
@@ -1676,6 +1862,13 @@ PyObject* InitMusaModule() {
   auto py_module = py::reinterpret_borrow<py::module>(module);
   py_module.def(
       "_conv_determine_backend_memory_format", DetermineBackendMemoryFormat);
+
+  py_module.def(
+      "_musa_memcpy_async",
+      &MusaMemcpyAsyncTensor,
+      py::arg("dst"),
+      py::arg("src"),
+      py::arg("use_ce") = false);
 
   return module;
 }

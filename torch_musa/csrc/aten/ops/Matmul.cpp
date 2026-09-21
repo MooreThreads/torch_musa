@@ -162,6 +162,13 @@ void AddMmCheck(const Tensor& self, const Tensor& mat1, const Tensor& mat2) {
       mat2.scalar_type());
 }
 
+Tensor MakeStrictContigAlias(const Tensor& input, bool trans) {
+  Tensor alias = input.alias();
+  alias = trans ? alias.transpose(-2, -1)
+                : FormatContiguous(alias, at::MemoryFormat::Contiguous);
+  return alias;
+}
+
 } // namespace
 
 at::Tensor Dot(const at::Tensor& l, const at::Tensor& r) {
@@ -344,22 +351,16 @@ void MmCall(
     return;
   }
 
-  muHandle& h = GetMudnnHandle();
+  auto& h = GetMudnnHandle();
   bool trans_l = IsTranspose(l);
   bool trans_r = IsTranspose(r);
 
-  // if IsTranspose(mat) is True, we don't need to clone to permutate memory
-  Tensor contiguous_l;
-  Tensor contiguous_r;
-
-  // muDNN don't support broadcast for mat1, we need to remove the broadcast
-  // muDNN need origin mat shape info, so we need to transpose(-2, -1) here
-  Tensor l_alias = l.alias();
-  l_alias = trans_l ? l_alias.transpose(-2, -1)
-                    : FormatContiguous(l_alias, at::MemoryFormat::Contiguous);
+  auto l_alias = MakeStrictContigAlias(l, trans_l);
   auto lmt = CreateMUTensor(l_alias);
-  auto rmt = trans_r ? CreateMUTensor(r.transpose(-2, -1))
-                     : CreateMUTensor(ContiguousRef(r, contiguous_r));
+
+  auto r_alias = MakeStrictContigAlias(r, trans_r);
+  auto rmt = CreateMUTensor(r_alias);
+
   auto out_contig = out.contiguous();
   auto rst = CreateMUTensor(out_contig);
 
@@ -424,19 +425,16 @@ void BmmCall(
     return;
   }
 
-  muHandle& h = GetMudnnHandle();
+  auto& h = GetMudnnHandle();
   bool trans_l = IsTranspose(l);
   bool trans_r = IsTranspose(r);
 
-  // if IsTranspose(mat) is True, we don't need to clone to permutate memory
-  Tensor contiguous_l;
-  Tensor contiguous_r;
+  auto l_alias = MakeStrictContigAlias(l, trans_l);
+  auto lmt = CreateMUTensor(l_alias);
 
-  // muDNN need origin mat shape info, so we need to transpose(-2, -1) here
-  auto lmt = trans_l ? CreateMUTensor(l.transpose(-2, -1))
-                     : CreateMUTensor(ContiguousRef(l, contiguous_l));
-  auto rmt = trans_r ? CreateMUTensor(r.transpose(-2, -1))
-                     : CreateMUTensor(ContiguousRef(r, contiguous_r));
+  auto r_alias = MakeStrictContigAlias(r, trans_r);
+  auto rmt = CreateMUTensor(r_alias);
+
   auto rst = CreateMUTensor(out);
 
   // Run muDNN BMM with `c = alpha * a @ b + beta * c`
@@ -695,15 +693,16 @@ Tensor& ScaledMatmulOut(
   IntArrayRef mat2_sizes = mat2.sizes();
   at::native::resize_output(out, {mat1_sizes[0], mat2_sizes[1]});
 
-  muHandle& h = GetMudnnHandle();
-  Tensor contiguous_l;
-  Tensor contiguous_r;
+  auto& h = GetMudnnHandle();
   bool trans_l = IsTranspose(mat1);
   bool trans_r = IsTranspose(mat2);
-  muTensor lmt = trans_l ? CreateMUTensor(mat1.transpose(-2, -1))
-                         : CreateMUTensor(ContiguousRef(mat1, contiguous_l));
-  muTensor rmt = trans_r ? CreateMUTensor(mat2.transpose(-2, -1))
-                         : CreateMUTensor(ContiguousRef(mat2, contiguous_r));
+
+  auto l_alias = MakeStrictContigAlias(mat1, trans_l);
+  auto lmt = CreateMUTensor(l_alias);
+
+  auto r_alias = MakeStrictContigAlias(mat2, trans_r);
+  auto rmt = CreateMUTensor(r_alias);
+
   muTensor bmt = CreateMUTensor(bias_);
   muTensor rst = CreateMUTensor(out);
   muTensor sa = CreateMUTensor(scale_a);

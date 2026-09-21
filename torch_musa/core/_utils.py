@@ -61,6 +61,7 @@ def _dummy_type(name: str) -> type:
 def _get_musa_arch() -> int:
     """Get musa arch string, 21 for QY1, 22 for QY2, and so on."""
     user_defined_musa_arch = os.getenv("TORCH_MUSA_ARCH", None)
+    skip_check = os.getenv("TORCH_MUSA_SKIP_ARCH_CHECK", None)
     if user_defined_musa_arch is None:
         try:
             properties = torch_musa.get_device_properties(0)
@@ -80,11 +81,12 @@ def _get_musa_arch() -> int:
     try:
         musa_arch = int(user_defined_musa_arch)
         print(f"Using pre-defined musa arch: {musa_arch}")
-        assert musa_arch in [
-            21,
-            22,
-            31,
-        ], f"'TORCH_MUSA_ARCH' should be a string of int: 21, 22, or 31, got {musa_arch}"
+        if not skip_check:
+            assert musa_arch in [
+                21,
+                22,
+                31,
+            ], f"'TORCH_MUSA_ARCH' should be a string of int: 21, 22, or 31, got {musa_arch}"
         return musa_arch
     except Exception as err:  # pylint: disable=W0718
         print("'TORCH_MUSA_ARCH' should be a string of int: 21, 22, or 31, got ")

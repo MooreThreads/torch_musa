@@ -68,17 +68,15 @@ def test_flash_sdp_backward(case, dtype, func, mask_type, is_causal, explicit_sc
     """
     # embedding_dim // q_head_num
     head_dim = case[-3] // case[-2]
-    if head_dim not in (64, 128, 256, 512):
-        pytest.skip(
-            reason="Flash backward doesn't support case with head dim not in [64, 128, 256, 512]."
-        )
+    if head_dim not in (64, 128, 200, 256, 384, 512):
+        pytest.skip(reason="Flash backward doesn't support case with this head dim.")
     if testing.get_musa_arch() < 31 and head_dim > 128:
         pytest.skip(
             reason="Flash backward with head dim > 128 is only supported on arch 31."
         )
-    if head_dim == 512 and not is_causal and mask_type != -1:
+    if head_dim > 256 and not is_causal and mask_type != -1:
         pytest.skip(
-            reason="Flash backward doesn't support explicit attn_mask with head dim 512."
+            reason="Flash backward doesn't support explicit attn_mask with head dim in (256, 512]."
         )
     with torch.nn.attention.sdpa_kernel(torch.nn.attention.SDPBackend.FLASH_ATTENTION):
         input_data = gen_input_data(case, mask_type, dtype, is_causal, explicit_scale)
@@ -87,8 +85,8 @@ def test_flash_sdp_backward(case, dtype, func, mask_type, is_causal, explicit_sc
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.skipif(
-    testing.get_musa_arch() != 31,
-    reason="SKIP this test if in GPU with arch not equal 31.",
+    testing.get_musa_arch() < 31,
+    reason="SKIP this test if in GPU with arch below 31.",
 )
 @pytest.mark.parametrize("dtype", [torch.bfloat16])
 @pytest.mark.parametrize("func", [sdp_func])

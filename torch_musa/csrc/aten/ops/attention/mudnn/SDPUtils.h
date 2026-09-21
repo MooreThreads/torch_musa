@@ -116,46 +116,81 @@ inline bool check_musa_arch(const sdp_params& params, bool is_debug) {
   return true;
 }
 
+inline bool check_musa_varlen_input(const sdp_params& params, bool is_debug) {
+  const auto arch = at::musa::getMUSAArch();
+  if (arch < 310) {
+    if (is_debug) {
+      TORCH_WARN("MUSA varlen flash attention requires arch >= 310");
+    }
+    return false;
+  }
+
+  const int64_t qk_head_dim = params.query.size(-1);
+  const int64_t v_head_dim = params.value.size(-1);
+  const bool head_ok = (qk_head_dim <= 128 && v_head_dim <= 128) ||
+      (qk_head_dim == 192 && v_head_dim == 128);
+  const bool even = (v_head_dim % 2 == 0);
+  if (!head_ok || !even) {
+    if (is_debug) {
+      TORCH_WARN(
+          "Current headdim is not support in current varlen flash attention");
+    }
+    return false;
+  }
+  if (params.dropout > 0.0) {
+    if (is_debug) {
+      TORCH_WARN(
+          "Dropout > 0.0 is not supported in current varlen flash attention");
+    }
+    return false;
+  }
+  if (params.attn_mask.has_value()) {
+    if (is_debug) {
+      TORCH_WARN(
+          "Attn_mask is not supported in current varlen flash attention");
+    }
+    return false;
+  }
+  return true;
+}
+
 inline bool check_musa_attention_input(
     const sdp_params& params,
     bool is_debug) {
-  const int64_t qk_head_dim = params.query.size(-1);
-  const int64_t v_head_dim = params.value.size(-1);
+  const auto qk_head_dim = params.query.sym_size(-1);
+  const auto v_head_dim = params.value.sym_size(-1);
 
   const auto arch = at::musa::getMUSAArch();
   const bool fwd_only = (!input_requires_grad(params));
+  const bool has_mask = params.attn_mask.has_value();
+  const bool has_dropout = (params.dropout > 0.0);
+  const bool sym = (qk_head_dim == v_head_dim);
 
-  const bool is_head_dim_qkv_128 = (qk_head_dim <= 128 && v_head_dim <= 128);
-  const bool is_head_dim_qkv_160 = (qk_head_dim == 160 && v_head_dim == 160);
-  const bool is_head_dim_qkv_256 = (qk_head_dim == 256 && v_head_dim == 256);
-  // const bool is_head_dim_qkv_384 = (qk_head_dim == 384 && v_head_dim == 384);
-  const bool is_head_dim_qkv_512 = (qk_head_dim == 512 && v_head_dim == 512);
-  const bool is_head_dim_qk192_v128 = (qk_head_dim == 192 && v_head_dim == 128);
+  const bool less_equal_128 = (qk_head_dim <= 128 && v_head_dim <= 128);
+  const bool is_160 = (qk_head_dim == 160 && v_head_dim == 160);
+  const bool is_192_128 = (qk_head_dim == 192 && v_head_dim == 128);
 
-  bool enable = is_head_dim_qkv_128;
+  bool enable = false;
   if (arch == 220) {
+    const bool is_160_ok = is_160 && !params.is_causal && !has_mask;
+    enable = sym && !has_dropout &&
+        (fwd_only ? (less_equal_128 || is_160_ok)
+                  : (less_equal_128 && qk_head_dim >= 64));
+  } else if (arch >= 310) {
     if (fwd_only) {
-      enable = enable || is_head_dim_qkv_160;
+      enable = (qk_head_dim <= 512 && v_head_dim <= 512);
     } else {
-      enable = enable && (qk_head_dim >= 64 && v_head_dim >= 64);
+      const bool bwd_256 = sym && qk_head_dim > 192 && qk_head_dim <= 256;
+      const bool bwd_512 = qk_head_dim > 256 && qk_head_dim <= 512 &&
+          v_head_dim > 256 && v_head_dim <= 512 && !has_mask && !has_dropout;
+      enable = less_equal_128 || is_160 || is_192_128 || bwd_256 || bwd_512;
     }
-  } else if (arch == 310) {
-    enable = enable || is_head_dim_qkv_160;
-    enable = enable || is_head_dim_qkv_256;
-    // enable = enable || is_head_dim_qkv_384;
-    enable = enable || is_head_dim_qkv_512;
-    enable = enable || is_head_dim_qk192_v128;
   }
 
-  if (params.dropout > 0.0 && is_head_dim_qkv_128) {
-    if (is_debug) {
-      TORCH_WARN(
-          "Flash SDPA does not support dropout with qk_head_dim: ",
-          qk_head_dim,
-          " v_head_dim: ",
-          v_head_dim);
-    }
-    return false;
+  // mutlass tme require head dim % 8 == 0
+  if ((enable && has_dropout) &&
+      !(qk_head_dim % 8 == 0 && v_head_dim % 8 == 0)) {
+    enable = false;
   }
 
   if (!enable) {
@@ -211,6 +246,16 @@ inline bool check_musa_attn_mask(const sdp_params& params, bool is_debug) {
 }
 
 inline bool use_flash_attention(const sdp_params& params) {
+  static const std::array<at::ScalarType, 2> musa_allowed_dtypes{
+      at::kHalf, at::kBFloat16};
+  const bool is_nested = params.query.is_nested() || params.key.is_nested() ||
+      params.value.is_nested();
+  if (is_nested) {
+    return check_runtime_disabled_flash(params, true) &&
+        check_musa_varlen_input(params, true) &&
+        check_tensor_dtype(params, musa_allowed_dtypes, true);
+  }
+
   using SDPParamsCheckFunc = bool (*)(const sdp_params&, bool);
   constexpr int conditions_num = 5;
   constexpr std::array<SDPParamsCheckFunc, conditions_num> conditions{
@@ -226,8 +271,6 @@ inline bool use_flash_attention(const sdp_params& params) {
   if (!res) {
     return false;
   }
-  static const std::array<at::ScalarType, 2> musa_allowed_dtypes{
-      at::kHalf, at::kBFloat16};
   return check_tensor_dtype(params, musa_allowed_dtypes, true);
 }
 

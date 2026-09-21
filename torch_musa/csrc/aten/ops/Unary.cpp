@@ -56,29 +56,39 @@ UNARY_FLOAT_COMMON_META(AtanMeta)
 
 #undef UNARY_FLOAT_COMMON_META
 
-#define UNARY_FLOAT_COMMON_IMPL(FUNC, MODE)                         \
+#define UNARY_FLOAT_COMMON_IMPL(FUNC, MODE, STUB)                   \
   void FUNC(MusaTensorIterator& iter, const std::string& op_name) { \
+    const auto dtype = iter.common_dtype();                         \
+    if (c10::isComplexType(dtype) || dtype == ScalarType::Double) { \
+      native::STUB##_stub(iter.device_type(), iter);                \
+      return;                                                       \
+    }                                                               \
     UnaryCall(iter, MODE, op_name);                                 \
   }
 
-UNARY_FLOAT_COMMON_IMPL(ErfImpl, UNARY_MODE::ERF)
-UNARY_FLOAT_COMMON_IMPL(LogImpl, UNARY_MODE::LOG)
-UNARY_FLOAT_COMMON_IMPL(Log2Impl, UNARY_MODE::LOG2)
-UNARY_FLOAT_COMMON_IMPL(Log10Impl, UNARY_MODE::LOG10)
-UNARY_FLOAT_COMMON_IMPL(SqrtImpl, UNARY_MODE::SQRT)
-UNARY_FLOAT_COMMON_IMPL(RsqrtImpl, UNARY_MODE::RSQRT)
-UNARY_FLOAT_COMMON_IMPL(TanhImpl, UNARY_MODE::TANH)
-UNARY_FLOAT_COMMON_IMPL(TanImpl, UNARY_MODE::TAN)
-UNARY_FLOAT_COMMON_IMPL(SigmoidImpl, UNARY_MODE::SIGMOID)
-UNARY_FLOAT_COMMON_IMPL(ExpImpl, UNARY_MODE::EXP)
-UNARY_FLOAT_COMMON_IMPL(SinImpl, UNARY_MODE::SIN)
-UNARY_FLOAT_COMMON_IMPL(CosImpl, UNARY_MODE::COS)
-UNARY_FLOAT_COMMON_IMPL(AcosImpl, UNARY_MODE::ACOS)
-UNARY_FLOAT_COMMON_IMPL(AtanImpl, UNARY_MODE::ATAN)
+UNARY_FLOAT_COMMON_IMPL(ErfImpl, UNARY_MODE::ERF, erf)
+UNARY_FLOAT_COMMON_IMPL(LogImpl, UNARY_MODE::LOG, log)
+UNARY_FLOAT_COMMON_IMPL(Log2Impl, UNARY_MODE::LOG2, log2)
+UNARY_FLOAT_COMMON_IMPL(Log10Impl, UNARY_MODE::LOG10, log10)
+UNARY_FLOAT_COMMON_IMPL(SqrtImpl, UNARY_MODE::SQRT, sqrt)
+UNARY_FLOAT_COMMON_IMPL(RsqrtImpl, UNARY_MODE::RSQRT, rsqrt)
+UNARY_FLOAT_COMMON_IMPL(TanhImpl, UNARY_MODE::TANH, tanh)
+UNARY_FLOAT_COMMON_IMPL(TanImpl, UNARY_MODE::TAN, tan)
+UNARY_FLOAT_COMMON_IMPL(SigmoidImpl, UNARY_MODE::SIGMOID, sigmoid)
+UNARY_FLOAT_COMMON_IMPL(ExpImpl, UNARY_MODE::EXP, exp)
+UNARY_FLOAT_COMMON_IMPL(SinImpl, UNARY_MODE::SIN, sin)
+UNARY_FLOAT_COMMON_IMPL(CosImpl, UNARY_MODE::COS, cos)
+UNARY_FLOAT_COMMON_IMPL(AcosImpl, UNARY_MODE::ACOS, acos)
+UNARY_FLOAT_COMMON_IMPL(AtanImpl, UNARY_MODE::ATAN, atan)
 
 #undef UNARY_FLOAT_COMMON_IMPL
 
 void ReciprocalImpl(MusaTensorIterator& iter, const std::string& op_name) {
+  const auto dtype = iter.common_dtype();
+  if (c10::isComplexType(dtype) || dtype == ScalarType::Double) {
+    native::reciprocal_stub(iter.device_type(), iter);
+    return;
+  }
   const auto alpha = Scalar(static_cast<double>(-1.0));
   UnaryAlphaCall(iter, alpha, UNARY_MODE::POW, op_name);
 }

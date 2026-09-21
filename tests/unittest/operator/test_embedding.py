@@ -218,7 +218,7 @@ def test_embedding_bwd(dtype, scale_grad_by_freq, input_shape, fixed_indices):
     reason="bf16 is not supported on arch older than qy2",
 )
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
-def test_embedding_dense_backward_deterministic_algorithms():
+def test_embedding_dense_backward_determinism():
     indices = torch.tensor(
         [0] * 133 + [1 + (position % 156) for position in range(2063 - 133)],
         dtype=torch.int64,
@@ -226,53 +226,40 @@ def test_embedding_dense_backward_deterministic_algorithms():
     )
     positions = torch.arange(2063 * 128, dtype=torch.float32).reshape(2063, 128)
     grad = (
-        torch.sin(positions * 0.00037) * 0.125
-        + torch.cos(positions * 0.00011) * 0.0625
+        torch.sin(positions * 0.00037) * 0.125 + torch.cos(positions * 0.00011) * 0.0625
     ).to(device="musa", dtype=torch.bfloat16)
 
-    deterministic_algorithms_enabled = (
-        torch.are_deterministic_algorithms_enabled()
-    )
-    deterministic_algorithms_warn_only_enabled = (
-        torch.is_deterministic_algorithms_warn_only_enabled()
-    )
+    deterministic_enabled = torch.are_deterministic_algorithms_enabled()
+    deterministic_warn_only = torch.is_deterministic_algorithms_warn_only_enabled()
     try:
         torch.use_deterministic_algorithms(True)
         outputs = [
-            torch.ops.aten.embedding_dense_backward(
-                grad, indices, 512, -1, False
-            ).cpu()
+            torch.ops.aten.embedding_dense_backward(grad, indices, 512, -1, False).cpu()
             for _ in range(8)
         ]
     finally:
         torch.use_deterministic_algorithms(
-            deterministic_algorithms_enabled,
-            warn_only=deterministic_algorithms_warn_only_enabled,
+            deterministic_enabled,
+            warn_only=deterministic_warn_only,
         )
 
     assert all(torch.equal(outputs[0], output) for output in outputs[1:])
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
-def test_embedding_dense_backward_deterministic_algorithms_empty_indices():
+def test_embedding_dense_backward_determinism_empty():
     indices = torch.empty((0,), dtype=torch.int64, device="musa")
     grad = torch.empty((0, 128), dtype=torch.float32, device="musa")
 
-    deterministic_algorithms_enabled = (
-        torch.are_deterministic_algorithms_enabled()
-    )
-    deterministic_algorithms_warn_only_enabled = (
-        torch.is_deterministic_algorithms_warn_only_enabled()
-    )
+    deterministic_enabled = torch.are_deterministic_algorithms_enabled()
+    deterministic_warn_only = torch.is_deterministic_algorithms_warn_only_enabled()
     try:
         torch.use_deterministic_algorithms(True)
-        output = torch.ops.aten.embedding_dense_backward(
-            grad, indices, 512, -1, False
-        )
+        output = torch.ops.aten.embedding_dense_backward(grad, indices, 512, -1, False)
     finally:
         torch.use_deterministic_algorithms(
-            deterministic_algorithms_enabled,
-            warn_only=deterministic_algorithms_warn_only_enabled,
+            deterministic_enabled,
+            warn_only=deterministic_warn_only,
         )
 
     assert output.shape == (512, 128)

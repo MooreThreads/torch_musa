@@ -132,6 +132,8 @@ def function(input_data, dtype, func, train=False):
         abs_diff, rel_diff = (2e-3, 5e-4)
     if dtype == torch.float and repr(func) == "GELU(approximate='none')":
         abs_diff = 5e-6
+    if dtype == torch.bfloat16 and func == torch.rsqrt:
+        abs_diff, rel_diff = (2e-1, 5e-3)
     comparator = testing.DefaultComparator(abs_diff, rel_diff, equal_nan=True)
     test = testing.OpTest(
         func=func,
@@ -217,6 +219,26 @@ def test_all_basic_funcs_out(input_data, dtype, func):
     )
     test.check_address()
     test.check_res(cpu_to_fp32=True)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_datas)
+@pytest.mark.parametrize("dtype", [torch.float64])
+@pytest.mark.parametrize("func", [torch.log])
+def test_log_double(input_data, dtype, func):
+    input_data = copy.deepcopy(input_data)
+    input_data["input"] = input_data["input"].clone().uniform_(0, 20).to(dtype)
+    comparator = testing.DefaultComparator(
+        abs_diff=1e-12, rel_diff=1e-12, equal_nan=True
+    )
+    test = testing.OpTest(
+        func=func,
+        input_args=input_data,
+        comparators=comparator,
+    )
+    test.check_result()
+    test.check_out_ops()
+    test.check_grad_fn()
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)

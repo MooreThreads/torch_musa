@@ -5,6 +5,7 @@ import math
 import os
 import sys
 import sysconfig
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -1440,6 +1441,7 @@ except RuntimeError as e:
             capture_output=True,
             text=True,
             env=env,
+            cwd=tempfile.gettempdir(),
         )
 
         error_message = result.stdout + result.stderr
@@ -1602,6 +1604,7 @@ except RuntimeError as e:
             capture_output=True,
             text=True,
             env=env,
+            cwd=tempfile.gettempdir(),
         )
 
         error_message = result.stdout + result.stderr

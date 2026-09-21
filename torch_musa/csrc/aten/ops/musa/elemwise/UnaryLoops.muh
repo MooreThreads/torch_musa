@@ -5,6 +5,7 @@
 #include <c10/core/Contiguity.h>
 
 #include "torch_musa/csrc/aten/musa/MUSAContextLight.h"
+#include "torch_musa/csrc/aten/ops/musa/OffsetCalculator.muh"
 #include "torch_musa/csrc/aten/ops/musa/elemwise/Functor.muh"
 #include "torch_musa/csrc/aten/ops/musa/elemwise/MemoryAccess.muh"
 #include "torch_musa/csrc/aten/utils/TensorIterator.h"
@@ -216,7 +217,7 @@ inline void dispatch_uncontig(
       numel > 0 && numel <= std::numeric_limits<int32_t>::max());
 
   const auto [io_vlen, grid, block] = default_contig_config(iter);
-  auto offset_calc = make_offset_calculator<2, true>(iter);
+  auto offset_calc = at::musa::make_offset_calculator<2, true>(iter);
   auto stream = at::musa::getCurrentMUSAStream();
 
   if constexpr (nocast) {
@@ -248,8 +249,6 @@ inline void gpu_kernel_impl_nocast(
     MusaTensorIterator& iter,
     const func_t& f,
     array_t data) {
-  iter.coalesce_dimensions();
-
   if (iter.is_contiguous()) {
     unary::dispatch_contig<true>(iter, f, data);
     return;
@@ -263,8 +262,6 @@ inline void gpu_kernel_impl(
     MusaTensorIterator& iter,
     const func_t& f,
     array_t data) {
-  iter.coalesce_dimensions();
-
   if (iter.is_contiguous()) {
     unary::dispatch_contig<false>(iter, f, data);
     return;

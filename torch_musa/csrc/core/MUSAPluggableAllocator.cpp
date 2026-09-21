@@ -38,7 +38,7 @@ MUSAPluggableAllocator::MUSAPluggableAllocator(MUSAPluggableAllocator& other)
       record_stream_fn_(other.record_stream_fn_),
       begin_allocate_to_pool_fn_(other.begin_allocate_to_pool_fn_),
       end_allocate_to_pool_fn_(other.end_allocate_to_pool_fn_),
-      relase_pool_fn_(other.relase_pool_fn_) {}
+      release_pool_fn_(other.release_pool_fn_) {}
 
 void MUSAPluggableAllocator::set_init_fn(std::function<void(int)> init_fn) {
   init_fn_ = std::move(init_fn);
@@ -77,7 +77,7 @@ void MUSAPluggableAllocator::set_end_allocate_to_pool_fn(
 
 void MUSAPluggableAllocator::set_release_pool(
     std::function<void(int, c10::musa::MempoolId_t)> capture_destroy_fn) {
-  relase_pool_fn_ = std::move(capture_destroy_fn);
+  release_pool_fn_ = std::move(capture_destroy_fn);
 }
 
 void* MUSAPluggableAllocator::malloc(
@@ -165,6 +165,13 @@ double MUSAPluggableAllocator::getMemoryFraction(c10::DeviceIndex device) {
       "If you need it, please file an issue describing your use case.");
 }
 
+std::vector<c10::musa::MUSACachingAllocator::StreamSegmentSize>
+MUSAPluggableAllocator::getExpandableSegmentSizes(c10::DeviceIndex device) {
+  TORCH_CHECK(
+      false,
+      "MUSAPluggableAllocator does not yet support getExpandableSegmentSizes.");
+}
+
 void MUSAPluggableAllocator::emptyCache(
     /*unused*/ c10::musa::MempoolId_t mempool_id) {
   if (reset_fn_) {
@@ -220,7 +227,8 @@ void MUSAPluggableAllocator::resetPeakStats(c10::DeviceIndex device) {
 }
 
 c10::musa::MUSACachingAllocator::SnapshotInfo MUSAPluggableAllocator::snapshot(
-    c10::musa::MempoolId_t mempool) {
+    c10::musa::MempoolId_t mempool,
+    bool include_traces) {
   TORCH_CHECK(
       false,
       "MUSAPluggableAllocator does not yet support snapshot. "
@@ -263,8 +271,8 @@ void MUSAPluggableAllocator::endAllocateToPool(
 void MUSAPluggableAllocator::releasePool(
     c10::DeviceIndex device,
     c10::musa::MempoolId_t mempool_id) {
-  if (relase_pool_fn_) {
-    relase_pool_fn_(device, mempool_id);
+  if (release_pool_fn_) {
+    release_pool_fn_(device, mempool_id);
   }
 }
 
@@ -273,7 +281,8 @@ void MUSAPluggableAllocator::recordHistory(
     c10::musa::MUSACachingAllocator::CreateContextFn context_recorder,
     size_t alloc_trace_max_entries,
     c10::musa::MUSACachingAllocator::RecordContext when,
-    bool clearHistory) {
+    bool clearHistory,
+    const std::vector<std::string>& skip_actions) {
   TORCH_CHECK(
       false,
       "MUSAPluggableAllocator does not yet support recordHistory. "

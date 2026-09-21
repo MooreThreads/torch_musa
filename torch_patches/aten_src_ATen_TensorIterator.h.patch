@@ -1,11 +1,11 @@
 diff --git a/aten/src/ATen/TensorIterator.h b/aten/src/ATen/TensorIterator.h
-index 0e49151..abf274d 100644
+index d8eebd4..970fb2e 100644
 --- a/aten/src/ATen/TensorIterator.h
 +++ b/aten/src/ATen/TensorIterator.h
 @@ -20,6 +20,10 @@ class OptionalTensorRef;
  using NameVector = SmallVector<Dimname, kDimVectorStaticSize>;
  } // namespace at
- 
+
 +namespace at::musa {
 +class MusaTensorIterator;
 +} // namespace at::musa
@@ -13,19 +13,57 @@ index 0e49151..abf274d 100644
  // TensorIterator is a helper class for element-wise operations, such as
  // arithmetic, comparisons, and trigonometric functions. It handles
  // broadcasting and type conversions of operands.
-@@ -239,6 +243,7 @@ enum class FastSetupType : uint8_t {
+@@ -140,6 +144,10 @@ struct TORCH_API OperandInfo {
+   /// Stride after broadcasting. The stride is in bytes, not number of elements.
+   StrideVector stride_bytes;
+
++  /// Stride after broadcasting in number of elements.
++  /// Used by MUSA-specific iterator paths that need element-based strides.
++  StrideVector element_strides;
++
+   /// The desired device and type for the operand. For inputs, this specifies
+   /// that the input should be converted to this type if necessary. For outputs,
+   /// this specifies which type to allocate. target_dtype and device are
+@@ -239,6 +247,7 @@ enum class FastSetupType : uint8_t {
    NONE,
    CONTIGUOUS,
    CHANNELS_LAST,
 +  CHANNELS_LAST_3D,
    NON_OVERLAPPING_DENSE
  };
- 
-@@ -784,6 +789,7 @@ class TORCH_API TensorIteratorConfig final {
+
+@@ -306,6 +315,15 @@ struct TORCH_API TensorIteratorBase : public impl::MetaBase {
+   IntArrayRef strides(int64_t arg) const {
+     return operands_[arg].stride_bytes;
+   }
++  IntArrayRef strides_element(int64_t arg) const {
++    return operands_[arg].element_strides;
++  }
++  IntArrayRef element_shape() const {
++    return element_shape_;
++  }
++  int element_ndim() const {
++    return static_cast<int>(element_shape_.size());
++  }
+   void* data_ptr(int64_t arg) const;
+   ScalarType dtype(int64_t arg = 0) const {
+     return operands_[arg].current_dtype;
+@@ -665,6 +683,10 @@ struct TORCH_API TensorIteratorBase : public impl::MetaBase {
+   /// e.g., via narrow or select_all_keeping_dim.
+   DimVector shape_;
+
++  /// MUSA-native computation shape matching OperandInfo::element_strides.
++  /// TensorIteratorBase::shape_ remains the byte-stride/Torch-order view.
++  DimVector element_shape_;
++
+   /// Temporarily records the permutation computed by reorder_dimensions.
+   /// This permutation maps the computation output dimension (dim) to
+   /// the original true output dimension (perm_[dim]).  It is used by
+@@ -784,6 +806,7 @@ class TORCH_API TensorIteratorConfig final {
   public:
    friend struct TensorIteratorBase;
    friend struct TensorIterator;
 +  friend class musa::MusaTensorIterator;
- 
+
    TensorIteratorConfig() = default;
- 
+

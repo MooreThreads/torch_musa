@@ -7,6 +7,7 @@
 
 #include <musa_runtime.h>
 
+#include "torch_musa/csrc/core/MUSAEvent.h"
 #include "torch_musa/csrc/core/MUSAFunctions.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
 #include "torch_musa/csrc/core/MusaIPCTypes.h"
@@ -185,10 +186,8 @@ static PyObject* THMPStorageNewSharedMusa(PyObject* _unused, PyObject* args) {
     }
     auto ipc_event_handle = reinterpret_cast<const musaIpcEventHandle_t*>(
         s_ipc_event_handle.c_str());
-    musaEvent_t event;
-    C10_MUSA_CHECK(musaIpcOpenEventHandle(&event, *ipc_event_handle));
-    C10_MUSA_CHECK(
-        musaStreamWaitEvent(c10::musa::getCurrentMUSAStream(device), event, 0));
+    at::musa::MUSAEvent event(device, ipc_event_handle);
+    event.block(c10::musa::getCurrentMUSAStream(device));
   }
 
   std::string s_handle = THMPStorageBytesAsHandleString(_handle);
@@ -227,8 +226,6 @@ static PyObject* THMPStorageNewSharedMusa(PyObject* _unused, PyObject* args) {
       +[](void* ctx_) {
         std::unique_ptr<IpcDeleterContext> ctx(
             static_cast<IpcDeleterContext*>(ctx_));
-        ctx->received_data.shared_ptr_.reset();
-
         // Sync default stream to make sure all operations related to the
         // storage is finished (otherwise another process may reuse memory and
         // corrupt data)
@@ -244,6 +241,7 @@ static PyObject* THMPStorageNewSharedMusa(PyObject* _unused, PyObject* args) {
         // impact)
         c10::musa::stream_synchronize(
             c10::musa::getCurrentMUSAStream(ctx->device));
+        ctx->received_data.shared_ptr_.reset();
 
         // We don't want to break existing code, so resource deletion is best
         // effort basis. Exception expected if producer process terminated

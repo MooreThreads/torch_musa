@@ -1,6 +1,8 @@
 """Test _grouped_mm operators."""
 
 # pylint: disable=missing-function-docstring, redefined-outer-name, C0103
+import gc
+
 import pytest
 import torch
 
@@ -118,6 +120,16 @@ GROUPED_MM_CASES = [
         "a_shape": (32, 48),
         "b_shape": (48, 64),
         "offs": [16, 32, 48],
+        "a_dim": 2,
+        "b_dim": 2,
+        "a_transposed": False,
+        "b_transposed": True,
+    },
+    {
+        "name": "2d_2d_zero_contraction_group",
+        "a_shape": (32, 48),
+        "b_shape": (48, 64),
+        "offs": [16, 16, 48],
         "a_dim": 2,
         "b_dim": 2,
         "a_transposed": False,
@@ -295,6 +307,37 @@ def test_grouped_mm(case, dtype, use_out_dtype):
     comparator = _get_comparator(dtype)
     assert musa_out.dtype == expected_dtype
     assert comparator(expected, musa_out.cpu())
+
+
+@pytest.mark.skipif(
+    testing.get_musa_arch() < 22, reason="bf16 is not supported on arch less than 22"
+)
+def test_grouped_mm_zero_contraction_group_output_is_initialized():
+    dtype = torch.bfloat16
+    mat_a = torch.randn(32, 48, dtype=dtype)
+    mat_b = torch.randn(64, 48, dtype=dtype).t()
+    offs = torch.tensor([16, 16, 48], dtype=torch.int32)
+    expected = _manual_grouped_mm(mat_a.float(), mat_b.float(), offs, out_dtype=dtype)
+
+    musa_a = mat_a.musa()
+    musa_b = mat_b.musa()
+    musa_offs = offs.musa()
+    poisoned_outputs = [
+        torch.full(expected.shape, float("nan"), dtype=dtype, device="musa")
+        for _ in range(16)
+    ]
+    torch.musa.synchronize()
+    poisoned_ptrs = {tensor.data_ptr() for tensor in poisoned_outputs}
+    del poisoned_outputs
+    gc.collect()
+
+    musa_out = torch._grouped_mm(musa_a, musa_b, musa_offs, None, None)
+    torch.musa.synchronize()
+
+    assert musa_out.data_ptr() in poisoned_ptrs
+    musa_out_cpu = musa_out.cpu()
+    assert torch.count_nonzero(musa_out_cpu[1]).item() == 0
+    assert _get_comparator(dtype)(expected, musa_out_cpu)
 
 
 @pytest.mark.skipif(

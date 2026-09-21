@@ -53,6 +53,22 @@ Tensor GetScaleSlice(
   return scale[group_idx];
 }
 
+Tensor Prepare(const Tensor& old, bool trans = false) {
+  TORCH_INTERNAL_ASSERT(old.dim() == 2);
+  const auto dim0 = old.size(-2), dim1 = old.size(-1);
+  if ((dim0 != 1) && (dim1 != 1)) {
+    return old;
+  }
+
+  auto tmp = trans ? old.transpose(-1, -2) : old.alias();
+  if (!tmp.is_contiguous()) {
+    return old;
+  }
+
+  auto ret = FormatContiguous(tmp, at::MemoryFormat::Contiguous);
+  return trans ? ret.transpose(-1, -2) : ret;
+}
+
 GroupedMatmulSlices BuildGroupedMatmulSlices(
     const Tensor& mat_a,
     const Tensor& mat_b,
@@ -102,30 +118,30 @@ GroupedMatmulSlices BuildGroupedMatmulSlices(
   int64_t group_start_idx = 0;
   for (int64_t group_idx = 0; group_idx < groups; ++group_idx) {
     if (a3_b3) {
-      slices.a_slices.emplace_back(mat_a[group_idx]);
-      slices.b_slices.emplace_back(mat_b[group_idx]);
-      slices.o_slices.emplace_back(out[group_idx]);
+      slices.a_slices.emplace_back(Prepare(mat_a[group_idx], transa));
+      slices.b_slices.emplace_back(Prepare(mat_b[group_idx], transb));
+      slices.o_slices.emplace_back(Prepare(out[group_idx]));
       continue;
     }
     const int64_t group_end_idx = offs_cpu[group_idx].item<int>();
     if (a2_b3) {
       slices.a_slices.emplace_back(
-          mat_a.slice(0, group_start_idx, group_end_idx));
-      slices.b_slices.emplace_back(mat_b[group_idx]);
+          Prepare(mat_a.slice(0, group_start_idx, group_end_idx), transa));
+      slices.b_slices.emplace_back(Prepare(mat_b[group_idx], transb));
       slices.o_slices.emplace_back(
-          out.slice(0, group_start_idx, group_end_idx));
+          Prepare(out.slice(0, group_start_idx, group_end_idx)));
     } else if (a3_b2) {
-      slices.a_slices.emplace_back(mat_a[group_idx]);
+      slices.a_slices.emplace_back(Prepare(mat_a[group_idx], transa));
       slices.b_slices.emplace_back(
-          mat_b.slice(1, group_start_idx, group_end_idx));
+          Prepare(mat_b.slice(1, group_start_idx, group_end_idx), transb));
       slices.o_slices.emplace_back(
-          out.slice(1, group_start_idx, group_end_idx));
+          Prepare(out.slice(1, group_start_idx, group_end_idx)));
     } else {
       slices.a_slices.emplace_back(
-          mat_a.slice(1, group_start_idx, group_end_idx));
+          Prepare(mat_a.slice(1, group_start_idx, group_end_idx), transa));
       slices.b_slices.emplace_back(
-          mat_b.slice(0, group_start_idx, group_end_idx));
-      slices.o_slices.emplace_back(out[group_idx]);
+          Prepare(mat_b.slice(0, group_start_idx, group_end_idx), transb));
+      slices.o_slices.emplace_back(Prepare(out[group_idx]));
     }
     group_start_idx = group_end_idx;
   }
@@ -165,6 +181,46 @@ GroupedMatmulSlices BuildGroupedMatmulSlices(
   }
 
   return slices;
+}
+
+GroupedMatmulSlices FilterZeroSizedGroups(GroupedMatmulSlices slices) {
+  GroupedMatmulSlices active_slices;
+  const auto groups = static_cast<int64_t>(slices.a_slices.size());
+  active_slices.a_slices.reserve(groups);
+  active_slices.b_slices.reserve(groups);
+  active_slices.o_slices.reserve(groups);
+  active_slices.sa_slices.reserve(groups);
+  active_slices.sb_slices.reserve(groups);
+  active_slices.so_slices.reserve(groups);
+
+  for (int64_t group_idx = 0; group_idx < groups; ++group_idx) {
+    auto& a_slice = slices.a_slices[group_idx];
+    auto& b_slice = slices.b_slices[group_idx];
+    auto& o_slice = slices.o_slices[group_idx];
+
+    if (o_slice.numel() == 0) {
+      continue;
+    }
+    // muDNN does not initialize the output of a grouped matmul whose
+    // contraction dimension is zero. Fill the mathematical zero here and do
+    // not pass that group to muDNN.
+    if (a_slice.size(-1) == 0 || b_slice.size(-2) == 0) {
+      o_slice.zero_();
+      continue;
+    }
+
+    active_slices.a_slices.emplace_back(std::move(a_slice));
+    active_slices.b_slices.emplace_back(std::move(b_slice));
+    active_slices.o_slices.emplace_back(std::move(o_slice));
+    active_slices.sa_slices.emplace_back(
+        std::move(slices.sa_slices[group_idx]));
+    active_slices.sb_slices.emplace_back(
+        std::move(slices.sb_slices[group_idx]));
+    active_slices.so_slices.emplace_back(
+        std::move(slices.so_slices[group_idx]));
+  }
+
+  return active_slices;
 }
 
 muTensor PrepareMatrixTensor(const Tensor& tensor, bool transposed) {
@@ -262,6 +318,11 @@ Tensor ScaledGroupedMM(
 
   auto slices = BuildGroupedMatmulSlices(
       mat_a, mat_b, offs, scale_a, scale_b, trans_a, trans_b, out);
+  slices = FilterZeroSizedGroups(std::move(slices));
+  const auto active_groups = static_cast<int64_t>(slices.o_slices.size());
+  if (active_groups == 0) {
+    return out;
+  }
 
   auto& h = GetMudnnHandle();
   ::musa::dnn::GroupedMatMul op;
@@ -274,14 +335,14 @@ Tensor ScaledGroupedMM(
       0.0,
       0.0);
 
-  std::vector<muTensor> a_mus(groups);
-  std::vector<muTensor> b_mus(groups);
-  std::vector<muTensor> o_mus(groups);
-  std::vector<muTensor> bias_mus(groups);
-  std::vector<::musa::dnn::MatMulLtParam> params(groups);
+  std::vector<muTensor> a_mus(active_groups);
+  std::vector<muTensor> b_mus(active_groups);
+  std::vector<muTensor> o_mus(active_groups);
+  std::vector<muTensor> bias_mus(active_groups);
+  std::vector<::musa::dnn::MatMulLtParam> params(active_groups);
 
   int64_t start_idx = 0;
-  for (int64_t group_idx = 0; group_idx < groups; ++group_idx) {
+  for (int64_t group_idx = 0; group_idx < active_groups; ++group_idx) {
     const auto& a_slice = slices.a_slices[group_idx];
     const auto& b_slice = slices.b_slices[group_idx];
     const auto& o_slice = slices.o_slices[group_idx];
@@ -311,7 +372,7 @@ Tensor ScaledGroupedMM(
           o_mus.data(),
           bias_mus.data(),
           params.data(),
-          groups,
+          active_groups,
           InternalMemAlloc),
       "RunLt");
 
@@ -342,6 +403,11 @@ Tensor GroupedMM(
   const bool trans_b = native::check_valid_strides_and_return_transposed(mat_b);
   auto slices = BuildGroupedMatmulSlices(
       mat_a, mat_b, offs, std::nullopt, std::nullopt, trans_a, trans_b, out);
+  slices = FilterZeroSizedGroups(std::move(slices));
+  const auto active_groups = static_cast<int64_t>(slices.o_slices.size());
+  if (active_groups == 0) {
+    return out;
+  }
 
   auto& h = GetMudnnHandle();
   ::musa::dnn::GroupedMatMul op;
@@ -354,13 +420,13 @@ Tensor GroupedMM(
       0.0,
       0.0);
 
-  std::vector<muTensor> a_mus(groups);
-  std::vector<muTensor> b_mus(groups);
-  std::vector<muTensor> o_mus(groups);
-  std::vector<muTensor> bias_mus(groups);
-  std::vector<::musa::dnn::MatMulLtParam> params(groups);
+  std::vector<muTensor> a_mus(active_groups);
+  std::vector<muTensor> b_mus(active_groups);
+  std::vector<muTensor> o_mus(active_groups);
+  std::vector<muTensor> bias_mus(active_groups);
+  std::vector<::musa::dnn::MatMulLtParam> params(active_groups);
 
-  for (int64_t group_idx = 0; group_idx < groups; ++group_idx) {
+  for (int64_t group_idx = 0; group_idx < active_groups; ++group_idx) {
     a_mus[group_idx] = PrepareMatrixTensor(slices.a_slices[group_idx], trans_a);
     b_mus[group_idx] = PrepareMatrixTensor(slices.b_slices[group_idx], trans_b);
     o_mus[group_idx] = CreateMUTensor(slices.o_slices[group_idx]);
@@ -375,7 +441,7 @@ Tensor GroupedMM(
           o_mus.data(),
           bias_mus.data(),
           params.data(),
-          groups,
+          active_groups,
           InternalMemAlloc),
       "RunLt");
 

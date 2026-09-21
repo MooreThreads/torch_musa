@@ -136,6 +136,23 @@ def test_mgc_pool_no_grad_outputs():
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_musa_graph_inference_mode():
+    def fn_test(x):
+        return x + 1
+
+    x = torch.randn(10, 10, device=DEVICE)
+
+    with torch.inference_mode():
+        captured_fn = torch.musa.make_graphed_callables(fn_test, (x,))
+        inp = torch.ones(10, 10, device=DEVICE)
+        assert testing.DefaultComparator(captured_fn(inp).cpu(), (inp + 1).cpu())
+
+    torch.musa.make_graphed_callables(fn_test, (x,))
+    inp = torch.ones(10, 10, device=DEVICE) * 10
+    assert testing.DefaultComparator(fn_test(inp).cpu(), (inp + 1).cpu())
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
 def test_mgc_kwargs_eval_fallback():
     class ScaleLinear(torch.nn.Module):
         def __init__(self):

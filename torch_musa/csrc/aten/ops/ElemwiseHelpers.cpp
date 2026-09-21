@@ -82,9 +82,9 @@ ScalarType UnaryTrueDivSuggestInputType(
 }
 
 std::optional<Tensor> BinaryMayContigRHS(MusaTensorIterator& iter) {
-  const auto r_shape = iter.shape();
-  const auto r_strides = iter.strides(2);
-  const size_t ndim = iter.ndim();
+  const auto r_shape = iter.element_shape();
+  const auto r_strides = iter.strides_element(2);
+  const size_t ndim = iter.element_ndim();
 
   DimVector useful_shape, useful_strides, useful_ids;
   for (const auto i : c10::irange(ndim)) {

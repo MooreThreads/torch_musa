@@ -1,151 +1,292 @@
 """Custom FSDP2 overlap settings"""
 
-# pylint: disable=C0301,C0415,W0602,C0103
+# pylint: disable=C0301,C0415,W0602,C0103,R1710
 import logging
 import os
 import warnings
-import functools
 from enum import Enum
 from collections.abc import Sequence
 from typing import (
     List,
     Optional,
     Union,
-    Tuple,
     Any,
-    Dict,
 )
 import torch
-from torch import nn
 import torch.distributed as dist
+from torch.distributed.device_mesh import _get_device_handle
+from torch.distributed.distributed_c10d import ReduceOp
+from torch.distributed.fsdp._fully_shard._fully_shard import FSDPModule
 from torch.distributed.fsdp._fully_shard._fsdp_param_group import (
     FSDPParamGroup,
     AllGatherState,
     ReduceScatterState,
 )
-from torch.distributed.utils import _apply_to_tensors
-from torch.distributed.fsdp._fully_shard._fsdp_common import TrainingState
 from torch.distributed.fsdp._fully_shard._fsdp_state import (
-    FSDPState,
     FSDPCommContext,
-    disable_if_config_true,
-    _cast_fp_tensor,
 )
 from torch.distributed.fsdp._fully_shard._fsdp_api import (
     AllGather,
     ReduceScatter,
     _ReduceOp,
 )
-from torch.distributed.fsdp._fully_shard._fsdp_collectives import (
-    DefaultAllGather,
-    DefaultReduceScatter,
-)
+
+import torch.distributed._symmetric_memory as symm_mem
+from torch.profiler import record_function
+
 
 logger = logging.getLogger(__name__)
 
-try:
-    import ce_comm
 
-    _ce_comm_is_available = True
-except ImportError:
-    _ce_comm_is_available = False
+class IntraNodeLowContentionCommAllocMixin:
+    """Allocates FSDP2 communication buffers from the low-contention symmetric mempool."""
 
-if _ce_comm_is_available:
+    # use global singleton memory pool for all-gather and reduce-scatter to
+    # maximize the memory multiplexing.
+    _mem_pool = None
 
-    class CECommAllocMixin:
-        """Define how to allocate tensor when using CEComm"""
+    def __init__(self, group: dist.ProcessGroup, *args: Any, **kwargs: Any):
+        super().__init__(*args, **kwargs)
+        if IntraNodeLowContentionCommAllocMixin._mem_pool is None:
+            device = torch.musa.current_device()
+            allocator = symm_mem.get_mempool_allocator(device)
+            IntraNodeLowContentionCommAllocMixin._mem_pool = torch.musa.MemPool(
+                allocator
+            )
 
-        def __init__(self, *args: Any, **kwargs: Any):
-            super().__init__(*args, **kwargs)
+        self._group = group
+        from torch.distributed._symmetric_memory import enable_symm_mem_for_group
 
-        def allocate(
-            self,
-            size: Sequence[Union[int, torch.SymInt]],
-            *,
-            dtype: torch.dtype,
-            device: torch.device,
-        ) -> torch.Tensor:
+        enable_symm_mem_for_group(dist._get_process_group_name(group))
+
+    def allocate(
+        self,
+        size: Sequence[Union[int, torch.SymInt]],
+        *,
+        dtype: torch.dtype,
+        device: torch.device,
+    ) -> torch.Tensor:
+        with torch.musa.use_mem_pool(IntraNodeLowContentionCommAllocMixin._mem_pool):
             return torch.empty(*size, dtype=dtype, device=device)
 
-    class CECommAllGather(CECommAllocMixin, AllGather):
-        """Wrapper of ce_comm all-gather"""
 
-        def __init__(self) -> None:
-            super().__init__()
-            self._all_gather_into_tensor = ce_comm.all_gather_into_tensor
+class IntraNodeLowContentionCommAllGather(
+    IntraNodeLowContentionCommAllocMixin, AllGather
+):
+    """Runs FSDP2 all-gather via the low-contention symmetric-memory kernel."""
 
-        def __call__(
-            self,
-            output_tensor: torch.Tensor,
-            input_tensor: torch.Tensor,
-            group: dist.ProcessGroup,
-            async_op: bool = False,
-        ) -> Optional[dist.Work]:
-            return self._all_gather_into_tensor(
+    def __init__(self, group: dist.ProcessGroup) -> None:
+        super().__init__(group)
+
+    def __call__(
+        self,
+        output_tensor: torch.Tensor,
+        input_tensor: torch.Tensor,
+        group: dist.ProcessGroup,
+        async_op: bool = False,
+    ) -> Optional[dist.Work]:
+        assert not async_op, "async all-gather is not supported currently"
+        group_name = torch.distributed._get_process_group_name(group)
+
+        with record_function("low_contention_all_gather"):
+            torch.ops.symm_mem.low_contention_all_gather(
                 output_tensor,
                 input_tensor,
-                group=group,
-                async_op=async_op,
+                group_name,
             )
 
-    class CECommReduceScatter(CECommAllocMixin, ReduceScatter):
-        """Wrapper of ce_comm reduce-scatter"""
 
-        def __init__(self) -> None:
-            super().__init__()
-            self._reduce_scatter_tensor = ce_comm.reduce_scatter_tensor
+class IntraNodeLowContentionCommReduceScatter(
+    IntraNodeLowContentionCommAllocMixin, ReduceScatter
+):
+    """Runs FSDP2 reduce-scatter via the low-contention symmetric-memory kernel."""
 
-        def __call__(
-            self,
-            output_tensor: torch.Tensor,
-            input_tensor: torch.Tensor,
-            group: dist.ProcessGroup,
-            op: _ReduceOp,
-            async_op: bool = False,
-        ) -> Optional[dist.Work]:
-            return self._reduce_scatter_tensor(
-                output=output_tensor,
-                input=input_tensor,
-                group=group,
-                op=op,
-                async_op=async_op,
+    def __init__(self, group: dist.ProcessGroup) -> None:
+        super().__init__(group)
+
+        self._op_to_str = {ReduceOp.SUM: "sum", ReduceOp.AVG: "avg"}
+        # FSDP2 allocates the reduce-scatter input before its output.  The
+        # low-contention kernel allows the input/send buffer to be native
+        # memory, while the output/receive buffer can use symmetric memory.
+        self._fsdp2_allow_native_buffer_allocation = True
+
+    def allocate(
+        self,
+        size: Sequence[Union[int, torch.SymInt]],
+        *,
+        dtype: torch.dtype,
+        device: torch.device,
+    ) -> torch.Tensor:
+        if self._fsdp2_allow_native_buffer_allocation:
+            # Use native memory for the first allocation in each
+            # reduce-scatter call (the input/send buffer).
+            self._fsdp2_allow_native_buffer_allocation = False
+            return torch.empty(*size, dtype=dtype, device=device)
+
+        # Subsequent communication buffers, including the output/receive
+        # buffer, must come from the symmetric mempool used by the kernel.
+        with torch.musa.use_mem_pool(IntraNodeLowContentionCommAllocMixin._mem_pool):
+            return torch.empty(*size, dtype=dtype, device=device)
+
+    def __call__(
+        self,
+        output_tensor: torch.Tensor,
+        input_tensor: torch.Tensor,
+        group: dist.ProcessGroup,
+        op: _ReduceOp,
+        async_op: bool = False,
+    ) -> Optional[dist.Work]:
+        # Prepare the allocator for the next FSDP2 reduce-scatter cycle.  The
+        # two allocate() calls happen before this collective is invoked.
+        self._fsdp2_allow_native_buffer_allocation = True
+        assert not async_op, "async all-gather is not supported currently"
+        group_name = torch.distributed._get_process_group_name(group)
+
+        reduce_str = self._op_to_str.get(op, None)
+        if not reduce_str:
+            raise RuntimeError(f"Unsupported reduce op: {op}")
+
+        with record_function("low_contention_reduce_scatter"):
+            torch.ops.symm_mem.low_contention_reduce_scatter(
+                output_tensor,
+                input_tensor,
+                reduce_str,
+                group_name,
             )
 
-else:
-    CECommAllGather = None
-    CECommReduceScatter = None
+
+class ProcessGroupMCCLSymmMemAllocMixin:
+    """Allocates FSDP2 communication buffers from a ProcessGroup MCCL symmetric mempool."""
+
+    _mem_pool: torch.musa.MemPool = None
+
+    def __init__(self, group: dist.ProcessGroup, *args: Any, **kwargs: Any):
+        self._group = group
+        super().__init__(*args, **kwargs)
+        if ProcessGroupMCCLSymmMemAllocMixin._mem_pool is None:
+            dist.barrier(group)  # ensure communicator is initialized
+            device = torch.device(torch.musa.current_device())
+            backend = group._get_backend(device)
+            ProcessGroupMCCLSymmMemAllocMixin._mem_pool = torch.musa.MemPool(
+                backend.mem_allocator
+            )
+            backend.register_mem_pool(
+                ProcessGroupMCCLSymmMemAllocMixin._mem_pool, symm=True
+            )
+
+    def allocate(
+        self,
+        size: Sequence[Union[int, torch.SymInt]],
+        *,
+        dtype: torch.dtype,
+        device: torch.device,
+    ) -> torch.Tensor:
+        with torch.musa.use_mem_pool(ProcessGroupMCCLSymmMemAllocMixin._mem_pool):
+            return torch.empty(*size, dtype=dtype, device=device)
 
 
-_TORCH_MUSA_FSDP2_ENABLE_CE_COMM_ENV = os.environ.get(
-    "TORCH_MUSA_FSDP2_ENABLE_CE_COMM", None
-)
-_TORCH_MUSA_FSDP2_ENABLE_CE_COMM = 0
-_forward_all_gather_comm = DefaultAllGather()
-_backward_all_gather_comm = DefaultAllGather()
-_reduce_scatter_comm = DefaultReduceScatter()
+class ProcessGroupMCCLSymmMemAllGather(ProcessGroupMCCLSymmMemAllocMixin, AllGather):
+    """Runs FSDP2 all-gather with MCCL using symmetric-mempool-allocated buffers."""
 
+    def __init__(self, group: dist.ProcessGroup) -> None:
+        super().__init__(group)
 
-if _TORCH_MUSA_FSDP2_ENABLE_CE_COMM_ENV is not None:
-    assert _TORCH_MUSA_FSDP2_ENABLE_CE_COMM_ENV in ["0", "1"]
-    if _TORCH_MUSA_FSDP2_ENABLE_CE_COMM_ENV == "1":
-        assert _ce_comm_is_available
-        _TORCH_MUSA_FSDP2_ENABLE_CE_COMM = 1
-        _forward_all_gather_comm = CECommAllGather()
-        _backward_all_gather_comm = CECommAllGather()
-        _reduce_scatter_comm = CECommReduceScatter()
-        logger.info(
-            "Using intra-node all-gather/reduce-scatter overlapped implementation"
+    def __call__(
+        self,
+        output_tensor: torch.Tensor,
+        input_tensor: torch.Tensor,
+        group: dist.ProcessGroup,
+        async_op: bool = False,
+    ) -> Optional[dist.Work]:
+        return dist.all_gather_into_tensor(
+            output_tensor,
+            input_tensor,
+            group=group,
+            async_op=async_op,
         )
-else:
-    # route to overlap comms if ce_comm is available
-    if _ce_comm_is_available:
-        _TORCH_MUSA_FSDP2_ENABLE_CE_COMM = 1
-        _forward_all_gather_comm = CECommAllGather()
-        _backward_all_gather_comm = CECommAllGather()
-        _reduce_scatter_comm = CECommReduceScatter()
-        logger.info(
-            "ce_comm is available, using intra-node all-gather/reduce-scatter overlapped implementation by default"
+
+
+class ProcessGroupMCCLSymmMemReduceScatter(
+    ProcessGroupMCCLSymmMemAllocMixin, ReduceScatter
+):
+    """Runs FSDP2 reduce-scatter with MCCL using symmetric-mempool-allocated buffers."""
+
+    def __init__(self, group: dist.ProcessGroup) -> None:
+        super().__init__(group)
+
+    def __call__(
+        self,
+        output_tensor: torch.Tensor,
+        input_tensor: torch.Tensor,
+        group: dist.ProcessGroup,
+        op: _ReduceOp,
+        async_op: bool = False,
+    ) -> dist.Work:
+        return dist.reduce_scatter_tensor(
+            output=output_tensor,
+            input=input_tensor,
+            group=group,
+            op=op,
+            async_op=async_op,
         )
+
+
+_TORCH_MUSA_FSDP2_COMM_TYPE_ENV = "TORCH_MUSA_FSDP2_COMM_TYPE"
+
+
+def _maybe_set_custom_comm(fsdp_module: FSDPModule | list[FSDPModule]) -> None:
+    """Install MUSA-specific FSDP2 collective implementations when requested.
+
+    This replaces the module's FSDP parameter-group all-gather and
+    reduce-scatter communication objects according to
+    ``TORCH_MUSA_FSDP2_COMM_TYPE``. A value of 0 keeps the default FSDP2
+    collectives. Values 1 and 2 enable custom intra-node communication paths
+    intended to improve computation/communication overlap:
+
+    * 1 uses low-contention symmetric-memory all-gather/reduce-scatter ops.
+    * 2 uses MCCL collectives with buffers allocated from a symmetric mempool.
+
+    Custom communication is only enabled on MUSA arch >= mp_31. In common
+    FSDP2 overlap workloads, type 1 generally has better memory consumption
+    than type 2.
+    """
+
+    # Multi-module groups share one FSDP state, so the first module represents
+    # the group's parameter group.
+    if isinstance(fsdp_module, list):
+        if not fsdp_module:
+            return
+        fsdp_module = fsdp_module[0]
+
+    fsdp_param_group = fsdp_module._get_fsdp_state()._fsdp_param_group
+
+    arch_version = torch.musa.core._utils._get_musa_arch()
+    # we disable custom all-gather/reduce-scatter by default
+    custom_comm_type = (
+        int(os.environ.get(_TORCH_MUSA_FSDP2_COMM_TYPE_ENV, 0))
+        if arch_version >= 31
+        else 0
+    )
+
+    if custom_comm_type == 0:
+        # no computation-communicator overlap
+        pass
+    elif custom_comm_type == 1:
+        fsdp_param_group._all_gather_comm = IntraNodeLowContentionCommAllGather(
+            fsdp_param_group._all_gather_process_group
+        )
+        fsdp_param_group._reduce_scatter_comm = IntraNodeLowContentionCommReduceScatter(
+            fsdp_param_group._reduce_scatter_process_group
+        )
+    elif custom_comm_type == 2:
+        fsdp_param_group._all_gather_comm = ProcessGroupMCCLSymmMemAllGather(
+            fsdp_param_group._all_gather_process_group
+        )
+        fsdp_param_group._reduce_scatter_comm = ProcessGroupMCCLSymmMemReduceScatter(
+            fsdp_param_group._reduce_scatter_process_group
+        )
+    else:
+        raise RuntimeError(f"Invalid option: {custom_comm_type}")
 
 
 __all__ = ["_apply_custom_overlap_patch", "FSDP2OverlapLevel", "_FSDP2_OVERLAP_LEVEL"]
@@ -200,8 +341,14 @@ class FSDP2OverlapLevel(Enum):
 
 
 def _get_fsdp2_overlap_level() -> FSDP2OverlapLevel:
-    """Setup FSDP2OverlapLevel according to the TORCH_MUSA_FSDP2_OVERLAP_LEVEL env,
-    if env is not specified, use FSDP2OverlapLevel.NO_OVERLAP by default.
+    """Resolve the FSDP2 computation/communication overlap policy.
+
+    ``TORCH_MUSA_FSDP2_OVERLAP_LEVEL`` has the highest priority and maps
+    directly to ``FSDP2OverlapLevel`` values 0 through 4. Most users do not
+    need to set it unless explicitly selecting or debugging an overlap mode.
+    If it is unset, keep overlap disabled by default, except for the deprecated
+    ``TORCH_MUSA_FSDP2_DISABLE_OVERLAP=0`` opt-in or when custom FSDP2
+    communication is enabled on MUSA arch >= mp_31.
     """
     if "TORCH_MUSA_FSDP2_OVERLAP_LEVEL" in os.environ:
         overlap_level = int(os.environ["TORCH_MUSA_FSDP2_OVERLAP_LEVEL"])
@@ -226,7 +373,10 @@ def _get_fsdp2_overlap_level() -> FSDP2OverlapLevel:
         )
         return FSDP2OverlapLevel.OVERLAP_HSDP_COMM
 
-    if _ce_comm_is_available:
+    if (
+        os.environ.get(_TORCH_MUSA_FSDP2_COMM_TYPE_ENV, "0") != "0"
+        and torch.musa.core._utils._get_musa_arch() >= 31
+    ):
         # this OverlapLevel should be efficient enough
         return FSDP2OverlapLevel.OVERLAP_FSDP_COMM_COPY_IN_WITH_COPY_OUT
 
@@ -236,12 +386,11 @@ def _get_fsdp2_overlap_level() -> FSDP2OverlapLevel:
 _FSDP2_OVERLAP_LEVEL = _get_fsdp2_overlap_level()
 
 
-def comm_context_lazy_init(self):
+def comm_context_lazy_init(self, device: torch.device):
     """setup streams will be used for communication and computation according
     to the different FSDP2 overlap strategy
     """
-    if not torch.musa.is_available():
-        raise RuntimeError("FSDP requires MUSA for streams")
+    self.device_handle = _get_device_handle(device.type)
 
     # pylint: disable=W0602
     global _FSDP2_OVERLAP_LEVEL
@@ -297,83 +446,6 @@ def comm_context_lazy_init(self):
     # Post-forward order for explicit backward prefetching
     self.post_forward_order: List[FSDPParamGroup] = []  # will cause ref cycles
 
-    # How many fsdp layers' collective operations have been set by pre_forward hook,
-    # which indicates should we stop to use mccl's collectives or not.
-    # Currently, layers that cannot be overlapped still need to use mccl for better performance,
-    # In principle, only the first layer or the previous few layers' communications
-    # will not be overlapped.
-    self._num_layer_collective_sets: int = 0
-
-
-# experimental setting for transformer-like models
-_MAYBE_NONOVERLAPPED_FSDP_LAYER_NUM = 2
-
-
-# TODO(mingyuan.wang): delete this once zero copy all-gather/reduce-scatter over ACE implementation ready
-def _maybe_set_mccl_collectives(state: FSDPState):
-    """for layers that won't be overlapped, still use mccl's all-gather/reduce-scatter
-
-    This should be called by the pre_forward hook, since the order can only be determined
-    when the model's forward is actually executed.
-    """
-    # pylint: disable=global-variable-not-assigned
-    global _FSDP2_OVERLAP_LEVEL, _TORCH_MUSA_FSDP2_ENABLE_CE_COMM
-
-    if _TORCH_MUSA_FSDP2_ENABLE_CE_COMM and state._fsdp_param_group:
-        if (
-            state._comm_ctx._num_layer_collective_sets
-            < _MAYBE_NONOVERLAPPED_FSDP_LAYER_NUM
-        ):
-            state._fsdp_param_group._forward_all_gather_comm = DefaultAllGather()
-            state._fsdp_param_group._reduce_scatter_comm = DefaultReduceScatter()
-            # shared for all FSDPStates
-            state._comm_ctx._num_layer_collective_sets += 1
-
-
-def _fsdp_state_init_shared_state(self) -> None:
-    global _FSDP2_OVERLAP_LEVEL
-    self._comm_ctx.lazy_init()
-    for state in self._state_ctx.all_states:
-        state._state_ctx = self._state_ctx
-        state._comm_ctx = self._comm_ctx
-        if fsdp_param_group := state._fsdp_param_group:
-            fsdp_param_group.comm_ctx = self._comm_ctx
-
-            # register all-gather/reduce-scatter for forward/backward prop
-            if _FSDP2_OVERLAP_LEVEL != FSDP2OverlapLevel.NO_OVERLAP:
-                fsdp_param_group._forward_all_gather_comm = _forward_all_gather_comm
-                fsdp_param_group._backward_all_gather_comm = _backward_all_gather_comm
-                fsdp_param_group._reduce_scatter_comm = _reduce_scatter_comm
-
-
-@disable_if_config_true
-def _pre_forward(
-    self, module: nn.Module, args: Tuple[Any, ...], kwargs: Dict[str, Any]
-) -> Tuple[Tuple[Any, ...], Dict[str, Any]]:
-    # When composing with module-hook-based activation checkpointing, the
-    # the pre-backward hook is responsible for the unshard
-    if self._training_state == TrainingState.PRE_BACKWARD:
-        return args, kwargs
-    self._training_state = TrainingState.FORWARD
-    args, kwargs = self._root_pre_forward(module, args, kwargs)
-    if self._mp_policy.cast_forward_inputs and self._mp_policy.param_dtype:
-        with torch.profiler.record_function("FSDP::cast_forward_inputs"):
-            cast_fn = functools.partial(_cast_fp_tensor, self._mp_policy.param_dtype)
-            args, kwargs = (
-                _apply_to_tensors(cast_fn, args),
-                _apply_to_tensors(cast_fn, kwargs),
-            )
-    if self._fsdp_param_group:
-        _maybe_set_mccl_collectives(self)
-        args, kwargs = self._fsdp_param_group.pre_forward(module, args, kwargs)
-    for fsdp_state in self._states_to_forward_prefetch:
-        if (target_param_group := fsdp_state._fsdp_param_group) is not None:
-            _maybe_set_mccl_collectives(fsdp_state)
-            FSDPParamGroup._prefetch_unshard(target_param_group, "forward")
-    return args, kwargs
-
 
 def _apply_custom_overlap_patch():
-    FSDPState._init_shared_state = _fsdp_state_init_shared_state
-    FSDPState._pre_forward = _pre_forward
     FSDPCommContext.lazy_init = comm_context_lazy_init

@@ -1,0 +1,13 @@
+diff --git a/aten/src/ATen/native/cuda/Embedding.cu b/aten/src/ATen/native/cuda/Embedding.cu
+index 65b0e14..13de643 100644
+--- a/aten/src/ATen/native/cuda/Embedding.cu
++++ b/aten/src/ATen/native/cuda/Embedding.cu
+@@ -344,7 +344,7 @@ Tensor & embedding_renorm_cuda_(Tensor & self, const Tensor & indices,
+   AT_DISPATCH_INDEX_TYPES(indices.scalar_type(), "embedding_renorm_cuda_", [&] () {
+ 
+     auto num_indices = indices.numel();
+-    auto indices_contig = std::get<0>(indices.sort()).contiguous();
++    auto indices_contig = std::get<0>(indices.contiguous().view(-1).sort()).contiguous();
+     auto unique_indices = at::empty(indices.numel(), indices.options());
+     auto num_unique_indices = at::empty({}, indices.options().dtype(kLong));
+ 

@@ -38,9 +38,8 @@ Tensor empty_musa(
     c10::optional<bool> pin_memory_opt,
     c10::optional<c10::MemoryFormat> memory_format_opt) {
   at::globalContext().lazyInitDevice(at::musa::kMUSA);
-  if (layout_opt.has_value()) {
-    LOG(INFO) << "layout_opt is invalid in empty_musa";
-  }
+  TORCH_INTERNAL_ASSERT_DEBUG_ONLY(
+      layout_or_default(layout_opt) == Layout::Strided);
   auto device = device_or_default(device_opt);
   c10::musa::OptionalMUSAGuard guard(device);
 

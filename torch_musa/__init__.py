@@ -85,6 +85,9 @@ from .core.device import (
     _DeviceGuard,
     register_musa_hook,
     get_arch_list,
+    get_gencode_flags,
+    set_sync_debug_mode,
+    get_sync_debug_mode,
     is_bf16_supported,
     is_tf32_supported,
 )
@@ -103,6 +106,7 @@ from .core.stream import (
     Stream,
     Event,
 )
+from .core import ipc
 from .core import amp
 from .core.amp.common import (
     amp_definitely_not_available,
@@ -253,6 +257,7 @@ setattr(
     torch_musa._MUSAC._conv_determine_backend_memory_format,
 )
 
+AcceleratorError = torch._C.AcceleratorError
 OutOfMemoryError = torch._C.OutOfMemoryError
 
 

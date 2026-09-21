@@ -26,8 +26,8 @@ ONLY_PATCH=0
 CLEAN=0
 COMPILE_FP64=1
 PYTORCH_TAG=v2.11.0
-PYTORCH_BUILD_VERSION=2.11.0.post1
-PYTORCH_BUILD_NUMBER=0 # This is used for official torch distribution.
+PYTORCH_BUILD_VERSION=2.11.0
+PYTORCH_BUILD_NUMBER=2 # This is used for official torch distribution.
 USE_MCCL=${USE_MCCL:-1}
 PIP_VERBOSE_ARGS=()
 VERBOSE_ENV_VALUE=0
@@ -254,6 +254,7 @@ build_pytorch() {
       USE_ASAN=${ASAN_MODE} \
       USE_KINETO=${USE_KINETO} \
       USE_NCCL=0 \
+      USE_MPI=0 \
       BUILD_TEST=0 python -m pip wheel . --wheel-dir ./dist --no-build-isolation
     status=$?
     rm -rf torch.egg-info
@@ -265,6 +266,7 @@ build_pytorch() {
       USE_ASAN=${ASAN_MODE} \
       USE_KINETO=${USE_KINETO} \
       USE_NCCL=0 \
+      USE_MPI=0 \
       BUILD_TEST=0 python -m pip install --no-build-isolation "${PIP_VERBOSE_ARGS[@]}" -e .
     status=$?
   fi
@@ -288,11 +290,35 @@ clean_torch_musa() {
   popd
 }
 
+ccache_build_log() {
+  { [ "${VERBOSE_ENV_VALUE}" -eq 1 ] && command -v ccache >/dev/null 2>&1; } || return 0
+  local statslog="${CUR_DIR}/build/ccache.statslog"
+  case "$1" in
+  begin)
+    mkdir -p "$(dirname "${statslog}")"
+    : >"${statslog}"
+    export CCACHE_STATSLOG="${statslog}"
+    ;;
+  report)
+    if [ -s "${statslog}" ]; then
+      echo -e "\033[34m[ccache] summary:\033[0m"
+      CCACHE_STATSLOG="${statslog}" ccache --show-log-stats 2>/dev/null || true
+      echo -e "\033[34m[ccache] per-file log: ${statslog}\033[0m"
+    else
+      echo -e "\033[33m[ccache] no compilation this build (incremental, nothing rebuilt)\033[0m"
+    fi
+    ;;
+  esac
+}
+
 build_torch_musa() {
   echo -e "\033[34mBuilding torch_musa...\033[0m"
   status=0
   pushd ${TORCH_MUSA_HOME}
   pip install -r requirements.txt
+
+  ccache_build_log begin
+
   if [ $BUILD_WHEEL -eq 1 ]; then
     rm -rf dist
     TORCH_DEVICE_BACKEND_AUTOLOAD=0 \
@@ -319,6 +345,9 @@ build_torch_musa() {
       python -m pip install --no-build-isolation "${PIP_VERBOSE_ARGS[@]}" -e .
     status=$?
   fi
+
+  ccache_build_log report
+
   if [ $status -ne 0 ]; then
     exit $status
   fi

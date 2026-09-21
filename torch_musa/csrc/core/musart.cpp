@@ -16,6 +16,8 @@ void initMusartBindings(PyObject* module) {
   py::enum_<musaError_t>(musart, "musaError").value("success", musaSuccess);
 
   musart.def("musaGetErrorString", musaGetErrorString);
+  musart.def("musaProfilerStart", musaProfilerStart);
+  musart.def("musaProfilerStop", musaProfilerStop);
 
   musart.def(
       "musaHostRegister",

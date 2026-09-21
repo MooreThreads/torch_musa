@@ -12,6 +12,7 @@ import unittest
 import dataclasses
 from typing import Dict, Tuple
 from unittest import skip
+from unittest.mock import patch
 
 import torch
 import torch._export
@@ -22,7 +23,7 @@ from torch._dynamo.utils import counters
 from torch._inductor import config
 from torch._inductor.runtime.runtime_utils import cache_dir
 from torch._inductor.test_case import TestCase
-from torch.export import Dim, export
+from torch.export import Dim
 from torch.testing import FileCheck
 from torch.testing._internal import common_utils
 from torch.testing._internal.common_quantization import (
@@ -51,7 +52,6 @@ class TestFailure:
 
 
 try:
-
     from test_aot_inductor_utils import (
         AOTIRunnerUtil,
         prepend_counters,
@@ -147,7 +147,6 @@ def code_check_count(
 
 
 class AOTInductorTestsTemplate:
-
     @pytest.mark.skipif(not _HAS_TRITON, reason="Triton not enabled")
     def test_simple(self):
         class Model(torch.nn.Module):
@@ -597,6 +596,281 @@ copy_tests(
     "non_abi_compatible_musa",
     MUSA_TEST_FAILURES,
 )
+
+
+class AOTInductorDynamicShapeTest(TestCase):
+    """Regression tests for AOTI dynamic-batch specialization bugs."""
+
+    @pytest.mark.skipif(not _HAS_TRITON, reason="Triton not enabled")
+    def test_convolution_dynamic_batch(self):
+        # Inductor keeps convolution as an ATen fallback node. AOTI should
+        # lower it to the direct MUSA convolution C-shim instead of using the
+        # ProxyExecutor fallback.
+        class Conv(torch.nn.Module):
+            def forward(self, x, weight, bias):
+                return torch.nn.functional.conv2d(
+                    x,
+                    weight,
+                    bias,
+                    stride=1,
+                    padding=1,
+                    dilation=1,
+                    groups=1,
+                )
+
+        dev = "musa"
+        batch = Dim("batch", min=1, max=64)
+        inputs = (
+            torch.randn(8, 3, 16, 16, dtype=torch.float16, device=dev),
+            torch.randn(4, 3, 3, 3, dtype=torch.float16, device=dev),
+            torch.randn(4, dtype=torch.float16, device=dev),
+        )
+        ep = torch.export.export(
+            Conv().eval(),
+            inputs,
+            dynamic_shapes=({0: batch}, {}, {}),
+            strict=False,
+        )
+        with patch("torch._inductor.ir.log.warning") as warning:
+            pkg = torch._inductor.aoti_compile_and_package(ep)
+        proxy_fallback_warnings = [
+            call
+            for call in warning.call_args_list
+            if call.args and "missing a c-shim implementation" in str(call.args[0])
+        ]
+        self.assertFalse(proxy_fallback_warnings)
+        runner = torch._inductor.aoti_load_package(pkg)
+
+        for b in [1, 8, 16, 32, 64]:
+            x = torch.randn(b, 3, 16, 16, dtype=torch.float16, device=dev)
+            out = runner(x, inputs[1], inputs[2])
+            out = out[0] if isinstance(out, (list, tuple)) else out
+            ref = Conv().eval()(x, inputs[1], inputs[2])
+            self.assertEqual(out.shape, ref.shape)
+            torch.testing.assert_close(out.float(), ref.float(), atol=2e-2, rtol=2e-2)
+
+    @pytest.mark.skipif(not _HAS_TRITON, reason="Triton not enabled")
+    def test_layer_norm_dynamic_batch(self):
+        # Inductor decomposes layer_norm into reduction and pointwise Triton
+        # kernels. AOTI should launch the generated MUSA Triton kernels with
+        # dynamic batch sizes and optional weight and bias inputs.
+        class LayerNorm(torch.nn.Module):
+            def forward(self, x, weight, bias):
+                return torch.nn.functional.layer_norm(
+                    x,
+                    (16,),
+                    weight,
+                    bias,
+                    eps=1e-5,
+                )
+
+        dev = "musa"
+        batch = Dim("batch", min=1, max=64)
+        inputs = (
+            torch.randn(8, 4, 16, dtype=torch.float16, device=dev),
+            torch.randn(16, dtype=torch.float16, device=dev),
+            torch.randn(16, dtype=torch.float16, device=dev),
+        )
+        ep = torch.export.export(
+            LayerNorm().eval(),
+            inputs,
+            dynamic_shapes=({0: batch}, {}, {}),
+            strict=False,
+        )
+        pkg = torch._inductor.aoti_compile_and_package(ep)
+        runner = torch._inductor.aoti_load_package(pkg)
+
+        for b in [1, 8, 16, 32, 64]:
+            x = torch.randn(b, 4, 16, dtype=torch.float16, device=dev)
+            out = runner(x, inputs[1], inputs[2])
+            out = out[0] if isinstance(out, (list, tuple)) else out
+            ref = LayerNorm().eval()(x, inputs[1], inputs[2])
+            self.assertEqual(out.shape, ref.shape)
+            torch.testing.assert_close(out.float(), ref.float(), atol=2e-2, rtol=2e-2)
+
+    @pytest.mark.skipif(not _HAS_TRITON, reason="Triton not enabled")
+    def test_layer_norm_backward_dynamic_batch(self):
+        # Inductor decomposes native_layer_norm_backward into reduction and
+        # pointwise Triton kernels. AOTI should launch the generated MUSA
+        # Triton kernels without using a direct C-shim or ProxyExecutor. This
+        # also covers three tensor outputs, SymIntArrayRef normalized shape,
+        # and the fixed-size boolean output mask.
+        class LayerNormBackward(torch.nn.Module):
+            def forward(self, grad_out, x, mean, rstd, weight, bias):
+                return torch.ops.aten.native_layer_norm_backward.default(
+                    grad_out,
+                    x,
+                    (16,),
+                    mean,
+                    rstd,
+                    weight,
+                    bias,
+                    (True, True, True),
+                )
+
+        dev = "musa"
+        batch = Dim("batch", min=1, max=64)
+        weight = torch.randn(16, dtype=torch.float16, device=dev)
+        bias = torch.randn(16, dtype=torch.float16, device=dev)
+
+        def make_inputs(b):
+            x = torch.randn(b, 4, 16, dtype=torch.float16, device=dev)
+            grad_out = torch.randn_like(x)
+            _, mean, rstd = torch.ops.aten.native_layer_norm.default(
+                x, (16,), weight, bias, 1e-5
+            )
+            return grad_out, x, mean, rstd, weight, bias
+
+        inputs = make_inputs(8)
+        ep = torch.export.export(
+            LayerNormBackward().eval(),
+            inputs,
+            dynamic_shapes=(
+                {0: batch},
+                {0: batch},
+                {0: batch},
+                {0: batch},
+                {},
+                {},
+            ),
+            strict=False,
+        )
+        with patch("torch._inductor.ir.log.warning") as warning:
+            pkg = torch._inductor.aoti_compile_and_package(ep)
+        proxy_fallback_warnings = [
+            call
+            for call in warning.call_args_list
+            if call.args
+            and "native_layer_norm_backward" in str(call.args)
+            and "missing a c-shim implementation" in str(call.args[0])
+        ]
+        self.assertFalse(proxy_fallback_warnings)
+        runner = torch._inductor.aoti_load_package(pkg)
+
+        for b in [1, 8, 16, 32, 64]:
+            run_inputs = make_inputs(b)
+            out = runner(*run_inputs)
+            ref = LayerNormBackward().eval()(*run_inputs)
+            self.assertEqual(len(out), len(ref))
+            for actual, expected in zip(out, ref):
+                self.assertEqual(actual.shape, expected.shape)
+                torch.testing.assert_close(
+                    actual.float(), expected.float(), atol=2e-2, rtol=2e-2
+                )
+
+    @pytest.mark.skipif(not _HAS_TRITON, reason="Triton not enabled")
+    def test_pointwise_dynamic_batch(self):
+        # Inductor fuses the pointwise add and relu operations into a Triton
+        # kernel. AOTI should launch the generated MUSA Triton kernel rather
+        # than route this graph through an ATen fallback C-shim.
+        class Pointwise(torch.nn.Module):
+            def forward(self, x, y):
+                return torch.nn.functional.relu(x + y)
+
+        dev = "musa"
+        batch = Dim("batch", min=1, max=64)
+        inputs = (
+            torch.randn(8, 4, 16, dtype=torch.float16, device=dev),
+            torch.randn(8, 4, 16, dtype=torch.float16, device=dev),
+        )
+        ep = torch.export.export(
+            Pointwise().eval(),
+            inputs,
+            dynamic_shapes=({0: batch}, {0: batch}),
+            strict=False,
+        )
+        pkg = torch._inductor.aoti_compile_and_package(ep)
+        runner = torch._inductor.aoti_load_package(pkg)
+
+        for b in [1, 8, 16, 32, 64]:
+            x = torch.randn(b, 4, 16, dtype=torch.float16, device=dev)
+            y = torch.randn(b, 4, 16, dtype=torch.float16, device=dev)
+            out = runner(x, y)
+            out = out[0] if isinstance(out, (list, tuple)) else out
+            ref = Pointwise().eval()(x, y)
+            self.assertEqual(out.shape, ref.shape)
+            torch.testing.assert_close(out.float(), ref.float(), atol=2e-2, rtol=2e-2)
+
+    @pytest.mark.skipif(not _HAS_TRITON, reason="Triton not enabled")
+    def test_adaptive_avg_pool_dynamic_batch(self):
+        # Inductor keeps adaptive average pooling as an ATen fallback node.
+        # This verifies that the SymIntArrayRef/list output-size argument is
+        # passed through the direct MUSA C-shim, without using ProxyExecutor.
+        class AdaptiveAvgPool(torch.nn.Module):
+            def forward(self, x):
+                return torch.nn.functional.adaptive_avg_pool2d(x, (4, 4))
+
+        dev = "musa"
+        batch = Dim("batch", min=1, max=64)
+        inputs = (torch.randn(8, 3, 16, 16, dtype=torch.float16, device=dev),)
+        ep = torch.export.export(
+            AdaptiveAvgPool().eval(),
+            inputs,
+            dynamic_shapes=({0: batch},),
+            strict=False,
+        )
+        with patch("torch._inductor.ir.log.warning") as warning:
+            pkg = torch._inductor.aoti_compile_and_package(ep)
+        proxy_fallback_warnings = [
+            call
+            for call in warning.call_args_list
+            if call.args and "missing a c-shim implementation" in str(call.args[0])
+        ]
+        self.assertFalse(proxy_fallback_warnings)
+        runner = torch._inductor.aoti_load_package(pkg)
+
+        for b in [1, 8, 16, 32, 64]:
+            x = torch.randn(b, 3, 16, 16, dtype=torch.float16, device=dev)
+            out = runner(x)
+            out = out[0] if isinstance(out, (list, tuple)) else out
+            ref = AdaptiveAvgPool().eval()(x)
+            self.assertEqual(out.shape, ref.shape)
+            torch.testing.assert_close(out.float(), ref.float(), atol=2e-2, rtol=2e-2)
+
+    @pytest.mark.skipif(not _HAS_TRITON, reason="Triton not enabled")
+    def test_sdpa_dynamic_batch_headdim(self):
+        # Inductor lowers SDPA to a MUSA-specific attention implementation.
+        # AOTI currently executes this low-level operator through ProxyExecutor
+        # because it does not have a direct MUSA C-shim implementation. This
+        # path is intentionally tested separately from convolution and pooling.
+        class Attn(torch.nn.Module):
+            def forward(self, q, k, v):
+                return torch.nn.functional.scaled_dot_product_attention(q, k, v)
+
+        dev = "musa"
+        mk = lambda b, head_dim: torch.randn(
+            b, 4, 4, head_dim, dtype=torch.float16, device=dev
+        )
+        batch = Dim("batch", min=1, max=4096)
+        qk_head_dim = Dim("qk_head_dim", min=16, max=128)
+        v_head_dim = Dim("v_head_dim", min=16, max=128)
+        ep = torch.export.export(
+            Attn().eval(),
+            (
+                mk(8, 16),
+                mk(8, 16),
+                mk(8, 32),
+            ),  # example batch = 8, qk_head_dim = 16, v_head_dim = 32
+            dynamic_shapes=(
+                {0: batch, 3: qk_head_dim},
+                {0: batch, 3: qk_head_dim},
+                {0: batch, 3: v_head_dim},
+            ),
+            strict=False,
+        )
+        pkg = torch._inductor.aoti_compile_and_package(ep)
+        runner = torch._inductor.aoti_load_package(pkg)
+
+        for b in [1, 5, 8, 16, 32, 64, 256, 1024, 4096]:
+            for head_dim in [16, 64, 128]:
+                q, k, v = mk(b, head_dim), mk(b, head_dim), mk(b, head_dim)
+                out = runner(q, k, v)
+                out = out[0] if isinstance(out, (list, tuple)) else out
+                ref = torch.nn.functional.scaled_dot_product_attention(q, k, v)
+                self.assertEqual(out.shape, ref.shape)
+                torch.testing.assert_close(
+                    out.float(), ref.float(), atol=2e-2, rtol=2e-2
+                )
 
 
 if __name__ == "__main__":

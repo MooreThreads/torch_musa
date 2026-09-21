@@ -59,9 +59,17 @@ void create_output_raw_strided_no_check(
   if (backup_dtype.has_value()) {
     const auto c_type = (*backup_dtype);
     if (c_type != op.target_dtype) {
+      const auto old_elem_size =
+          static_cast<int64_t>(c10::elementSize(op.target_dtype));
       op.exchange_tensor(c10::MaybeOwned<TensorBase>::owned(
           create_out(sizes, strides, options.dtype(c_type))));
       op.target_dtype = c_type;
+      const auto elem_size =
+          static_cast<int64_t>(op.tensor_base().element_size());
+      for (auto& byte_stride : op.stride_bytes) {
+        TORCH_INTERNAL_ASSERT(byte_stride % old_elem_size == 0);
+        byte_stride = byte_stride / old_elem_size * elem_size;
+      }
     }
   }
   op.current_dtype = op.target_dtype;
@@ -92,6 +100,15 @@ const Tensor& original_output_tensor(const OperandInfo& op) {
     return op.original_tensor();
   }
   return op.tensor();
+}
+
+DimVector invert_perm_with(IntArrayRef input, IntArrayRef perm) {
+  TORCH_INTERNAL_ASSERT(input.size() == perm.size());
+  auto inverted = DimVector(input.size());
+  for (const auto i : c10::irange(input.size())) {
+    inverted[perm[i]] = input[i];
+  }
+  return inverted;
 }
 
 } // anonymous namespace
@@ -149,13 +166,13 @@ void MusaTensorIterator::set_output_raw_strided(
 }
 
 StrideVector MusaTensorIterator::compatible_stride() const {
-  int dim = ndim();
+  int dim = element_ndim();
   auto stride = StrideVector(dim, 0);
   int64_t next_stride = 1;
   --dim;
   for (; dim >= 0; --dim) {
     stride[dim] = next_stride;
-    next_stride *= shape_[dim];
+    next_stride *= element_shape_[dim];
   }
   return stride;
 }
@@ -201,12 +218,19 @@ void MusaTensorIterator::replace_input(int arg, const TensorBase& input) {
   AT_ASSERT(old_input.sizes() == new_sizes);
   if (old_input.strides() != new_strides) {
     AT_ASSERT(!old_input.is_non_overlapping_and_dense());
-    const int dims = ndim();
+    const int dims = element_ndim();
     const int offset = dims - static_cast<int>(new_sizes.size());
     for (const auto i : c10::irange(dims)) {
+      auto& stride = op.element_strides[i];
+      if (stride != 0) {
+        stride = new_strides[element_perm_[i] - offset];
+      }
+    }
+    for (const auto i : c10::irange(ndim())) {
       auto& stride = op.stride_bytes[i];
       if (stride != 0) {
-        stride = new_strides[perm_[i] - offset];
+        stride = new_strides[perm_[i] - offset] *
+            static_cast<int64_t>(input.element_size());
       }
     }
   }
@@ -233,7 +257,8 @@ muTensor MusaTensorIterator::mu_tensor(int arg) const {
   SetMUTensorDType(op.current_dtype, mt);
   SetMUTensorAddr(op.data, mt);
 
-  mt.SetNdInfo(ndim(), shape_.data(), op.stride_bytes.data());
+  mt.SetNdInfo(
+      element_ndim(), element_shape_.data(), op.element_strides.data());
   return mt;
 }
 
@@ -490,121 +515,49 @@ bool MusaTensorIterator::fast_set_up(const TensorIteratorConfig& config) {
   const auto n_elems = numel();
   shape_.resize(1UL);
   shape_[0] = n_elems;
+  element_shape_ = shape_;
+  perm_.resize(1UL);
+  perm_[0] = 0;
+  element_perm_.resize(1UL);
+  element_perm_[0] = 0;
+  do_reorder_element_dimensions_ = false;
   for (auto& op : operands_) {
+    op.element_strides.resize(1UL, 0);
     op.stride_bytes.resize(1UL, 0);
     if (op.tensor().dim() > 0) {
-      op.stride_bytes[0] = 1;
+      op.element_strides[0] = 1;
+      op.stride_bytes[0] =
+          static_cast<int64_t>(op.tensor_base().element_size());
     }
   }
   return true;
 }
 
-void MusaTensorIterator::compute_strides(const TensorIteratorConfig& config) {
-  for (auto& op : operands_) {
+void MusaTensorIterator::compute_element_shape_and_strides() {
+  const auto dims = ndim();
+  element_shape_.resize(dims);
+  element_perm_.resize(dims);
+  do_reorder_element_dimensions_ = false;
+  for (const auto i : c10::irange(dims)) {
+    const auto dim = dims - 1 - i;
+    element_shape_[i] = shape_[dim];
+    // element_shape_/element_strides are already reversed from the base
+    // iterator order. element_perm_ is only for MUSA output allocation, which
+    // this path no longer uses after base allocation and coalescing.
+    element_perm_[i] = i;
+  }
+
+  for (const auto arg : c10::irange(ntensors())) {
+    auto& op = operands_[arg];
     const auto& op_base = op.tensor_base();
-    if (op_base.defined() && !op.will_resize) {
-      const IntArrayRef original_shape =
-          config.static_shape_ ? shape_ : op_base.sizes();
-      const auto original_stride = op_base.strides();
-      const auto original_dims = static_cast<int>(original_shape.size());
-
-      const auto broadcasted_dims = ndim();
-      const auto offset = broadcasted_dims - original_dims;
-      op.stride_bytes.resize(broadcasted_dims, 0);
-
-      for (const auto i : c10::irange(original_dims)) {
-        const auto offset_i = offset + i;
-        if (original_shape[i] == 1 && shape_[offset_i] != 1) {
-          op.stride_bytes[offset_i] = 0;
-        } else {
-          op.stride_bytes[offset_i] = original_stride[i];
-        }
-      }
-    }
-  }
-}
-
-void MusaTensorIterator::reorder_dimensions() {
-  const auto broadcasted_dims = ndim();
-  perm_.resize(broadcasted_dims);
-  std::iota(perm_.begin(), perm_.end(), 0);
-
-  if (enforce_linear_iteration_) {
-    return;
-  }
-
-  auto should_swap = [&](size_t dim0, size_t dim1) {
-    for (const auto arg : c10::irange(ntensors())) {
-      if (operands_[arg].stride_bytes.empty() || operands_[arg].will_resize) {
-        continue;
-      }
-      int64_t stride0 = operands_[arg].stride_bytes[dim0];
-      int64_t stride1 = operands_[arg].stride_bytes[dim1];
-      if (is_reduction_ && operands_[arg].is_output) {
-        if ((stride0 == 0) != (stride1 == 0)) {
-          return stride1 == 0 ? 1 : -1;
-        }
-      }
-
-      if (stride0 == 0 || stride1 == 0) {
-        continue;
-      } else if (stride0 < stride1) {
-        return -1;
-      } else if (stride0 > stride1) {
-        return 1;
-      } else {
-        auto t_dim0 = shape_[dim0];
-        auto t_dim1 = shape_[dim1];
-        if (t_dim0 > t_dim1) {
-          return 1;
-        }
-      }
-    }
-    return 0;
-  };
-
-  for (auto i = broadcasted_dims - 2; i >= 0; --i) {
-    int dim1 = i;
-    for (auto dim0 = i + 1; dim0 < broadcasted_dims; ++dim0) {
-      int comparison = should_swap(perm_[dim0], perm_[dim1]);
-      if (comparison > 0) {
-        std::swap(perm_[dim0], perm_[dim1]);
-        dim1 = dim0;
-      } else if (comparison < 0) {
-        break;
-      }
-    }
-  }
-
-  for (const auto i : c10::irange(broadcasted_dims)) {
-    if (perm_[i] != i) {
-      do_reorder_dimensions_ = true;
-      break;
-    }
-  }
-  if (do_reorder_dimensions_) {
-    permute_dimensions(perm_);
-  }
-}
-
-void MusaTensorIterator::allocate_or_resize_outputs() {
-  for (const auto i : c10::irange(num_outputs_)) {
-    auto& op = operands_[i];
-    const auto& op_base = op.tensor_base();
-    const auto opt = original_options(op);
-    if (!op_base.defined() || op.will_resize) {
-      TORCH_INTERNAL_ASSERT(op.is_type_defined(), "no type for operand", i);
-      op.stride_bytes = compatible_stride();
-      if (!do_reorder_dimensions_) {
-        set_output_raw_strided(i, shape_, {}, opt, names_);
-      } else {
-        const auto tensor_shape = invert_perm(shape_);
-        const auto tensor_stride = invert_perm(op.stride_bytes);
-        set_output_raw_strided(i, tensor_shape, tensor_stride, opt, names_);
-      }
-      op.current_dtype = op.target_dtype;
-    } else if (op_base.defined()) {
-      set_output_raw_strided(i, op_base.sizes(), {}, opt, names_);
+    op.element_strides.resize(dims);
+    const auto elem_size = static_cast<int64_t>(op_base.element_size());
+    for (const auto i : c10::irange(dims)) {
+      const auto byte_stride = op.stride_bytes[dims - 1 - i];
+      TORCH_INTERNAL_ASSERT(
+          byte_stride % elem_size == 0,
+          "byte stride must be divisible by element size");
+      op.element_strides[i] = byte_stride / elem_size;
     }
   }
 }
@@ -631,7 +584,13 @@ void MusaTensorIterator::build(TensorIteratorConfig& config) {
 
     reorder_dimensions();
 
-    allocate_or_resize_outputs();
+    TensorIteratorBase::allocate_or_resize_outputs();
+
+    if (!is_meta_) {
+      TensorIteratorBase::coalesce_dimensions();
+    }
+
+    compute_element_shape_and_strides();
   }
 
   common_dtype_ = promote_common_dtype_;
@@ -652,72 +611,6 @@ void MusaTensorIterator::cast_outputs() {
       op.restore_original_tensor();
     }
   }
-}
-
-void MusaTensorIterator::coalesce_dimensions() {
-  const auto dims = ndim();
-  if (dims <= 1) {
-    return;
-  }
-
-  auto can_coalesce = [&](int dim0, int dim1) {
-    auto shape0 = shape_[dim0];
-    auto shape1 = shape_[dim1];
-    if (shape0 == 1 || shape1 == 1) {
-      return true;
-    }
-    for (const auto i : c10::irange(ntensors())) {
-      auto& stride = operands_[i].stride_bytes;
-      if (shape0 * stride[dim0] != stride[dim1]) {
-        return false;
-      }
-    }
-    return true;
-  };
-
-  auto replace_stride = [&](int dim0, int dim1) {
-    for (const auto i : c10::irange(ntensors())) {
-      auto& stride = operands_[i].stride_bytes;
-      stride[dim0] = stride[dim1];
-    }
-  };
-
-  int prev_dim = dims - 1;
-  for (auto dim = prev_dim - 1; dim >= 0; --dim) {
-    if (can_coalesce(prev_dim, dim)) {
-      if (shape_[prev_dim] == 1) {
-        replace_stride(prev_dim, dim);
-      }
-      shape_[prev_dim] *= shape_[dim];
-    } else {
-      --prev_dim;
-      if (prev_dim != dim) {
-        replace_stride(prev_dim, dim);
-        shape_[prev_dim] = shape_[dim];
-      }
-    }
-  }
-
-  if (prev_dim != 0) {
-    shape_.erase(shape_.begin(), shape_.begin() + prev_dim);
-
-    for (const auto i : c10::irange(ntensors())) {
-      auto& stride = operands_[i].stride_bytes;
-      stride.erase(stride.begin(), stride.begin() + prev_dim);
-    }
-  }
-
-  has_coalesced_dimensions_ = true;
-}
-
-bool MusaTensorIterator::is_contiguous() const {
-  if (numel() == 1) {
-    return true;
-  }
-  if (ndim() != 1) {
-    return false;
-  }
-  return has_contiguous_first_dim();
 }
 
 void FunctionalTensorIterator::_set_output_raw_strided(

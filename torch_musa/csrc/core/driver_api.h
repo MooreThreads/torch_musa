@@ -31,6 +31,9 @@
   _(muGraphExecMemAtomicNodeSetParams)    \
   _(muGraphExecMemTransferNodeSetParams)  \
   _(muGraphExecMemWaitWriteNodeSetParams) \
+  _(muMemoryAtomicAsync)                  \
+  _(muMemsetD32Async)                     \
+  _(muStreamWriteValue32)                 \
   _(muGetErrorString)
 
 #if defined(REAL_MUSA_VERSION) && (REAL_MUSA_VERSION >= 4000)

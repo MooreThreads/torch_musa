@@ -830,6 +830,7 @@ def _get_musa_arch_flags():
     supported_arches = ["10", "21", "22", "31", "32"]
 
     _arch_list = os.environ.get("TORCH_MUSA_ARCH_LIST", None)
+    _skip_check = os.environ.get("TORCH_MUSA_SKIP_ARCH_CHECK", None)
 
     if not _arch_list:
         warnings.warn(
@@ -858,7 +859,7 @@ def _get_musa_arch_flags():
 
     flags = []
     for arch in arch_list:
-        if arch not in supported_arches:
+        if (not _skip_check) and (arch not in supported_arches):
             raise ValueError(f"Unknown MUSA arch ({arch})")
         flags.append(f"--offload-arch=mp_{arch}")
 

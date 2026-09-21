@@ -80,6 +80,8 @@ struct MUSAPluggableAllocator : public MUSAAllocator {
   bool initialized() override;
   double getMemoryFraction(c10::DeviceIndex device) override;
   void setMemoryFraction(double fraction, c10::DeviceIndex device) override;
+  std::vector<c10::musa::MUSACachingAllocator::StreamSegmentSize>
+  getExpandableSegmentSizes(c10::DeviceIndex device) override;
   void enable(bool) override {}
   bool isEnabled() const override {
     return true;
@@ -95,7 +97,8 @@ struct MUSAPluggableAllocator : public MUSAAllocator {
   void resetAccumulatedStats(c10::DeviceIndex device) override;
   void resetPeakStats(c10::DeviceIndex device) override;
   c10::musa::MUSACachingAllocator::SnapshotInfo snapshot(
-      c10::musa::MempoolId_t mempool) override;
+      c10::musa::MempoolId_t mempool,
+      bool include_traces = true) override;
   void beginAllocateToPool(
       c10::DeviceIndex device,
       c10::musa::MempoolId_t mempool_id,
@@ -113,7 +116,8 @@ struct MUSAPluggableAllocator : public MUSAAllocator {
       c10::musa::MUSACachingAllocator::CreateContextFn context_recorder,
       size_t alloc_trace_max_entries,
       c10::musa::MUSACachingAllocator::RecordContext when,
-      bool clearHistory) override;
+      bool clearHistory,
+      const std::vector<std::string>& skip_actions) override;
   void attachOutOfMemoryObserver(
       c10::musa::MUSACachingAllocator::OutOfMemoryObserver observer) override;
   void attachAllocatorTraceTracker(
@@ -150,7 +154,7 @@ struct MUSAPluggableAllocator : public MUSAAllocator {
       void(int, c10::musa::MempoolId_t, std::function<bool(musaStream_t)>)>
       begin_allocate_to_pool_fn_;
   std::function<void(int, c10::musa::MempoolId_t)> end_allocate_to_pool_fn_;
-  std::function<void(int, c10::musa::MempoolId_t)> relase_pool_fn_;
+  std::function<void(int, c10::musa::MempoolId_t)> release_pool_fn_;
   std::mutex allocator_mutex_;
   // We do the bookeeping here in order to simplify custom allocators
   std::unordered_map<void*, _AllocationMetadata> allocation_metadata_;

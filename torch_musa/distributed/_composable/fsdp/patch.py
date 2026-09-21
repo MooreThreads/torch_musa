@@ -8,6 +8,7 @@ from typing import (
     Any,
 )
 import warnings
+from itertools import chain
 
 # from enum import Enum
 from functools import wraps
@@ -27,8 +28,11 @@ from torch.distributed.fsdp._fully_shard._fsdp_collectives import (
     AllGatherResult,
     foreach_reduce,
 )
-from torch.distributed.fsdp._fully_shard._fsdp_param import FSDPParam
-from torch.distributed.fsdp._fully_shard._fsdp_common import TrainingState
+from torch.distributed.fsdp._fully_shard._fsdp_param import FSDPParam, alloc_storage
+from torch.distributed.fsdp._fully_shard._fsdp_common import (
+    TrainingState,
+    _get_dim0_padded_size,
+)
 
 
 __all__ = ["_apply_fsdp2_patches"]
@@ -42,15 +46,44 @@ def wait_for_unshard_non_overlap(self):
     if not self._all_gather_result:
         return  # no preceding unshard
 
-    with record_function(self._with_fqn("FSDP::all_gather_copy_out")):
-        foreach_all_gather_copy_out(
-            self._all_gather_result,
-            self.fsdp_params,
-            self._all_gather_process_group,
-        )
+    world_size = self._all_gather_process_group.size()
+
+    if world_size == 1:
+        # directly initialize unsharded parameters from sharded parameters
+        for fsdp_param in self.fsdp_params:
+            # Use all_gather_inputs which already handles conversion to param_dtype
+            # This is consistent with the world_size > 1 path
+            all_gather_input = fsdp_param.all_gather_inputs[0]
+
+            # Make sure the all_gather_outputs has proper storage size before using it
+            # First ensure we have at least one tensor in all_gather_outputs
+            fsdp_param.init_all_gather_outputs(
+                [all_gather_input.numel()],
+                [all_gather_input.dtype],
+                world_size,
+                self.device,
+                force_recreate=False,
+            )
+
+            tensor = fsdp_param.all_gather_outputs[0]
+            alloc_storage(tensor)
+
+            # find alternative way to check if tensor.is_inference
+            with torch.autograd._unsafe_preserve_version_counter(tensor):
+                tensor.copy_(all_gather_input)
+    else:
+        with record_function(self._with_fqn("FSDP::all_gather_copy_out")):
+            foreach_all_gather_copy_out(
+                self._all_gather_result,
+                self.fsdp_params,
+                self._all_gather_process_group,
+            )
     for fsdp_param in self.fsdp_params:
         fsdp_param.init_unsharded_param()
     self._to_unsharded()
+
+    # in non overlap case, we don't need to defer free `_all_gather_result` or
+    # let all_gather stream waits previous all_gather_copy_out done explicitly.
 
     # free memory used by all-gather output
     self._all_gather_result = None  # free unless saved in `all_gather_state`
@@ -98,6 +131,29 @@ def post_backward_non_overlap(self, *unused: Any):
         #         self.comm_ctx.reduce_scatter_state.event
         #     )
         #     self.comm_ctx.reduce_scatter_state = None
+        all_reduce_pg = self._all_reduce_process_group if self._is_hsdp else None
+        all_reduce_stream: torch.musa.Stream
+        if all_reduce_pg is None and self._all_reduce_hook_stream is not None:
+            # this means the native HSDP is not enabled,
+            # but user may want to have a custom HSDP setup
+            assert (
+                self._all_reduce_hook is not None
+            ), "all reduce hook stream is specified but hook itself is missing."
+            all_reduce_stream = self._all_reduce_hook_stream
+        else:
+            all_reduce_stream = self.comm_ctx.all_reduce_stream
+        lazy_hsdp_allreduce = getattr(self, "lazy_hsdp_allreduce", False)
+        if lazy_hsdp_allreduce:
+            logger.debug("Setting up lazy HSDP all-reduce in post_backward")
+            self.all_reduce_stream = all_reduce_stream
+            self.fsdp_params_with_grad = fsdp_params_with_grad
+            world_size = self._reduce_scatter_process_group.size()
+            self.padded_unsharded_sizes = tuple(
+                _get_dim0_padded_size(grad.size(), world_size)
+                for grad in unsharded_grads
+            )
+        all_reduce_grads = self.all_reduce_grads and not lazy_hsdp_allreduce
+        self._wait_for_post_backward()
         (
             _,
             _,
@@ -114,21 +170,27 @@ def post_backward_non_overlap(self, *unused: Any):
             self._orig_dtype,
             self._reduce_dtype,
             self.device,
-            self.reduce_scatter_reduce_op,
+            self.gradient_divide_factor,
             self._all_reduce_process_group if self._is_hsdp else None,
-            self.comm_ctx.all_reduce_stream,
-            self.all_reduce_grads,
+            all_reduce_stream,
+            all_reduce_grads,
             self._partial_reduce_output,
             self._all_reduce_hook,
+            self.force_sum_reduction_for_comms,
         )
         # [Note: Unset reduce_scatter_state]
         # the reduce-scatter input is allocated in current_stream and used in
         # reduce_scatter comm stream, but in FSDP2OverlapLevel.NO_OVERLAP case
         # its memory is safe to be reused for the later computations in current_stream,
         # so we don't need to hold reference and use MUSA events for synchronization here.
-        # self.comm_ctx.reduce_scatter_state = ReduceScatterState(
-        #     reduce_scatter_input, reduce_scatter_event
-        # )
+
+        # [Note: Unset all_reduce_state]
+        # when lazy HSDP all-reduce is disabled, all-reduce and the later
+        # `_to_dtype_if_needed(reduce_output, orig_dtype)` run in current_stream,
+        # so the all-reduce input does not need an extra reference to extend
+        # its lifetime across streams; when lazy HSDP all-reduce is enabled,
+        # `foreach_reduce()` saves the reduce-scatter output in
+        # `_partial_reduce_output` for the root final callback instead.
 
 
 # _fsdp_collectives.py
@@ -159,7 +221,7 @@ def foreach_all_gather_non_overlap(
             t.view(torch.uint8) for ts in param_all_gather_inputs for t in ts
         ]
     else:
-        all_gather_inputs = [t for ts in param_all_gather_inputs for t in ts]
+        all_gather_inputs = [*chain.from_iterable(param_all_gather_inputs)]
 
     inp_split_sizes = [t.numel() for t in all_gather_inputs]
     all_gather_input_numel = sum(inp_split_sizes)
@@ -217,20 +279,19 @@ def _setup_fsdp2_patches():
         warnings.warn(
             "The overlapping of FSDP2 was disabled on musa arch older than mp_31"
         )
-
-    # TODO(@mingyuan.wang): API changed in PT29
-    # if _FSDP2_OVERLAP_LEVEL == FSDP2OverlapLevel.NO_OVERLAP:
-    #     #
-    #     torch.distributed.fsdp._fully_shard._fsdp_collectives.foreach_all_gather.__code__ = (
-    #         foreach_all_gather_non_overlap.__code__
-    #     )
-    #     FSDPParamGroup.wait_for_unshard = wait_for_unshard_non_overlap
-    #     FSDPParamGroup.post_backward = post_backward_non_overlap
+    # TODO(mingyuan.wang): Drop these NO_OVERLAP patches once the overlap path is stable enough.
+    if _FSDP2_OVERLAP_LEVEL == FSDP2OverlapLevel.NO_OVERLAP:
+        torch.distributed.fsdp._fully_shard._fsdp_collectives.foreach_all_gather.__code__ = (
+            foreach_all_gather_non_overlap.__code__
+        )
+        FSDPParamGroup.wait_for_unshard = wait_for_unshard_non_overlap
+        FSDPParamGroup.post_backward = post_backward_non_overlap
 
 
 def monkey_patched_fully_shard(fully_shard_func):
     """Returns monkey patched fully_shard function, which will apply our patches on the first invocation"""
     has_patched = False
+    from .custom_overlap_patch import _maybe_set_custom_comm
 
     @wraps(fully_shard_func)
     def wrapper(*args, **kwargs):
@@ -238,7 +299,9 @@ def monkey_patched_fully_shard(fully_shard_func):
         if not has_patched:
             _setup_fsdp2_patches()
             has_patched = True
-        return fully_shard_func(*args, **kwargs)
+        fsdp_module = fully_shard_func(*args, **kwargs)
+        _maybe_set_custom_comm(fsdp_module)
+        return fsdp_module
 
     return wrapper
 

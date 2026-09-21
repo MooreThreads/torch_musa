@@ -29,10 +29,14 @@ def sdp_cases(part):
 
     cases.extend(
         [
+            # head_dim = 144: embedding_dim=1152, q_head_num=8 -> 1152//8=144
+            [(2, 64, 1152), 1152, 8, 8],
+            # head_dim = 200: embedding_dim=1600, q_head_num=8 -> 1600//8=200
+            [(2, 64, 1600), 1600, 8, 8],
             # head_dim = 256: embedding_dim=2048, q_head_num=8 -> 2048//8=256
             [(2, 64, 2048), 2048, 8, 8],
             # head_dim = 384: embedding_dim=3072, q_head_num=8 -> 3072//8=384
-            # [(2, 64, 3072), 3072, 8, 8],
+            [(2, 64, 3072), 3072, 8, 8],
             # head_dim = 512: embedding_dim=4096, q_head_num=8 -> 4096//8=512
             [(2, 64, 4096), 4096, 8, 8],
         ]
