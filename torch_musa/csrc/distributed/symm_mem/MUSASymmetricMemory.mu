@@ -522,9 +522,31 @@ void validate_rendezvous_requests(
 }
 
 namespace {
+struct ResolvedGroupInfo {
+  int rank;
+  int world_size;
+  c10::intrusive_ptr<c10d::Store> store;
+};
+
+ResolvedGroupInfo resolve_rendezvous_group_info(const std::string& group_name) {
+  try {
+    auto group = c10d::resolve_process_group(group_name);
+    return {group->getRank(), group->getSize(), group->getStore()};
+  } catch (const c10::Error& e) {
+    constexpr const char* kMissingProcessGroupMsg =
+        "Could not resolve the process group registered under the name ";
+    if (std::string(e.what_without_backtrace()).find(kMissingProcessGroupMsg) ==
+        std::string::npos) {
+      throw;
+    }
+  }
+
+  const auto& group = get_group_info(group_name);
+  return {group.rank, group.world_size, group.store};
+}
+
 template <bool use_fabric_handle>
 c10::intrusive_ptr<MUSAPeerAllocInfo> make_peer_alloc_info(
-    void* ptr,
     c10::intrusive_ptr<Block> block,
     const std::string& group_name) {
   static_assert(!use_fabric_handle, "fabric handle is not supported");
@@ -539,10 +561,10 @@ c10::intrusive_ptr<MUSAPeerAllocInfo> make_peer_alloc_info(
     LOG(INFO) << "using posix fd to import symmetric memory handles.";
   }
 
-  auto group = resolve_process_group(group_name);
-  auto rank = group->getRank();
-  auto world_size = group->getSize();
-  auto store = group->getStore();
+  auto group = resolve_rendezvous_group_info(group_name);
+  auto rank = group.rank;
+  auto world_size = group.world_size;
+  auto store = group.store;
 
   // Note: don't move ipc_channel construction closer to the use
   // there needs to be a barrier between constructor and first use,
@@ -589,8 +611,9 @@ c10::intrusive_ptr<MUSAPeerAllocInfo> make_peer_alloc_info(
   for (int r = 0; r < world_size; r++) {
     if (r == rank) {
       handles[r] = block->alloc_ref->handle;
-      buffers[r] = ptr;
-      signal_pads[r] = (void*)((uintptr_t)ptr + block->signal_pad_offset);
+      buffers[r] = block->alloc_ref->ptr;
+      signal_pads[r] =
+          (void*)((uintptr_t)buffers[r] + block->signal_pad_offset);
       continue;
     }
     if constexpr (!use_fabric_handle) {
@@ -668,7 +691,7 @@ c10::intrusive_ptr<SymmetricMemory> MUSASymmetricMemoryAllocator::rendezvous(
   if (it == block->symm_mems.end()) {
     TORCH_INTERNAL_ASSERT(
         handle_type_ != Expandable_Segments_Handle_Type::UNSPECIFIED);
-    auto pai = make_peer_alloc_info<false>(ptr, block, group_name_);
+    auto pai = make_peer_alloc_info<false>(block, group_name_);
     it = block->symm_mems.emplace(group_name_, pai).first;
   }
   return c10::make_intrusive<MUSASymmetricMemory>(it->second, offset);

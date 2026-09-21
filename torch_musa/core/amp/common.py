@@ -37,7 +37,7 @@ def _musa_set_autocast_enabled(*args, **kwargs) -> None:
 def get_amp_supported_dtype():
     from torch_musa.core.device import is_bf16_supported
 
-    choices = [torch.float16]
+    choices = [torch.float16, torch.float32]
     if is_bf16_supported():
         choices.append(torch.bfloat16)
     return choices

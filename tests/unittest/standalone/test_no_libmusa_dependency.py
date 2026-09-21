@@ -68,6 +68,7 @@ def _needed_libraries(path: Path):
         capture_output=True,
         text=True,
         check=True,
+        cwd=tempfile.gettempdir(),
     )
     return re.findall(r"Shared library: \[(.*?)\]", proc.stdout)
 

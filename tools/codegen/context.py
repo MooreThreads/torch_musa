@@ -1,7 +1,8 @@
 """Contexts extension based on pytorch for musa codegen"""
 
 import contextlib
-from typing import Iterator, Union
+import functools
+from typing import Callable, Iterator, TypeVar, Union
 
 from torchgen import local
 from torchgen.model import (
@@ -12,6 +13,9 @@ from torchgen.model import (
 from torchgen.utils import context as utils_context
 
 from codegen.model import musa_get_func_extra_info
+
+
+F = TypeVar("F")
 
 
 @contextlib.contextmanager
@@ -35,8 +39,18 @@ def musa_native_function_manager(
             yield
 
 
-def init_for_musa_codegen() -> None:
-    """This function should be done before executing codegen process"""
-    from torchgen import context as torchgen_context  # pylint: disable=C0415
+def method_with_musa_native_function(
+    func: Callable[[object, F], object],
+) -> Callable[[object, F], object]:
+    """Decorate a MUSA codegen method with metadata from musa_functions.yaml."""
 
-    setattr(torchgen_context, "native_function_manager", musa_native_function_manager)
+    @functools.wraps(func)
+    def wrapper(slf: object, f: F) -> object:
+        with musa_native_function_manager(f):
+            return func(slf, f)
+
+    return wrapper
+
+
+def init_for_musa_codegen() -> None:
+    """Keep torchgen's native-function context manager unchanged."""

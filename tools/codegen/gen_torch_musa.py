@@ -33,6 +33,7 @@ init_for_musa_codegen()
 
 from torchgen.gen import (
     parse_tags_yaml,
+    parse_native_yaml as parse_torch_native_yaml,
     LineLoader,
     ParsedYaml,
     error_check_native_functions,
@@ -679,6 +680,9 @@ def gen_source_files(
     selector: SelectiveBuilder,
     musa_fm: FileManager,
     aoti_fm: FileManager,
+    aoti_native_functions: Sequence[NativeFunction],
+    aoti_backend_indices: Dict[DispatchKey, BackendIndex],
+    aoti_structured_native_functions: Sequence[NativeFunctionsGroup],
     dispatch_keys: List[DispatchKey],
     functions_keys: Set[DispatchKey],
 ) -> None:
@@ -747,9 +751,9 @@ def gen_source_files(
     gen_aoti_c_shim_files(
         aoti_fm=aoti_fm,
         aoti_backends=(DispatchKey.PrivateUse1,),
-        native_functions=native_functions,
-        backend_indices=backend_indices,
-        structured_native_functions=structured_native_functions,
+        native_functions=aoti_native_functions,
+        backend_indices=aoti_backend_indices,
+        structured_native_functions=aoti_structured_native_functions,
         extra_musa_headers=extra_musa_headers,
         update_aoti_c_shim=True,
         extend_aoti_c_shim=False,
@@ -1030,6 +1034,7 @@ def codegen() -> None:
 
     # load pytorch native_functions.yaml and tags.yaml
     parsed_yaml = parse_native_yaml(native_yaml_path, tags_yaml_path, musa_yaml_path)
+    torch_parsed_yaml = parse_torch_native_yaml(native_yaml_path, tags_yaml_path)
     # valid_tags = parse_tags_yaml(tags_yaml_path)
 
     native_functions, backend_indices = (
@@ -1040,6 +1045,16 @@ def codegen() -> None:
 
     structured_native_functions = [
         g for g in grouped_native_functions if isinstance(g, NativeFunctionsGroup)
+    ]
+
+    aoti_backend_indices = dict(torch_parsed_yaml.backend_indices)
+    aoti_backend_indices[DispatchKey.PrivateUse1] = backend_indices[
+        DispatchKey.PrivateUse1
+    ]
+    aoti_native_functions = torch_parsed_yaml.native_functions
+    aoti_grouped_native_functions = get_grouped_native_functions(aoti_native_functions)
+    aoti_structured_native_functions = [
+        g for g in aoti_grouped_native_functions if isinstance(g, NativeFunctionsGroup)
     ]
 
     functions_keys: Set[DispatchKey] = {
@@ -1081,6 +1096,9 @@ def codegen() -> None:
         selector=selector,
         musa_fm=musa_fm,
         aoti_fm=aoti_fm,
+        aoti_native_functions=aoti_native_functions,
+        aoti_backend_indices=aoti_backend_indices,
+        aoti_structured_native_functions=aoti_structured_native_functions,
         dispatch_keys=MUSA_DISPATCH_KEYS,
         functions_keys=functions_keys,
     )

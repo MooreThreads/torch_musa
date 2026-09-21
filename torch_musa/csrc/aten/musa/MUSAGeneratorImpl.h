@@ -97,7 +97,7 @@ struct MUSAGraph;
 struct MUSAGeneratorState : public c10::intrusive_ptr_target {
   uint64_t seed_;
   uint64_t philox_offset_per_thread_;
-  uint32_t offset_intragraph_;
+  uint64_t offset_intragraph_;
   bool capturing_{};
   std::unordered_set<musa::MUSAGraph*> registered_graphs_;
   at::TensorBase seed_extragraph_{};
@@ -106,7 +106,7 @@ struct MUSAGeneratorState : public c10::intrusive_ptr_target {
   MUSAGeneratorState(
       uint64_t seed = default_rng_seed_val,
       uint64_t philox_offset_per_thread = 0,
-      uint32_t offset_intragraph = 0)
+      uint64_t offset_intragraph = 0)
       : seed_(seed),
         philox_offset_per_thread_(philox_offset_per_thread),
         offset_intragraph_(offset_intragraph) {}

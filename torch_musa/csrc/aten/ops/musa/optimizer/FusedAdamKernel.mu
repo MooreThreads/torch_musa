@@ -1,0 +1,196 @@
+#include "torch_musa/csrc/aten/ops/musa/optimizer/FusedAdam.muh"
+
+namespace at::musa {
+
+void FusedAdamKernelImplDefault(
+    at::TensorList params,
+    at::TensorList grads,
+    at::TensorList exp_avgs,
+    at::TensorList exp_avg_sqs,
+    at::TensorList state_steps,
+    const double lr,
+    const double beta1,
+    const double beta2,
+    const double weight_decay,
+    const double eps,
+    const bool maximize,
+    const c10::optional<at::Tensor>& grad_scale,
+    const c10::optional<at::Tensor>& found_inf) {
+  std::vector<std::vector<at::Tensor>> tensor_lists{
+      params.vec(), grads.vec(), exp_avgs.vec(), exp_avg_sqs.vec()};
+
+  float* grad_scale_ptr =
+      grad_scale.has_value() ? grad_scale->data_ptr<float>() : nullptr;
+  float* found_inf_ptr =
+      found_inf.has_value() ? found_inf->data_ptr<float>() : nullptr;
+  float* lr_ptr = nullptr;
+
+  AT_DISPATCH_FLOATING_TYPES_AND2(
+      at::kHalf,
+      at::kBFloat16,
+      params[0].scalar_type(),
+      "fused_adam_kernel_musa",
+      [&]() {
+        multi_tensor_apply_for_fused_adam_amp_dispatch<
+            FusedAdamMetadataConfig::Default,
+            scalar_t,
+            4,
+            ADAM_MODE::ORIGINAL,
+            false>(
+            tensor_lists,
+            state_steps,
+            lr_ptr, // unused
+            lr,
+            beta1,
+            beta2,
+            weight_decay,
+            eps,
+            maximize,
+            grad_scale_ptr,
+            found_inf_ptr);
+      });
+}
+// The following overload simply has a Tensor lr
+void FusedAdamKernelImplDefault(
+    at::TensorList params,
+    at::TensorList grads,
+    at::TensorList exp_avgs,
+    at::TensorList exp_avg_sqs,
+    at::TensorList state_steps,
+    const at::Tensor& lr,
+    const double beta1,
+    const double beta2,
+    const double weight_decay,
+    const double eps,
+    const bool maximize,
+    const c10::optional<at::Tensor>& grad_scale,
+    const c10::optional<at::Tensor>& found_inf) {
+  std::vector<std::vector<at::Tensor>> tensor_lists{
+      params.vec(), grads.vec(), exp_avgs.vec(), exp_avg_sqs.vec()};
+
+  float* grad_scale_ptr =
+      grad_scale.has_value() ? grad_scale->data_ptr<float>() : nullptr;
+  float* found_inf_ptr =
+      found_inf.has_value() ? found_inf->data_ptr<float>() : nullptr;
+  float* lr_ptr = lr.data_ptr<float>();
+
+  AT_DISPATCH_FLOATING_TYPES_AND2(
+      at::kHalf,
+      at::kBFloat16,
+      params[0].scalar_type(),
+      "fused_adam_kernel_musa",
+      [&]() {
+        multi_tensor_apply_for_fused_adam_amp_dispatch<
+            FusedAdamMetadataConfig::Default,
+            scalar_t,
+            4,
+            ADAM_MODE::ORIGINAL,
+            false>(
+            tensor_lists,
+            state_steps,
+            lr_ptr,
+            1.0, // unused,
+            beta1,
+            beta2,
+            weight_decay,
+            eps,
+            maximize,
+            grad_scale_ptr,
+            found_inf_ptr);
+      });
+}
+
+void FusedAdamKernelImpl(
+    at::TensorList params,
+    at::TensorList grads,
+    at::TensorList exp_avgs,
+    at::TensorList exp_avg_sqs,
+    at::TensorList state_steps,
+    const double lr,
+    const double beta1,
+    const double beta2,
+    const double weight_decay,
+    const double eps,
+    const bool maximize,
+    const c10::optional<at::Tensor>& grad_scale,
+    const c10::optional<at::Tensor>& found_inf) {
+  if (at::musa::getMUSAArch() < 310) {
+    FusedAdamKernelImplArchLt310(
+        params,
+        grads,
+        exp_avgs,
+        exp_avg_sqs,
+        state_steps,
+        lr,
+        beta1,
+        beta2,
+        weight_decay,
+        eps,
+        maximize,
+        grad_scale,
+        found_inf);
+  } else {
+    FusedAdamKernelImplDefault(
+        params,
+        grads,
+        exp_avgs,
+        exp_avg_sqs,
+        state_steps,
+        lr,
+        beta1,
+        beta2,
+        weight_decay,
+        eps,
+        maximize,
+        grad_scale,
+        found_inf);
+  }
+}
+void FusedAdamKernelImpl(
+    at::TensorList params,
+    at::TensorList grads,
+    at::TensorList exp_avgs,
+    at::TensorList exp_avg_sqs,
+    at::TensorList state_steps,
+    const at::Tensor& lr,
+    const double beta1,
+    const double beta2,
+    const double weight_decay,
+    const double eps,
+    const bool maximize,
+    const c10::optional<at::Tensor>& grad_scale,
+    const c10::optional<at::Tensor>& found_inf) {
+  if (at::musa::getMUSAArch() < 310) {
+    FusedAdamKernelImplArchLt310(
+        params,
+        grads,
+        exp_avgs,
+        exp_avg_sqs,
+        state_steps,
+        lr,
+        beta1,
+        beta2,
+        weight_decay,
+        eps,
+        maximize,
+        grad_scale,
+        found_inf);
+  } else {
+    FusedAdamKernelImplDefault(
+        params,
+        grads,
+        exp_avgs,
+        exp_avg_sqs,
+        state_steps,
+        lr,
+        beta1,
+        beta2,
+        weight_decay,
+        eps,
+        maximize,
+        grad_scale,
+        found_inf);
+  }
+}
+
+} // namespace at::musa

@@ -5,9 +5,6 @@
 
 from torch._inductor.ir import TemplateBuffer
 
-import torchgen.aoti.fallback_ops
-from .codegen import fallback_ops
-
 
 class MUSATemplateBuffer(TemplateBuffer):
     """
@@ -29,8 +26,3 @@ class MUSATemplateBuffer(TemplateBuffer):
 
     def get_workspace_size(self):
         return self.workspace_size if self.workspace_size is not None else 0
-
-
-def _apply_ir_patch():
-    # pass
-    torchgen.aoti.fallback_ops = fallback_ops

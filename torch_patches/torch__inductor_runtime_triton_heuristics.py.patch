@@ -1,8 +1,24 @@
 diff --git a/torch/_inductor/runtime/triton_heuristics.py b/torch/_inductor/runtime/triton_heuristics.py
-index 2a1447fbf0b..9a9f422f67e 100644
+index 2a1447f..1c8c6af 100644
 --- a/torch/_inductor/runtime/triton_heuristics.py
 +++ b/torch/_inductor/runtime/triton_heuristics.py
-@@ -1240,7 +1240,7 @@ class CachingAutotuner(KernelInterface):
+@@ -540,9 +540,13 @@ class CachingAutotuner(KernelInterface):
+             and self.heuristic_type == HeuristicType.REDUCTION
+             and self.size_hints is not None
+             # Disable for Intel as Triton is not ready to return n_regs for a compiled_binary.
+-            and device_prop.type in ["cuda", "hip"]
++            and device_prop.type in ["cuda", "hip", "musa"]
+             and device_prop.major
+-            and (device_prop.major >= 8 or torch.version.hip)
++            and (
++                device_prop.major >= 8
++                or torch.version.hip
++                or device_prop.type == "musa"
++            )
+             and device_prop.regs_per_multiprocessor is not None
+         ):
+             assert device_prop.regs_per_multiprocessor
+@@ -1240,8 +1244,8 @@ class CachingAutotuner(KernelInterface):
          from torch._inductor import config
          from torch._inductor.codecache import CudaKernelParamCache
  
@@ -12,7 +28,8 @@ index 2a1447fbf0b..9a9f422f67e 100644
 +            self.device_props.type, "mubin"
          )
          binary = launcher.bin.asm[bin_type]
-@@ -1265,7 +1265,7 @@ class CachingAutotuner(KernelInterface):
+ 
+@@ -1265,7 +1269,7 @@ class CachingAutotuner(KernelInterface):
  
          # Everything else: capture architecture-specific assembly
          else:
@@ -21,7 +38,7 @@ index 2a1447fbf0b..9a9f422f67e 100644
                  self.device_props.type
              )
              asm = launcher.bin.asm.get(asm_type, None)
-@@ -2464,14 +2464,14 @@ def triton_config(
+@@ -2464,14 +2468,14 @@ def triton_config(
          num_warps = _num_warps(
              conditional_product(x, y, z) // num_elements_per_warp, min_num_warps=1
          )
@@ -44,21 +61,23 @@ index 2a1447fbf0b..9a9f422f67e 100644
      xnumel = size_hints["x"]
      ynumel = size_hints.get("y")
      znumel = size_hints.get("z")
-@@ -2878,6 +2878,13 @@ def pointwise(
+@@ -2878,6 +2882,15 @@ def pointwise(
                  ),
                  *hinted_configs,
              ]
 +            if inductor_meta.get("max_autotune") or inductor_meta.get("max_autotune_pointwise"):
 +                for num_warps in [1, 2, 4, 8]:
 +                    for _bs in [bs, 64, 128, 256]:
-+                        for nepw in [128, 256, 512]:
-+                            configs.append(triton_config_with_settings(
-+                                size_hints, _bs,  num_elements_per_warp=nepw, num_warps=num_warps))
++                        configs.append(
++                            triton_config_with_settings(
++                                size_hints, _bs, num_warps=num_warps
++                            )
++                        )
 +
              # Additional configs appended for ROCm builds
              if torch.version.hip:
                  if inductor_meta.get("max_autotune_pointwise"):
-@@ -3244,6 +3251,10 @@ def _reduction_configs(
+@@ -3244,6 +3257,10 @@ def _reduction_configs(
          contiguous_config,
          outer_config,
          tiny_config,
@@ -69,7 +88,7 @@ index 2a1447fbf0b..9a9f422f67e 100644
          make_config(64, 64),
          make_config(8, 512),
          # halve the XBLOCK/Rn_BLOCK compared to outer_config
-@@ -3260,7 +3271,23 @@ def _reduction_configs(
+@@ -3260,7 +3277,23 @@ def _reduction_configs(
              ]
          )
  

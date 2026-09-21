@@ -60,6 +60,32 @@ mcclRedOp_t getMcclReduceOp(
   }
 }
 
+const char* getIntraNodeReduceOp(const ReduceOp& reduce_op) {
+  if (reduce_op == ReduceOp::SUM) {
+    return "sum";
+  }
+  if (reduce_op == ReduceOp::AVG) {
+    return "avg";
+  }
+  return nullptr;
+}
+
+template <typename CanUseFn>
+bool canUseIntraNodeCommCoalesced(
+    const std::vector<at::Tensor>& inputs,
+    const std::vector<at::Tensor>& outputs,
+    CanUseFn canUseFn) {
+  if (inputs.empty() || inputs.size() != outputs.size()) {
+    return false;
+  }
+  for (const auto i : c10::irange(inputs.size())) {
+    if (!canUseFn(inputs[i], outputs[i])) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // Get a key string from device
 inline std::string getKeyFromDevice(const at::Device& device) {
   return std::to_string(device.index());
@@ -440,14 +466,14 @@ ProcessGroupMCCL::WorkMCCL::WorkMCCL(const WorkMCCL& w)
 }
 
 bool ProcessGroupMCCL::WorkMCCL::isCompleted() {
-  if (!mcclComm_->isAborted()) {
+  if (mcclComm_ && !mcclComm_->isAborted()) {
     checkAndSetException();
   }
   return exception() || finishedGPUExecutionInternal();
 }
 
 bool ProcessGroupMCCL::WorkMCCL::isStarted() {
-  if (!mcclComm_->isAborted()) {
+  if (mcclComm_ && !mcclComm_->isAborted()) {
     checkAndSetException();
   }
   return exception() || startedGPUExecutionInternal();
@@ -460,6 +486,9 @@ bool ProcessGroupMCCL::WorkMCCL::isSuccess() const {
 void ProcessGroupMCCL::WorkMCCL::checkAndSetException() {
   if (exception()) {
     // We already have an exception.
+    return;
+  }
+  if (!mcclComm_) {
     return;
   }
 
@@ -716,6 +745,10 @@ bool ProcessGroupMCCL::WorkMCCL::wait(std::chrono::milliseconds timeout) {
 }
 
 void ProcessGroupMCCL::WorkMCCL::abort() {
+  if (!mcclComm_) {
+    return;
+  }
+
   // Abort all communicators of this work
   mcclComm_->abort();
 
@@ -743,7 +776,8 @@ ProcessGroupMCCL::ProcessGroupMCCL(
       store_(std::move(store)),
       options_(std::move(options)),
       terminateProcessGroup_(false),
-      local_id_(process_group_id++) {
+      local_id_(process_group_id++),
+      intraNodeComm_(initIntraNodeComm()) {
   TORCH_CHECK_WITH(
       ValueError,
       c10::musa::device_count() != 0,
@@ -1004,6 +1038,41 @@ void ProcessGroupMCCL::deregisterMemPool(c10::musa::MemPool* pool) {
     mcclComm->deregisterSegment(
         reinterpret_cast<void*>(segmentInfo.address), symm);
   }
+}
+
+c10::intrusive_ptr<musa_intra_node_comm::IntraNodeComm> ProcessGroupMCCL::
+    initIntraNodeComm() {
+  LOG(INFO) << logPrefix() << "Running initIntraNodeComm";
+  using IntraNodeComm = musa_intra_node_comm::IntraNodeComm;
+  if (!IntraNodeComm::isEnabled()) {
+    LOG(INFO) << logPrefix() << "initIntraNodeComm not enabled";
+    return nullptr;
+  }
+  auto prefixStore = c10::make_intrusive<PrefixStore>("IntraNodeComm", store_);
+  const auto& processGroupName =
+      pg_uid_.empty() ? options_->group_name : pg_uid_;
+  LOG(INFO) << logPrefix() << "Running initIntraNodeComm processGroupName: "
+            << processGroupName;
+
+  auto comm = c10::make_intrusive<IntraNodeComm>(
+      prefixStore, rank_, size_, processGroupName);
+  if (comm->rendezvous()) {
+    const auto device =
+        at::Device(at::DeviceType::PrivateUse1, comm->deviceIndex());
+    const auto streamKey = getKeyFromDevice(device);
+    LOG(INFO) << logPrefix()
+              << "Running initIntraNodeComm stream key: " << streamKey;
+
+    // Pre-create the shared stream so the intra-node hot path is read-only.
+    ensureMCCLStream(streamKey, device);
+    LOG(INFO) << logPrefix()
+              << "Running initIntraNodeComm rendezvous successful";
+
+    return comm;
+  }
+  LOG(INFO) << logPrefix() << "Running initIntraNodeComm rendezvous failed";
+
+  return nullptr;
 }
 
 void ProcessGroupMCCL::setSequenceNumberForGroup() {
@@ -1333,6 +1402,17 @@ void ProcessGroupMCCL::shutdown() {
   // Watchdog thread exiting, retire heartbeat monitoring thread now to avoid
   // false alarm
   heartbeatMonitor_->stop();
+
+  // MemPool allocator hooks outlive this process group and may fire during
+  // Python finalization. Stop tracking this PG's communicators before they are
+  // destroyed so late segment-free hooks do not touch invalid MCCL comms.
+  {
+    std::lock_guard<std::mutex> lock(mcclCommMemPoolMapMutex);
+    for (auto& [_, mcclComm] : devMCCLCommMap_) {
+      mcclCommMemPoolMap.erase(mcclComm);
+    }
+  }
+
   // Destroy the communicator, reclaim resources
   LOG(INFO) << logPrefix() << "Watchdog joined, destroying MCCL communicators.";
   {
@@ -2478,6 +2558,9 @@ void ProcessGroupMCCL::runHookLoop() {
 }
 
 std::exception_ptr ProcessGroupMCCL::WorkMCCL::checkForMCCLErrors() {
+  if (!mcclComm_) {
+    return nullptr;
+  }
   return checkForMCCLErrorsInternal(mcclComm_);
 }
 
@@ -2814,10 +2897,8 @@ std::shared_ptr<MCCLComm> ProcessGroupMCCL::initMCCLComm(
     }
   }
 
-  // Creates the MCCL streams
-  bool force_high = getCvarBool(TORCH_MCCL_HIGH_PRIORITY, false);
-  auto streamVal = at::musa::getStreamFromPool(
-      options_->is_high_priority_stream || force_high);
+  // The intra-node path may have created this stream before the communicator.
+  ensureMCCLStream(deviceKey, device);
 
   {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -2842,8 +2923,6 @@ std::shared_ptr<MCCLComm> ProcessGroupMCCL::initMCCLComm(
     (void)i;
     C10D_MCCL_CHECK(mcclGroupStart(), std::nullopt);
   }
-
-  mcclStreams_.emplace(deviceKey, streamVal);
 
   // Note: these events are created with the (default) cudaEventDisableTiming
   // flag This flag provides the best performance when used with
@@ -2917,6 +2996,19 @@ std::shared_ptr<MCCLComm> ProcessGroupMCCL::getMCCLComm(
     return devMCCLCommMap_[deviceKey];
   }
   return nullptr;
+}
+
+void ProcessGroupMCCL::ensureMCCLStream(
+    const std::string& key,
+    const at::Device& device) {
+  std::lock_guard<std::mutex> lock(mcclStreamsMutex_);
+  auto it = mcclStreams_.find(key);
+  if (it == mcclStreams_.end()) {
+    const bool forceHighPriority = getCvarBool(TORCH_MCCL_HIGH_PRIORITY, false);
+    auto stream = at::musa::getStreamFromPool(
+        options_->is_high_priority_stream || forceHighPriority, device.index());
+    mcclStreams_.emplace(key, stream);
+  }
 }
 
 uint64_t ProcessGroupMCCL::getCommSplitCounter() const {
@@ -3063,6 +3155,93 @@ c10::intrusive_ptr<ProcessGroupMCCL::WorkMCCL> ProcessGroupMCCL::initWork(
     r->trace_reset_epoch_ = traceId.reset_epoch;
   }
   return r;
+}
+
+template <typename StashFn, typename RunFn>
+c10::intrusive_ptr<Work> ProcessGroupMCCL::runIntraNodeComm(
+    at::Device device,
+    OpType opType,
+    const char* profilingTitle,
+    const std::vector<at::Tensor>& inputs,
+    const std::vector<at::Tensor>& outputs,
+    bool asyncOp,
+    int64_t numelIn,
+    int64_t numelOut,
+    StashFn stashFn,
+    RunFn runFn) {
+  std::string opName = profilingTitle != nullptr ? profilingTitle : "";
+  if (opName.rfind("mccl:", 0) == 0) {
+    opName = opName.substr(5);
+  }
+  LOG(INFO) << logPrefix() << "Running in PGMCCL intra node comm " << opName;
+
+  c10::musa::OptionalMUSAGuard gpuGuard(device);
+  auto currentStream = at::musa::getCurrentMUSAStream(device.index());
+  TORCH_CHECK(
+      intraNodeComm_ != nullptr, "MUSA IntraNodeComm is not initialized");
+  const auto& processGroupName =
+      pg_uid_.empty() ? options_->group_name : pg_uid_;
+  if (!processGroupName.empty()) {
+    intraNodeComm_->setProcessGroupName(processGroupName);
+  }
+  auto capture_status = c10::musa::currentStreamCaptureStatusMayInitCtx();
+  errorIfCapturingNonCapturableMCCL();
+  // Intra-node collectives reuse shared workspaces, so serialize both
+  // synchronous and asynchronous work on the communication stream.
+  auto intraNodeStream = mcclStreams_.at(getKeyFromDevice(device));
+  seqCollective_++;
+  op_id_++;
+  bool enqueue = capture_status == c10::musa::CaptureStatus::None;
+
+  auto work = initWork(
+      device, rank_, opType, false, profilingTitle, inputs, outputs, enqueue);
+  work->outputs_ = std::make_shared<std::vector<at::Tensor>>(outputs);
+  stashFn(work);
+
+  at::musa::MUSAEvent startEvent(musaEventDisableTiming);
+  startEvent.record(currentStream);
+  startEvent.block(intraNodeStream);
+
+  if (work->timingEnabled_) {
+    work->mcclStartEvent_->record(intraNodeStream);
+  }
+
+  {
+    at::musa::MUSAStreamGuard guard(intraNodeStream);
+    runFn();
+  }
+
+  work->mcclEndEvent_->record(intraNodeStream);
+
+  {
+    c10::musa::MUSAMultiStreamGuard streamGuard(intraNodeStream);
+    std::vector<at::Device> devices{device};
+    work->future_ = c10::make_intrusive<at::ivalue::Future>(
+        c10::ListType::create(c10::TensorType::get()), devices);
+    if (work->recordFunctionEndCallback_) {
+      work->future_->addCallback(
+          [work](at::ivalue::Future& /* unused */) {
+            work->recordFunctionEndCallback_();
+          },
+          /*uses_future=*/false);
+    }
+    work->future_->markCompleted(at::IValue(*work->outputs_));
+  }
+
+  work->blockingWait_ = blockingWait_;
+  work->store_ = store_;
+  assignTimeoutToWork(work, options_);
+  work->numelIn_ = numelIn;
+  work->numelOut_ = numelOut;
+
+  if (enqueue) {
+    workEnqueue(work);
+  }
+  if (asyncOp) {
+    return work;
+  }
+  work->synchronize();
+  return nullptr;
 }
 
 std::vector<at::Tensor> ProcessGroupMCCL::WorkMCCL::result() {
@@ -4057,6 +4236,32 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::allreduce(
       globalRankStride_, // globalRankStride_
       this->getSize()); // worldSize
 
+  // intra node comm branch
+  const char* intraNodeReduceOp = getIntraNodeReduceOp(opts.reduceOp);
+  if (intraNodeReduceOp != nullptr && !coalescing_state_ &&
+      intraNodeComm_ != nullptr) {
+    auto algo = intraNodeComm_->selectAllReduceAlgo(tensor, intraNodeReduceOp);
+    if (algo != musa_intra_node_comm::AllReduceAlgo::NONE) {
+      auto device = tensor.device();
+      std::vector<at::Tensor> workTensors{tensor};
+      return runIntraNodeComm(
+          device,
+          OpType::ALLREDUCE,
+          "mccl:all_reduce",
+          workTensors,
+          workTensors,
+          opts.asyncOp,
+          tensor.numel(),
+          tensor.numel(),
+          [&](const c10::intrusive_ptr<WorkMCCL>& work) {
+            work->stashed_for_allocator_safety_->stash(workTensors);
+          },
+          [&]() {
+            intraNodeComm_->allReduce(tensor, algo, intraNodeReduceOp);
+          });
+    }
+  } // end intra node comm
+
   // avoidRecordStreams_ note: collective() will stash tensors.
   return allreduce_impl(tensor, "mccl:all_reduce", opts);
 }
@@ -4086,6 +4291,44 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::allreduce_coalesced(
       globalRankStart_, // globalRankStart_
       globalRankStride_, // globalRankStride_
       this->getSize()); // worldSize
+
+  const char* intraNodeReduceOp = getIntraNodeReduceOp(opts.reduceOp);
+  if (intraNodeReduceOp != nullptr && !coalescing_state_ &&
+      intraNodeComm_ != nullptr) {
+    std::vector<musa_intra_node_comm::AllReduceAlgo> algos;
+    algos.reserve(tensors.size());
+    bool canUseIntraNode = true;
+    for (const auto& tensor : tensors) {
+      auto algo =
+          intraNodeComm_->selectAllReduceAlgo(tensor, intraNodeReduceOp);
+      if (algo == musa_intra_node_comm::AllReduceAlgo::NONE) {
+        canUseIntraNode = false;
+        break;
+      }
+      algos.push_back(algo);
+    }
+    if (canUseIntraNode) {
+      auto device = tensors.front().device();
+      return runIntraNodeComm(
+          device,
+          OpType::ALLREDUCE,
+          "mccl:allreduce_coalesced",
+          tensors,
+          tensors,
+          opts.asyncOp,
+          total_numel,
+          total_numel,
+          [&](const c10::intrusive_ptr<WorkMCCL>& work) {
+            work->stashed_for_allocator_safety_->stash(tensors);
+          },
+          [&]() {
+            for (const auto i : c10::irange(tensors.size())) {
+              intraNodeComm_->allReduce(
+                  tensors[i], algos[i], intraNodeReduceOp);
+            }
+          });
+    }
+  }
 
   // avoidRecordStreams_ note: collective() will stash tensors.
   return collectiveCoalesced(
@@ -4341,6 +4584,35 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::allgather(
     // Flatten a vector of tensors into a single, stacked tensor.
     at::Tensor outputFlattened = newLikeFlat(outputTensors_);
 
+    // intra node comm branch
+    if (!coalescing_state_ && intraNodeComm_ != nullptr &&
+        intraNodeComm_->canUseAllGather(inputTensor, outputFlattened)) {
+      auto device = inputTensor.device();
+      std::vector<at::Tensor> workInputs{inputTensor};
+      std::vector<at::Tensor> workOutputs{outputFlattened};
+      return runIntraNodeComm(
+          device,
+          OpType::ALLGATHER,
+          "mccl:all_gather",
+          workInputs,
+          workOutputs,
+          opts.asyncOp,
+          inputTensor.numel(),
+          outputFlattened.numel(),
+          [&](const c10::intrusive_ptr<WorkMCCL>& work) {
+            work->stashed_for_allocator_safety_->stash(workInputs);
+            work->stashed_for_allocator_safety_->stash(workOutputs);
+            work->stashed_for_allocator_safety_->stash(outputTensors_);
+          },
+          [&]() {
+            intraNodeComm_->allGather(outputFlattened, inputTensor);
+            for (const auto j : c10::irange(outputTensors_.size())) {
+              outputTensors_[j].copy_(
+                  outputFlattened[static_cast<int64_t>(j)], true);
+            }
+          });
+    }
+
     return collective(
         inputTensor,
         outputFlattened,
@@ -4412,6 +4684,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::allgather_into_tensor_coalesced(
     std::vector<at::Tensor>& outputs,
     std::vector<at::Tensor>& inputs,
     const AllgatherOptions& opts) {
+  const auto numelIn = getTensorsNumel(inputs);
+  const auto numelOut = getTensorsNumel(outputs);
   RECORD_PARAM_COMMS_DATA(
       std::make_tuple(
           static_cast<int64_t>(seqCollective_) + 1,
@@ -4422,14 +4696,40 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::allgather_into_tensor_coalesced(
       outputs, // outputTensors
       rank_, // rank
       "allgather_into_tensor_coalesced", // collective name
-      getTensorsNumel(inputs), // inNelems
-      getTensorsNumel(outputs), // outNelems
+      numelIn, // inNelems
+      numelOut, // outNelems
       inputs[0].scalar_type(), // dType
       std::vector<int64_t>(), // inSplitSizes
       std::vector<int64_t>(), // outSplitSizes
       globalRankStart_, // globalRankStart_
       globalRankStride_, // globalRankStride_
       this->getSize()); // worldSize
+
+  if (!coalescing_state_ && intraNodeComm_ != nullptr &&
+      canUseIntraNodeCommCoalesced(
+          inputs, outputs, [&](const auto& input, const auto& output) {
+            return intraNodeComm_->canUseAllGather(input, output);
+          })) {
+    auto device = inputs.front().device();
+    return runIntraNodeComm(
+        device,
+        OpType::ALLGATHER,
+        "mccl:all_gather_into_tensor_coalesced",
+        inputs,
+        outputs,
+        opts.asyncOp,
+        numelIn,
+        numelOut,
+        [&](const c10::intrusive_ptr<WorkMCCL>& work) {
+          work->stashed_for_allocator_safety_->stash(inputs);
+          work->stashed_for_allocator_safety_->stash(outputs);
+        },
+        [&]() {
+          for (const auto i : c10::irange(inputs.size())) {
+            intraNodeComm_->allGather(outputs[i], inputs[i]);
+          }
+        });
+  }
 
   return collectiveCoalesced(
       inputs,
@@ -4481,6 +4781,37 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::reduce_scatter(
   if (same_size) {
     // Flatten a vector of tensors into a single, stacked tensor.
     at::Tensor inputFlattened = newLikeFlat(inputTensors_);
+
+    const char* intraNodeReduceOp = getIntraNodeReduceOp(opts.reduceOp);
+    if (!coalescing_state_ && intraNodeReduceOp != nullptr &&
+        intraNodeComm_ != nullptr &&
+        intraNodeComm_->canUseReduceScatter(inputFlattened, outputTensor)) {
+      auto device = outputTensor.device();
+      std::vector<at::Tensor> workInputs{inputFlattened};
+      std::vector<at::Tensor> workOutputs{outputTensor};
+      return runIntraNodeComm(
+          device,
+          OpType::REDUCE_SCATTER,
+          "mccl:reduce_scatter",
+          workInputs,
+          workOutputs,
+          opts.asyncOp,
+          inputFlattened.numel(),
+          outputTensor.numel(),
+          [&](const c10::intrusive_ptr<WorkMCCL>& work) {
+            work->stashed_for_allocator_safety_->stash(workInputs);
+            work->stashed_for_allocator_safety_->stash(workOutputs);
+            work->stashed_for_allocator_safety_->stash(inputTensors_);
+          },
+          [&]() {
+            for (const auto j : c10::irange(inputTensors_.size())) {
+              inputFlattened[static_cast<int64_t>(j)].copy_(
+                  inputTensors_[j], true);
+            }
+            intraNodeComm_->reduceScatter(
+                outputTensor, inputFlattened, intraNodeReduceOp);
+          });
+    }
 
     return collective(
         inputFlattened,
@@ -4597,6 +4928,32 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::_reduce_scatter_base(
   // in a clever way. This setting is added for libraries like FSDP which uses
   // `reduce_scatter_tensor`.
 
+  const char* intraNodeReduceOp = getIntraNodeReduceOp(opts.reduceOp);
+  if (!coalescing_state_ && intraNodeReduceOp != nullptr &&
+      intraNodeComm_ != nullptr &&
+      intraNodeComm_->canUseReduceScatter(inputTensor, outputTensor)) {
+    auto device = outputTensor.device();
+    std::vector<at::Tensor> workInputs{inputTensor};
+    std::vector<at::Tensor> workOutputs{outputTensor};
+    return runIntraNodeComm(
+        device,
+        OpType::_REDUCE_SCATTER_BASE,
+        "mccl:_reduce_scatter_base",
+        workInputs,
+        workOutputs,
+        opts.asyncOp,
+        inputTensor.numel(),
+        outputTensor.numel(),
+        [&](const c10::intrusive_ptr<WorkMCCL>& work) {
+          work->stashed_for_allocator_safety_->stash(workInputs);
+          work->stashed_for_allocator_safety_->stash(workOutputs);
+        },
+        [&]() {
+          intraNodeComm_->reduceScatter(
+              outputTensor, inputTensor, intraNodeReduceOp);
+        });
+  }
+
   return collective(
       inputTensor,
       outputTensor,
@@ -4634,6 +4991,8 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::reduce_scatter_tensor_coalesced(
     std::vector<at::Tensor>& outputs,
     std::vector<at::Tensor>& inputs,
     const ReduceScatterOptions& opts) {
+  const auto numelIn = getTensorsNumel(inputs);
+  const auto numelOut = getTensorsNumel(outputs);
   RECORD_PARAM_COMMS_DATA(
       std::make_tuple(
           static_cast<int64_t>(seqCollective_) + 1,
@@ -4644,14 +5003,43 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::reduce_scatter_tensor_coalesced(
       outputs, // outputTensors
       rank_, // rank
       "reduce_scatter_tensor_coalesced", // collective name
-      getTensorsNumel(inputs), // inNelems
-      getTensorsNumel(outputs), // outNelems
+      numelIn, // inNelems
+      numelOut, // outNelems
       inputs[0].scalar_type(), // dType
       std::vector<int64_t>(), // inSplitSizes
       std::vector<int64_t>(), // outSplitSizes
       globalRankStart_, // globalRankStart_
       globalRankStride_, // globalRankStride_
       this->getSize()); // worldSize
+
+  const char* intraNodeReduceOp = getIntraNodeReduceOp(opts.reduceOp);
+  if (!coalescing_state_ && intraNodeReduceOp != nullptr &&
+      intraNodeComm_ != nullptr &&
+      canUseIntraNodeCommCoalesced(
+          inputs, outputs, [&](const auto& input, const auto& output) {
+            return intraNodeComm_->canUseReduceScatter(input, output);
+          })) {
+    auto device = outputs.front().device();
+    return runIntraNodeComm(
+        device,
+        OpType::_REDUCE_SCATTER_BASE,
+        "mccl:reduce_scatter_tensor_coalesced",
+        inputs,
+        outputs,
+        opts.asyncOp,
+        numelIn,
+        numelOut,
+        [&](const c10::intrusive_ptr<WorkMCCL>& work) {
+          work->stashed_for_allocator_safety_->stash(inputs);
+          work->stashed_for_allocator_safety_->stash(outputs);
+        },
+        [&]() {
+          for (const auto i : c10::irange(inputs.size())) {
+            intraNodeComm_->reduceScatter(
+                outputs[i], inputs[i], intraNodeReduceOp);
+          }
+        });
+  }
 
   return collectiveCoalesced(
       inputs,
@@ -4809,6 +5197,21 @@ std::vector<std::vector<T>> allgather_sdispls(
 
   std::vector<std::vector<T>> peerVals;
   peerVals.reserve(worldSize);
+  const bool useMultiGet = store->hasExtendedApi();
+  std::vector<std::vector<uint8_t>> remotePayloads;
+  if (useMultiGet && worldSize > 1) {
+    std::vector<std::string> remoteKeys;
+    remoteKeys.reserve(worldSize - 1);
+    for (size_t r = 0; r < worldSize; ++r) {
+      if (r != rank) {
+        remoteKeys.push_back(peerKeys[r]);
+      }
+    }
+    remotePayloads = store->multiGet(remoteKeys);
+    TORCH_CHECK(remotePayloads.size() == remoteKeys.size());
+  }
+
+  size_t remotePayloadIndex = 0;
   for (size_t r = 0; r < worldSize; ++r) {
     if (r == rank) {
       std::vector<T> localVals(count);
@@ -4818,14 +5221,22 @@ std::vector<std::vector<T>> allgather_sdispls(
       peerVals.push_back(std::move(localVals));
       continue;
     }
-    store->wait({peerKeys[r]});
-    auto payload = store->get(peerKeys[r]);
+    std::vector<uint8_t> payload;
+    if (useMultiGet) {
+      payload = std::move(remotePayloads[remotePayloadIndex++]);
+    } else {
+      store->wait({peerKeys[r]});
+      payload = store->get(peerKeys[r]);
+    }
     TORCH_CHECK(payload.size() == count * sizeof(T));
     std::vector<T> peerVal(count);
     if (count != 0) {
       std::memcpy(peerVal.data(), payload.data(), payload.size());
     }
     peerVals.push_back(std::move(peerVal));
+  }
+  if (useMultiGet) {
+    TORCH_CHECK(remotePayloadIndex == remotePayloads.size());
   }
   return peerVals;
 }
@@ -5540,6 +5951,28 @@ c10::intrusive_ptr<Work> ProcessGroupMCCL::_allgather_base(
   // in a clever way. This setting is added for libraries like FSDP which uses
   // `all_gather_into_tensor`.
 
+  // intra node comm branch
+  if (!coalescing_state_ && intraNodeComm_ != nullptr &&
+      intraNodeComm_->canUseAllGather(input_tensor, output_tensor)) {
+    auto device = input_tensor.device();
+    std::vector<at::Tensor> workInputs{input_tensor};
+    std::vector<at::Tensor> workOutputs{output_tensor};
+    return runIntraNodeComm(
+        device,
+        OpType::_ALLGATHER_BASE,
+        "mccl:_all_gather_base",
+        workInputs,
+        workOutputs,
+        opts.asyncOp,
+        input_tensor.numel(),
+        output_tensor.numel(),
+        [&](const c10::intrusive_ptr<WorkMCCL>& work) {
+          work->stashed_for_allocator_safety_->stash(workInputs);
+          work->stashed_for_allocator_safety_->stash(workOutputs);
+        },
+        [&]() { intraNodeComm_->allGather(output_tensor, input_tensor); });
+  }
+
   return collective(
       input_tensor,
       output_tensor,
@@ -5656,7 +6089,7 @@ at::Tensor ProcessGroupMCCL::allocateTensor(
     auto allocator = std::static_pointer_cast<
         c10::musa::MUSACachingAllocator::MUSAAllocator>(getMemAllocator());
     // Pool is created
-    memPool_ = std::make_unique<c10::musa::MemPool>(allocator.get());
+    memPool_ = std::make_unique<c10::musa::MemPool>(std::move(allocator));
     // Register so that we call mcclCommRegister on all new allocations
     registerMemPool(memPool_.get(), /*symmetric*/ false);
     LOG(INFO) << logPrefix() << "Created memory pool";
@@ -5693,16 +6126,12 @@ void ProcessGroupMCCL::initializeDeviceStateForComm(
     const at::Device& device,
     std::shared_ptr<MCCLComm> comm) {
   const auto key = getKeyFromDevice(device);
-  std::unique_lock<std::mutex> lock(mutex_);
   at::musa::OptionalMUSAGuard gpuGuard(device);
+  ensureMCCLStream(key, device);
 
-  bool force_high = getCvarBool(TORCH_MCCL_HIGH_PRIORITY, false);
-  auto stream = at::musa::getStreamFromPool(
-      options_->is_high_priority_stream || force_high);
-
+  std::unique_lock<std::mutex> lock(mutex_);
   auto commForGlobalMap = comm;
   devMCCLCommMap_[key] = std::move(comm);
-  mcclStreams_.emplace(key, stream);
   mcclEvents_.emplace(key, at::musa::MUSAEvent(musaEventDisableTiming));
   usedDeviceIdxs_.insert(device.index());
 

@@ -19,6 +19,7 @@
 #include "torch_musa/csrc/core/MUSAStream.h"
 #include "torch_musa/csrc/distributed/MCCLUtils.h"
 #include "torch_musa/csrc/distributed/MUSAEventCache.h"
+#include "torch_musa/csrc/distributed/symm_mem/intra_node_comm.hpp"
 
 #include <torch/csrc/distributed/c10d/ParamCommsUtils.hpp>
 #include <torch/csrc/distributed/c10d/ProcessGroup.hpp>
@@ -1039,6 +1040,8 @@ class TORCH_API ProcessGroupMCCL : public Backend {
   // Helper that looks up the cached MCCL communicators only
   std::shared_ptr<MCCLComm> getMCCLComm(const std::string& deviceKey);
 
+  void ensureMCCLStream(const std::string& key, const at::Device& device);
+
   std::shared_ptr<MCCLComm> initMCCLComm(
       const std::string& deviceKey,
       at::Device& device,
@@ -1068,6 +1071,19 @@ class TORCH_API ProcessGroupMCCL : public Backend {
       const std::vector<at::Tensor>& inputs = {},
       const std::vector<at::Tensor>& outputs = {},
       bool record = false);
+
+  template <typename StashFn, typename RunFn>
+  c10::intrusive_ptr<Work> runIntraNodeComm(
+      at::Device device,
+      OpType opType,
+      const char* profilingTitle,
+      const std::vector<at::Tensor>& inputs,
+      const std::vector<at::Tensor>& outputs,
+      bool asyncOp,
+      int64_t numelIn,
+      int64_t numelOut,
+      StashFn stashFn,
+      RunFn runFn);
 
   // In the timeout case and we will dump debug info such as the MCCL flight
   // recorder to storage. Down the road, if we have more complicated or blocking
@@ -1172,6 +1188,8 @@ class TORCH_API ProcessGroupMCCL : public Backend {
   // appropriate exception_ptr (nullptr if no errors).
   static std::exception_ptr checkForMCCLErrorsInternal(
       std::shared_ptr<MCCLComm>& mcclComm);
+
+  c10::intrusive_ptr<musa_intra_node_comm::IntraNodeComm> initIntraNodeComm();
 
   void runHookLoop();
 
@@ -1340,8 +1358,10 @@ class TORCH_API ProcessGroupMCCL : public Backend {
   // Add Work Pointer to workVector
   void workEnqueue(c10::intrusive_ptr<ProcessGroupMCCL::WorkMCCL> /*work*/);
 
-  // The MUSA streams used by MCCL kernels
+  // The MUSA streams used by MCCL and intra-node communication kernels.
   std::unordered_map<std::string, at::musa::MUSAStream> mcclStreams_;
+  // Guards one-time insertion; hot-path reads require an initialized key.
+  std::mutex mcclStreamsMutex_;
 
   // The MUSA events used to sync MCCL streams
   std::unordered_map<std::string, at::musa::MUSAEvent> mcclEvents_;
@@ -1425,6 +1445,8 @@ class TORCH_API ProcessGroupMCCL : public Backend {
   size_t local_id_{0};
 
   std::string logPrefix_;
+
+  c10::intrusive_ptr<musa_intra_node_comm::IntraNodeComm> intraNodeComm_;
 
   // Number of devices on this node.
   int localDeviceCount_{0};

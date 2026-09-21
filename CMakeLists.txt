@@ -75,12 +75,26 @@ cmake_dependent_option(
 if(USE_CCACHE)
   find_program(CCACHE_PROGRAM ccache)
 
+  # Only the MUSA-patched (MT) ccache is supported
   if(CCACHE_PROGRAM)
+    file(STRINGS "${CCACHE_PROGRAM}" _CCACHE_MU_MARKER REGEX "^\\.mu$"
+         LIMIT_COUNT 1)
+    if(_CCACHE_MU_MARKER)
+      set(CCACHE_MT_OK ON)
+    else()
+      message(WARNING "${CCACHE_PROGRAM} is not the MUSA-patched ccache \
+(no .mu support) -- ccache disabled. Install the MT ccache package, or point \
+to it with -DCCACHE_PROGRAM=/usr/local/bin/ccache.")
+    endif()
+    unset(_CCACHE_MU_MARKER)
+  endif()
+
+  if(CCACHE_PROGRAM AND CCACHE_MT_OK)
     set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}"
         CACHE STRING "C compiler launcher")
     set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}"
         CACHE STRING "CXX compiler launcher")
-  else()
+  elseif(NOT CCACHE_PROGRAM)
     message(STATUS "Could not find ccache. \
                    Consider installing ccache to speed up compilation.")
   endif()
@@ -137,6 +151,11 @@ string(APPEND CMAKE_CXX_FLAGS " -Wno-attributes")
 string(APPEND CMAKE_CXX_FLAGS " -Wno-redundant-move")
 string(APPEND CMAKE_CXX_FLAGS " -Wno-sign-compare")
 string(APPEND CMAKE_CXX_FLAGS " -Wno-missing-field-initializers")
+if(CMAKE_COMPILER_IS_GNUCXX AND CMAKE_CXX_COMPILER_VERSION
+                                VERSION_GREATER_EQUAL 13)
+  append_cxx_flag_if_supported("-Wno-dangling-reference" CMAKE_CXX_FLAGS)
+  append_cxx_flag_if_supported("-Wno-error=dangling-reference" CMAKE_CXX_FLAGS)
+endif()
 
 # Use ld.gold if available, fall back to ld.bfd (the default ld) if not
 if(USE_GOLD_LINKER)
@@ -213,6 +232,15 @@ if(USE_TSAN)
   string(APPEND CMAKE_LINKER_FLAGS_DEBUG " -fsanitize=thread")
 endif()
 
+set(private_compile_options)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  list(APPEND private_compile_options -Wredundant-move)
+  # -Wno-interference-size only exists in GCC 12+
+  if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 12)
+    list(APPEND private_compile_options -Wno-interference-size)
+  endif()
+endif()
+
 # =============================================================
 set(PLUGIN_NAME "musa_python")
 set(MUSA_CSRCS)
@@ -245,6 +273,21 @@ endif()
 message(STATUS "USE_MUDNN_C_API: ${USE_MUDNN_C_API}")
 
 find_package(MUSA REQUIRED)
+
+# mcc runs via `cmake -P run_mcc.cmake`, bypassing
+# CMAKE_<lang>_COMPILER_LAUNCHER, so wrap it explicitly through
+# MUSA_MCC_EXECUTABLE.
+if(USE_CCACHE AND CCACHE_PROGRAM AND CCACHE_MT_OK)
+  set(_MCC_CCACHE_WRAPPER
+      "${PROJECT_SOURCE_DIR}/scripts/build_tools/mcc_ccache.sh")
+  if(EXISTS "${_MCC_CCACHE_WRAPPER}")
+    set(MUSA_MCC_EXECUTABLE "${_MCC_CCACHE_WRAPPER}"
+        CACHE FILEPATH "MCC executable wrapped by ccache" FORCE)
+    message(
+      STATUS "MUSA_MCC_EXECUTABLE wrapped by ccache: ${MUSA_MCC_EXECUTABLE}")
+  endif()
+  unset(_MCC_CCACHE_WRAPPER)
+endif()
 
 if(MUSA_FOUND)
   # torch_musa/csrc/extension will also use TORCH_MUSA_ARCH, so parse mcc
@@ -287,7 +330,7 @@ if(MUSA_FOUND)
 
   list(APPEND DEPENDENT_INCLUDE_DIRS ${MUDNN_INCLUDE_DIRS}
        ${MUSAToolkit_INCLUDE_DIR})
-  list(APPEND DEPENDENT_LIBRARIES ${MUSA_LIBRARIES} ${MUDNN_LIBRARIES})
+  list(APPEND DEPENDENT_LIBRARIES MUSA::musart ${MUDNN_LIBRARIES})
 
   if(USE_MCCL)
     if(NOT DEFINED ENV{MCCL_INCLUDE_DIR})
@@ -338,6 +381,8 @@ else()
 endif()
 
 set(CODEGEN_TARGET "musa_codegen")
+file(GLOB MUSA_CODEGEN_PY "${PROJECT_SOURCE_DIR}/tools/codegen/*.py"
+     "${PROJECT_SOURCE_DIR}/tools/codegen/dest/*.py")
 set(GENERATED_MUSA_CSRCS
     "${CODE_GENERATED_DIR}/ATen/RegisterMUSA.cpp"
     "${CODE_GENERATED_DIR}/ATen/RegisterQuantizedMUSA.cpp"
@@ -354,32 +399,18 @@ add_custom_command(
   DEPENDS ${PROJECT_SOURCE_DIR}/torch_musa/csrc/aten/ops/musa_functions.yaml
           ${BUILD_PYTORCH_REPO_PATH}/aten/src/ATen/native/native_functions.yaml
           ${BUILD_PYTORCH_REPO_PATH}/tools/autograd/derivatives.yaml
+          ${BUILD_PYTORCH_REPO_PATH}/aten/src/ATen/native/tags.yaml
+          ${MUSA_CODEGEN_PY}
   VERBATIM)
 set_source_files_properties(${GENERATED_MUSA_CSRCS} PROPERTIES GENERATED TRUE)
 add_custom_target(${CODEGEN_TARGET} DEPENDS ${GENERATED_MUSA_CSRCS})
 
-# add AOT Inductor fallback op copy
-set(FALLBACK_OPS_PY "${CMAKE_CURRENT_SOURCE_DIR}/tools/codegen/fallback_ops.py")
-set(FALLBACK_OPS_OUT
-    "${PROJECT_SOURCE_DIR}/torch_musa/_inductor/codegen/fallback_ops.py")
-
-add_custom_command(
-  OUTPUT ${FALLBACK_OPS_OUT}
-  COMMENT "Copying fallback_ops.py to ${FALLBACK_OPS_OUT} ..."
-  COMMAND ${CMAKE_COMMAND} -E copy ${FALLBACK_OPS_PY} ${FALLBACK_OPS_OUT}
-  DEPENDS ${FALLBACK_OPS_PY}
-  VERBATIM)
-
-set_source_files_properties(${FALLBACK_OPS_OUT} PROPERTIES GENERATED TRUE)
-
-add_custom_target(fallback_codegen DEPENDS ${FALLBACK_OPS_OUT})
-
-add_dependencies(${CODEGEN_TARGET} fallback_codegen)
-# add AOT Inductor end.
-
 add_subdirectory(${PROJECT_SOURCE_DIR}/torch_musa/csrc)
 set(CPP_SRCS ${MUSA_CSRCS})
 add_library(${PLUGIN_NAME} SHARED ${CPP_SRCS})
+
+target_compile_options(
+  ${PLUGIN_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${private_compile_options}>)
 
 # Add MUTLASS headers dir
 target_include_directories(
@@ -435,6 +466,7 @@ target_compile_definitions(
                         -DMUSPARSE_VERSION=${MUSPARSE_VERSION})
 
 add_dependencies(${MUSA_KERNELS_LIB} ${CODEGEN_TARGET})
+target_link_options(${MUSA_KERNELS_LIB} PUBLIC "-Wl,--as-needed")
 
 string(REPLACE ";" " " PYTORCH_MUSA_ARCH_readable "${TORCH_MUSA_ARCH_LIST}")
 set_source_files_properties(

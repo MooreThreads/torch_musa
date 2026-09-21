@@ -1,5 +1,7 @@
 #include "torch_musa/csrc/aten/mudnn/GroupedMatMul.h"
 
+#include <ATen/Context.h>
+
 #include "torch_musa/csrc/aten/mudnn/Exception.h"
 
 namespace at::musa {
@@ -18,7 +20,15 @@ void SetGroupedMatMulImpl(
     double gamma) {
   CHECK_MUDNN_STATUS(
       mudnnSetGroupedMatMulDescriptorEx(
-          op.Desc(), mode, transa, transb, false, 0, alpha, beta, gamma),
+          op.Desc(),
+          mode,
+          transa,
+          transb,
+          at::globalContext().deterministicAlgorithms(),
+          0,
+          alpha,
+          beta,
+          gamma),
       "mudnnSetGroupedMatMulDescriptorEx");
 }
 
@@ -34,6 +44,9 @@ void SetGroupedMatMulImpl(
     double gamma) {
   CHECK_MUDNN_STATUS(op.SetComputeMode(mode), "SetComputeMode");
   CHECK_MUDNN_STATUS(op.SetTranspose(transa, transb), "SetTranspose");
+  CHECK_MUDNN_STATUS(
+      op.SetDeterministic(at::globalContext().deterministicAlgorithms()),
+      "SetDeterministic");
   CHECK_MUDNN_STATUS(op.SetAlpha(alpha), "SetAlpha");
   CHECK_MUDNN_STATUS(op.SetBeta(beta), "SetBeta");
   CHECK_MUDNN_STATUS(op.SetGamma(gamma), "SetGamma");

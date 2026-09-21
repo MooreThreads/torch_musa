@@ -38,7 +38,22 @@ dtypes = [
     torch.short,
     torch.bool,
     torch.uint8,
+    torch.complex128,
+    torch.complex64,
 ]
+
+dtypes_reduce = [
+    torch.float32,
+    torch.float16,
+    torch.float64,
+    torch.int64,
+    torch.int8,
+    torch.int32,
+    torch.short,
+    torch.bool,
+    torch.uint8,
+]
+
 
 reduce = ["add", "multiply"]
 
@@ -120,7 +135,7 @@ def test_scatter_add(inputs, dtype):
     ],
 )
 @pytest.mark.parametrize("reduce", ["sum", "prod", "mean", "amax", "amin"])
-@pytest.mark.parametrize("dtype", dtypes)
+@pytest.mark.parametrize("dtype", dtypes_reduce)
 @pytest.mark.parametrize("include_self", [False, True])
 def test_scatter_reduce(config, reduce, dtype, include_self):
     # not implemented for torch.bool
@@ -151,7 +166,7 @@ def test_scatter_reduce(config, reduce, dtype, include_self):
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("inputs", inputs)
-@pytest.mark.parametrize("dtype", dtypes)
+@pytest.mark.parametrize("dtype", dtypes_reduce)
 @pytest.mark.parametrize("reduce", reduce)
 def test_scatter_value_reduce(inputs, dtype, reduce):
     if dtype == torch.bool:

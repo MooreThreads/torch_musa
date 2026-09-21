@@ -11,6 +11,7 @@
 #include <ATen/ops/scatter.h>
 #endif
 
+#include <ATen/ops/view_as_real.h>
 #include "torch_musa/csrc/aten/mudnn/Scatter.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/utils/MudnnUtils.h"
@@ -34,11 +35,15 @@ inline void ScatterMetaCheck(
   at::native::scatter_gather_dtype_check("scatter", self, index, src);
   at::native::scatter_shape_check(self, dim, index, src);
 }
-
-inline void DTypeCheck(const Tensor& self, const std::string& name) {
-  TORCH_CHECK(!self.is_complex(), name, " unsupported complex tensor dtype");
-}
 } // namespace
+
+Tensor& ScatterComplexOp(
+    const Tensor& self,
+    int64_t dim,
+    const Tensor& index,
+    const Tensor& src,
+    Tensor& out,
+    Mode mode);
 
 Tensor& ScatterOp(
     const Tensor& self,
@@ -72,6 +77,10 @@ Tensor& ScatterOp(
     return out;
   }
 
+  if (self.is_complex()) {
+    return ScatterComplexOp(self, dim, index, src, out, mode);
+  }
+
   Tensor src_ = src.contiguous();
   Tensor index_ = index.contiguous();
 
@@ -100,20 +109,40 @@ Tensor& ScatterOp(
   return out;
 }
 
+Tensor& ScatterComplexOp(
+    const Tensor& self,
+    int64_t dim,
+    const Tensor& index,
+    const Tensor& src,
+    Tensor& out,
+    Mode mode) {
+  auto self_real = at::view_as_real(self);
+  auto src_real = at::view_as_real(src);
+  auto out_real = at::view_as_real(out);
+
+  for (int64_t component = 0; component < 2; ++component) {
+    Tensor self_component = self_real.select(-1, component);
+    Tensor src_component = src_real.select(-1, component);
+    Tensor out_component = out_real.select(-1, component);
+
+    at::musa::ScatterOp(
+        self_component, dim, index, src_component, out_component, mode);
+  }
+  return out;
+}
+
 Tensor& ScatterOut(
     const Tensor& self,
     int64_t dim,
     const Tensor& index,
     const Tensor& src,
     Tensor& out) {
-  DTypeCheck(self, "scatter.out input");
   TORCH_CHECK(
       index.scalar_type() == at::ScalarType::Long ||
           index.scalar_type() == at::ScalarType::Int,
       "Dtype of index tensor of scatter.out only support Long/Int, but "
       "now it is ",
       index.scalar_type());
-  DTypeCheck(src, "scatter.out src");
   return ScatterOp(self, dim, index, src, out, Mode::UPDATE_ONLY);
 }
 
@@ -122,14 +151,12 @@ Tensor& Scatter_(
     int64_t dim,
     const Tensor& index,
     const Tensor& src) {
-  DTypeCheck(self, "scatter_ input");
   TORCH_CHECK(
       index.scalar_type() == at::ScalarType::Long ||
           index.scalar_type() == at::ScalarType::Int,
       "Dtype of index tensor of scatter_ only support Long/Int, but "
       "now it is ",
       index.scalar_type());
-  DTypeCheck(src, "scatter_ src");
   return ScatterOp(self, dim, index, src, self, Mode::UPDATE_ONLY);
 }
 
@@ -138,14 +165,12 @@ Tensor Scatter(
     int64_t dim,
     const Tensor& index,
     const Tensor& src) {
-  DTypeCheck(self, "scatter input");
   TORCH_CHECK(
       index.scalar_type() == at::ScalarType::Long ||
           index.scalar_type() == at::ScalarType::Int,
       "Dtype of index tensor of scatter only support Long/Int, but "
       "now it is ",
       index.scalar_type());
-  DTypeCheck(src, "scatter src");
   Tensor out = at::empty_like(self);
   return ScatterOp(self, dim, index, src, out, Mode::UPDATE_ONLY);
 }
@@ -156,7 +181,6 @@ at::Tensor& ScatterValueOut(
     const at::Tensor& index,
     const at::Scalar& value,
     at::Tensor& out) {
-  DTypeCheck(self, "scatter_value_out input");
   TORCH_CHECK(
       self.scalar_type() == out.scalar_type(),
       "Dtype of input tensor of scatter_add should be same as out, which is ",
@@ -197,7 +221,6 @@ Tensor& ScatterAddOut(
     const Tensor& index,
     const Tensor& src,
     Tensor& out) {
-  DTypeCheck(self, "scatter_add_out input");
   TORCH_CHECK(
       self.scalar_type() == src.scalar_type() &&
           self.scalar_type() == out.scalar_type(),
@@ -208,7 +231,6 @@ Tensor& ScatterAddOut(
       "Dtype of index tensor of scatter_add.out only support Long/Int, but "
       "now it is ",
       index.scalar_type());
-  DTypeCheck(src, "scatter_add_out src");
   return ScatterOp(self, dim, index, src, out, Mode::ADD);
 }
 
@@ -217,15 +239,12 @@ Tensor& ScatterAdd_(
     int64_t dim,
     const Tensor& index,
     const Tensor& src) {
-  DTypeCheck(self, "scatter_add_ input");
   TORCH_CHECK(
       index.scalar_type() == at::ScalarType::Long ||
           index.scalar_type() == at::ScalarType::Int,
       "Dtype of index tensor of scatter_add_ only support Long/Int, but "
       "now it is ",
       index.scalar_type());
-  DTypeCheck(src, "scatter_add_ src");
-
   return ScatterOp(self, dim, index, src, self, Mode::ADD);
 }
 
@@ -234,14 +253,12 @@ Tensor ScatterAdd(
     int64_t dim,
     const Tensor& index,
     const Tensor& src) {
-  DTypeCheck(self, "scatter_add input");
   TORCH_CHECK(
       index.scalar_type() == at::ScalarType::Long ||
           index.scalar_type() == at::ScalarType::Int,
       "Dtype of index tensor of scatter_add only support Long/Int, but "
       "now it is ",
       index.scalar_type());
-  DTypeCheck(src, "scatter_add src");
 
   Tensor out = at::empty_like(self);
   out = ScatterOp(self, dim, index, src, out, Mode::ADD);

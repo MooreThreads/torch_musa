@@ -21,7 +21,6 @@ from torchgen.api.types import (
     NativeSignature,
     tensorT,
 )
-from torchgen.context import method_with_native_function
 from torchgen.model import (
     BackendIndex,
     NativeFunction,
@@ -30,6 +29,7 @@ from torchgen.model import (
 from torchgen.selective_build.selector import SelectiveBuilder
 from torchgen.utils import assert_never, Target
 
+from codegen.context import method_with_musa_native_function
 from codegen.model import MUSA_DISPATCH_KEYS, MUSA_STRUCTURED_DISPATCH_KEY
 
 
@@ -151,11 +151,15 @@ def musa_gen_class(
     elif k is SchemaKind.inplace:
         output_type = "std::reference_wrapper<Tensor>"
         output_value = "proxy_outputs_[output_idx].has_value() ? *proxy_outputs_[output_idx] : outputs_[output_idx].get()"
-        proxy_field = f"std::array<c10::optional<Tensor>, {len(f.func.returns)}> proxy_outputs_;"
+        proxy_field = (
+            f"std::array<c10::optional<Tensor>, {len(f.func.returns)}> proxy_outputs_;"
+        )
     elif k is SchemaKind.out:
         output_type = "std::reference_wrapper<Tensor>"
         output_value = "proxy_outputs_[output_idx].has_value() ? *proxy_outputs_[output_idx] : outputs_[output_idx].get()"
-        proxy_field = f"std::array<c10::optional<Tensor>, {len(f.func.returns)}> proxy_outputs_;"
+        proxy_field = (
+            f"std::array<c10::optional<Tensor>, {len(f.func.returns)}> proxy_outputs_;"
+        )
 
     if self.backend_index.dispatch_key == MUSA_STRUCTURED_DISPATCH_KEY:
         guard_field = "c10::musa::OptionalMUSAGuard guard_;"
@@ -179,7 +183,7 @@ def musa_gen_class(
     return "\n".join(line for line in lines if line)
 
 
-@method_with_native_function
+@method_with_musa_native_function
 def musa_gen_one(self, f: NativeFunction) -> Optional[str]:
     from torchgen.dest import RegisterDispatchKey  # pylint: disable=C0415
 
@@ -338,8 +342,7 @@ return {sig.name()}({', '.join(e.expr for e in translate(cpp_sig.arguments(), si
                 ret_expr = "std::move(op.outputs_[0])"  # small optimization
             else:
                 moved = ", ".join(
-                    f"std::move(op.outputs_[{i}])"
-                    for i in range(len(f.func.returns))
+                    f"std::move(op.outputs_[{i}])" for i in range(len(f.func.returns))
                 )
                 ret_expr = f"std::make_tuple({moved})"
         elif k is SchemaKind.inplace:

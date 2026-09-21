@@ -1,3 +1,4 @@
+#include <c10/core/alignment.h>
 #include <c10/core/impl/GPUTrace.h>
 #include <c10/util/CallOnce.h>
 #include <c10/util/Gauge.h>
@@ -25,6 +26,7 @@
 #include <stack>
 #include <thread>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "torch_musa/csrc/core/MUSAAllocatorConfig.h"
@@ -49,21 +51,13 @@ C10_DEFINE_REGISTRY(FreeMusaMemoryCallbacksRegistry, FreeMemoryCallback);
 
 namespace musa::MUSACachingAllocator {
 
+using namespace c10::CachingAllocator;
 using namespace c10::CachingDeviceAllocator;
-
-const size_t kLargeBuffer =
-    20971520; // "large" allocations may be packed in 20 MiB blocks
 
 namespace Native {
 
-constexpr size_t kMinBlockSize =
-    512; // all sizes are rounded to at least 512 bytes
-constexpr size_t kSmallSize = 1048576; // largest "small" allocation is 1 MiB
-constexpr size_t kSmallBuffer =
-    2097152; // "small" allocations are packed in 2 MiB blocks
-constexpr size_t kMinLargeAlloc =
-    10485760; // allocations between 1 and 10 MiB may use kLargeBuffer
-constexpr size_t kRoundLarge = 2097152; // round up large allocations to 2 MiB
+// counter to track order for Mempool Registration
+thread_local int32_t registration_counter_global = -1;
 
 char SHAREABLE_HANDLE_VERSION = 2;
 enum ShareableHandleType : char {
@@ -118,6 +112,7 @@ struct Block {
   c10::DeviceIndex device; // gpu
   musaStream_t stream; // allocation stream
   stream_set stream_uses; // streams on which the block was used
+  int32_t registration_counter{-1};
   size_t size; // block size in bytes
   size_t requested_size; // memory originally requested
   BlockPool* pool{nullptr}; // owning memory pool
@@ -153,14 +148,18 @@ struct Block {
         size(size),
         requested_size(0),
         pool(pool),
-        ptr(ptr) {}
+        ptr(ptr) {
+    registration_counter = ++registration_counter_global;
+  }
 
   Block(c10::DeviceIndex device, musaStream_t stream, size_t size)
       : device(device),
         stream(stream),
         stream_uses(),
         size(size),
-        requested_size(0) {}
+        requested_size(0) {
+    registration_counter = ++registration_counter_global;
+  }
 
   size_t gc_count() {
     TORCH_INTERNAL_ASSERT(pool);
@@ -210,6 +209,7 @@ struct ExpandableSegment {
         peers_(std::move(peers)) {
     musaDeviceProp prop{};
     C10_MUSA_CHECK(musaGetDeviceProperties(&prop, device_));
+    mapped_size_ = 0;
     // we allocate enough address space for 1 1/8 the total memory on the GPU.
     // This allows for some cases where we have to unmap pages earlier in the
     // segment to put them at the end.
@@ -259,11 +259,16 @@ struct ExpandableSegment {
       MUmemGenericAllocationHandle handle = 0;
       MUmemAllocationProp prop = {};
       prop.type = MU_MEM_ALLOCATION_TYPE_PINNED;
-      if (MUSAAllocatorConfig::expandable_segments_handle_type() !=
-          Expandable_Segments_Handle_Type::FABRIC_HANDLE) {
-        prop.requestedHandleTypes = MU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR;
-      } else {
-        prop.requestedHandleTypes = MU_MEM_HANDLE_TYPE_FABRIC;
+      static const bool enable_ipc_handles =
+          c10::utils::check_env("TORCH_MUSA_EXPANDABLE_SEGMENTS_IPC")
+              .value_or(true);
+      if (enable_ipc_handles) {
+        if (MUSAAllocatorConfig::expandable_segments_handle_type() !=
+            Expandable_Segments_Handle_Type::FABRIC_HANDLE) {
+          prop.requestedHandleTypes = MU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR;
+        } else {
+          prop.requestedHandleTypes = MU_MEM_HANDLE_TYPE_FABRIC;
+        }
       }
       int flag = 0;
       C10_MUSA_DRIVER_CHECK(DriverAPI::get()->muDeviceGetAttribute_(
@@ -318,6 +323,7 @@ struct ExpandableSegment {
       return SegmentRange{range.ptr, 0};
     }
     unmapHandles(begin, end);
+    mapped_size_ -= (end - begin) * segment_size_;
     return rangeFromHandles(begin, end);
   }
 
@@ -329,8 +335,16 @@ struct ExpandableSegment {
   SegmentRange share(SegmentRange range, std::ostream& buf) {
     auto begin = segmentLeft(range.ptr);
     auto end = segmentRight(range.ptr + range.size);
-    ShareHeader header{getpid(), segment_size_, end - begin};
-    buf.write((const char*)&header, sizeof(ShareHeader));
+    // header.pid needs to be padded with 4 bytes and initialized with
+    // 0 values ​​to avoid random padding of different bytes each time,
+    // thereby ensuring that the handle can be correctly matched in
+    // ipcMemHandle_to_devptr.
+    ShareHeader header{};
+    header.pid = getpid();
+    header.segment_size = segment_size_;
+    header.num_handles = end - begin;
+
+    buf.write(reinterpret_cast<const char*>(&header), sizeof(ShareHeader));
     for (auto i : c10::irange(begin, end)) {
       auto& handle = handles_.at(i).value();
       if (MUSAAllocatorConfig::expandable_segments_handle_type() !=
@@ -345,7 +359,9 @@ struct ExpandableSegment {
         TORCH_CHECK(
             handle.shareable_handle != std::nullopt,
             "shareable_handle is null");
-        buf.write((const char*)&*handle.shareable_handle, sizeof(int));
+        buf.write(
+            reinterpret_cast<const char*>(&*handle.shareable_handle),
+            sizeof(int));
       } else {
         if (!handle.shareable_handle) {
           MUmemFabricHandle fabric_handle;
@@ -358,7 +374,8 @@ struct ExpandableSegment {
             handle.shareable_handle != std::nullopt,
             "shareable_handle is null");
         buf.write(
-            (const char*)&*handle.shareable_handle, sizeof(MUmemFabricHandle));
+            reinterpret_cast<const char*>(&*handle.shareable_handle),
+            sizeof(MUmemFabricHandle));
       }
     }
     return rangeFromHandles(begin, end);
@@ -369,7 +386,7 @@ struct ExpandableSegment {
       std::vector<c10::DeviceIndex> peers,
       std::istream& buf) {
     ShareHeader header{};
-    buf.read((char*)&header, sizeof(ShareHeader));
+    buf.read(reinterpret_cast<char*>(&header), sizeof(ShareHeader));
     auto segment = std::make_unique<ExpandableSegment>(
         device, std::nullopt, header.segment_size, std::move(peers));
 // older build setups (e.g. multiwheels) do not have this syscall, added 2020
@@ -391,11 +408,11 @@ struct ExpandableSegment {
       for (auto i : c10::irange(header.num_handles)) {
         (void)i;
         int fd = 0;
-        buf.read((char*)&fd, sizeof(int));
+        buf.read(reinterpret_cast<char*>(&fd), sizeof(int));
         auto myfd = syscall(SYS_pidfd_getfd, pidfd, fd, 0);
         if (myfd == -1) {
           auto err = errno;
-          close((int)pidfd);
+          close(static_cast<int>(pidfd));
           for (auto& h : segment->handles_) {
             C10_MUSA_DRIVER_CHECK(
                 // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
@@ -415,15 +432,16 @@ struct ExpandableSegment {
             (void*)(uintptr_t)myfd,
             MU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR));
         LOG(INFO) << "use posix fd to import expandable segments.";
-        close((int)myfd);
+        close(static_cast<int>(myfd));
         segment->handles_.emplace_back(Handle{handle, std::nullopt});
       }
-      close((int)pidfd);
+      close(static_cast<int>(pidfd));
     } else {
       for (auto i : c10::irange(header.num_handles)) {
         (void)i;
         MUmemFabricHandle fabric_handle;
-        buf.read((char*)&fabric_handle, sizeof(MUmemFabricHandle));
+        buf.read(
+            reinterpret_cast<char*>(&fabric_handle), sizeof(MUmemFabricHandle));
         MUmemGenericAllocationHandle handle = 0;
         C10_MUSA_DRIVER_CHECK(DriverAPI::get()->muMemImportFromShareableHandle_(
             &handle,
@@ -444,6 +462,18 @@ struct ExpandableSegment {
 
   size_t size() const {
     return max_handles_ * segment_size_;
+  }
+
+  musaStream_t getStream() {
+    return stream_.value_or(nullptr);
+  }
+
+  size_t getMappedSize() const {
+    return mapped_size_;
+  }
+
+  size_t getSegmentSize() const {
+    return segment_size_;
   }
 
   void addPeer(c10::DeviceIndex device) {
@@ -479,6 +509,7 @@ struct ExpandableSegment {
           handles_.at(i).value().handle,
           0ULL));
     }
+    mapped_size_ += (end - begin) * segment_size_;
     setAccess(device_, begin, end);
     for (auto p : peers_) {
       setAccess(p, begin, end);
@@ -504,7 +535,8 @@ struct ExpandableSegment {
       handles_.at(i) = std::nullopt;
       C10_MUSA_DRIVER_CHECK(DriverAPI::get()->muMemUnmap_(
           ptr_ + segment_size_ * i, segment_size_));
-      if (h.shareable_handle) {
+      if (h.shareable_handle &&
+          std::holds_alternative<int>(*h.shareable_handle)) {
         close(std::get<int>(*h.shareable_handle));
       }
       C10_MUSA_DRIVER_CHECK(DriverAPI::get()->muMemRelease_(h.handle));
@@ -546,6 +578,7 @@ struct ExpandableSegment {
   std::optional<musaStream_t> stream_;
   MUdeviceptr ptr_{};
   size_t segment_size_;
+  size_t mapped_size_;
   size_t max_handles_;
   struct Handle {
     MUmemGenericAllocationHandle handle;
@@ -589,6 +622,17 @@ struct ExpandableSegment {
   size_t size() const {
     return 0;
   }
+  musaStream_t getStream() {
+    return nullptr;
+  }
+
+  size_t getMappedSize() const {
+    return 0;
+  }
+
+  size_t getSegmentSize() const {
+    return 0;
+  }
   void addPeer(c10::DeviceIndex device) {}
 };
 #endif
@@ -604,14 +648,14 @@ struct BlockState {
   // maintain invariant that event_count == 0 ;
   // history will be left alone in checkpoint
 
-  BlockState(Block* block);
+  explicit BlockState(Block* block);
 };
 
 struct SegmentState {
   std::vector<BlockState> blocks;
   bool is_small = false;
 
-  SegmentState(Block* head);
+  explicit SegmentState(Block* head);
 };
 
 struct PrivatePoolState : AllocatorState {
@@ -716,7 +760,7 @@ class EventPool {
 
  private:
   struct PerDevicePool {
-    alignas(64) std::mutex mutex_;
+    alignas(hardware_destructive_interference_size) std::mutex mutex_;
     std::vector<std::unique_ptr<musaEvent_t>> event_pool_;
   };
   std::vector<PerDevicePool> pools_;
@@ -724,9 +768,11 @@ class EventPool {
 
 // MUSA graphs helper
 struct PrivatePool {
-  PrivatePool(MempoolId_t id, MUSAAllocator* allocator = nullptr)
+  explicit PrivatePool(
+      MempoolId_t id,
+      std::shared_ptr<MUSAAllocator> allocator = nullptr)
       : id(std::move(id)),
-        allocator_(allocator),
+        allocator_(std::move(allocator)),
         large_blocks(/*small=*/false, this),
         small_blocks(/*small=*/true, this) {}
   PrivatePool(const PrivatePool&) = delete;
@@ -738,13 +784,13 @@ struct PrivatePool {
   MempoolId_t id{0, 0};
   int use_count{1};
   int musaMalloc_count{0};
-  MUSAAllocator* allocator_;
+  std::shared_ptr<MUSAAllocator> allocator_;
   BlockPool large_blocks;
   BlockPool small_blocks;
 
  public:
   MUSAAllocator* allocator() {
-    return allocator_;
+    return allocator_.get();
   }
 };
 
@@ -767,7 +813,7 @@ BlockState::BlockState(Block* block)
   TORCH_CHECK(
       block->event_count == 0,
       "Events should have synchronized when checkpointing block");
-};
+}
 
 SegmentState::SegmentState(Block* head) {
   TORCH_INTERNAL_ASSERT(head->prev == nullptr && head->pool != nullptr);
@@ -786,12 +832,6 @@ PrivatePoolState::PrivatePoolState(
     segments.emplace_back(head);
   }
 }
-
-struct MempoolIdHash {
-  std::size_t operator()(const MempoolId_t& mempool_id) const noexcept {
-    return mempool_id.first != 0 ? mempool_id.first : mempool_id.second;
-  }
-};
 
 musaError_t allocPrimitive(void** ptr, size_t size, AllocParams& p) {
   if (p.pool->owner_PrivatePool && p.pool->owner_PrivatePool->allocator()) {
@@ -846,27 +886,21 @@ class RingBuffer {
     }
   }
 
-  void getEntries(std::vector<T>& result) {
+  void getEntries(std::vector<T>& result) const {
     std::lock_guard<std::mutex> lk(alloc_trace_lock);
-    result.reserve(alloc_trace->size());
-    result.insert(
-        result.end(),
-        alloc_trace->begin() +
-            static_cast<typename std::vector<T>::difference_type>(
-                alloc_trace_next),
-        alloc_trace->end());
-    result.insert(
-        result.end(),
+    result.reserve(result.size() + alloc_trace->size());
+    std::rotate_copy(
         alloc_trace->begin(),
-        alloc_trace->begin() +
-            static_cast<typename std::vector<T>::difference_type>(
-                alloc_trace_next));
+        std::next(alloc_trace->begin(), alloc_trace_next),
+        alloc_trace->end(),
+        std::back_inserter(result));
   }
 
   void clear() {
     std::lock_guard<std::mutex> lk(alloc_trace_lock);
     alloc_trace_next = 0;
     alloc_trace->clear();
+    alloc_trace->shrink_to_fit();
   }
 
  private:
@@ -874,7 +908,7 @@ class RingBuffer {
 
   // Both alloc_trace and alloc_trace_next needs to be used
   // under alloc_trace_lock.
-  std::mutex alloc_trace_lock;
+  mutable std::mutex alloc_trace_lock;
   size_t alloc_trace_next = 0;
   std::vector<T>*
       alloc_trace; // pointer because we need to intentionally leak this on
@@ -886,7 +920,7 @@ class RingBuffer {
 } // namespace Native
 
 // reportProcessMemoryInfo is not supported for MUSA yet.
-static std::string reportProcessMemoryInfo(c10::DeviceIndex device) {
+static std::string reportProcessMemoryInfo(const musaDeviceProp& prop) {
   return "";
 }
 
@@ -899,6 +933,8 @@ class DeviceCachingAllocator {
 
   // device statistics
   DeviceStats stats;
+
+  c10::DeviceIndex device_id;
 
   // unallocated cached blocks larger than 1 MB
   BlockPool large_blocks;
@@ -919,6 +955,7 @@ class DeviceCachingAllocator {
 
   // tracks which pools we can use as a last resort before ooming
   ska::flat_hash_set<MempoolId_t, MempoolIdHash> use_on_oom_pools;
+  ska::flat_hash_set<MempoolId_t, MempoolIdHash> no_split_pools;
 
   // Map of blocks whose freeing is deferred until after MUSA graph capture.
   //   - Key: Block* to be freed.
@@ -926,6 +963,16 @@ class DeviceCachingAllocator {
   //     If the vector is empty, the block must always be deferred until capture
   //     ends.
   ska::flat_hash_map<Block*, std::vector<musaGraphNode_t>> deferred_blocks;
+
+  // Incremental reverse-traversal state cached per graph.
+  // We never re-traverse nodes we've already seen
+  struct GraphReuseContext {
+    ska::flat_hash_map<musaStream_t, ska::flat_hash_set<musaGraphNode_t>>
+        visited;
+  };
+  ska::flat_hash_map<MempoolId_t, CaptureId_t, MempoolIdHash>
+      mempool_to_capture_id;
+  ska::flat_hash_map<CaptureId_t, GraphReuseContext> graph_reuse_context;
 
   // outstanding musa events
   ska::flat_hash_map<
@@ -935,14 +982,13 @@ class DeviceCachingAllocator {
 
   // record used memory.
   size_t total_allocated_memory = 0;
+  musaDeviceProp device_prop;
 
-  size_t allowed_memory_maximum = 0;
+  std::optional<size_t> allowed_memory_maximum{std::nullopt};
 
   // all live expandable segments
   std::vector<ExpandableSegment*> expandable_segments_;
   std::vector<c10::DeviceIndex> devices_with_peer_access_;
-
-  bool set_fraction = false;
 
   bool record_history = false;
 
@@ -951,6 +997,7 @@ class DeviceCachingAllocator {
 
   // Ring buffer for memory snapshot TraceEntry's
   RingBuffer<TraceEntry> alloc_buffer;
+  std::unordered_set<TraceEntry::Action> skip_actions_list;
 
   // Members specific to MUSA graphs
 
@@ -975,13 +1022,19 @@ class DeviceCachingAllocator {
 
   // thread local compile context for each device
   static thread_local std::stack<std::string> compile_context;
+  static thread_local std::string user_metadata;
 
  public:
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
-  DeviceCachingAllocator()
-      : large_blocks(/*small=*/false), small_blocks(/*small=*/true) {
+  explicit DeviceCachingAllocator(c10::DeviceIndex id)
+      : device_id(id),
+        large_blocks(/*small=*/false),
+        small_blocks(/*small=*/true) {
+    C10_MUSA_CHECK(musaGetDeviceProperties(&device_prop, id));
+    setMemoryFraction(MUSAAllocatorConfig::per_process_memory_fraction());
+
     stats.max_split_size =
-        static_cast<int64_t>(MUSAAllocatorConfig::max_split_size());
+        static_cast<int64_t>(AcceleratorAllocatorConfig::max_split_size());
     context_recorder_.store(nullptr);
   }
 
@@ -990,10 +1043,19 @@ class DeviceCachingAllocator {
       CreateContextFn context_recorder,
       size_t alloc_buffer_max_entries,
       RecordContext when,
-      bool clearHistory) {
+      bool clearHistory,
+      const std::vector<std::string>& skip_actions) {
     std::unique_lock<std::recursive_mutex> lock(mutex);
     TORCH_CHECK(when == RecordContext::NEVER || context_recorder);
     record_history = enabled;
+
+    // Convert string list to action enum set
+    skip_actions_list.clear();
+    for (const auto& action_str : skip_actions) {
+      auto action = parseTraceEntryAction(action_str);
+      skip_actions_list.insert(action);
+    }
+
     context_recorder_.store(record_history ? context_recorder : nullptr);
     alloc_buffer.setMaxEntries(alloc_buffer_max_entries);
     record_context_ = enabled ? when : RecordContext::NEVER;
@@ -1014,6 +1076,14 @@ class DeviceCachingAllocator {
     if (!compile_context.empty()) {
       compile_context.pop();
     }
+  }
+
+  void setUserMetadata(const std::string& metadata) {
+    user_metadata = metadata;
+  }
+
+  std::string getUserMetadata() {
+    return user_metadata;
   }
 
   bool checkPoolLiveAllocations(
@@ -1065,10 +1135,7 @@ class DeviceCachingAllocator {
   // All public methods (except the above) acquire the allocator mutex.
   // Thus, do not call a public method from another public method.
 
-  Block* malloc(
-      c10::DeviceIndex device,
-      size_t orig_size,
-      musaStream_t stream) {
+  Block* malloc(size_t orig_size, musaStream_t stream) {
     // done outside the lock because we don't know what locks the recorder needs
     // to have...
     auto context = maybeGatherContext(RecordContext::STATE);
@@ -1102,7 +1169,12 @@ class DeviceCachingAllocator {
     bool is_expandable_segments_active =
         MUSAAllocatorConfig::expandable_segments() && !active_user_pool;
     AllocParams params(
-        device, size, stream, &pool, alloc_size, is_expandable_segments_active);
+        device_id,
+        size,
+        stream,
+        &pool,
+        alloc_size,
+        is_expandable_segments_active);
     params.stat_types = get_stat_types_for_pool(pool);
 
     // First, try to get a block from the existing pool.
@@ -1116,8 +1188,9 @@ class DeviceCachingAllocator {
     if (!block_found) {
       // Do garbage collection if the flag is set.
       if (C10_UNLIKELY(
-              set_fraction &&
-              MUSAAllocatorConfig::garbage_collection_threshold() > 0.0)) {
+              allowed_memory_maximum.has_value() &&
+              AcceleratorAllocatorConfig::garbage_collection_threshold() >
+                  0.0)) {
         garbage_collect_cached_blocks(context);
       }
       // Attempt allocate
@@ -1126,6 +1199,10 @@ class DeviceCachingAllocator {
       // keep in mind that any observed allocator state may change across calls
       // to alloc_block since it may release the lock.
       block_found = alloc_block(params, false, context, lock)
+          // Try to use memory pools that have opted in as overflow before
+          // expensive memory freeing operations.
+          || try_mempool_fallback(
+                        params, size, stream, device_id, alloc_size, stats)
           // Free enough available cached blocks to satisfy alloc and retry
           // alloc.
           || (release_available_cached_blocks(params, context) &&
@@ -1134,32 +1211,6 @@ class DeviceCachingAllocator {
           || (C10_LIKELY(captures_underway.empty()) &&
               release_cached_blocks(context, {0, 0}) &&
               alloc_block(params, true, context, lock));
-    }
-
-    // we are about to oom, try to use existing mempools as a last resort
-    if (!block_found && params.err == musaErrorMemoryAllocation) {
-      // if already trying to use a mempool, then just oom
-      bool active_pool = params.pool->owner_PrivatePool;
-      if (!active_pool) {
-        for (MempoolId_t mempool_id : use_on_oom_pools) {
-          auto tid = std::this_thread::get_id();
-          auto filter = [tid](musaStream_t) {
-            return std::this_thread::get_id() == tid;
-          };
-          beginAllocateToPool(mempool_id, filter);
-          auto& mempool = get_pool(size, stream);
-          AllocParams mempool_params(
-              device, size, stream, &mempool, alloc_size, false);
-          mempool_params.stat_types = get_stat_types_for_pool(mempool);
-          block_found = get_free_block(mempool_params);
-          endAllocateToPool(mempool_id);
-          releasePool(mempool_id);
-          if (block_found) {
-            params = mempool_params;
-            break;
-          }
-        }
-      }
     }
 
     if (!block_found) {
@@ -1172,11 +1223,12 @@ class DeviceCachingAllocator {
       C10_MUSA_CHECK(musaMemGetInfo(&device_free, &device_total));
       std::string allowed_info;
 
-      if (set_fraction) {
-        allowed_info = format_size(allowed_memory_maximum) + " allowed; ";
+      if (allowed_memory_maximum.has_value()) {
+        allowed_info =
+            format_size(allowed_memory_maximum.value()) + " allowed; ";
       }
 
-      std::string proc_info = reportProcessMemoryInfo(device);
+      std::string proc_info = reportProcessMemoryInfo(device_prop);
 
       record_trace(
           TraceEntry::OOM,
@@ -1194,7 +1246,7 @@ class DeviceCachingAllocator {
               .current,
           stats.reserved_bytes[static_cast<int64_t>(StatType::AGGREGATE)]
               .current,
-          c10::Device(at::musa::kMUSA, device));
+          c10::Device(at::musa::kMUSA, device_id));
 
       auto allocated_bytes =
           stats.allocated_bytes[static_cast<size_t>(StatType::AGGREGATE)]
@@ -1232,9 +1284,9 @@ class DeviceCachingAllocator {
       lock.unlock();
 
       for (const auto& obs : observers_local) {
-        obs(device,
+        obs(device_id,
             alloc_size,
-            set_fraction ? allowed_memory_maximum : device_total,
+            allowed_memory_maximum.value_or(device_total),
             device_free);
       }
 
@@ -1262,7 +1314,7 @@ class DeviceCachingAllocator {
           "MUSA out of memory. Tried to allocate ",
           format_size(alloc_size),
           ". GPU ",
-          static_cast<int>(device),
+          static_cast<int>(device_id),
           " has a total capacity of ",
           format_size(device_total),
           " of which ",
@@ -1288,6 +1340,39 @@ class DeviceCachingAllocator {
         params.block, params.size(), params.is_expandable_segments_active);
     return alloc_found_block(
         params, orig_size, std::move(context), split_remainder);
+  }
+
+  bool try_mempool_fallback(
+      AllocParams& params,
+      size_t size,
+      musaStream_t stream,
+      c10::DeviceIndex device_idx,
+      size_t alloc_size,
+      DeviceStats& device_stats) {
+    bool block_found = false;
+    // if already trying to use a mempool, then just oom
+    bool active_pool = params.pool->owner_PrivatePool;
+    if (!active_pool) {
+      for (MempoolId_t mempool_id : use_on_oom_pools) {
+        auto tid = std::this_thread::get_id();
+        auto filter = [tid](musaStream_t) {
+          return std::this_thread::get_id() == tid;
+        };
+        beginAllocateToPool(mempool_id, filter);
+        auto& mempool = get_pool(size, stream);
+        AllocParams mempool_params(
+            device_idx, size, stream, &mempool, alloc_size, false);
+        mempool_params.stat_types = get_stat_types_for_pool(mempool);
+        block_found = get_free_block(mempool_params);
+        endAllocateToPool(mempool_id);
+        releasePool(mempool_id);
+        if (block_found) {
+          params = mempool_params;
+          break;
+        }
+      }
+    }
+    return block_found;
   }
 
   Block* alloc_found_block(
@@ -1369,7 +1454,7 @@ class DeviceCachingAllocator {
       stats.active_bytes[stat_type].increase(block->size);
       stats.requested_bytes[stat_type].increase(block->requested_size);
     });
-    if (block->size >= MUSAAllocatorConfig::max_split_size())
+    if (block->size >= AcceleratorAllocatorConfig::max_split_size())
       stats.oversize_allocations.increase(1);
 
     auto allocated_bytes_gauge =
@@ -1388,35 +1473,59 @@ class DeviceCachingAllocator {
     return block;
   }
 
-  // Insert "free marker" (empty nodes) into the MUSA graph for all streams that
+  struct CaptureInfo {
+    musaGraph_t graph{};
+    CaptureId_t capture_id{0};
+    const musaGraphNode_t* terminals{nullptr};
+    size_t num_terminals{0};
+    musaStreamCaptureStatus status{musaStreamCaptureStatusNone};
+  };
+
+  CaptureInfo stream_get_capture_info(musaStream_t stream) {
+    CaptureInfo info{};
+    C10_MUSA_CHECK(musaStreamGetCaptureInfo(
+        stream,
+        &info.status,
+        &info.capture_id,
+        &info.graph,
+        &info.terminals,
+        &info.num_terminals));
+    TORCH_INTERNAL_ASSERT(
+        info.status != musaStreamCaptureStatusInvalidated,
+        "Invalid stream capture status");
+
+    return info;
+  }
+
+  // Record "free marker" of the MUSA graph for all streams that
   // have used the block, including the allocation stream. These nodes mark the
   // last use of the block in the capture graph. Returns a vector of the
   // inserted nodes, or an empty vector if any stream is not capturing.
-  std::vector<musaGraphNode_t> insert_free_marker(Block* block) {
-    std::vector<musaGraphNode_t> empty_nodes;
+  std::vector<musaGraphNode_t> record_free_markers(Block* block) {
+    // Is is possible to have the same marker recorded multiple times, so we use
+    // a set to avoid duplicates
+    ska::flat_hash_set<musaGraphNode_t> markers;
+    musaGraph_t owning_graph = nullptr;
 
-    auto try_add_empty_node = [&](musaStream_t stream) -> bool {
-      musaStreamCaptureStatus status{};
-      musaGraph_t graph{};
-      const musaGraphNode_t* deps = nullptr;
-      size_t num_deps = 0;
-      C10_MUSA_CHECK(musaStreamGetCaptureInfo_v2(
-          stream, &status, nullptr, &graph, &deps, &num_deps));
-
-      TORCH_INTERNAL_ASSERT(
-          status != musaStreamCaptureStatusInvalidated,
-          "Invalid stream capture status");
-
-      if (status == musaStreamCaptureStatusNone) {
-        return false;
+    auto try_record = [&](musaStream_t s) -> bool {
+      auto info = stream_get_capture_info(s);
+      if (info.status == musaStreamCaptureStatusNone) {
+        return false; // not capturing on this stream -> must defer
       }
 
-      musaGraphNode_t node{};
-      C10_MUSA_CHECK(musaGraphAddEmptyNode(&node, graph, deps, num_deps));
-      C10_MUSA_CHECK(musaStreamUpdateCaptureDependencies(
-          stream, &node, 1, musaStreamSetCaptureDependencies));
+      if (owning_graph == nullptr) {
+        owning_graph = info.graph;
+      }
+      TORCH_INTERNAL_ASSERT(
+          info.graph == owning_graph,
+          "All streams in the same capture should agree on the graph");
 
-      empty_nodes.push_back(node);
+      // Use current terminals as the free markers for the stream
+      for (size_t i = 0; i < info.num_terminals; ++i) {
+        auto terminal = info.terminals[i];
+        markers.insert(terminal);
+      }
+      owning_graph = info.graph; // all streams in the same capture should agree
       return true;
     };
 
@@ -1424,124 +1533,63 @@ class DeviceCachingAllocator {
     // An empty vector indicates that the block should be deferred for freeing
     // until after capture.
 
-    // Attempt to add an empty node for the allocation stream.
-    if (!try_add_empty_node(block->stream)) {
+    // Allocation stream
+    if (!try_record(block->stream)) {
       return {};
     }
-    // Attempt to add empty nodes for all streams that have used the block.
+    // Any extra streams that used this block
     for (const auto& s : block->stream_uses) {
-      if (!try_add_empty_node(s.stream())) {
+      if (!try_record(s.stream())) {
         return {};
       }
     }
-    return empty_nodes;
+    return std::vector<musaGraphNode_t>(markers.begin(), markers.end());
   }
 
-  // Returns the current set of "terminal" nodes in the MUSA graph for a given
-  // stream. These represent the current endpoints of the stream, and may
-  // include additional nodes if the graph branches. Any new work captured will
-  // be attached after one or more of these terminals.
-  std::vector<musaGraphNode_t> get_terminals(musaStream_t stream) {
-    std::vector<musaGraphNode_t> result;
-
-    musaStreamCaptureStatus status{};
-    musaGraph_t graph{};
-    const musaGraphNode_t* dependencies = nullptr;
-    size_t num_dependencies = 0;
-
-    C10_MUSA_CHECK(musaStreamGetCaptureInfo_v2(
-        stream, &status, nullptr, &graph, &dependencies, &num_dependencies));
-
-    TORCH_INTERNAL_ASSERT(
-        status == musaStreamCaptureStatusActive,
-        "Invalid stream capture status");
-
-    for (size_t i = 0; i < num_dependencies; i++) {
-      auto node = dependencies[i];
-      if (node != nullptr) {
-        result.push_back(node);
-      }
-    }
-
-    return result;
-  }
-
-  // Returns the set of "reusable" free markers (empty nodes) in the current
+  // Returns the set of "reusable" free markers in the current
   // MUSA graph capture. A free marker is considered reusable if it is a
   // predecessor of every terminal node.
   // This ensures that all future captured work will occur after the free
   // marker, making it safe to reuse.
-  ska::flat_hash_set<musaGraphNode_t> get_reusable_empty_nodes(
-      musaStream_t stream) {
-    auto terminals = get_terminals(stream);
-    if (terminals.empty()) {
-      // No terminal nodes found; nothing to free.
-      return {};
-    }
-
-    auto get_dependencies = [](musaGraphNode_t node,
-                               musaGraphNode_t* pDependencies,
-                               size_t* pNumDependencies) -> void {
-      C10_MUSA_CHECK(
-          musaGraphNodeGetDependencies(node, pDependencies, pNumDependencies));
-    };
-
-    // Helper to retrieve all parent nodes (dependencies) of a given node.
+  void update_visited(
+      const CaptureInfo& info,
+      ska::flat_hash_set<musaGraphNode_t>& visited) {
     auto get_parents =
         [&](musaGraphNode_t node) -> std::vector<musaGraphNode_t> {
       size_t count = 0;
-      get_dependencies(node, nullptr, &count);
+      C10_MUSA_CHECK(musaGraphNodeGetDependencies(node, nullptr, &count));
+
       std::vector<musaGraphNode_t> out(count);
       if (count) {
-        get_dependencies(node, out.data(), &count);
+        C10_MUSA_CHECK(musaGraphNodeGetDependencies(node, out.data(), &count));
         out.resize(count);
       }
       return out;
     };
 
-    // Helper to determine if a node is an empty node (used as a free marker).
-    auto is_empty_node = [](musaGraphNode_t n) -> bool {
-      musaGraphNodeType type{};
-      C10_MUSA_CHECK(musaGraphNodeGetType(n, &type));
-      return type == musaGraphNodeTypeEmpty;
-    };
-
-    // For each terminal node, perform a reverse DFS to count, for each empty
-    // node, how many terminals it can reach (i.e., for how many terminals it is
-    // a predecessor). An empty node is reusable if it is a predecessor of all
-    // terminal nodes.
-    ska::flat_hash_map<musaGraphNode_t, size_t> num_terminals_reachable;
-
-    for (auto terminal : terminals) {
-      ska::flat_hash_set<musaGraphNode_t> visited;
-      ska::flat_hash_set<musaGraphNode_t> empty_nodes;
-
-      std::function<void(musaGraphNode_t)> reverse_dfs =
-          [&](musaGraphNode_t node) {
-            if (!visited.insert(node).second)
-              return;
-
-            if (is_empty_node(node)) {
-              num_terminals_reachable[node]++;
-              empty_nodes.insert(node);
-            }
-            auto parents = get_parents(node);
-            for (auto p : parents) {
-              reverse_dfs(p);
-            }
-          };
-
-      reverse_dfs(terminal);
+    // For each terminal node, perform a reverse DFS to count, for each free
+    // marker, how many terminals it can reach (i.e., for how many terminals it
+    // is a predecessor). A free marker is reusable if it is a predecessor of
+    // all terminal nodes.
+    std::deque<musaGraphNode_t> dfs;
+    for (size_t i = 0; i < info.num_terminals; ++i) {
+      dfs.push_back(info.terminals[i]);
     }
 
-    ska::flat_hash_set<musaGraphNode_t> reusable_empty_nodes;
-    for (auto [node, count] : num_terminals_reachable) {
-      if (count == terminals.size()) {
-        reusable_empty_nodes.insert(node);
+    while (!dfs.empty()) {
+      auto v = dfs.back();
+      dfs.pop_back();
+
+      if (visited.count(v)) {
+        continue;
+      }
+      visited.insert(v);
+
+      auto parents = get_parents(v);
+      for (auto p : parents) {
+        dfs.push_back(p);
       }
     }
-
-    return reusable_empty_nodes;
   }
 
   // A block is considered reusable during MUSA graph capture if every free
@@ -1561,29 +1609,52 @@ class DeviceCachingAllocator {
   void free_safe_blocks_in_capture(
       const std::shared_ptr<GatheredContext>& context,
       musaStream_t stream) {
-    auto reusable_empty_nodes = get_reusable_empty_nodes(stream);
+    auto info = stream_get_capture_info(stream);
 
     // If there are no reusable empty nodes (e.g., not currently capturing),
     // there is nothing to do.
-    if (reusable_empty_nodes.empty()) {
+    if (info.status == musaStreamCaptureStatusNone || info.num_terminals == 0) {
       return;
     }
+    if (graph_reuse_context.find(info.capture_id) ==
+        graph_reuse_context.end()) {
+      bool found = false;
+      // Use the reverse iterator to search captures_underway in LIFO order.
+      for (auto it = captures_underway.rbegin(); it != captures_underway.rend();
+           ++it) {
+        if (it->second(stream)) {
+          auto graph_pool = graph_pools.find(it->first);
+          TORCH_INTERNAL_ASSERT(
+              graph_pool != graph_pools.end(),
+              "Could not find graph pool for capture.");
+          auto mempool_id = graph_pool->first;
+          graph_reuse_context[info.capture_id] = GraphReuseContext{};
+          mempool_to_capture_id[mempool_id] = info.capture_id;
+          found = true;
+          break;
+        }
+      }
+      TORCH_INTERNAL_ASSERT(
+          found, "Could not find memory pool id for capture.");
+    }
+    auto& graph_context = graph_reuse_context[info.capture_id];
+    auto& visited = graph_context.visited[stream];
+    update_visited(info, visited);
 
     std::vector<Block*> blocks_to_erase;
 
-    for (auto& [block, inserted_empty_nodes] : deferred_blocks) {
+    for (auto& [block, markers] : deferred_blocks) {
       // Skip this block if it has no empty nodes, as we defer its freeing until
       // after graph capture. Also skip if the block was not allocated on the
       // current stream; such blocks will be freed when
       // free_safe_blocks_in_capture is attempted on that stream.
-      if (inserted_empty_nodes.empty() || block->stream != stream) {
+      if (markers.empty() || block->stream != stream) {
         continue;
       }
 
       bool is_reusable = true;
-
-      for (const auto& node : inserted_empty_nodes) {
-        if (reusable_empty_nodes.find(node) == reusable_empty_nodes.end()) {
+      for (auto m : markers) {
+        if (!visited.count(m)) {
           is_reusable = false;
           break;
         }
@@ -1637,17 +1708,17 @@ class DeviceCachingAllocator {
         block->pool->owner_MempoolId(),
         context ? context : block->context_when_allocated);
 
-    if (block->size >= MUSAAllocatorConfig::max_split_size())
+    if (block->size >= AcceleratorAllocatorConfig::max_split_size())
       stats.oversize_allocations.decrease(1);
 
     if (!block->stream_uses.empty()) {
       if (C10_UNLIKELY(!captures_underway.empty())) {
         if (MUSAAllocatorConfig::graph_capture_record_stream_reuse()) {
-          // insert_free_marker returns a vector of free markers,
+          // record_free_markers returns a vector of free markers,
           // or an empty vector if any associated stream is not currently
           // capturing. The empty vector means that we will defer the free until
           // capture is finished.
-          deferred_blocks.emplace(block, insert_free_marker(block));
+          deferred_blocks.emplace(block, record_free_markers(block));
         } else {
           // If graph_capture_record_stream_reuse is not enabled, always defer
           // the free until capture is finished.
@@ -1700,15 +1771,16 @@ class DeviceCachingAllocator {
       while (base_block->prev) {
         base_block = base_block->prev;
       }
-      offset = (char*)block->ptr - (char*)base_block->ptr;
-      musaIpcMemHandle_t handle;
+      offset = static_cast<const char*>(block->ptr) -
+          static_cast<const char*>(base_block->ptr);
+      musaIpcMemHandle_t handle{};
       C10_MUSA_CHECK(musaIpcGetMemHandle(&handle, base_block->ptr));
-      ss.write((char*)&handle, MUSA_IPC_HANDLE_SIZE);
+      ss.write(reinterpret_cast<const char*>(&handle), MUSA_IPC_HANDLE_SIZE);
     } else {
       ss.put(SHAREABLE_MUSA_EXPANDABLE_SEGMENT);
       auto full_range = block->expandable_segment_->share(
           SegmentRange(block->ptr, block->size), ss);
-      offset = (char*)block->ptr - (char*)full_range.ptr;
+      offset = static_cast<const char*>(block->ptr) - full_range.ptr;
     }
     return ShareableHandle{offset, ss.str()};
   }
@@ -1726,25 +1798,43 @@ class DeviceCachingAllocator {
     }
   }
 
-  void setMemoryFraction(double fraction) {
-    size_t device_free = 0;
-    size_t device_total = 0;
-    C10_MUSA_CHECK(musaMemGetInfo(&device_free, &device_total));
-    allowed_memory_maximum =
-        static_cast<size_t>(fraction * static_cast<double>(device_total));
-    set_fraction = true;
-  }
-
   /** get memory fraction limiting maximum allocated memory **/
   double getMemoryFraction() {
-    if (!set_fraction) {
+    if (!allowed_memory_maximum.has_value()) {
       return 1.0;
     }
-    size_t device_free = 0;
-    size_t device_total = 0;
-    C10_MUSA_CHECK(musaMemGetInfo(&device_free, &device_total));
-    return static_cast<double>(allowed_memory_maximum) /
-        static_cast<double>(device_total);
+
+    return static_cast<double>(allowed_memory_maximum.value()) /
+        static_cast<double>(device_prop.totalGlobalMem);
+  }
+
+  /** set memory fraction to limit maximum allocated memory **/
+  void setMemoryFraction(double fraction) {
+    TORCH_CHECK(
+        0 <= fraction && fraction <= 1,
+        "invalid fraction:",
+        fraction,
+        ". Please set within [0, 1].");
+    allowed_memory_maximum = std::nullopt;
+    if (fraction < 1.0) {
+      allowed_memory_maximum = static_cast<size_t>(
+          fraction * static_cast<double>(device_prop.totalGlobalMem));
+    }
+  }
+
+  std::vector<StreamSegmentSize> getExpandableSegmentSizes() const {
+    std::lock_guard<std::recursive_mutex> lock(mutex);
+    std::vector<StreamSegmentSize> sizes;
+    for (auto& segment : expandable_segments_) {
+      if (!segment->getStream()) {
+        continue;
+      }
+      sizes.emplace_back(
+          segment->getStream(),
+          segment->getSegmentSize() == kSmallBuffer,
+          segment->getMappedSize());
+    }
+    return sizes;
   }
 
   /** returns cached blocks to the system allocator **/
@@ -1894,15 +1984,24 @@ class DeviceCachingAllocator {
     BlockPool& pool = *block->pool;
     const auto segment_len = segment.blocks.size();
 
+    auto is_unmapped_tail = [](Block* b) {
+      return b->next == nullptr && !b->mapped && !b->allocated;
+    };
+
     // allocate all blocks in the segment
     for (size_t i = 0; i < segment_len; ++i) {
       // The last block in every expandable segment is the remaining amount of
       // available unmapped virtual address space. We shouldn't change it but
       // instead check it is correctly formed then skip over allocating it.
       if (i == segment_len - 1 && curr_block->expandable_segment_) {
-        TORCH_CHECK(curr_block->next == nullptr);
-        TORCH_CHECK(!curr_block->mapped);
-        TORCH_CHECK(curr_block->allocated == false);
+        bool valid_structure =
+            /* case 1*/ is_unmapped_tail(curr_block) ||
+            /* case 2*/
+            (curr_block->mapped && !curr_block->allocated && curr_block->next &&
+             is_unmapped_tail(curr_block->next));
+        TORCH_CHECK(
+            valid_structure,
+            "Invalid expandable segment structure during checkpoint restore");
         continue;
       }
 
@@ -1948,9 +2047,15 @@ class DeviceCachingAllocator {
 
     for (size_t i = 0; i < segment_len; ++i, curr_block = curr_block->next) {
       if (i == segment_len - 1 && curr_block->expandable_segment_) {
-        TORCH_CHECK(curr_block->next == nullptr);
-        TORCH_CHECK(!curr_block->mapped);
-        TORCH_CHECK(curr_block->allocated == false);
+        // See Note [Last block when restoring checkpoint state]
+        bool valid_structure =
+            /* case 1*/ is_unmapped_tail(curr_block) ||
+            /* case 2*/
+            (curr_block->mapped && !curr_block->allocated && curr_block->next &&
+             is_unmapped_tail(curr_block->next));
+        TORCH_CHECK(
+            valid_structure,
+            "Invalid expandable segment structure during checkpoint restore");
         continue;
       }
 
@@ -1966,7 +2071,15 @@ class DeviceCachingAllocator {
 
       TORCH_CHECK(curr_block->ptr == block_state.ptr);
       TORCH_CHECK(curr_block->allocated == block_state.allocated);
-      TORCH_CHECK(curr_block->size == block_state.size);
+
+      // See Note [Last block when restoring checkpoint state]
+      // The last mapped block (i == segment_len - 2) may merge with extra
+      // mapped memory from segment growth, making it larger than checkpoint
+      bool is_last_mapped =
+          (i == segment_len - 2) && curr_block->expandable_segment_;
+      TORCH_CHECK(
+          curr_block->size == block_state.size ||
+          (is_last_mapped && curr_block->size >= block_state.size));
     }
   }
 
@@ -2101,7 +2214,7 @@ class DeviceCachingAllocator {
       SegmentInfo& segment_info = result.back();
       segment_info.device = head_block->device;
       segment_info.address = reinterpret_cast<size_t>(head_block->ptr);
-      segment_info.stream = head_block->stream;
+      segment_info.stream = reinterpret_cast<void*>(head_block->stream);
       segment_info.is_large = (!head_block->pool->is_small);
       segment_info.is_expandable = head_block->expandable_segment_;
       segment_info.context_when_allocated =
@@ -2111,6 +2224,7 @@ class DeviceCachingAllocator {
           id == mempool_id) {
         segment_info.owner_private_pool_id = id;
       }
+      segment_info.registration_counter = head_block->registration_counter;
 
       const Block* block = head_block;
       while (block != nullptr && block->mapped) {
@@ -2172,21 +2286,22 @@ class DeviceCachingAllocator {
     // divide the space between these 2's power into equal divisions
     // If division is zero, return the power-of-2 ceiling.
     size_t power2_floor = llvm::PowerOf2Floor(size);
-    size_t power2_divison =
+    size_t power2_division =
         power2_floor >> (63 - llvm::countLeadingZeros(divisions));
-    if (C10_UNLIKELY(power2_divison == 0)) {
+    if (C10_UNLIKELY(power2_division == 0)) {
       return (power2_floor << 1);
     }
-    size_t round_size_floor = size & (~(power2_divison - 1));
+    size_t round_size_floor = size & (~(power2_division - 1));
     return (round_size_floor == size) ? size
-                                      : round_size_floor + power2_divison;
+                                      : round_size_floor + power2_division;
   }
 
   static size_t round_size(size_t size) {
     if (size < kMinBlockSize) {
       return kMinBlockSize;
     } else {
-      auto divisions = MUSAAllocatorConfig::roundup_power2_divisions(size);
+      auto divisions =
+          AcceleratorAllocatorConfig::roundup_power2_divisions(size);
       if (divisions > 1 && size > (kMinBlockSize * divisions)) {
         return roundup_power2_next_division(size, divisions);
       } else {
@@ -2195,17 +2310,27 @@ class DeviceCachingAllocator {
     }
   }
 
-  void createOrIncrefPool(MempoolId_t mempool_id, MUSAAllocator* allocator) {
+  void createOrIncrefPool(
+      MempoolId_t mempool_id,
+      std::shared_ptr<MUSAAllocator> allocator) {
     // Create a PrivatePool object if it does not exist yet
     // and increment its use_count
     std::lock_guard<std::recursive_mutex> lock(mutex);
-    create_or_incref_pool(mempool_id, allocator);
+    create_or_incref_pool(mempool_id, std::move(allocator));
   }
 
-  void setUseOnOOM(MempoolId_t mempool_id) {
-    // Choose if this pool should be used as a last resort before ooming
+  void setUseOnOOM(MempoolId_t mempool_id, bool use_on_oom) {
     std::lock_guard<std::recursive_mutex> lock(mutex);
-    use_on_oom_pools.insert(mempool_id);
+    if (use_on_oom) {
+      use_on_oom_pools.insert(mempool_id);
+    } else {
+      use_on_oom_pools.erase(mempool_id);
+    }
+  }
+
+  void setNoSplit(MempoolId_t mempool_id) {
+    std::lock_guard<std::recursive_mutex> lock(mutex);
+    no_split_pools.insert(mempool_id);
   }
 
   // See Note [Interaction with MUSA graph capture]
@@ -2228,6 +2353,21 @@ class DeviceCachingAllocator {
   // Called by MUSAGraph::capture_end
   void endAllocateToPool(MempoolId_t mempool_id) {
     std::lock_guard<std::recursive_mutex> lock(mutex);
+
+    if (MUSAAllocatorConfig::graph_capture_record_stream_reuse() &&
+        !graph_reuse_context.empty()) {
+      auto capture_id = mempool_to_capture_id[mempool_id];
+      auto graph_context = graph_reuse_context[capture_id];
+      for (auto& [stream, _] : graph_context.visited) {
+        TORCH_INTERNAL_ASSERT(
+            stream_get_capture_info(stream).status ==
+                musaStreamCaptureStatusNone,
+            "This stream should not be capturing when the capture is ended");
+      }
+      graph_reuse_context.erase(capture_id);
+      mempool_to_capture_id.erase(mempool_id);
+    }
+
     for (auto it = captures_underway.begin(); it != captures_underway.end();
          ++it) {
       if (it->first == mempool_id) {
@@ -2340,11 +2480,12 @@ class DeviceCachingAllocator {
 
   void create_or_incref_pool(
       MempoolId_t mempool_id,
-      MUSAAllocator* allocator = nullptr) {
+      std::shared_ptr<MUSAAllocator> allocator = nullptr) {
     auto it = graph_pools.find(mempool_id);
     if (it == graph_pools.end()) {
       graph_pools.emplace(
-          mempool_id, std::make_unique<PrivatePool>(mempool_id, allocator));
+          mempool_id,
+          std::make_unique<PrivatePool>(mempool_id, std::move(allocator)));
     } else {
       // mempool_id references an existing pool, which the current MUSAGraph
       // capture or torch.musa.use_mem_pool will
@@ -2398,7 +2539,9 @@ class DeviceCachingAllocator {
         return c;
       }
     }
-    auto segment_size = pool->is_small ? kSmallBuffer : kLargeBuffer;
+    auto segment_size = pool->is_small
+        ? kSmallBuffer
+        : AcceleratorAllocatorConfig::large_segment_size();
     expandable_segments_.emplace_back(new ExpandableSegment(
         device, stream, segment_size, devices_with_peer_access_));
 
@@ -2630,9 +2773,10 @@ class DeviceCachingAllocator {
     // a capture, so it's usually 0, and we can short-circuit
     // musaStreamCaptureStatus (which does a TLS lookup).
     if (C10_UNLIKELY(!captures_underway.empty())) {
-      for (auto& entry : captures_underway) {
-        if (entry.second(stream)) {
-          auto it1 = graph_pools.find(entry.first);
+      for (auto it = captures_underway.rbegin(); it != captures_underway.rend();
+           ++it) {
+        if (it->second(stream)) {
+          auto it1 = graph_pools.find(it->first);
           TORCH_INTERNAL_ASSERT(it1 != graph_pools.end());
           if (size <= kSmallSize) {
             return it1->second->small_blocks;
@@ -2661,11 +2805,16 @@ class DeviceCachingAllocator {
       const Block* block,
       size_t size,
       bool is_expandable_segments_active) {
+    // If the pool is marked as not splitting a segment, do not split
+    if (no_split_pools.find(block->pool->owner_MempoolId()) !=
+        no_split_pools.end()) {
+      return false;
+    }
     size_t remaining = block->size - size;
     if (block->pool->is_small || is_expandable_segments_active) {
       return remaining >= kMinBlockSize;
     } else {
-      return (size < MUSAAllocatorConfig::max_split_size()) &&
+      return (size < AcceleratorAllocatorConfig::max_split_size()) &&
           (remaining > kSmallSize);
     }
   }
@@ -2674,7 +2823,7 @@ class DeviceCachingAllocator {
     if (size <= kSmallSize) {
       return kSmallBuffer;
     } else if (size < kMinLargeAlloc) {
-      return kLargeBuffer;
+      return AcceleratorAllocatorConfig::large_segment_size();
     } else {
       return kRoundLarge * ((size + kRoundLarge - 1) / kRoundLarge);
     }
@@ -2684,8 +2833,8 @@ class DeviceCachingAllocator {
     BlockPool& pool = *p.pool;
 
     if (C10_UNLIKELY(
-            set_fraction &&
-            MUSAAllocatorConfig::garbage_collection_threshold() > 0.0)) {
+            allowed_memory_maximum.has_value() &&
+            AcceleratorAllocatorConfig::garbage_collection_threshold() > 0.0)) {
       // Track block reuse interval only when garbage collection is enabled.
       ++pool.get_free_blocks_call_count;
     }
@@ -2727,13 +2876,13 @@ class DeviceCachingAllocator {
     }
 
     // Do not return an oversized block for a large request
-    if ((p.size() < MUSAAllocatorConfig::max_split_size()) &&
-        ((*it)->size >= MUSAAllocatorConfig::max_split_size()))
+    if ((p.size() < AcceleratorAllocatorConfig::max_split_size()) &&
+        ((*it)->size >= AcceleratorAllocatorConfig::max_split_size()))
       return false;
     // Allow oversized block size to be rounded up but within a limit
-    if ((p.size() >= MUSAAllocatorConfig::max_split_size()) &&
+    if ((p.size() >= AcceleratorAllocatorConfig::max_split_size()) &&
         ((*it)->size >=
-         p.size() + MUSAAllocatorConfig::max_non_split_rounding_size()))
+         p.size() + AcceleratorAllocatorConfig::max_non_split_rounding_size()))
       return false;
     p.block = *it;
     pool.blocks.erase(it);
@@ -2756,8 +2905,8 @@ class DeviceCachingAllocator {
     // therefore should be of less overheads.
 
     size_t gc_threshold = static_cast<size_t>(
-        MUSAAllocatorConfig::garbage_collection_threshold() *
-        static_cast<double>(allowed_memory_maximum));
+        AcceleratorAllocatorConfig::garbage_collection_threshold() *
+        static_cast<double>(allowed_memory_maximum.value()));
     // No need to trigger GC yet
     if (total_allocated_memory <= gc_threshold) {
       return;
@@ -2830,8 +2979,8 @@ class DeviceCachingAllocator {
 
     bool in_fbcode = false;
 
-    if (set_fraction &&
-        total_allocated_memory + size > allowed_memory_maximum) {
+    if (allowed_memory_maximum.has_value() &&
+        total_allocated_memory + size > allowed_memory_maximum.value()) {
       p.err = musaErrorMemoryAllocation;
       return false;
       // Temporarily disable checkpointing & musagraphs internally
@@ -2891,12 +3040,13 @@ class DeviceCachingAllocator {
     }
 
     total_allocated_memory += size;
-    p.block = new Block(p.device(), p.stream(), size, p.pool, (char*)ptr);
+    p.block = new Block(
+        p.device(), p.stream(), size, p.pool, static_cast<char*>(ptr));
     for_each_selected_stat_type(p.stat_types, [&](size_t stat_type) {
       stats.segment[stat_type].increase(1);
       stats.reserved_bytes[stat_type].increase(size);
     });
-    if (size >= MUSAAllocatorConfig::max_split_size())
+    if (size >= AcceleratorAllocatorConfig::max_split_size())
       stats.oversize_segments.increase(1);
     auto reserved_bytes_gauge =
         STATIC_GAUGE(pytorch.MUSACachingAllocator.reserved_bytes);
@@ -2925,7 +3075,7 @@ class DeviceCachingAllocator {
   bool release_available_cached_blocks(
       const AllocParams& p,
       const std::shared_ptr<GatheredContext>& context) {
-    if (MUSAAllocatorConfig::max_split_size() ==
+    if (AcceleratorAllocatorConfig::max_split_size() ==
         std::numeric_limits<size_t>::max())
       return false;
     BlockPool& pool = *p.pool;
@@ -2933,8 +3083,8 @@ class DeviceCachingAllocator {
     // because of std::unique_ptr, block cannot be trivially copied
     // Use constructor for search key.
     Block key(p.search_key.device, p.search_key.stream, p.search_key.size);
-    key.size = (key.size < MUSAAllocatorConfig::max_split_size())
-        ? MUSAAllocatorConfig::max_split_size()
+    key.size = (key.size < AcceleratorAllocatorConfig::max_split_size())
+        ? AcceleratorAllocatorConfig::max_split_size()
         : key.size;
     auto it = pool.blocks.lower_bound(&key);
     if (it == pool.blocks.end() || (*it)->stream != p.stream() ||
@@ -2947,7 +3097,7 @@ class DeviceCachingAllocator {
       --it; // Back up one item.  Now on the largest block for the correct
             // stream
       while ((totalReleased < key.size) &&
-             ((*it)->size >= MUSAAllocatorConfig::max_split_size()) &&
+             ((*it)->size >= AcceleratorAllocatorConfig::max_split_size()) &&
              ((*it)->stream == p.stream())) {
         auto cur = it;
         bool is_first = cur == pool.blocks.begin();
@@ -3072,7 +3222,7 @@ class DeviceCachingAllocator {
         stats.reserved_bytes[static_cast<int64_t>(StatType::AGGREGATE)]
             .current);
 
-    if (block->size >= MUSAAllocatorConfig::max_split_size())
+    if (block->size >= AcceleratorAllocatorConfig::max_split_size())
       stats.oversize_segments.decrease(1);
     pool->blocks.erase(block);
     delete block;
@@ -3355,11 +3505,12 @@ class DeviceCachingAllocator {
         device,
         addr,
         size,
-        stream,
+        reinterpret_cast<void*>(stream),
         mempool_id,
         getApproximateTime(),
         record_context_ >= RecordContext::ALLOC ? std::move(context) : nullptr,
-        compile_string);
+        compile_string,
+        user_metadata);
 
     // Callbacks should not include any Pytorch call
     for (const auto& cb : trace_trackers_) {
@@ -3367,7 +3518,11 @@ class DeviceCachingAllocator {
     }
 
     if (record_history) {
-      alloc_buffer.insertEntries(te);
+      // Skip if action is in the skip_actions set
+      bool should_skip = skip_actions_list.count(action) > 0;
+      if (!should_skip) {
+        alloc_buffer.insertEntries(te);
+      }
     }
   }
 };
@@ -3409,14 +3564,14 @@ static void uncached_delete(void* ptr) {
 
 void local_raw_delete(void* ptr);
 thread_local std::stack<std::string> DeviceCachingAllocator::compile_context;
+thread_local std::string DeviceCachingAllocator::user_metadata;
 
 class NativeCachingAllocator : public MUSAAllocator {
  private:
   // Shard allocation region to have independent mutexes to reduce contention.
   static constexpr size_t kNumMutexShard = 67;
 
-  // TODO: use std::hardware_destructive_interference_size once available
-  struct alignas(64) AlignedMutex {
+  struct alignas(hardware_destructive_interference_size) AlignedMutex {
     std::mutex m;
   };
 
@@ -3427,7 +3582,7 @@ class NativeCachingAllocator : public MUSAAllocator {
       allocated_blocks;
 
   static size_t get_mutex_shard_id(void* ptr) {
-    return twang_mix64((size_t)ptr) % kNumMutexShard;
+    return twang_mix64(reinterpret_cast<uintptr_t>(ptr)) % kNumMutexShard;
   }
 
   void add_allocated_block(Block* block) {
@@ -3465,7 +3620,8 @@ class NativeCachingAllocator : public MUSAAllocator {
     if (size < device_count) {
       device_allocator.resize(device_count);
       for (const auto i : c10::irange(size, device_count)) {
-        device_allocator[i] = std::make_unique<DeviceCachingAllocator>();
+        device_allocator[i] = std::make_unique<DeviceCachingAllocator>(
+            static_cast<c10::DeviceIndex>(i));
       }
     }
   }
@@ -3485,7 +3641,7 @@ class NativeCachingAllocator : public MUSAAllocator {
         "Allocator not initialized for device ",
         device,
         ": did you call init?");
-    Block* block = device_allocator[device]->malloc(device, size, stream);
+    Block* block = device_allocator[device]->malloc(size, stream);
     add_allocated_block(block);
     *devPtr = (void*)block->ptr;
     const c10::impl::PyInterpreter* interp = c10::impl::GPUTrace::get_trace();
@@ -3517,12 +3673,6 @@ class NativeCachingAllocator : public MUSAAllocator {
         "Allocator not initialized for device ",
         device,
         ": did you call init?");
-    TORCH_INTERNAL_ASSERT(
-        0 <= fraction && fraction <= 1,
-        "invalid fraction:",
-        fraction,
-        ". Please set within (0, 1).");
-    C10_MUSA_CHECK(c10::musa::SetDevice(device));
     device_allocator[device]->setMemoryFraction(fraction);
   }
 
@@ -3532,8 +3682,17 @@ class NativeCachingAllocator : public MUSAAllocator {
         "Allocator not initialized for device ",
         device,
         ": did you call init?");
-    C10_MUSA_CHECK(c10::musa::SetDevice(device));
     return device_allocator[device]->getMemoryFraction();
+  }
+
+  std::vector<StreamSegmentSize> getExpandableSegmentSizes(
+      c10::DeviceIndex device) override {
+    TORCH_INTERNAL_ASSERT(
+        0 <= device && static_cast<size_t>(device) < device_allocator.size(),
+        "Allocator not initialized for device ",
+        device,
+        ": did you call init?");
+    return device_allocator[device]->getExpandableSegmentSizes();
   }
 
   void enable(bool value) override {
@@ -3549,17 +3708,21 @@ class NativeCachingAllocator : public MUSAAllocator {
       CreateContextFn context_recorder,
       size_t alloc_buffer_max_entries,
       RecordContext when,
-      bool clearHistory) override {
+      bool clearHistory,
+      const std::vector<std::string>& skip_actions) override {
     record_history = enabled;
     annotation_buffer.setMaxEntries(alloc_buffer_max_entries);
-    annotation_buffer.clear();
+    if (!enabled || clearHistory) {
+      annotation_buffer.clear();
+    }
     for (auto& allocator : device_allocator) {
       allocator->recordHistory(
           enabled,
           context_recorder,
           alloc_buffer_max_entries,
           when,
-          clearHistory);
+          clearHistory,
+          skip_actions);
     }
   }
 
@@ -3595,6 +3758,18 @@ class NativeCachingAllocator : public MUSAAllocator {
     c10::DeviceIndex device = 0;
     C10_MUSA_CHECK(c10::musa::GetDevice(&device));
     device_allocator[device]->popCompileContext();
+  }
+
+  void setUserMetadata(const std::string& metadata) override {
+    c10::DeviceIndex device = 0;
+    C10_MUSA_CHECK(c10::musa::GetDevice(&device));
+    device_allocator[device]->setUserMetadata(metadata);
+  }
+
+  std::string getUserMetadata() override {
+    c10::DeviceIndex device = 0;
+    C10_MUSA_CHECK(c10::musa::GetDevice(&device));
+    return device_allocator[device]->getUserMetadata();
   }
 
   bool isHistoryEnabled() override {
@@ -3665,32 +3840,40 @@ class NativeCachingAllocator : public MUSAAllocator {
     device_allocator[block->device]->recordStream(block, stream);
   }
 
-  SnapshotInfo snapshot(MempoolId_t mempool_id) override {
-    // Set-up converter to convert timestamps from tsc to microseconds.
-    auto tsc_to_ns = clock_converter.makeConverter();
-    auto tsc_to_us = [=](approx_time_t t_approx) {
-      return tsc_to_ns(t_approx) / 1000;
-    };
-
+  SnapshotInfo snapshot(MempoolId_t mempool_id, bool include_traces) override {
     SnapshotInfo result;
 
-    // Get AnnotationEntry list and convert the timestamps.
-    annotation_buffer.getEntries(result.external_annotations);
-    for (auto& ae : result.external_annotations) {
-      ae.time_.t_ = tsc_to_us(ae.time_.approx_t_);
-    }
+    if (include_traces) {
+      // Set-up converter to convert timestamps from tsc to microseconds.
+      auto tsc_to_ns = clock_converter.makeConverter();
+      auto tsc_to_us = [=](approx_time_t t_approx) {
+        return tsc_to_ns(t_approx) / 1000;
+      };
 
-    // Get the device_traces' TraceEntry lists.
-    for (auto& da : device_allocator) {
-      result.device_traces.emplace_back(da->trace(tsc_to_us));
-      auto snap = da->snapshot(mempool_id);
-      result.segments.insert(result.segments.end(), snap.begin(), snap.end());
+      // Get AnnotationEntry list and convert the timestamps.
+      annotation_buffer.getEntries(result.external_annotations);
+      for (auto& ae : result.external_annotations) {
+        ae.time_.t_ = tsc_to_us(ae.time_.approx_t_);
+      }
+
+      // Get the device_traces' TraceEntry lists.
+      for (auto& da : device_allocator) {
+        result.device_traces.emplace_back(da->trace(tsc_to_us));
+        auto snap = da->snapshot(mempool_id);
+        result.segments.insert(result.segments.end(), snap.begin(), snap.end());
+      }
+    } else {
+      // Fast path: skip traces and annotations entirely
+      for (auto& da : device_allocator) {
+        auto snap = da->snapshot(mempool_id);
+        result.segments.insert(result.segments.end(), snap.begin(), snap.end());
+      }
     }
 
     auto& md = result.config_metadata;
     md.garbage_collection_threshold =
-        MUSAAllocatorConfig::garbage_collection_threshold();
-    md.max_split_size = MUSAAllocatorConfig::max_split_size();
+        AcceleratorAllocatorConfig::garbage_collection_threshold();
+    md.max_split_size = AcceleratorAllocatorConfig::max_split_size();
     md.pinned_num_register_threads =
         MUSAAllocatorConfig::pinned_num_register_threads();
     md.expandable_segments = MUSAAllocatorConfig::expandable_segments();
@@ -3698,9 +3881,10 @@ class NativeCachingAllocator : public MUSAAllocator {
         MUSAAllocatorConfig::release_lock_on_musamalloc();
     md.pinned_use_host_register =
         MUSAAllocatorConfig::pinned_use_musa_host_register();
-    md.last_allocator_settings = MUSAAllocatorConfig::last_allocator_settings();
+    md.last_allocator_settings =
+        AcceleratorAllocatorConfig::last_allocator_settings();
     md.roundup_power2_divisions =
-        MUSAAllocatorConfig::roundup_power2_divisions();
+        AcceleratorAllocatorConfig::roundup_power2_divisions();
     md.graph_capture_record_stream_reuse =
         MUSAAllocatorConfig::graph_capture_record_stream_reuse();
 
@@ -3816,15 +4000,23 @@ class NativeCachingAllocator : public MUSAAllocator {
   void createOrIncrefPool(
       c10::DeviceIndex device,
       MempoolId_t mempool_id,
-      MUSAAllocator* allocator) override {
+      std::shared_ptr<MUSAAllocator> allocator) override {
     assertValidDevice(device);
     device_allocator[device]->createOrIncrefPool(
-        std::move(mempool_id), allocator);
+        std::move(mempool_id), std::move(allocator));
   }
 
-  void setUseOnOOM(c10::DeviceIndex device, MempoolId_t mempool_id) override {
+  void setUseOnOOM(
+      c10::DeviceIndex device,
+      MempoolId_t mempool_id,
+      bool use_on_oom) override {
     assertValidDevice(device);
-    device_allocator[device]->setUseOnOOM(std::move(mempool_id));
+    device_allocator[device]->setUseOnOOM(std::move(mempool_id), use_on_oom);
+  }
+
+  void setNoSplit(c10::DeviceIndex device, MempoolId_t mempool_id) override {
+    assertValidDevice(device);
+    device_allocator[device]->setNoSplit(std::move(mempool_id));
   }
 
   // MUSAGraph interactions
@@ -4062,7 +4254,7 @@ class NativeCachingAllocator : public MUSAAllocator {
   }
 };
 
-NativeCachingAllocator allocator;
+static NativeCachingAllocator allocator;
 
 void local_raw_delete(void* ptr) {
   if (TORCH_SDT_IS_ENABLED(free)) {
@@ -4090,35 +4282,32 @@ struct BackendStaticInitializer {
   // works, maybe we should move all of MUSAAllocatorConfig here?
   void parseEnvForBackend(std::atomic<MUSAAllocator*>& allocator) {
     auto val = c10::utils::get_env("PYTORCH_MUSA_ALLOC_CONF");
+    if (!val.has_value()) {
+      val = c10::utils::get_env("PYTORCH_ALLOC_CONF");
+    }
+
     if (val.has_value()) {
-      const std::string& config = val.value();
-
-      std::regex exp("[\\s,]+");
-      std::sregex_token_iterator it(config.begin(), config.end(), exp, -1);
-      std::sregex_token_iterator end;
-      std::vector<std::string> options(it, end);
-
-      for (auto option : options) {
-        std::regex exp2("[:]+");
-        std::sregex_token_iterator it2(option.begin(), option.end(), exp2, -1);
-        std::sregex_token_iterator end2;
-        std::vector<std::string> kv(it2, end2);
-        if (kv.size() >= 2) {
-          if (kv[0] == "backend") {
-            if (kv[1] == "musaMallocAsync") {
-              // TODO(MTAI): support Async Allocator
-              /* return MusaMallocAsync::allocator(); */
-            }
-            if (kv[1] == "unified") {
-              c10::register_unified_allocator();
-              c10::uma_cpu_alloc_context.set_allocator();
-              return;
-            }
-            if (kv[1] == "native") {
-              allocator.store(&Native::allocator);
-              at::SetAllocator(c10::kPrivateUse1, allocator.load(), 0);
-            }
+      c10::CachingAllocator::ConfigTokenizer tokenizer(val.value());
+      for (size_t i = 0; i < tokenizer.size(); i++) {
+        const auto& key = tokenizer[i];
+        if (key == "backend") {
+          tokenizer.checkToken(++i, ":");
+          i++;
+          if (tokenizer[i] == "musaMallocAsync") {
+            // TODO(MTAI): support Async Allocator
+            /* return MusaMallocAsync::allocator(); */
           }
+          if (tokenizer[i] == "unified") {
+            c10::register_unified_allocator();
+            c10::uma_cpu_alloc_context.set_allocator();
+            return;
+          }
+        } else { // !=backend
+          // Skip the key and its value
+          i = tokenizer.skipKey(i);
+        }
+        if (i + 1 < tokenizer.size()) {
+          tokenizer.checkToken(++i, ",");
         }
       }
     }
@@ -4152,19 +4341,23 @@ std::atomic<CaptureId_t> MemPool::uid_{1};
 std::atomic<CaptureId_t> MemPool::uuid_{1};
 
 MemPool::MemPool(
-    MUSACachingAllocator::MUSAAllocator* allocator,
+    std::shared_ptr<MUSACachingAllocator::MUSAAllocator> allocator,
     bool is_user_created,
-    bool use_on_oom)
-    : allocator_(allocator), is_user_created_(is_user_created) {
+    bool use_on_oom,
+    bool no_split)
+    : is_user_created_(is_user_created) {
   if (is_user_created_) {
     id_ = {0, uid_++};
   } else {
     id_ = {uuid_++, 0};
   }
   device_ = c10::musa::current_device();
-  MUSACachingAllocator::createOrIncrefPool(device_, id_, allocator);
+  MUSACachingAllocator::createOrIncrefPool(device_, id_, std::move(allocator));
   if (use_on_oom) {
-    MUSACachingAllocator::setUseOnOOM(device_, id_);
+    MUSACachingAllocator::setUseOnOOM(device_, id_, true);
+  }
+  if (no_split) {
+    MUSACachingAllocator::setNoSplit(device_, id_);
   }
 }
 
@@ -4172,12 +4365,8 @@ MempoolId_t MemPool::id() {
   return id_;
 }
 
-MUSACachingAllocator::MUSAAllocator* MemPool::allocator() {
-  return allocator_;
-}
-
 MemPool::~MemPool() {
-  TORCH_INTERNAL_ASSERT(use_count() == 1);
+  MUSACachingAllocator::setUseOnOOM(device_, id_, false);
   MUSACachingAllocator::releasePool(device_, id_);
   c10::musa::MUSACachingAllocator::emptyCache(id_);
 }
@@ -4195,25 +4384,6 @@ MempoolId_t MemPool::graph_pool_handle(bool is_user_created) {
     return {0, uid_++};
   }
   return {uuid_++, 0};
-}
-
-// Note that active_mempool_ is a global variable here
-// and not inside MemPoolContext class, because in windows we
-// can't use __declspec(dllexport) and __declspec(thread)
-// together: https://stackoverflow.com/a/50967977
-static thread_local MemPool* active_mempool_ = nullptr;
-
-MemPoolContext::MemPoolContext(MemPool* mempool)
-    : prev_mempool_(active_mempool_) {
-  active_mempool_ = mempool;
-}
-
-MemPoolContext::~MemPoolContext() {
-  active_mempool_ = prev_mempool_;
-}
-
-MemPool* MemPoolContext::getActiveMemPool() {
-  return active_mempool_;
 }
 
 } // namespace c10::musa

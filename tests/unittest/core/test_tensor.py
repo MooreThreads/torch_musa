@@ -127,3 +127,53 @@ def test_set_dtype():
         assert y_2.type() == type_str
         assert y_1.device == torch.device("musa:0")
         assert y_2.device == torch.device("musa:0")
+
+
+# Tensor.to() / Tensor.lazy_to() device conversion coverage
+# Each entry: (to_args, to_kwargs, expected_device, requires_multi_gpu)
+# Covers positional/keyword int indices and explicit string forms
+_TO_CASES = [
+    # to(0) — positional int index → musa:0
+    pytest.param((0,), {}, "musa:0", id="int-index-pos"),
+    # to(device=0) — keyword int index → musa:0
+    pytest.param((), {"device": 0}, "musa:0", id="int-index-kwarg"),
+    # to("musa:0") — string with explicit index
+    pytest.param(("musa:0",), {}, "musa:0", id="str-with-index"),
+    # to(1) — second device index → musa:1 (needs multi-GPU)
+    pytest.param(
+        (1,),
+        {},
+        "musa:1",
+        marks=testing.skip_if_not_multiple_musa_device,
+        id="second-device",
+    ),
+]
+
+# Both ``to`` and ``lazy_to`` accept the same argument forms, so run the
+# same suite of device-resolution cases through each method.
+_METHODS = ["to", "lazy_to"]
+
+
+@testing.skip_if_musa_unavailable
+@pytest.mark.parametrize("method", _METHODS)
+@pytest.mark.parametrize("to_args,to_kwargs,expected_device", _TO_CASES)
+def test_tensor_to(method, to_args, to_kwargs, expected_device):
+    """Verify ``to()`` / ``lazy_to()`` resolve to the correct MUSA device.
+
+    Outside a unified-memory context ``lazy_to`` falls back to a regular
+    copy, so the resulting device is identical to ``to``.
+    """
+    t = torch.randn(3)
+    result = getattr(t, method)(*to_args, **to_kwargs)
+    assert result.device == torch.device(expected_device)
+
+
+@testing.skip_if_musa_unavailable
+@pytest.mark.parametrize(
+    "src, dst",
+    [("cpu", "musa"), ("musa", "cpu")],
+)
+def test_uninitialized_parameter_to(src, dst):
+    p = torch.nn.UninitializedParameter(device=src)
+    r = p.to(dst)
+    assert r.device.type == dst

@@ -48,7 +48,6 @@ __all__ = [
     "MUSAPluggableAllocator",
     "change_current_allocator",
     "MemPool",
-    "MemPoolContext",
     "use_mem_pool",
 ]
 
@@ -59,7 +58,6 @@ from torch_musa._MUSAC import (
     _musa_beginAllocateToPool,
     _musa_endAllocateToPool,
     _MemPool,
-    _MemPoolContext,
     _musa_releasePool,
 )
 
@@ -478,6 +476,7 @@ def _record_memory_history_legacy(
     clear_history=False,
     compile_context=False,
     global_record_annotations=False,
+    skip_actions=None,
 ):
     torch_musa._MUSAC._musa_record_memory_history_legacy(
         enabled,
@@ -488,6 +487,7 @@ def _record_memory_history_legacy(
         clear_history,
         compile_context,
         global_record_annotations,
+        skip_actions if skip_actions is not None else [],
     )
 
 
@@ -500,6 +500,7 @@ def _record_memory_history_impl(
     clear_history: bool = False,
     compile_context: bool = False,
     global_record_annotations: bool = False,
+    skip_actions: list[str] | None = None,
 ):
     torch_musa._MUSAC._musa_record_memory_history(
         enabled,
@@ -509,6 +510,7 @@ def _record_memory_history_impl(
         clear_history,
         compile_context,
         global_record_annotations,
+        skip_actions if skip_actions is not None else [],
     )
 
 
@@ -578,6 +580,23 @@ def _record_memory_history(enabled="all", *args, **kwargs):
             Defaults to "all".
         max_entries (int, optional): Keep a maximum of `max_entries`
             alloc/free events in the recorded history recorded.
+        clear_history (bool, optional): Clear history when enabling, defaults to False.
+        skip_actions (list[str], optional): List of action types to skip when recording
+            memory history. This can be used to reduce memory overhead by excluding
+            certain types of events from being recorded. Valid action types are:
+
+            - `"alloc"`: Memory allocation events
+            - `"free_requested"`: Free requests (memory marked for freeing)
+            - `"free_completed"`: Completed free operations (memory actually freed)
+            - `"segment_alloc"`: Segment allocation from cudaMalloc
+            - `"segment_free"`: Segment freed back to CUDA via cudaFree
+            - `"oom"`: Out-of-memory exceptions
+            - `"snapshot"`: Memory snapshot generation events
+
+            For example, to skip recording free_requested events:
+            `skip_actions=["free_requested"]`
+
+            Defaults to None (record all actions).
     """
     if isinstance(enabled, bool):
         return _record_memory_history_legacy(enabled, *args, **kwargs)
@@ -695,7 +714,7 @@ def _save_memory_usage(filename="output.svg", snapshot=None):
         f.write(_memory(snapshot, format_flamegraph=_select_format_flamegraph))
 
 
-def memory_snapshot(mempool_id=None):
+def memory_snapshot(mempool_id=None, include_traces=True):
     r"""Return a snapshot of the MUSA memory allocator state across all devices.
 
     Interpreting the output of this function requires familiarity with the
@@ -705,7 +724,13 @@ def memory_snapshot(mempool_id=None):
         See :ref:`musa-memory-management` for more details about GPU memory
         management.
     """
-    return torch_musa._MUSAC._musa_memorySnapshot(mempool_id)["segments"]
+    if mempool_id is None:
+        return torch_musa._MUSAC._musa_memorySnapshot((0, 0, include_traces))[
+            "segments"
+        ]
+    return torch_musa._MUSAC._musa_memorySnapshot(
+        (mempool_id[0], mempool_id[1], include_traces)
+    )["segments"]
 
 
 def memory_summary(device: Union[Device, int] = None, abbreviated: bool = False) -> str:
@@ -964,6 +989,32 @@ def _set_allocator_settings(env: str):
     return torch.musa._MUSAC._musa_musaCachingAllocator_set_allocator_settings(env)
 
 
+def _set_memory_metadata(metadata: str):
+    """
+    Set custom metadata that will be attached to all subsequent MUSA memory allocations.
+
+    This metadata will be recorded in the memory snapshot for all allocations made
+    after this call until the metadata is cleared or changed.
+
+    Args:
+        metadata (str): Custom metadata string to attach to allocations.
+                       Pass an empty string to clear the metadata.
+    """
+    # pyrefly: ignore [missing-attribute]
+    torch.musa._MUSAC._musa_setMemoryMetadata(metadata)
+
+
+def _get_memory_metadata() -> str:
+    """
+    Get the current custom metadata that is being attached to MUSA memory allocations.
+
+    Returns:
+        str: The current metadata string, or empty string if no metadata is set.
+    """
+    # pyrefly: ignore [missing-attribute]
+    return torch.musa._MUSAC._musa_getMemoryMetadata()
+
+
 def get_allocator_backend() -> str:
     """Return a string describing the active allocator backend"""
     return torch_musa._MUSAC._musa_getAllocatorBackend()
@@ -1018,6 +1069,8 @@ class MemPool(_MemPool):
         use_on_oom(bool): a bool that indicates if this pool can be used as a
             last resort if a memory allocation outside of the pool fails due to
             Out Of Memory. This is False by default.
+        no_split(bool): a bool that indicates if this pool should not split a segment.
+            This is False by default.
 
     """
 
@@ -1025,24 +1078,20 @@ class MemPool(_MemPool):
         self,
         allocator: Optional[_musa_MUSAAllocator] = None,
         use_on_oom: bool = False,
+        no_split: bool = False,
     ):
-        super().__init__(allocator, True, use_on_oom)
+        super().__init__(allocator, True, use_on_oom, no_split)
 
     @property
     def id(self) -> Tuple[int, int]:
         """Returns the ID of this pool as a tuple of two ints."""
         return super().id
 
-    @property
-    def allocator(self) -> Optional[_musa_MUSAAllocator]:
-        """Returns the allocator this MemPool routes allocations to."""
-        return super().allocator
-
     def use_count(self) -> int:
         r"""Returns the reference count of this pool."""
         return super().use_count()
 
-    def snapshot(self):
+    def snapshot(self, include_traces=True):
         r"""Return a snapshot of the MUSA memory allocator pool state across all
         devices.
 
@@ -1053,23 +1102,8 @@ class MemPool(_MemPool):
             See :ref:`musa-memory-management` for more details about GPU memory
             management.
         """
-        snapshot = torch.musa.memory_snapshot(self.id)
+        snapshot = torch.musa.memory_snapshot(self.id, include_traces=include_traces)
         return snapshot
-
-
-class MemPoolContext(_MemPoolContext):
-    """MemPoolContext holds the currently active pool and stashed the previous
-    pool. On deletion it makes the previous pool active.
-    """
-
-    def __init__(self, pool: MemPool):
-        if hasattr(_MemPoolContext, "__init__"):
-            super().__init__(pool)
-
-    @staticmethod
-    def active_pool() -> Optional[_MemPool]:
-        """Returns the active MemPool"""
-        return _MemPoolContext.activate_pool()
 
 
 @contextlib.contextmanager

@@ -19,8 +19,7 @@ from test_attention_base import (
 from torch_musa import testing
 from torch_musa.testing.base_test_tool import DefaultComparator, skip_on_cpu_arch
 
-# FIXME(lgj): dnn current not support headdim=384, dropout not support headdim=[64, 128]
-ATTN_HEAD_DIMS = [256, 512]
+ATTN_HEAD_DIMS = [64, 128, 256, 512]
 
 
 def function(input_data, func, train=False):

@@ -458,6 +458,92 @@ def test_memory_snapshot_with_cpp():
         torch.musa.memory._record_memory_history(None)
 
 
+def test_memory_snapshot_metadata():
+    try:
+        torch.musa.memory.empty_cache()
+        torch.musa.memory._set_memory_metadata("metadata test")
+        assert torch.musa.memory._get_memory_metadata() == "metadata test"
+        torch.musa.memory._record_memory_history("state", stacks="all")
+        x = torch.rand(311, 411, device="musa")
+
+        del x
+        torch.musa.synchronize()
+        torch.musa.memory.empty_cache()
+
+        ss = torch.musa.memory._snapshot()
+        assert ss["device_traces"]
+        for event in ss["device_traces"][0]:
+            assert event["user_metadata"] == "metadata test"
+    finally:
+        torch.musa.memory._set_memory_metadata("")
+        assert torch.musa.memory._get_memory_metadata() == ""
+        torch.musa.memory._record_memory_history(None)
+
+
+@pytest.mark.parametrize(
+    "skip_actions",
+    [
+        ["free_requested"],
+        ["free_requested", "free_completed"],
+        ["alloc"],
+        ["segment_alloc", "segment_free"],
+        [],
+        None,
+    ],
+)
+def test_memory_snapshot_skip_actions(skip_actions):
+    try:
+        torch.musa.memory.empty_cache()
+        torch.musa.memory._record_memory_history(
+            "all", stacks="python", skip_actions=skip_actions
+        )
+
+        x = torch.rand(128, 128, device="musa")
+        del x
+        torch.musa.synchronize()
+
+        ss = torch.musa.memory._snapshot()
+        device_trace = next(trace for trace in ss["device_traces"] if trace)
+        assert len(device_trace) > 0
+
+        if skip_actions:
+            all_actions = {event["action"] for event in device_trace}
+            for action in skip_actions:
+                assert action not in all_actions
+            assert all_actions - set(skip_actions)
+    finally:
+        torch.musa.memory._record_memory_history(None)
+
+
+def test_memory_snapshot_include_traces_correctness():
+    torch.musa.memory.empty_cache()
+
+    t1 = torch.ones(1024 * 1024, device="musa", dtype=torch.uint8)
+    t2 = torch.ones(1024 * 1024, device="musa", dtype=torch.uint8)
+    t3 = torch.ones(1024 * 1024, device="musa", dtype=torch.uint8)
+
+    snapshot_with_traces = torch.musa.memory_snapshot(include_traces=True)
+    snapshot_without_traces = torch.musa.memory_snapshot(include_traces=False)
+
+    assert snapshot_with_traces
+    assert snapshot_without_traces
+
+    def get_total_allocated(segments):
+        total = 0
+        for segment in segments:
+            for block in segment.get("blocks", []):
+                if block.get("state") == "active_allocated":
+                    total += block.get("size", 0)
+        return total
+
+    assert get_total_allocated(snapshot_with_traces) == get_total_allocated(
+        snapshot_without_traces
+    )
+    assert t1.data_ptr() != 0
+    assert t2.data_ptr() != 0
+    assert t3.data_ptr() != 0
+
+
 def test_notifies_oom():
     x = False
 

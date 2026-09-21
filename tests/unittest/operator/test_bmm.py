@@ -36,6 +36,10 @@ input_data = [
         "input": torch.randn(4, 10, 5).transpose(0, 1),
         "mat2": torch.randn(5, 10, 10).transpose(0, 1),
     },
+    {
+        "input": torch.as_strided(torch.randn(128), (2, 64, 1), (64, 1, 0)),
+        "mat2": torch.as_strided(torch.randn(128), (2, 1, 64), (64, 0, 1)),
+    },
 ]
 
 
@@ -99,7 +103,7 @@ input_data_complex_mh = [
 
 @pytest.mark.parametrize("input_data", input_data_complex_mh)
 def test_bmm_complex_mh(input_data):
-    input_cpu, mat2_cpu = input_data['input'], input_data['mat2']
+    input_cpu, mat2_cpu = input_data["input"], input_data["mat2"]
     input_musa = input_cpu.musa()
     mat2_musa = mat2_cpu.musa()
 

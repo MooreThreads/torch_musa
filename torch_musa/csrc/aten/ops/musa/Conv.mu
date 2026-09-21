@@ -84,7 +84,7 @@ __global__ void W8A8Conv2dKernel_FLOAT(
     }
     float out_val =
         static_cast<float>(acc) * input_scale * weight_scales[oc_idx];
-    if(bias_data) {
+    if (bias_data) {
       out_val += bias_data[oc_idx];
     }
     if (use_relu) {
@@ -165,7 +165,7 @@ __global__ void W8A8Conv2dKernel_UINT(
     }
     float out_val =
         static_cast<float>(acc) * input_scale * weight_scales[oc_idx];
-    if(bias_data) {
+    if (bias_data) {
       out_val += bias_data[oc_idx];
     }
     if (use_relu) {
@@ -251,7 +251,7 @@ __global__ void W8A8Conv2dKernel_INT(
     }
     float out_val =
         static_cast<float>(acc) * input_scale * weight_scales[oc_idx];
-    if(bias_data) {
+    if (bias_data) {
       out_val += bias_data[oc_idx];
     }
     if (use_relu) {
@@ -328,7 +328,7 @@ __global__ void W8A8Conv2dKernel_INT(
               static_cast<int32_t*>(weight_zps.data_ptr()),                 \
               (float)output_scale,                                          \
               (int)output_zero_point,                                       \
-              bias_ptr,                         \
+              bias_ptr,                                                     \
               use_relu);                                                    \
     } else if constexpr (std::is_same_v<_TYPE, int8_t>) {                   \
       W8A8Conv2dKernel_INT<_TYPE>                                           \
@@ -358,7 +358,7 @@ __global__ void W8A8Conv2dKernel_INT(
               static_cast<int32_t*>(weight_zps.data_ptr()),                 \
               (float)output_scale,                                          \
               (int)output_zero_point,                                       \
-              bias_ptr,                         \
+              bias_ptr,                                                     \
               use_relu);                                                    \
     } else {                                                                \
       W8A8Conv2dKernel_FLOAT<_TYPE>                                         \
@@ -386,7 +386,7 @@ __global__ void W8A8Conv2dKernel_INT(
               (int)input_zp,                                                \
               static_cast<float*>(weight_scales.data_ptr()),                \
               static_cast<int32_t*>(weight_zps.data_ptr()),                 \
-              bias_ptr,                         \
+              bias_ptr,                                                     \
               use_relu);                                                    \
     }                                                                       \
   }
@@ -483,7 +483,7 @@ void conv_kernel(
     int64_t output_zero_point,
     c10::ScalarType output_dtype,
     const std::string_view& attr) {
-  ConvKernelTable kernels;
+  static ConvKernelTable kernels;
   kernels.launch(
       input,
       input_scale,

@@ -247,6 +247,19 @@ struct MUSAGuardImpl final : public c10::impl::DeviceGuardImplInterface {
     C10_MUSA_CHECK(SetDevice(orig_device));
     return static_cast<double>(time_ms);
   }
+
+  // Note: synchronizeDevice can be safely called from any device
+  void synchronizeDevice(const c10::DeviceIndex device_index) const override {
+    DeviceIndex orig_device{-1};
+    C10_MUSA_CHECK(c10::musa::GetDevice(&orig_device));
+    C10_MUSA_CHECK(c10::musa::SetDevice(device_index));
+    const c10::impl::PyInterpreter* interp = c10::impl::GPUTrace::get_trace();
+    if (C10_UNLIKELY(interp)) {
+      (*interp)->trace_gpu_device_synchronization(kMUSA);
+    }
+    C10_MUSA_CHECK(musaDeviceSynchronize());
+    C10_MUSA_CHECK(c10::musa::SetDevice(orig_device));
+  }
 };
 
 } // namespace c10::musa::impl

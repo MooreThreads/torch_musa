@@ -36,6 +36,10 @@ input_data = [
         "input": torch.randn(64, 128),
         "mat2": torch.randn(256, 128).t(),
     },
+    {
+        "input": torch.as_strided(torch.randn(64), (64, 1), (1, 0)),
+        "mat2": torch.as_strided(torch.randn(64), (1, 64), (0, 1)),
+    },
 ]
 
 
@@ -142,6 +146,10 @@ input_data = [
     {
         "mat1": torch.randn(64, 128),
         "mat2": torch.randn(256, 128).t(),
+    },
+    {
+        "mat1": torch.as_strided(torch.randn(64), (64, 1), (1, 0)),
+        "mat2": torch.as_strided(torch.randn(64), (1, 64), (0, 1)),
     },
 ]
 

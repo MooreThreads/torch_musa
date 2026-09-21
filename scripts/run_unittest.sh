@@ -11,7 +11,13 @@ pytest --last-failed --junitxml=${TEST_REPORT_DIR}/${GPU_TYPE}-optim-test-failed
 pytest --last-failed --junitxml=${TEST_REPORT_DIR}/${GPU_TYPE}-miscs-test-failed-results.xml -v tests/unittest/miscs
 pytest --last-failed --junitxml=${TEST_REPORT_DIR}/${GPU_TYPE}-sparse-test-failed-results.xml -v tests/unittest/sparse
 pytest --last-failed --junitxml=${TEST_REPORT_DIR}/${GPU_TYPE}-amp-test-failed-results.xml -v tests/unittest/amp
-pytest --last-failed --junitxml=${TEST_REPORT_DIR}/${GPU_TYPE}-compile-test-failed-results.xml -v tests/unittest/compile
+# Run compile test files in separate processes to avoid graph/allocator state leakage.
+for test_file in tests/unittest/compile/test_*.py; do
+  test_name=$(basename "${test_file}" .py)
+  pytest --cache-clear \
+    --junitxml=${TEST_REPORT_DIR}/${GPU_TYPE}-compile-${test_name}.xml \
+    -v "${test_file}"
+done
 pytest --last-failed --junitxml=${TEST_REPORT_DIR}/${GPU_TYPE}-graph-test-failed-results.xml -v tests/unittest/graph
 pytest --last-failed --junitxml=${TEST_REPORT_DIR}/${GPU_TYPE}-jit-test-failed-results.xml -v tests/unittest/jit
 pytest --last-failed --junitxml=${TEST_REPORT_DIR}/${GPU_TYPE}-quantized-test-failed-results.xml -v tests/unittest/quantized
@@ -26,3 +32,4 @@ done
 end_time=$(date +%s.%N)
 runtime=$(awk "BEGIN {print $end_time - $start_time}")
 echo "Total runtime: $runtime seconds"
+

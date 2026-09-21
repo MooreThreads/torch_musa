@@ -112,7 +112,7 @@ add_library(torch_musa SHARED IMPORTED)
 set_target_properties(torch_musa PROPERTIES
   IMPORTED_LOCATION ${TorchMusa_LIBRARIES}
   INTERFACE_INCLUDE_DIRECTORIES "${TorchMusa_INCLUDE_DIRS}"
-  INTERFACE_LINK_OPTIONS "-Wl,--no-as-needed"
+  INTERFACE_LINK_OPTIONS "-Wl,--as-needed"
 )
 target_link_libraries(torch_musa INTERFACE ${DEPENDENT_TARGETS})
 

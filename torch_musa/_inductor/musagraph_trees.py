@@ -324,6 +324,10 @@ def mark_step_begin() -> None:
 def reset_musagraph_trees() -> None:
     "Clear all musagraph trees"
     # see shutdown below for why this is necessary
+    # get_obj may fail when called from a thread that wasn't spawned by
+    # autograd (e.g., test threads). In that case, there's nothing to reset.
+    if not torch._C._is_key_in_tls("tree_manager_containers"):
+        return
     container_dict = get_obj(local, "tree_manager_containers")
     locks_dict = get_obj(local, "tree_manager_locks")
     for device, lock in locks_dict.items():
@@ -621,12 +625,18 @@ class StorageWeakRefWrapper:
         self.extra_ref_check = None
 
     def expired(self) -> bool:
+        """Return whether the referenced storage has expired."""
         if self.extra_ref_check is not None and not self.extra_ref_check():
             return False
 
-        # if extra_ref_check is not None we expect an additional reference
         stor_count = torch_musa._MUSAC._storage_Use_Count(self.ref.cdata)
-        return (stor_count - (self.extra_ref_check is not None)) == 0
+        if self.extra_ref_check is not None:
+            # if extra_ref_check is not None we expect two additional references:
+            #  - one from the Python storage object
+            #  - one from the cached Tensor
+            stor_count -= 2
+        assert stor_count >= 0
+        return stor_count == 0
 
     def __repr__(self) -> str:
         if self.ref is None or self.ref.expired():
@@ -1666,7 +1676,14 @@ class MUSAGraphNode:
                 self_loc = self_ref()
                 if self_loc is None:
                     return False
-                return self_loc.get_output_refcount(i) == 2
+                refcount = self_loc.get_output_refcount(i)
+                # The c10::Tensor may hold an additional reference to the
+                # cached tensor's TensorImpl.
+                if self_loc.cached_tensor_outputs[i]._use_count() > 1:
+                    assert refcount >= 3
+                    return refcount == 3
+                assert refcount >= 2
+                return refcount == 2
 
             check = functools.partial(check_refcount, i=i)
 
@@ -1987,7 +2004,8 @@ class MUSAGraphNode:
         # this invocation. it is too late to check after we've replayed the graph,
         # because we would have already written over their memory.
         for idx in self.musagraph_managed_idxs:
-            inputs[idx] = None  # type: ignore[call-overload]
+            if not self.preserved_aliased_inputs[idx]:
+                inputs[idx] = None  # type: ignore[call-overload]
 
         torch._check(
             self._check_liveness(
@@ -2924,7 +2942,6 @@ class MUSAGraphTreeManager:
                 assert storage_ptr is not None
                 assert torch_musa._MUSAC._has_Standard_Deleter(storage_ptr)
                 assert wrapper.data_ptr() not in ptrs_to_deallocate
-
     def live_musagraph_pool_storages_in_curr_execution(
         self,
     ) -> List[StorageWeakRefPointer]:

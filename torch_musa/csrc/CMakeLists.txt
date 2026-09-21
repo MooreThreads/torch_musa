@@ -109,6 +109,7 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationMishKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationPreluKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationSoftplusKernel.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationSiluKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/ActivationThresholdKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/AdaptiveMaxPooling3d.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/AmpKernels.mu
@@ -245,8 +246,8 @@ if(USE_MCCL)
 endif()
 
 # symmetric memory
-file(GLOB SYMM_MEM_MU_SRCS distributed/symm_mem/*.cpp)
-file(GLOB SYMM_MEM_CPP_SRCS distributed/symm_mem/*.mu)
+file(GLOB SYMM_MEM_MU_SRCS CONFIGURE_DEPENDS distributed/symm_mem/*.cpp)
+file(GLOB SYMM_MEM_CPP_SRCS CONFIGURE_DEPENDS distributed/symm_mem/*.mu)
 list(APPEND MU_SRCS ${SYMM_MEM_MU_SRCS})
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/utils.cmake)

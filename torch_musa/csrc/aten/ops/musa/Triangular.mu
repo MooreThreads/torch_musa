@@ -154,17 +154,18 @@ struct KernelTable {
       const int,
       const int64_t)>;
 
-#define REGISTER_KERNEL_MODE(_MODE)                            \
-  REGISTER_KERNEL(at::ScalarType::Bool, _MODE, bool)           \
-  REGISTER_KERNEL(at::ScalarType::Byte, _MODE, uint8_t)        \
-  REGISTER_KERNEL(at::ScalarType::Half, _MODE, float16_t)      \
-  REGISTER_KERNEL(at::ScalarType::BFloat16, _MODE, bfloat16_t) \
-  REGISTER_KERNEL(at::ScalarType::Float, _MODE, float)         \
-  REGISTER_KERNEL(at::ScalarType::Double, _MODE, double)       \
-  REGISTER_KERNEL(at::ScalarType::Char, _MODE, int8_t)         \
-  REGISTER_KERNEL(at::ScalarType::Int, _MODE, int32_t)         \
-  REGISTER_KERNEL(at::ScalarType::Long, _MODE, int64_t)        \
-  REGISTER_KERNEL(at::ScalarType::ComplexFloat, _MODE, double)
+#define REGISTER_KERNEL_MODE(_MODE)                                         \
+  REGISTER_KERNEL(at::ScalarType::Bool, _MODE, bool)                        \
+  REGISTER_KERNEL(at::ScalarType::Byte, _MODE, uint8_t)                     \
+  REGISTER_KERNEL(at::ScalarType::Half, _MODE, float16_t)                   \
+  REGISTER_KERNEL(at::ScalarType::BFloat16, _MODE, bfloat16_t)              \
+  REGISTER_KERNEL(at::ScalarType::Float, _MODE, float)                      \
+  REGISTER_KERNEL(at::ScalarType::Double, _MODE, double)                    \
+  REGISTER_KERNEL(at::ScalarType::Char, _MODE, int8_t)                      \
+  REGISTER_KERNEL(at::ScalarType::Int, _MODE, int32_t)                      \
+  REGISTER_KERNEL(at::ScalarType::Long, _MODE, int64_t)                     \
+  REGISTER_KERNEL(at::ScalarType::ComplexFloat, _MODE, c10::complex<float>) \
+  REGISTER_KERNEL(at::ScalarType::ComplexDouble, _MODE, c10::complex<double>)
 
   KernelTable() {
     REGISTER_KERNEL_MODE(TriangularMode::TRIU);

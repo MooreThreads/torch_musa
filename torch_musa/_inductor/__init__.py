@@ -9,7 +9,6 @@ from torch._inductor import config
 config.compile_threads = 1
 
 from .utils import _apply_util_patches
-from .ir import _apply_ir_patch
 
 
 __all__ = ["_init_inductor_backend_registration"]
@@ -40,7 +39,8 @@ def _init_inductor_backend_registration():
     from torch._inductor.codegen.common import register_backend_for_device
     from torch._inductor.codegen.cpp_wrapper_gpu import CppWrapperGpu
     from .codegen.wrapper import MUSATritonWrapperCodeGen  # avoid circular import
-    from .codegen.triton import MUSATritonScheduling
+    from .codegen.triton import MUSATritonScheduling, _apply_codegen_triton_patch
+    from .lowering import _apply_lowering_patch
     from .runtime.triton_heuristics import _apply_triton_heuristics_patches
     from .template_heuristics import _apply_template_heuristics_patches
 
@@ -63,6 +63,8 @@ def _init_inductor_backend_registration():
     )
 
     # apply patches
+    _apply_codegen_triton_patch()
+    _apply_lowering_patch()
     _apply_template_heuristics_patches()
     _apply_triton_heuristics_patches()
 
@@ -108,5 +110,4 @@ from .codegen import device_op_overrides
 
 _apply_codecache_hash_patch()
 _apply_util_patches()
-_apply_ir_patch()
 _prepatch_triton_attrs_descriptor_for_torch25()

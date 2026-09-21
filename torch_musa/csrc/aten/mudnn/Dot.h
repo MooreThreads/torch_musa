@@ -5,6 +5,8 @@
 
 #ifdef TORCH_MUSA_USE_MUDNN_C_API
 
+#include <c10/util/Exception.h>
+
 #include "torch_musa/csrc/aten/mudnn/Handle.h"
 #include "torch_musa/csrc/aten/mudnn/Tensor.h"
 
@@ -17,6 +19,12 @@ class MudnnDot : public Descriptor<
  public:
   mudnnStatus_t SetComputeMode(ComputeMode mode) {
     return mudnnSetDotMathType(Desc(), mode);
+  }
+
+  mudnnStatus_t SetDeterministic(bool deterministic) {
+    TORCH_CHECK(
+        !deterministic, "mudnn dot deterministic mode not supported in c api");
+    return MUDNN_STATUS_SUCCESS;
   }
 
   mudnnStatus_t Run(

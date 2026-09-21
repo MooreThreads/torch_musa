@@ -1,0 +1,21 @@
+diff --git a/torch/csrc/inductor/aoti_runtime/model_base.h b/torch/csrc/inductor/aoti_runtime/model_base.h
+index e3f4b4b..9ca05eb 100644
+--- a/torch/csrc/inductor/aoti_runtime/model_base.h
++++ b/torch/csrc/inductor/aoti_runtime/model_base.h
+@@ -477,6 +477,16 @@ class AOTInductorModelBase {
+       delete *run_finished_;
+     }
+ #endif // USE_XPU
++#ifdef USE_MMAP_SELF
++    // _get_constants_start() maps the weights appended to the shared library
++    // and caches the pointer in self_mmap; nothing else ever unmaps it.
++    if (self_mmap) {
++      const uint64_t weights_size =
++          reinterpret_cast<const uint64_t*>(_binary_constants_bin_start)[0];
++      munmap(self_mmap, weights_size);
++      self_mmap = NULL;
++    }
++#endif // USE_MMAP_SELF
+   }
+ 
+   AOTInductorModelBase(AOTInductorModelBase&&) = delete;

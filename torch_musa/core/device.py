@@ -94,7 +94,7 @@ def get_device_capability(device: Optional[_device_t] = None) -> Tuple[int, int]
     return prop.major, prop.minor
 
 
-def get_device_properties(device: _device_t) -> _MusaDeviceProperties:
+def get_device_properties(device: Optional[_device_t] = None) -> _MusaDeviceProperties:
     """Gets the properties of a device.
 
     Args:
@@ -172,6 +172,50 @@ def get_arch_list() -> List[str]:
     if arch_flags is None:
         return []
     return arch_flags.split()
+
+
+def get_gencode_flags() -> str:
+    r"""Return MUSA offload architecture flags this library was compiled with."""
+    arch_list = get_arch_list()
+    if len(arch_list) == 0:
+        return ""
+    arch_list_ = [arch.removeprefix("mp_") for arch in arch_list]
+    return " ".join([f"--offload-arch=mp_{arch}" for arch in arch_list_])
+
+
+def set_sync_debug_mode(debug_mode: int | str) -> None:
+    r"""Set the debug mode for musa synchronizing operations.
+
+    Args:
+        debug_mode(str or int): if "default" or 0, don't error or warn on synchronizing operations,
+            if "warn" or 1, warn on synchronizing operations,
+            if "error" or 2, error out synchronizing operations.
+
+    Warning:
+        This is an experimental feature, and not all synchronizing operations
+        will trigger warning or error.
+        In particular, operations in torch.distributed and torch.sparse namespaces
+        are not covered yet.
+    """
+    _lazy_init()
+    if isinstance(debug_mode, str):
+        if debug_mode == "default":
+            debug_mode = 0
+        elif debug_mode == "warn":
+            debug_mode = 1
+        elif debug_mode == "error":
+            debug_mode = 2
+        else:
+            raise RuntimeError(
+                "invalid value of debug_mode, expected one of `default`, `warn`, `error`"
+            )
+    torch_musa._MUSAC._musa_set_sync_debug_mode(debug_mode)
+
+
+def get_sync_debug_mode() -> int:
+    r"""Return current value of debug mode for musa synchronizing operations."""
+    _lazy_init()
+    return torch_musa._MUSAC._musa_get_sync_debug_mode()
 
 
 @lru_cache(maxsize=16)

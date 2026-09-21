@@ -100,6 +100,98 @@ def load_extra_replace_map(mapping_dir: str, dir_name: str) -> Dict[str, str]:
         return json.load(handle)
 
 
+def patch_memory_access(dst_file: str) -> None:
+    r"""Collapse CUDA/ROCm vector load/store into MUSA C++ load/store."""
+    if os.path.normpath(dst_file).split(os.sep)[-4:] != [
+        "ATen",
+        "native",
+        "musa",
+        "MemoryAccess.muh",
+    ]:
+        return
+
+    with open(dst_file, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    # USE_ROCM is OFF for the generated MUSA tree, but the non-ROCm branch in
+    # upstream MemoryAccess.cuh is CUDA PTX inline asm. Collapse the whole
+    # conditional to the portable C++ load/store path instead.
+    content = content.replace(
+        """  if constexpr (Alignment == 16) {
+#if defined(USE_ROCM)
+    vec.u128 = *reinterpret_cast<const uint4*>(addr);
+  } else if constexpr (Alignment == 8) {
+    vec.u64 = *reinterpret_cast<const uint64_t*>(addr);
+  } else if constexpr (Alignment == 4) {
+    vec.u32 = *reinterpret_cast<const uint32_t*>(addr);
+#else
+    asm("ld.global.v4.u32 {%0,%1,%2,%3}, [%4];"
+        : "=r"(vec.u32[0]), "=r"(vec.u32[1]), "=r"(vec.u32[2]), "=r"(vec.u32[3])
+        : "l"(addr)
+        : "memory");
+  } else if constexpr (Alignment == 8) {
+    asm("ld.global.v2.u32 {%0,%1}, [%2];"
+        : "=r"(vec.u32[0]), "=r"(vec.u32[1])
+        : "l"(addr)
+        : "memory");
+  } else if constexpr (Alignment == 4) {
+    asm("ld.global.u32 %0, [%1];" : "=r"(vec.u32) : "l"(addr) : "memory");
+#endif
+  } else {
+""",
+        """  if constexpr (Alignment == 16) {
+    vec.u128 = *reinterpret_cast<const uint4*>(addr);
+  } else if constexpr (Alignment == 8) {
+    vec.u64 = *reinterpret_cast<const uint64_t*>(addr);
+  } else if constexpr (Alignment == 4) {
+    vec.u32 = *reinterpret_cast<const uint32_t*>(addr);
+  } else {
+""",
+    )
+
+    content = content.replace(
+        """  if constexpr (Alignment == 16) {
+#if defined(USE_ROCM)
+    reinterpret_cast<uint64_t*>(addr)[0] = vec.u64[0];
+    reinterpret_cast<uint64_t*>(addr)[1] = vec.u64[1];
+  } else if constexpr (Alignment == 8) {
+    *reinterpret_cast<uint64_t*>(addr) = vec.u64;
+  } else if constexpr (Alignment == 4) {
+    *reinterpret_cast<uint32_t*>(addr) = vec.u32;
+#else
+    asm("st.global.v4.u32 [%0], {%1,%2,%3,%4};"
+        :
+        : "l"(addr),
+          "r"(vec.u32[0]),
+          "r"(vec.u32[1]),
+          "r"(vec.u32[2]),
+          "r"(vec.u32[3])
+        : "memory");
+  } else if constexpr (Alignment == 8) {
+    asm("st.global.v2.u32 [%0], {%1,%2};"
+        :
+        : "l"(addr), "r"(vec.u32[0]), "r"(vec.u32[1])
+        : "memory");
+  } else if constexpr (Alignment == 4) {
+    asm("st.global.u32 [%0], %1;" : : "l"(addr), "r"(vec.u32) : "memory");
+#endif
+  } else {
+""",
+        """  if constexpr (Alignment == 16) {
+    reinterpret_cast<uint64_t*>(addr)[0] = vec.u64[0];
+    reinterpret_cast<uint64_t*>(addr)[1] = vec.u64[1];
+  } else if constexpr (Alignment == 8) {
+    *reinterpret_cast<uint64_t*>(addr) = vec.u64;
+  } else if constexpr (Alignment == 4) {
+    *reinterpret_cast<uint32_t*>(addr) = vec.u32;
+  } else {
+""",
+    )
+
+    with open(dst_file, "w", encoding="utf-8") as f:
+        f.write(content)
+
+
 def port_cuda(
     pytorch_src_root: str, pytorch_install_root: str, generated_dir: str
 ) -> None:
@@ -265,6 +357,7 @@ def port_cuda(
                     file_extra_replace_map,
                     excluded_files_mapping,
                 )
+                patch_memory_access(dst_file)
 
     # 2. Copy several special files about macros files
     special_copy_files = {

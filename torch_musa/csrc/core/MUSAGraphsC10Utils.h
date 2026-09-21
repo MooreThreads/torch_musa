@@ -40,6 +40,16 @@ enum class CaptureStatus : int {
   Invalidated = int(musaStreamCaptureStatus::musaStreamCaptureStatusInvalidated)
 };
 
+static_assert(
+    int(musaStreamCaptureStatus::musaStreamCaptureStatusNone) == 0,
+    "unexpected int(musaStreamCaptureStatusNone) value");
+static_assert(
+    int(musaStreamCaptureStatus::musaStreamCaptureStatusActive) == 1,
+    "unexpected int(musaStreamCaptureStatusActive) value");
+static_assert(
+    int(musaStreamCaptureStatus::musaStreamCaptureStatusInvalidated) == 2,
+    "unexpected int(musaStreamCaptureStatusInvalidated) value");
+
 inline std::ostream& operator<<(std::ostream& os, CaptureStatus status) {
   switch (status) {
     case CaptureStatus::None:
@@ -60,7 +70,7 @@ inline std::ostream& operator<<(std::ostream& os, CaptureStatus status) {
 
 // Use this version where you're sure a MUSA context exists already.
 inline CaptureStatus currentStreamCaptureStatusMayInitCtx() {
-  musaStreamCaptureStatus is_capturing;
+  musaStreamCaptureStatus is_capturing{musaStreamCaptureStatusNone};
   C10_MUSA_CHECK(
       musaStreamIsCapturing(c10::musa::getCurrentMUSAStream(), &is_capturing));
   return CaptureStatus(is_capturing);

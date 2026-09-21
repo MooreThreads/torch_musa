@@ -106,3 +106,26 @@ def test_multinomial(data_type):
     assert out_res[1] == 0 or out_res[1] == 1 or out_res[1] == 2 or out_res[1] == 3
     assert out_res[2] == 0 or out_res[2] == 1 or out_res[2] == 2 or out_res[2] == 3
     assert out_res[3] == 0 or out_res[3] == 1 or out_res[3] == 2 or out_res[3] == 3
+
+
+@pytest.mark.parametrize("data_type", data_type)
+def test_multinomial_in_graph(data_type):
+    inp = torch.tensor([0, 10, 3, 0], device="musa").to(data_type)
+    num_samples = 2
+    replacement = False
+
+    result = torch.multinomial(inp, num_samples, replacement=replacement)
+    assert len(result) == 2
+    assert result[0] == 1 or result[0] == 2
+    assert result[1] == 1 or result[1] == 2
+
+    g = torch.musa.MUSAGraph()
+    with torch.musa.graph(g):
+        result.zero_()
+        result = torch.multinomial(inp, num_samples, replacement=replacement)
+    result.zero_()
+    g.replay()
+
+    assert len(result) == 2
+    assert result[0] == 1 or result[0] == 2
+    assert result[1] == 1 or result[1] == 2

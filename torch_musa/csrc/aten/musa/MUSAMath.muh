@@ -326,6 +326,49 @@ struct RadixTypeConvert<int64_t> {
   }
 };
 
+__device__ __forceinline__ float4 bfloat1642float4(const __mt_bfloat164 value) {
+#if defined(__MUSA_ARCH__) && (__MUSA_ARCH__ >= 310)
+  return __bfloat1642float4(value);
+#else
+  float4 res;
+  res.x = __uint_as_float(
+      static_cast<uint32_t>(__bfloat16_as_ushort(value.x)) << 16);
+  res.y = __uint_as_float(
+      static_cast<uint32_t>(__bfloat16_as_ushort(value.y)) << 16);
+  res.z = __uint_as_float(
+      static_cast<uint32_t>(__bfloat16_as_ushort(value.z)) << 16);
+  res.w = __uint_as_float(
+      static_cast<uint32_t>(__bfloat16_as_ushort(value.w)) << 16);
+  return res;
+#endif
+}
+
+__device__ __forceinline__ uint16_t float2bfloat16_rn_bits(float value) {
+  const uint32_t x = __float_as_uint(value);
+
+  if ((x & 0x7fffffffU) > 0x7f800000U) {
+    return static_cast<uint16_t>((x >> 16) | 0x0040U);
+  }
+  const uint32_t lsb = (x >> 16) & 1U;
+  const uint32_t rounding_bias = 0x7fffU + lsb;
+  return static_cast<uint16_t>((x + rounding_bias) >> 16);
+}
+
+__device__ __forceinline__ __mt_bfloat164
+float42bfloat164_rn(const float4 value) {
+#if defined(__MUSA_ARCH__) && (__MUSA_ARCH__ >= 310)
+  return __float42bfloat164_rn(value);
+#else
+  __mt_bfloat164 res;
+  res.x = __ushort_as_bfloat16(float2bfloat16_rn_bits(value.x));
+  res.y = __ushort_as_bfloat16(float2bfloat16_rn_bits(value.y));
+  res.z = __ushort_as_bfloat16(float2bfloat16_rn_bits(value.z));
+  res.w = __ushort_as_bfloat16(float2bfloat16_rn_bits(value.w));
+
+  return res;
+#endif
+}
+
 } // namespace musa
 } // namespace at
 #endif // ATEN_MUSA_MUSA_MATH_H_

@@ -1,0 +1,13 @@
+diff --git a/torch/_inductor/lowering.py b/torch/_inductor/lowering.py
+index 0c4c963..ee4f0ac 100644
+--- a/torch/_inductor/lowering.py
++++ b/torch/_inductor/lowering.py
+@@ -6894,6 +6894,8 @@ sort_fallback = fallback_handler(aten.sort.stable, add_to_fallback_set=False)
+ 
+ @register_lowering(aten.sort.stable, type_promotion_kind=None)
+ def sort_stable(x, *, stable=None, dim=-1, descending=False):
++    (x,), _ = require_contiguous(None, x)
++
+     if stable is None:
+         stable = False
+ 

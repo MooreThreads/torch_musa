@@ -3,11 +3,22 @@
 # pylint: disable=C0415
 
 from .tensor import *
+from .hybrid_checkpoint import (
+    HybridCheckpointConfig,
+    apply_hybrid_checkpoint,
+    apply_hybrid_checkpoint_per_layer,
+    get_default_hybrid_checkpoint_offload_ops,
+    get_default_hybrid_checkpoint_ops,
+)
 
 
 # NOTE: DO NOT change the import order, otherwise it may cause unexpected runtime errors
 # TODO: reconsider how to apply patches after FSDP testing done
 def _apply_distributed_patch():
+    from .numa_binding import apply_torchrun_numa_patch
+
+    apply_torchrun_numa_patch()
+
     from .device_mesh import _apply_device_mesh_patch
 
     _apply_device_mesh_patch()

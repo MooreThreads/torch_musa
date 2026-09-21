@@ -58,7 +58,7 @@ def test_checkpoint_dropout_gradient_matches_eager():
     x = torch.randn(16, 64, device="musa", requires_grad=True)
 
     torch.musa.manual_seed(1234)
-    block(x).sum().backward()
+    block(x).sum().backward()  # pylint: disable=not-callable
     reference = [p.grad.detach().clone() for p in block.parameters()]
     reference_input_grad = x.grad.detach().clone()
 

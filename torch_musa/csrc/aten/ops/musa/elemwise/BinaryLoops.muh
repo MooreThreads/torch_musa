@@ -1,6 +1,7 @@
 #ifndef TORCH_MUSA_CSRC_ATEN_OPS_MUSA_ELEMWISE_BINARYLOOPS_MUH_
 #define TORCH_MUSA_CSRC_ATEN_OPS_MUSA_ELEMWISE_BINARYLOOPS_MUH_
 
+#include "torch_musa/csrc/aten/ops/musa/OffsetCalculator.muh"
 #include "torch_musa/csrc/aten/ops/musa/elemwise/UnaryLoops.muh"
 
 namespace at::musa::binary {
@@ -217,7 +218,7 @@ inline void dispatch_uncontig(
       numel > 0 && numel <= std::numeric_limits<int32_t>::max());
 
   const auto [io_vlen, grid, block] = default_contig_config(iter);
-  auto offset_calc = make_offset_calculator<3, true>(iter);
+  auto offset_calc = at::musa::make_offset_calculator<3, true>(iter);
   auto stream = at::musa::getCurrentMUSAStream();
 
   if constexpr (nocast) {
@@ -268,7 +269,6 @@ inline void gpu_kernel_impl_nocast(
     }
   }
 
-  iter.coalesce_dimensions();
   contiguous = iter.is_contiguous();
 
   if (contiguous) {
@@ -303,7 +303,6 @@ inline void gpu_kernel_impl(
     }
   }
 
-  iter.coalesce_dimensions();
   contiguous = iter.is_contiguous();
 
   if (contiguous) {

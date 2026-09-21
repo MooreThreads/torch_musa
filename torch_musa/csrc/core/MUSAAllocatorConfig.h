@@ -1,16 +1,12 @@
 #ifndef TORCH_MUSA_CSRC_CORE_MUSAALLOCATORCONFIG_H_
 #define TORCH_MUSA_CSRC_CORE_MUSAALLOCATORCONFIG_H_
 
+#include <c10/core/AllocatorConfig.h>
 #include <c10/musa/MUSAMacros.h>
+#include <c10/util/Deprecated.h>
 #include <c10/util/Exception.h>
 #include <c10/util/env.h>
-
-#include <atomic>
-#include <cstddef>
-#include <cstdlib>
-#include <mutex>
-#include <string>
-#include <vector>
+#include "torch_musa/csrc/core/MUSAException.h"
 
 namespace c10::musa::MUSACachingAllocator {
 
@@ -23,21 +19,29 @@ enum class Expandable_Segments_Handle_Type : int {
 // Environment config parser
 class C10_MUSA_API MUSAAllocatorConfig {
  public:
+  C10_DEPRECATED_MESSAGE(
+      "c10::musa::MUSACachingAllocator::MUSAAllocatorConfig::max_split_size() is deprecated. Please use c10::CachingAllocator::AcceleratorAllocatorConfig::max_split_size() instead.")
   static size_t max_split_size() {
-    return instance().m_max_split_size;
+    return c10::CachingAllocator::AcceleratorAllocatorConfig::max_split_size();
   }
+
+  C10_DEPRECATED_MESSAGE(
+      "c10::musa::MUSACachingAllocator::MUSAAllocatorConfig::garbage_collection_threshold() is deprecated. Please use c10::CachingAllocator::AcceleratorAllocatorConfig::garbage_collection_threshold() instead.")
   static double garbage_collection_threshold() {
-    return instance().m_garbage_collection_threshold;
+    return c10::CachingAllocator::AcceleratorAllocatorConfig::
+        garbage_collection_threshold();
   }
 
   static bool expandable_segments() {
+    bool enabled = c10::CachingAllocator::AcceleratorAllocatorConfig::
+        use_expandable_segments();
 #if !defined(REAL_MUSA_VERSION) || REAL_MUSA_VERSION < 4000
-    if (instance().m_expandable_segments) {
+    if (enabled) {
       TORCH_WARN_ONCE("expandable_segments not supported on this platform")
     }
     return false;
 #else
-    return instance().m_expandable_segments;
+    return enabled;
 #endif
   }
 
@@ -58,6 +62,10 @@ class C10_MUSA_API MUSAAllocatorConfig {
     return instance().m_graph_capture_record_stream_reuse;
   }
 
+  static double per_process_memory_fraction() {
+    return instance().m_per_process_memory_fraction;
+  }
+
   /** Pinned memory allocator settings */
   static bool pinned_use_musa_host_register() {
     return instance().m_pinned_use_musa_host_register;
@@ -67,8 +75,15 @@ class C10_MUSA_API MUSAAllocatorConfig {
     return instance().m_pinned_num_register_threads;
   }
 
+  C10_DEPRECATED_MESSAGE(
+      "c10::musa::MUSACachingAllocator::MUSAAllocatorConfig::pinned_use_background_threads() is deprecated. Please use c10::CachingAllocator::AcceleratorAllocatorConfig::pinned_use_background_threads() instead.")
   static bool pinned_use_background_threads() {
-    return instance().m_pinned_use_background_threads;
+    return c10::CachingAllocator::AcceleratorAllocatorConfig::
+        pinned_use_background_threads();
+  }
+
+  static size_t pinned_reserve_segment_size_mb() {
+    return instance().m_pinned_reserve_segment_size_mb;
   }
 
   static size_t pinned_max_register_threads() {
@@ -78,91 +93,105 @@ class C10_MUSA_API MUSAAllocatorConfig {
     return 128;
   }
 
-  // This is used to round-up allocation size to nearest power of 2 divisions.
-  // More description below in function roundup_power2_next_division
-  // As ane example, if we want 4 divisions between 2's power, this can be done
-  // using env variable: PYTORCH_MUSA_ALLOC_CONF=roundup_power2_divisions:4
-  static size_t roundup_power2_divisions(size_t size);
+  C10_DEPRECATED_MESSAGE(
+      "c10::musa::MUSACachingAllocator::MUSAAllocatorConfig::roundup_power2_divisions() is deprecated. Please use c10::CachingAllocator::AcceleratorAllocatorConfig::roundup_power2_divisions() instead.")
+  static size_t roundup_power2_divisions(size_t size) {
+    return c10::CachingAllocator::AcceleratorAllocatorConfig::
+        roundup_power2_divisions(size);
+  }
 
+  C10_DEPRECATED_MESSAGE(
+      "c10::musa::MUSACachingAllocator::MUSAAllocatorConfig::roundup_power2_divisions() is deprecated. Please use c10::CachingAllocator::AcceleratorAllocatorConfig::roundup_power2_divisions() instead.")
   static std::vector<size_t> roundup_power2_divisions() {
-    return instance().m_roundup_power2_divisions;
+    return c10::CachingAllocator::AcceleratorAllocatorConfig::
+        roundup_power2_divisions();
   }
 
   static size_t max_non_split_rounding_size() {
-    return instance().m_max_non_split_rounding_size;
+    return c10::CachingAllocator::AcceleratorAllocatorConfig::
+        max_non_split_rounding_size();
   }
 
+  C10_DEPRECATED_MESSAGE(
+      "c10::musa::MUSACachingAllocator::MUSAAllocatorConfig::last_allocator_settings() is deprecated. Please use c10::CachingAllocator::AcceleratorAllocatorConfig::last_allocator_settings() instead.")
   static std::string last_allocator_settings() {
-    std::lock_guard<std::mutex> lock(
-        instance().m_last_allocator_settings_mutex);
-    return instance().m_last_allocator_settings;
+    return c10::CachingAllocator::getAllocatorSettings();
   }
 
   static MUSAAllocatorConfig& instance() {
     static MUSAAllocatorConfig* s_instance = ([]() {
       auto inst = new MUSAAllocatorConfig();
       auto env = c10::utils::get_env("PYTORCH_MUSA_ALLOC_CONF");
-      inst->parseArgs(env);
+
+      // Note: keep the parsing order and logic stable to avoid potential
+      // performance regressions in internal tests.
+      if (!env.has_value()) {
+        env = c10::utils::get_env("PYTORCH_ALLOC_CONF");
+      }
+      if (env.has_value()) {
+        inst->parseArgs(env.value());
+      }
       return inst;
     })();
     return *s_instance;
   }
 
-  void parseArgs(const std::optional<std::string>& env);
+  // Use `Construct On First Use Idiom` to avoid `Static Initialization Order`
+  // issue.
+  static const std::unordered_set<std::string>& getKeys() {
+    static std::unordered_set<std::string> keys{
+        "cpu",
+        "backend",
+        "pinned_use_musa_host_register",
+        "release_lock_on_musamalloc",
+        "graph_capture_record_stream_reuse",
+        "pinned_reserve_segment_size_mb",
+        "pinned_num_register_threads",
+        "per_process_memory_fraction"};
+    return keys;
+  }
+
+  void parseArgs(const std::string& env);
 
  private:
-  MUSAAllocatorConfig();
+  MUSAAllocatorConfig() = default;
 
-  static void lexArgs(const std::string& env, std::vector<std::string>& config);
-  static void consumeToken(
-      const std::vector<std::string>& config,
-      size_t i,
-      const char c);
-  size_t parseMaxSplitSize(const std::vector<std::string>& config, size_t i);
-  size_t parseMaxNonSplitRoundingSize(
-      const std::vector<std::string>& config,
-      size_t i);
-  size_t parseGarbageCollectionThreshold(
-      const std::vector<std::string>& config,
-      size_t i);
-  size_t parseRoundUpPower2Divisions(
-      const std::vector<std::string>& config,
-      size_t i);
   size_t parseAllocatorConfig(
-      const std::vector<std::string>& config,
+      const c10::CachingAllocator::ConfigTokenizer& tokenizer,
       size_t i,
       bool& used_musaMallocAsync);
   size_t parsePinnedUseMusaHostRegister(
-      const std::vector<std::string>& config,
+      const c10::CachingAllocator::ConfigTokenizer& tokenizer,
       size_t i);
   size_t parsePinnedNumRegisterThreads(
-      const std::vector<std::string>& config,
+      const c10::CachingAllocator::ConfigTokenizer& tokenizer,
       size_t i);
-  size_t parsePinnedUseBackgroundThreads(
-      const std::vector<std::string>& config,
+  size_t parsePinnedReserveSegmentSize(
+      const c10::CachingAllocator::ConfigTokenizer& tokenizer,
       size_t i);
   size_t parseGraphCaptureRecordStreamReuse(
-      const std::vector<std::string>& config,
+      const c10::CachingAllocator::ConfigTokenizer& tokenizer,
+      size_t i);
+  double parsePerProcessMemoryFraction(
+      const c10::CachingAllocator::ConfigTokenizer& tokenizer,
       size_t i);
 
-  std::atomic<size_t> m_max_split_size;
-  std::atomic<size_t> m_max_non_split_rounding_size;
-  std::vector<size_t> m_roundup_power2_divisions;
-  std::atomic<double> m_garbage_collection_threshold;
-  std::atomic<size_t> m_pinned_num_register_threads;
-  std::atomic<bool> m_expandable_segments;
-  std::atomic<Expandable_Segments_Handle_Type>
-      m_expandable_segments_handle_type;
-  std::atomic<bool> m_release_lock_on_musamalloc;
-  std::atomic<bool> m_pinned_use_musa_host_register;
-  std::atomic<bool> m_graph_capture_record_stream_reuse;
-  std::atomic<bool> m_pinned_use_background_threads;
-  std::string m_last_allocator_settings;
-  std::mutex m_last_allocator_settings_mutex;
+  std::atomic<size_t> m_pinned_num_register_threads{1};
+  std::atomic<size_t> m_pinned_reserve_segment_size_mb{0};
+  std::atomic<Expandable_Segments_Handle_Type> m_expandable_segments_handle_type
+#if REAL_MUSA_VERSION >= 5010
+      {Expandable_Segments_Handle_Type::UNSPECIFIED};
+#else
+      {Expandable_Segments_Handle_Type::POSIX_FD};
+#endif
+  std::atomic<bool> m_release_lock_on_musamalloc{false};
+  std::atomic<bool> m_pinned_use_musa_host_register{false};
+  std::atomic<bool> m_graph_capture_record_stream_reuse{false};
+  std::atomic<double> m_per_process_memory_fraction{1.0};
 };
 
-// General caching allocator utilities
-C10_MUSA_API void setAllocatorSettings(const std::string& env);
+// Keep this for backwards compatibility
+using c10::CachingAllocator::setAllocatorSettings;
 
 } // namespace c10::musa::MUSACachingAllocator
 

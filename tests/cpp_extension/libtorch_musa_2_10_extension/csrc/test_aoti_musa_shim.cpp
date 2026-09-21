@@ -6,8 +6,17 @@
 #error "RAII_gpuMalloc test requires AOT_INDUCTOR_USE_CACHING_ALLOCATOR"
 #endif
 
+#pragma push_macro("TORCH_STABLE_ONLY")
+#pragma push_macro("TORCH_TARGET_VERSION")
+#undef TORCH_STABLE_ONLY
+#undef TORCH_TARGET_VERSION
+
 #include <torch/csrc/inductor/aoti_runtime/model_base.h>
 #include <torch/csrc/inductor/aoti_runtime/utils_musa.h>
+
+#pragma pop_macro("TORCH_TARGET_VERSION")
+#pragma pop_macro("TORCH_STABLE_ONLY")
+
 #include <torch/csrc/stable/library.h>
 
 #include <cstdint>
