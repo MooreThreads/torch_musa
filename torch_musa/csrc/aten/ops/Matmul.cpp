@@ -783,7 +783,7 @@ Tensor& _BmmDtypeOut(
 
   Scalar beta(0.0);
   Scalar alpha(1.0);
-  { BmmCall(batch1, batch2, out, beta, alpha); }
+  { BmmCall(batch1, batch2, out, alpha, beta); }
 
   return out;
 }
@@ -817,7 +817,7 @@ Tensor& _MmDtypeOut(
       "out_dtype must be the same as input dtype or fp32 for fp16/bf16 inputs");
   MmCheck(self, mat2);
 
-  MmCall(self, mat2, c10::nullopt, out, 0, 1);
+  MmCall(self, mat2, c10::nullopt, out, 1, 0);
 
   return out;
 }

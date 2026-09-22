@@ -1,6 +1,7 @@
 """Test the functionality of SymmetricMemory"""
 
 # pylint: disable=C0103
+import pytest
 import torch
 import torch.distributed as dist
 from torch.distributed.distributed_c10d import ReduceOp
@@ -15,7 +16,6 @@ from torch_musa.testing.common_dist import (
     MultiProcessingTest,
     skip_if_lt_x_gpu,
 )
-
 
 NUM_DEVICES_FOR_TESTING_SYMM_MEM = 4
 
@@ -202,7 +202,7 @@ class TestSymmetricMemoryOps(MultiProcessingTest):
 
         output_tensor_0 = symm_mem_input_tensor.new_empty(
             symm_mem_input_tensor.shape[0] * self.world_size,
-            *symm_mem_input_tensor.shape[1:]
+            *symm_mem_input_tensor.shape[1:],
         )
         torch.ops.symm_mem.low_contention_all_gather(
             output_tensor_0, symm_mem_input_tensor, group_name
@@ -355,3 +355,23 @@ class TestSymmetricMemoryOps(MultiProcessingTest):
         )
         output_tensor_2 = torch.ops._c10d_functional.wait_tensor(output_tensor_2)
         self.assertEqual(output_tensor_2, ref_output_tensor_0)
+
+
+@pytest.mark.skipif(torch.musa.device_count() < 1, reason="requires a MUSA device")
+def test_memory_pool_initialization_uses_current_stream():
+    """Allocator initialization must not overwrite a non-default stream copy."""
+    device = torch.device("musa", torch.musa.current_device())
+    allocator = symmetric_memory.get_mempool_allocator(device.index)
+    mempool = torch.musa.MemPool(allocator)
+    copy_stream = torch.musa.Stream(priority=-1)
+
+    # Cross the caching allocator's small/large segment boundary. Mimic FSDP
+    # copy-in by writing one local shard of a larger communication buffer.
+    for numel in (17, 1_024, 100_003, 1_000_000):
+        with torch.musa.stream(copy_stream):
+            source = torch.full((numel,), 7.0, dtype=torch.float32, device=device)
+            with torch.musa.use_mem_pool(mempool):
+                output = torch.empty(numel * 8, dtype=torch.float32, device=device)
+            output[:numel].copy_(source)
+            torch.musa.synchronize()
+            assert torch.equal(output[:numel], source), f"copy corrupted: {numel=}"

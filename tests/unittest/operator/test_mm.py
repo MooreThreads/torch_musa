@@ -217,3 +217,38 @@ def test_scaled_mm(input_data, dtype, out_dtype, per_channel):
         golden, musa_out, rtol=0.25 if dtype == torch.float8_e5m2 else 0.125, atol=1e-2
     )
     # assert torch.allclose(golden_amax, amax.cpu(), rtol=1e-3, atol=1e-3)
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (1, 1, 1),
+        (1, 256, 256),
+        (256, 256, 1),
+        (16, 64, 32),
+        (64, 128, 256),
+        (128, 256, 512),
+        (64, 7168, 4480),
+    ],
+)
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_mm_out_dtype_fp32(shape):
+    m, k, n = shape
+
+    a_bf16 = torch.randn(m, k, device="musa", dtype=torch.bfloat16)
+    b_bf16 = torch.randn(n, k, device="musa", dtype=torch.bfloat16).t()
+    a_fp16 = a_bf16.to(torch.float16)
+    b_fp16 = b_bf16.to(torch.float16)
+
+    bf16_result = torch.mm(a_bf16, b_bf16, out_dtype=torch.float32)
+    fp16_result = torch.mm(a_fp16, b_fp16, out_dtype=torch.float32)
+    fp32_result = torch.mm(
+        a_bf16.to(torch.float32),
+        b_bf16.to(torch.float32),
+    )
+
+    assert bf16_result.dtype == torch.float32
+    assert fp16_result.dtype == torch.float32
+    assert fp32_result.dtype == torch.float32
+    torch.testing.assert_close(bf16_result, fp32_result, rtol=1e-3, atol=1e-3)
+    torch.testing.assert_close(fp16_result, fp32_result, rtol=1e-3, atol=1e-3)
