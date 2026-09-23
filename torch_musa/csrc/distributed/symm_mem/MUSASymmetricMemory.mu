@@ -79,10 +79,17 @@ MUSAPeerAllocInfo::MUSAPeerAllocInfo(
       c10::musa::MUSACachingAllocator::raw_alloc(arr_size));
 
   c10::musa::MUSAGuard guard(local_device_idx);
-  AT_MUSA_CHECK(musaMemcpy(
-      buffers_dev_, buffers_.data(), arr_size, musaMemcpyHostToDevice));
-  AT_MUSA_CHECK(musaMemcpy(
-      signal_pads_dev_, signal_pads_.data(), arr_size, musaMemcpyHostToDevice));
+  auto stream = at::musa::getCurrentMUSAStream(
+      static_cast<c10::DeviceIndex>(local_device_idx));
+  AT_MUSA_CHECK(musaMemcpyAsync(
+      buffers_dev_, buffers_.data(), arr_size, musaMemcpyHostToDevice, stream));
+  AT_MUSA_CHECK(musaMemcpyAsync(
+      signal_pads_dev_,
+      signal_pads_.data(),
+      arr_size,
+      musaMemcpyHostToDevice,
+      stream));
+  AT_MUSA_CHECK(musaStreamSynchronize(stream));
 }
 
 /* Start of MUSASymmetricMemory */
@@ -451,7 +458,12 @@ void* MUSASymmetricMemoryAllocator::alloc(
   // allocate virtual address space and map the physical memory to the virtual
   // address
   map_block(&ptr, handle, block_size, device_idx);
-  C10_MUSA_CHECK(musaMemset(ptr, 0, block_size));
+  // make sure block data is fully zeroed before exposed to peers.
+  auto stream =
+      at::musa::getCurrentMUSAStream(static_cast<c10::DeviceIndex>(device_idx));
+  C10_MUSA_CHECK(musaMemsetAsync(ptr, 0, block_size, stream));
+  // this sync might not be necessary ?
+  C10_MUSA_CHECK(musaStreamSynchronize(stream));
 
   auto alloc_ref = c10::make_intrusive<MUSAAllocationRef>(
       ptr, handle, block_size, device_idx);

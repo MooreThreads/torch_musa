@@ -111,3 +111,76 @@ def test_bmm_complex_mh(input_data):
     out_cpu = torch.bmm(input_cpu, mat2_cpu)
 
     torch.allclose(out_musa.cpu(), out_cpu)
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [
+        (1, 1, 1, 1),
+        (1, 1, 256, 256),
+        (4, 256, 256, 1),
+        (4, 16, 64, 32),
+        (4, 64, 128, 256),
+        (4, 128, 256, 512),
+        (4, 7168, 4480, 7168),
+    ],
+)
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_bmm_out_dtype_fp32(shape):
+    batch, m, k, n = shape
+
+    a_bf16 = torch.randn(
+        batch,
+        m,
+        k,
+        device="musa",
+        dtype=torch.bfloat16,
+    )
+    b_bf16 = torch.randn(
+        batch,
+        n,
+        k,
+        device="musa",
+        dtype=torch.bfloat16,
+    ).transpose(1, 2)
+
+    a_fp16 = a_bf16.to(torch.float16)
+    b_fp16 = b_bf16.to(torch.float16)
+
+    # bf16 input -> fp32 output
+    bf16_result = torch.bmm(
+        a_bf16,
+        b_bf16,
+        out_dtype=torch.float32,
+    )
+
+    # fp16 input -> fp32 output
+    fp16_result = torch.bmm(
+        a_fp16,
+        b_fp16,
+        out_dtype=torch.float32,
+    )
+
+    # fp32 input -> fp32 output, used as reference
+    fp32_result = torch.bmm(
+        a_bf16.to(torch.float32),
+        b_bf16.to(torch.float32),
+    )
+
+    assert bf16_result.dtype == torch.float32
+    assert fp16_result.dtype == torch.float32
+    assert fp32_result.dtype == torch.float32
+
+    torch.testing.assert_close(
+        bf16_result,
+        fp32_result,
+        rtol=1e-3,
+        atol=1e-3,
+    )
+
+    torch.testing.assert_close(
+        fp16_result,
+        fp32_result,
+        rtol=1e-3,
+        atol=1e-3,
+    )

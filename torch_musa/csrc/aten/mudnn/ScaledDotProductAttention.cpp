@@ -124,8 +124,7 @@ mudnnStatus_t ScaledDotProductAttention::RunMath(
           q.Desc(),
           k.Desc(),
           v.Desc(),
-          mask.Desc(),
-          mask.DataPtr(),
+          MUDNN_UNPACK_TENSOR(mask),
           dropout_mask.Desc(),
           out.Desc(),
           &ws_size),
@@ -139,10 +138,8 @@ mudnnStatus_t ScaledDotProductAttention::RunMath(
       MUDNN_UNPACK_TENSOR(v),
       MUDNN_UNPACK_TENSOR(mask),
       Desc(),
-      dropout_mask.Desc(),
-      dropout_mask.DataPtr(),
-      out.Desc(),
-      out.DataPtr(),
+      MUDNN_UNPACK_TENSOR(dropout_mask),
+      MUDNN_UNPACK_TENSOR(out),
       mem.get(),
       ws_size);
 }
@@ -197,12 +194,9 @@ mudnnStatus_t ScaledDotProductAttention::RunMathBwd(
       MUDNN_UNPACK_TENSOR(attn_weights),
       MUDNN_UNPACK_TENSOR(dropout_mask),
       Desc(),
-      grad_q.Desc(),
-      grad_q.DataPtr(),
-      grad_k.Desc(),
-      grad_k.DataPtr(),
-      grad_v.Desc(),
-      grad_v.DataPtr(),
+      MUDNN_UNPACK_TENSOR(grad_q),
+      MUDNN_UNPACK_TENSOR(grad_k),
+      MUDNN_UNPACK_TENSOR(grad_v),
       mem.get(),
       ws_size);
 }
@@ -218,7 +212,7 @@ mudnnStatus_t ScaledDotProductAttention::RunFlash(
     const muTensor& v,
     const muTensor& mask,
     muTensor& dropout_mask,
-    const MemoryMaintainer& /*maintainer*/) const {
+    const MemoryMaintainer& maintainer) const {
   BuildStandardDescriptor();
   out.Build();
   lse.Build();
@@ -228,6 +222,36 @@ mudnnStatus_t ScaledDotProductAttention::RunFlash(
   mask.Build();
   dropout_mask.Build();
 
+#if defined(MUDNN_VERSION) && MUDNN_VERSION >= 3500
+  size_t ws_size = 0;
+  CHECK_MUDNN_STATUS(
+      mudnnScaledDotProductAttentionFlashForwardGetWorkspaceSizeV2(
+          h,
+          Desc(),
+          lse.Desc(),
+          q.Desc(),
+          k.Desc(),
+          v.Desc(),
+          MUDNN_UNPACK_TENSOR(mask),
+          MUDNN_UNPACK_TENSOR(dropout_mask),
+          out.Desc(),
+          &ws_size),
+      "mudnnScaledDotProductAttentionFlashForwardGetWorkspaceSizeV2");
+  auto mem = maintainer(ws_size);
+  return mudnnScaledDotProductAttentionFlashForwardV2(
+      h,
+      MUDNN_UNPACK_TENSOR(lse),
+      MUDNN_UNPACK_TENSOR(q),
+      MUDNN_UNPACK_TENSOR(k),
+      MUDNN_UNPACK_TENSOR(v),
+      MUDNN_UNPACK_TENSOR(mask),
+      Desc(),
+      MUDNN_UNPACK_TENSOR(dropout_mask),
+      MUDNN_UNPACK_TENSOR(out),
+      mem.get(),
+      ws_size);
+#else
+  (void)maintainer;
   return mudnnScaledDotProductAttentionFlashForward(
       h,
       MUDNN_UNPACK_TENSOR(lse),
@@ -236,10 +260,9 @@ mudnnStatus_t ScaledDotProductAttention::RunFlash(
       MUDNN_UNPACK_TENSOR(v),
       MUDNN_UNPACK_TENSOR(mask),
       Desc(),
-      dropout_mask.Desc(),
-      dropout_mask.DataPtr(),
-      out.Desc(),
-      out.DataPtr());
+      MUDNN_UNPACK_TENSOR(dropout_mask),
+      MUDNN_UNPACK_TENSOR(out));
+#endif
 }
 
 // ---- Flash backward ----
@@ -301,12 +324,9 @@ mudnnStatus_t ScaledDotProductAttention::RunFlashBwd(
       MUDNN_UNPACK_TENSOR(lse),
       MUDNN_UNPACK_TENSOR(dropout_mask),
       Desc(),
-      grad_q.Desc(),
-      grad_q.DataPtr(),
-      grad_k.Desc(),
-      grad_k.DataPtr(),
-      grad_v.Desc(),
-      grad_v.DataPtr(),
+      MUDNN_UNPACK_TENSOR(grad_q),
+      MUDNN_UNPACK_TENSOR(grad_k),
+      MUDNN_UNPACK_TENSOR(grad_v),
       mem.get(),
       ws_size);
 }
@@ -324,7 +344,7 @@ mudnnStatus_t ScaledDotProductAttention::RunFlashVarlen(
     muTensor& dropout_mask,
     const muTensor& cu_seqlens_q,
     const muTensor& cu_seqlens_k,
-    const MemoryMaintainer& /*maintainer*/) const {
+    const MemoryMaintainer& maintainer) const {
   BuildVarlenDescriptor();
   out.Build();
   lse.Build();
@@ -336,6 +356,41 @@ mudnnStatus_t ScaledDotProductAttention::RunFlashVarlen(
   cu_seqlens_q.Build();
   cu_seqlens_k.Build();
 
+#if defined(MUDNN_VERSION) && MUDNN_VERSION >= 3500
+  // Same workspace story as RunFlash above.
+  size_t ws_size = 0;
+  CHECK_MUDNN_STATUS(
+      mudnnScaledDotProductAttentionFlashVarlenForwardGetWorkspaceSizeV2(
+          h,
+          Desc(),
+          lse.Desc(),
+          q.Desc(),
+          k.Desc(),
+          v.Desc(),
+          MUDNN_UNPACK_TENSOR(mask),
+          cu_seqlens_q.Desc(),
+          cu_seqlens_k.Desc(),
+          MUDNN_UNPACK_TENSOR(dropout_mask),
+          out.Desc(),
+          &ws_size),
+      "mudnnScaledDotProductAttentionFlashVarlenForwardGetWorkspaceSizeV2");
+  auto mem = maintainer(ws_size);
+  return mudnnScaledDotProductAttentionFlashVarlenForwardV2(
+      h,
+      MUDNN_UNPACK_TENSOR(lse),
+      MUDNN_UNPACK_TENSOR(q),
+      MUDNN_UNPACK_TENSOR(k),
+      MUDNN_UNPACK_TENSOR(v),
+      MUDNN_UNPACK_TENSOR(mask),
+      MUDNN_UNPACK_TENSOR(cu_seqlens_q),
+      MUDNN_UNPACK_TENSOR(cu_seqlens_k),
+      Desc(),
+      MUDNN_UNPACK_TENSOR(dropout_mask),
+      MUDNN_UNPACK_TENSOR(out),
+      mem.get(),
+      ws_size);
+#else
+  (void)maintainer;
   return mudnnScaledDotProductAttentionFlashVarlenForward(
       h,
       MUDNN_UNPACK_TENSOR(lse),
@@ -346,10 +401,9 @@ mudnnStatus_t ScaledDotProductAttention::RunFlashVarlen(
       MUDNN_UNPACK_TENSOR(cu_seqlens_q),
       MUDNN_UNPACK_TENSOR(cu_seqlens_k),
       Desc(),
-      dropout_mask.Desc(),
-      dropout_mask.DataPtr(),
-      out.Desc(),
-      out.DataPtr());
+      MUDNN_UNPACK_TENSOR(dropout_mask),
+      MUDNN_UNPACK_TENSOR(out));
+#endif
 }
 
 // ---- Flash Varlen backward ----
@@ -419,12 +473,9 @@ mudnnStatus_t ScaledDotProductAttention::RunFlashVarlenBwd(
       MUDNN_UNPACK_TENSOR(cu_seqlens_q),
       MUDNN_UNPACK_TENSOR(cu_seqlens_k),
       Desc(),
-      grad_q.Desc(),
-      grad_q.DataPtr(),
-      grad_k.Desc(),
-      grad_k.DataPtr(),
-      grad_v.Desc(),
-      grad_v.DataPtr(),
+      MUDNN_UNPACK_TENSOR(grad_q),
+      MUDNN_UNPACK_TENSOR(grad_k),
+      MUDNN_UNPACK_TENSOR(grad_v),
       mem.get(),
       ws_size);
 }
