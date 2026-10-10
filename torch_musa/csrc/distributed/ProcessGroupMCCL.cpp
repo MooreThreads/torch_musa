@@ -667,6 +667,21 @@ void ProcessGroupMCCL::WorkMCCL::synchronizeStream() {
   auto currentStream = at::musa::getCurrentMUSAStream(device_.index());
   // Block the current stream on the MCCL stream
   mcclEndEvent_->block(currentStream);
+
+  // MUSA quirk: musaStreamWaitEvent alone does not provide the cross-stream
+  // completion ordering/output visibility that c10d guarantees on the CUDA
+  // backend. Observed on MUSA 5.2.0 (driver 5.2.0, libmccl 2.30.4): when the
+  // only synchronization after a collective is the event wait above, DeepSpeed
+  // ZeRO-3 (~1k collectives/step, relying on the "result ready after call"
+  // semantics of async_op=False) hangs at the first step (3/3); with a host
+  // wait per collective the same workload is healthy and flat (4B ~9 s/step,
+  // 27B 12-13 s/step). When blocking wait is requested, block the host on the
+  // end event here as well, so that synchronize()/wait() callers get
+  // completion + visibility regardless of which entry point they use.
+  if (blockingWait_) {
+    mcclEndEvent_->synchronize();
+  }
+
   // Unstage the stashed tensors so that CachingAllocator can recycle them
   // THIS MUST HAPPEN AFTER THE BLOCKING CALL ABOVE
   stashed_for_allocator_safety_->unstash();
