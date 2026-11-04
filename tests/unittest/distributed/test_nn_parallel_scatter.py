@@ -7,6 +7,7 @@ from torch.nn.parallel import scatter
 import torch_musa
 
 from torch_musa.testing.common_fsdp import skip_if_lt_x_gpu
+from torch_musa.testing.common_utils import spawn_isolated_test
 
 input_shapes = [(4, 5), (3, 4)]
 devices = [
@@ -16,6 +17,7 @@ devices = [
 
 NUM_GPUS_FOR_TESTING_LOSS_PARALLEL = 2
 
+@spawn_isolated_test
 @skip_if_lt_x_gpu(NUM_GPUS_FOR_TESTING_LOSS_PARALLEL)
 @pytest.mark.parametrize("input_shape", input_shapes)
 @pytest.mark.parametrize("devices", devices)

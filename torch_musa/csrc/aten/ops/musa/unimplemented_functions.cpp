@@ -156,15 +156,6 @@ __host__ musaError_t musaGraphDebugDotPrint(
 }
 #endif
 
-__host__ musaError_t musaStreamGetCaptureInfo(
-    musaStream_t stream,
-    enum musaStreamCaptureStatus* captureStatus_out,
-    unsigned long long* id_out) {
-  C10_THROW_ERROR(
-      NotImplementedError, "musaStreamGetCaptureInfo is not supported now!");
-  return musaErrorNotSupported;
-}
-
 #if defined(REAL_MUSA_VERSION) && (REAL_MUSA_VERSION < 5010)
 __host__ musaError_t
 musaThreadExchangeStreamCaptureMode(enum musaStreamCaptureMode* mode) {
@@ -214,6 +205,15 @@ __host__ musaError_t musaMemPoolSetAttribute(
     void* value) {
   C10_THROW_ERROR(
       NotImplementedError, "musaMemPoolSetAttribute is not supported now!");
+  return musaErrorNotSupported;
+}
+
+__host__ musaError_t musaStreamGetCaptureInfo(
+    musaStream_t stream,
+    enum musaStreamCaptureStatus* captureStatus_out,
+    unsigned long long* id_out) {
+  C10_THROW_ERROR(
+      NotImplementedError, "musaStreamGetCaptureInfo is not supported now!");
   return musaErrorNotSupported;
 }
 #endif

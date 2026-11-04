@@ -1,8 +1,8 @@
 diff --git a/torch/_inductor/output_code.py b/torch/_inductor/output_code.py
-index 955c00c51d0..d55e6b4efb2 100644
+index 41f2477..7450294 100644
 --- a/torch/_inductor/output_code.py
 +++ b/torch/_inductor/output_code.py
-@@ -237,7 +237,7 @@ def cudagraph_post_compile(
+@@ -278,7 +278,7 @@ def cudagraph_post_compile(
          BoxedBool.disable(cudagraphs)
          maybe_handle_backward_generation(compiled_graph, boxed_forward_device_index)
  
@@ -11,7 +11,7 @@ index 955c00c51d0..d55e6b4efb2 100644
              # prefer better disable_cudagraphs_reason bc stack trace
              # TODO: migrate all disable reasons to stack trace, refactor
              if compiled_graph.disabled_cudagraphs_reason:
-@@ -246,7 +246,7 @@ def cudagraph_post_compile(
+@@ -287,7 +287,7 @@ def cudagraph_post_compile(
                  )
              else:
                  log_cudagraph_skip_and_bump_counter(
@@ -20,7 +20,7 @@ index 955c00c51d0..d55e6b4efb2 100644
                  )
  
  
-@@ -511,9 +511,9 @@ class CompiledFxGraph(OutputCode):
+@@ -600,9 +600,9 @@ class CompiledFxGraph(OutputCode):
          if cudagraphs:
              # check cudagraph disabling reasons from inductor lowering
              if self.disabled_cudagraphs_reason:
@@ -32,8 +32,8 @@ index 955c00c51d0..d55e6b4efb2 100644
                      )
                  else:
                      counters["inductor"]["cudagraph_skips"] += 1
-@@ -527,12 +527,12 @@ class CompiledFxGraph(OutputCode):
- 
+@@ -610,12 +610,12 @@ class CompiledFxGraph(OutputCode):
+             else:
                  if not config.triton.cudagraph_support_input_mutation:
                      # Skip supports for cudagraph-managed tensors
 -                    from torch._inductor.cudagraph_utils import (
@@ -48,7 +48,7 @@ index 955c00c51d0..d55e6b4efb2 100644
                              gm,
                              self.mutated_inputs,
                              self.mutated_input_idxs,
-@@ -657,9 +657,9 @@ class CompiledFxGraph(OutputCode):
+@@ -827,9 +827,9 @@ class CompiledFxGraph(OutputCode):
              # during a previous compilation we're loading from the cache.
              # If so, we need to disable it on this new process too.
              if self.disabled_cudagraphs_reason:

@@ -243,6 +243,23 @@ def test_log_double(input_data, dtype, func):
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_datas)
+def test_sqrt_double(input_data):
+    input_data = copy.deepcopy(input_data)
+    input_data["input"] = input_data["input"].clone().uniform_(0, 20).to(torch.float64)
+    test = testing.OpTest(
+        func=torch.sqrt,
+        input_args=input_data,
+        comparators=testing.DefaultComparator(
+            abs_diff=1e-12, rel_diff=1e-12, equal_nan=True
+        ),
+    )
+    test.check_result()
+    test.check_out_ops()
+    test.check_grad_fn()
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_datas)
 # torch.bitwise_not only support integral and Boolean type
 @pytest.mark.parametrize("dtype", [torch.int32, torch.int64])
 @pytest.mark.parametrize("func", [torch.bitwise_not])

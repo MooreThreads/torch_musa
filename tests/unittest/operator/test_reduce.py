@@ -13,7 +13,6 @@ from torch_musa.testing import (
     BooleanComparator,
 )
 
-
 reduce_dim_configs = [
     # input_shape, dim
     [
@@ -126,14 +125,14 @@ def function(input_data, input_dtype, func, **kwargs):
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
-@pytest.mark.parametrize("dtype", testing.get_float_types())
+@pytest.mark.parametrize("dtype", testing.get_float_types() + [torch.double])
 def test_std(input_data, dtype):
     function(input_data, dtype, torch.std)
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
-@pytest.mark.parametrize("dtype", testing.get_float_types())
+@pytest.mark.parametrize("dtype", testing.get_float_types() + [torch.double])
 @pytest.mark.parametrize("correction", [0, 1])
 @pytest.mark.parametrize("keepdim", [True, False])
 def test_std_mean_correction(input_data, dtype, correction, keepdim):
@@ -154,21 +153,21 @@ def test_std_mean_correction(input_data, dtype, correction, keepdim):
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
-@pytest.mark.parametrize("dtype", testing.get_float_types())
+@pytest.mark.parametrize("dtype", testing.get_float_types() + [torch.double])
 def test_std_mean(input_data, dtype):
     function(input_data, dtype, torch.std_mean)
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
-@pytest.mark.parametrize("dtype", testing.get_float_types())
+@pytest.mark.parametrize("dtype", testing.get_float_types() + [torch.double])
 def test_var(input_data, dtype):
     function(input_data, dtype, torch.var)
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)
 @pytest.mark.parametrize("input_data", input_data)
-@pytest.mark.parametrize("dtype", [torch.float32])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_amax(input_data, dtype):
     function(input_data, dtype, torch.amax)
 
@@ -338,8 +337,11 @@ def test_prod(input_data, dtype):
         {"input": torch.randn([100]), "p": 2, "dtype": torch.float32},
     ],
 )
-@pytest.mark.parametrize("dtype", [torch.float32])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
 def test_norm(input_data, dtype):
+    if dtype == torch.float64 and "dtype" in input_data:
+        input_data = copy.deepcopy(input_data)
+        input_data.pop("dtype")
     function(input_data, dtype, torch.norm)
 
 

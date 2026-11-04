@@ -1,6 +1,4 @@
-#include <ATen/TensorNames.h>
 #include <ATen/WrapDimUtilsMulti.h>
-#include <ATen/core/NamedTensor.h>
 #include <ATen/core/Tensor.h>
 #include <ATen/native/ReduceOpsUtils.h>
 #include <ATen/native/TensorCompare.h>
@@ -78,15 +76,10 @@ std::tuple<Tensor&, Tensor&> ModeOut(
     return std::forward_as_tuple(values, indices);
   } else {
     auto result = [&]() {
-      at::NoNamesGuard guard;
       at::native::mode_stub(
           self.device().type(), values, indices, self, dim, keepdim);
       return std::tuple<Tensor&, Tensor&>{values, indices};
     }();
-    namedinference::propagate_names_for_reduction(
-        std::get<0>(result), self, dim, keepdim);
-    namedinference::propagate_names_for_reduction(
-        std::get<1>(result), self, dim, keepdim);
     return result;
   }
 }

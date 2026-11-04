@@ -1,6 +1,5 @@
 #include <ATen/Config.h>
 #include <ATen/ExpandUtils.h>
-#include <ATen/NamedTensorUtils.h>
 #include <ATen/NativeFunctions.h>
 #include <ATen/TensorUtils.h>
 #include <ATen/WrapDimUtils.h>
@@ -91,15 +90,7 @@ Tensor LogSoftmaxInt(
   Tensor converted = dtype.has_value() ? self.toType(dtype.value()) : self;
   Tensor result = LogSoftmax(converted, dim, half_to_float);
 
-  namedinference::propagate_names(result, self);
   return result;
-}
-
-Tensor LogSoftmaxDimname(
-    const Tensor& self,
-    Dimname dim,
-    c10::optional<at::ScalarType> dtype) {
-  return LogSoftmaxInt(self, dimname_to_position(self, dim), dtype);
 }
 
 Tensor Softmax(const Tensor& self, int64_t dim, bool half_to_float) {
@@ -128,15 +119,7 @@ Tensor SoftmaxInt(
   Tensor converted = dtype.has_value() ? self.toType(dtype.value()) : self;
   Tensor result = Softmax(converted, dim, half_to_float);
 
-  namedinference::propagate_names(result, self);
   return result;
-}
-
-Tensor SoftmaxDimname(
-    const Tensor& self,
-    Dimname dim,
-    c10::optional<at::ScalarType> dtype) {
-  return SoftmaxInt(self, dimname_to_position(self, dim), dtype);
 }
 
 Tensor& SoftmaxBwdInternal(
@@ -318,7 +301,6 @@ Tensor& LogSumExpOut(
     Tensor& result) {
   c10::musa::MUSAGuard device_guard(self.device());
   TORCH_MUSA_CHECK_FLOATING_TYPES(result.scalar_type(), "LogSumExpOut");
-  namedinference::propagate_names_for_reduction(result, self, dims, keepdim);
 
   if (at::isIntegralType(self.scalar_type(), /*includeBool=*/true)) {
     // for integral inputs, promote input to default floating type.

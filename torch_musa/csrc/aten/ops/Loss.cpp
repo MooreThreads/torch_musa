@@ -1,6 +1,5 @@
 #include <ATen/Config.h>
 #include <ATen/ExpandUtils.h>
-#include <ATen/NamedTensorUtils.h>
 #include <ATen/TensorUtils.h>
 #include <ATen/WrapDimUtils.h>
 #include <ATen/core/op_registration/adaption.h>

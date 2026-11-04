@@ -70,7 +70,6 @@ def check_model(
     example_inputs,
     options=None,
     dynamic_shapes=None,
-    disable_constraint_solver=False,
     atol=None,
     rtol=None,
 ):

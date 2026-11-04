@@ -9,6 +9,7 @@ import pytest
 import torch
 import torch.multiprocessing as mp
 from torch_musa import testing
+from torch_musa.testing.common_utils import spawn_isolated_test
 
 
 def _producer_tensor_handle(handle_q, done_q):
@@ -20,6 +21,53 @@ def _producer_tensor_handle(handle_q, done_q):
 def _consume_tensor_handle(handle):
     opened = torch.musa.ipc.open_tensor(handle)
     opened.close()
+
+
+def _consume_expandable_tensors(tensor_q):
+    # Import before any local allocation, with different allocator settings.
+    torch.musa.set_device(0)
+    torch.musa.memory._set_allocator_settings("expandable_segments:False")
+    tensors = tensor_q.get()
+    for tensor in tensors:
+        assert tensor[0].item() == 1.0
+        assert tensor[-1].item() == 1.0
+
+
+@spawn_isolated_test
+@testing.skip_if_musa_unavailable
+@pytest.mark.parametrize(
+    "start_method,numel,count",
+    [
+        ("spawn", 4194304, 4),
+        ("forkserver", 4194304, 2000),
+    ],
+)
+def test_expandable_segments_ipc_import(start_method, numel, count):
+    was_expandable = torch.musa.memory._snapshot()["allocator_settings"][
+        "expandable_segments"
+    ]
+    ctx = mp.get_context(start_method)
+    tensor_q = ctx.Queue()
+    process = ctx.Process(target=_consume_expandable_tensors, args=(tensor_q,))
+    keep = []
+    try:
+        torch.musa.memory._set_allocator_settings("expandable_segments:True")
+        keep = [torch.ones(numel, device="musa:0") for _ in range(count)]
+        process.start()
+        tensor_q.put(keep)
+        process.join(120)
+        assert process.exitcode == 0
+    finally:
+        if process.is_alive():
+            process.terminate()
+            process.join(30)
+        tensor_q.cancel_join_thread()
+        tensor_q.close()
+        keep.clear()
+        torch.musa.ipc_collect()
+        torch.musa.memory._set_allocator_settings(
+            f"expandable_segments:{was_expandable}"
+        )
 
 
 def _assert_handle_opens_from_spawned_process(handle):

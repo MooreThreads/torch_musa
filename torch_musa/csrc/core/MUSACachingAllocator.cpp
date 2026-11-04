@@ -59,7 +59,7 @@ namespace Native {
 // counter to track order for Mempool Registration
 thread_local int32_t registration_counter_global = -1;
 
-char SHAREABLE_HANDLE_VERSION = 2;
+static char SHAREABLE_HANDLE_VERSION = 3;
 enum ShareableHandleType : char {
   SHAREABLE_MUSA_MALLOC = 'c',
   SHAREABLE_MUSA_EXPANDABLE_SEGMENT = 'e'
@@ -88,6 +88,7 @@ static bool BlockComparatorAddress(const Block* a, const Block* b);
 struct BlockPool {
   BlockPool(bool small, PrivatePool* private_pool = nullptr)
       : blocks(BlockComparatorSize),
+        blocks_by_addr(BlockComparatorAddress),
         unmapped(BlockComparatorAddress),
         is_small(small),
         owner_PrivatePool(private_pool) {}
@@ -95,6 +96,7 @@ struct BlockPool {
   // Do not insert a Block to blocks directly; use insert_into_blocks(),
   // instead.
   std::set<Block*, Comparison> blocks;
+  std::set<Block*, Comparison> blocks_by_addr;
   std::set<Block*, Comparison> unmapped;
   const bool is_small;
   PrivatePool* owner_PrivatePool;
@@ -102,6 +104,7 @@ struct BlockPool {
 
   std::pair<std::set<Block*, Comparison>::iterator, bool> insert_into_blocks(
       Block* block);
+  size_t erase_from_blocks(Block* block);
 
   MempoolId_t owner_MempoolId() const;
 };
@@ -186,7 +189,17 @@ struct Block {
 std::pair<std::set<Block*, Comparison>::iterator, bool> BlockPool::
     insert_into_blocks(Block* block) {
   block->gc_count_base = get_free_blocks_call_count;
-  return blocks.insert(block);
+  auto inserted = blocks.insert(block);
+  auto inserted_by_addr = blocks_by_addr.insert(block);
+  TORCH_INTERNAL_ASSERT(inserted.second == inserted_by_addr.second);
+  return inserted;
+}
+
+size_t BlockPool::erase_from_blocks(Block* block) {
+  auto erased = blocks.erase(block);
+  auto erased_by_addr = blocks_by_addr.erase(block);
+  TORCH_INTERNAL_ASSERT(erased == erased_by_addr);
+  return erased;
 }
 
 struct SegmentRange {
@@ -201,19 +214,27 @@ struct ExpandableSegment {
       c10::DeviceIndex device,
       std::optional<musaStream_t> stream,
       size_t segment_size,
-      std::vector<c10::DeviceIndex> peers)
+      std::vector<c10::DeviceIndex> peers,
+      Expandable_Segments_Handle_Type handle_type =
+          Expandable_Segments_Handle_Type::UNSPECIFIED,
+      // Set only by fromShared(), to the producer's exact handle count.
+      std::optional<size_t> imported_handles = std::nullopt)
       : device_(device),
         stream_(stream),
         // 2MB for small pool, 20MB for large pool
         segment_size_(segment_size),
-        peers_(std::move(peers)) {
+        peers_(std::move(peers)),
+        handle_type_(handle_type) {
     musaDeviceProp prop{};
     C10_MUSA_CHECK(musaGetDeviceProperties(&prop, device_));
     mapped_size_ = 0;
     // we allocate enough address space for 1 1/8 the total memory on the GPU.
     // This allows for some cases where we have to unmap pages earlier in the
     // segment to put them at the end.
-    max_handles_ = numSegments(prop.totalGlobalMem + prop.totalGlobalMem / 8);
+    // Imported segments cannot grow: reserve only the shared range.
+    max_handles_ = imported_handles.has_value()
+        ? *imported_handles
+        : numSegments(prop.totalGlobalMem + prop.totalGlobalMem / 8);
     C10_MUSA_DRIVER_CHECK(DriverAPI::get()->muMemAddressReserve_(
         &ptr_, segment_size_ * max_handles_, 0ULL, 0, 0ULL));
   }
@@ -235,20 +256,23 @@ struct ExpandableSegment {
       return rangeFromHandles(begin, end);
     }
 
-    // if the handle type is not specified, try to use fabric handle first.
-    // if it fails, use posix file handle
-    if (MUSAAllocatorConfig::expandable_segments_handle_type() ==
-        Expandable_Segments_Handle_Type::UNSPECIFIED) {
-      MUSAAllocatorConfig::set_expandable_segments_handle_type(
-          Expandable_Segments_Handle_Type::FABRIC_HANDLE);
-      auto output = map(range);
-      if (output.ptr != nullptr) {
-        return output;
+    static const bool enable_ipc_handles =
+        c10::utils::check_env("TORCH_MUSA_EXPANDABLE_SEGMENTS_IPC")
+            .value_or(true);
+    // Resolve once per segment. Imported segments get their type from the
+    // producer's header, independently of this process's allocator settings.
+    if (enable_ipc_handles &&
+        handle_type_ == Expandable_Segments_Handle_Type::UNSPECIFIED) {
+      handle_type_ = MUSAAllocatorConfig::expandable_segments_handle_type();
+      if (handle_type_ == Expandable_Segments_Handle_Type::UNSPECIFIED) {
+        handle_type_ = Expandable_Segments_Handle_Type::FABRIC_HANDLE;
+        auto output = map(range);
+        if (output.ptr != nullptr) {
+          return output;
+        }
+        handle_type_ = Expandable_Segments_Handle_Type::POSIX_FD;
+        return map(range);
       }
-      // if fabric handle is not supported, use posix file handle.
-      MUSAAllocatorConfig::set_expandable_segments_handle_type(
-          Expandable_Segments_Handle_Type::POSIX_FD);
-      return map(range);
     }
 
     while (end > handles_.size()) {
@@ -259,15 +283,11 @@ struct ExpandableSegment {
       MUmemGenericAllocationHandle handle = 0;
       MUmemAllocationProp prop = {};
       prop.type = MU_MEM_ALLOCATION_TYPE_PINNED;
-      static const bool enable_ipc_handles =
-          c10::utils::check_env("TORCH_MUSA_EXPANDABLE_SEGMENTS_IPC")
-              .value_or(true);
       if (enable_ipc_handles) {
-        if (MUSAAllocatorConfig::expandable_segments_handle_type() !=
-            Expandable_Segments_Handle_Type::FABRIC_HANDLE) {
-          prop.requestedHandleTypes = MU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR;
-        } else {
+        if (handle_type_ == Expandable_Segments_Handle_Type::FABRIC_HANDLE) {
           prop.requestedHandleTypes = MU_MEM_HANDLE_TYPE_FABRIC;
+        } else {
+          prop.requestedHandleTypes = MU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR;
         }
       }
       int flag = 0;
@@ -292,8 +312,7 @@ struct ExpandableSegment {
           trimHandles();
           return rangeFromHandles(begin, begin);
         } else if (
-            MUSAAllocatorConfig::expandable_segments_handle_type() ==
-            Expandable_Segments_Handle_Type::FABRIC_HANDLE) {
+            handle_type_ == Expandable_Segments_Handle_Type::FABRIC_HANDLE) {
           // we are testing if we can use fabric handle.
           // if we can, we will use it.
           // if we can't, we will use posix file handle.
@@ -333,6 +352,11 @@ struct ExpandableSegment {
   // other process, and then restored as an exapandable segment
   // via ExpandableSegment::fromShared(istream);
   SegmentRange share(SegmentRange range, std::ostream& buf) {
+    TORCH_CHECK(
+        handle_type_ != Expandable_Segments_Handle_Type::UNSPECIFIED,
+        "Cannot share an expandable_segments allocation: IPC handles are ",
+        "disabled. Set TORCH_MUSA_EXPANDABLE_SEGMENTS_IPC=1 or disable ",
+        "expandable_segments for cross-process tensors.");
     auto begin = segmentLeft(range.ptr);
     auto end = segmentRight(range.ptr + range.size);
     // header.pid needs to be padded with 4 bytes and initialized with
@@ -343,12 +367,12 @@ struct ExpandableSegment {
     header.pid = getpid();
     header.segment_size = segment_size_;
     header.num_handles = end - begin;
+    header.handle_type = handle_type_;
 
     buf.write(reinterpret_cast<const char*>(&header), sizeof(ShareHeader));
     for (auto i : c10::irange(begin, end)) {
       auto& handle = handles_.at(i).value();
-      if (MUSAAllocatorConfig::expandable_segments_handle_type() !=
-          Expandable_Segments_Handle_Type::FABRIC_HANDLE) {
+      if (handle_type_ != Expandable_Segments_Handle_Type::FABRIC_HANDLE) {
         if (!handle.shareable_handle) {
           int fd = 0;
           C10_MUSA_DRIVER_CHECK(DriverAPI::get()->muMemExportToShareableHandle_(
@@ -387,8 +411,22 @@ struct ExpandableSegment {
       std::istream& buf) {
     ShareHeader header{};
     buf.read(reinterpret_cast<char*>(&header), sizeof(ShareHeader));
+    TORCH_CHECK(
+        buf && header.num_handles > 0, "invalid expandable segment header");
+    TORCH_CHECK(
+        header.handle_type == Expandable_Segments_Handle_Type::UNSPECIFIED ||
+            header.handle_type == Expandable_Segments_Handle_Type::POSIX_FD ||
+            header.handle_type ==
+                Expandable_Segments_Handle_Type::FABRIC_HANDLE,
+        "Unknown Expandable_Segments_Handle_Type in IPC share header: ",
+        static_cast<int>(header.handle_type));
     auto segment = std::make_unique<ExpandableSegment>(
-        device, std::nullopt, header.segment_size, std::move(peers));
+        device,
+        std::nullopt,
+        header.segment_size,
+        std::move(peers),
+        header.handle_type,
+        header.num_handles);
 // older build setups (e.g. multiwheels) do not have this syscall, added 2020
 // but the kernel on the system might still support it.
 #ifndef SYS_pidfd_open
@@ -397,8 +435,7 @@ struct ExpandableSegment {
 #ifndef SYS_pidfd_getfd
 #define SYS_pidfd_getfd 438
 #endif
-    if (MUSAAllocatorConfig::expandable_segments_handle_type() !=
-        Expandable_Segments_Handle_Type::FABRIC_HANDLE) {
+    if (header.handle_type != Expandable_Segments_Handle_Type::FABRIC_HANDLE) {
       auto pidfd = syscall(SYS_pidfd_open, header.pid, 0);
       TORCH_CHECK(
           pidfd != -1 || errno != ENOSYS,
@@ -585,12 +622,19 @@ struct ExpandableSegment {
     std::optional<std::variant<int, MUmemFabricHandle>> shareable_handle;
   };
   struct ShareHeader {
-    pid_t pid;
-    size_t segment_size;
-    size_t num_handles;
+    pid_t pid = 0;
+    size_t segment_size = 0;
+    size_t num_handles = 0;
+    Expandable_Segments_Handle_Type handle_type =
+        Expandable_Segments_Handle_Type::UNSPECIFIED;
   };
   std::vector<std::optional<Handle>> handles_;
   std::vector<c10::DeviceIndex> peers_;
+  // IPC handle type of the expandable segment. Resolved once per segment
+  // lifetime (see map() / detectHandleType) and serialized into ShareHeader
+  // so that the consumer can deserialize the correct handle shape.
+  Expandable_Segments_Handle_Type handle_type_ =
+      Expandable_Segments_Handle_Type::UNSPECIFIED;
 };
 #else
 struct ExpandableSegment {
@@ -1132,6 +1176,64 @@ class DeviceCachingAllocator {
     return context_recorder_.load()();
   }
 
+  Block* get_free_block_containing_address(
+      BlockPool& pool,
+      size_t size,
+      musaStream_t stream,
+      void* addr) {
+    const auto requested_addr = reinterpret_cast<uintptr_t>(addr);
+    Block search_key(device_id, stream, 0);
+    search_key.ptr = addr;
+    auto it = pool.blocks_by_addr.upper_bound(&search_key);
+    if (it == pool.blocks_by_addr.begin()) {
+      return nullptr;
+    }
+    --it;
+    if ((*it)->stream != stream) {
+      return nullptr;
+    }
+    Block* block = *it;
+    const auto block_begin = reinterpret_cast<uintptr_t>(block->ptr);
+    // check block_begin <= requested_addr < requested_addr + size <=
+    // block_begin + block->size
+    if (requested_addr < block_begin) {
+      return nullptr;
+    }
+    // use offset to avoid overflow or underflow
+    const auto offset = requested_addr - block_begin;
+    if ((offset > block->size) || (size > block->size - offset)) {
+      return nullptr;
+    }
+    pool.erase_from_blocks(block);
+    return block;
+  }
+
+  void prepare_for_malloc(
+      const std::shared_ptr<GatheredContext>& context,
+      musaStream_t stream) {
+    if (C10_LIKELY(captures_underway.empty())) {
+      // Processes end-of-life events for outstanding allocations used on
+      // multiple streams (checks if their GPU-side uses are complete and
+      // recycles their memory if so)
+      //
+      // Q. Why skip process_events if a capture might be underway?
+      // A. process_events involves musaEventQueries, illegal during MUSA graph
+      //    capture.
+      //    Dumb simple solution: defer reclaiming these allocations until after
+      //    capture. Cross-stream memory use is uncommon, so the deferral's
+      //    effect on memory use during capture should be small.
+      //
+      // Note: user mempools (via use_mem_pool) are also in allocation_scopes_
+      // but do NOT involve graph capture, so process_events is safe for them.
+      process_events(context);
+    } else {
+      if (MUSAAllocatorConfig::graph_capture_record_stream_reuse()) {
+        // We check if there is some block that is safe to reuse on this stream
+        free_safe_blocks_in_capture(context, stream);
+      }
+    }
+  }
+
   // All public methods (except the above) acquire the allocator mutex.
   // Thus, do not call a public method from another public method.
 
@@ -1340,6 +1442,96 @@ class DeviceCachingAllocator {
         params.block, params.size(), params.is_expandable_segments_active);
     return alloc_found_block(
         params, orig_size, std::move(context), split_remainder);
+  }
+
+  Block* mallocWithAddress(size_t orig_size, musaStream_t stream, void* addr) {
+    const auto requested_addr = reinterpret_cast<uintptr_t>(addr);
+    TORCH_CHECK(
+        requested_addr % kMinBlockSize == 0,
+        "mallocWithAddress: addr must be aligned to kMinBlockSize (",
+        kMinBlockSize,
+        " bytes), got ",
+        addr);
+
+    // done outside the lock because we don't know what locks the recorder needs
+    // to have.
+    auto context = maybeGatherContext(RecordContext::STATE);
+    std::unique_lock<std::recursive_mutex> lock(mutex);
+    prepare_for_malloc(context, stream);
+
+    const size_t size = round_size(orig_size);
+
+    // The same block pool is used for both prefix block and requested block.
+    // Prefix block may have a significantly larger size than requested block
+    // when multiple small blocks coalesced into a large prefix block.
+    auto& pool = get_pool(size, stream);
+    Block* containing_block =
+        get_free_block_containing_address(pool, size, stream, addr);
+    if (!containing_block) {
+      return nullptr;
+    }
+
+    const bool active_user_pool =
+        pool.owner_PrivatePool && pool.owner_PrivatePool->allocator();
+    const bool is_expandable_segments_active =
+        MUSAAllocatorConfig::expandable_segments() && !active_user_pool;
+    const auto stat_types = get_stat_types_for_pool(pool);
+    const auto block_begin = reinterpret_cast<uintptr_t>(containing_block->ptr);
+    const size_t prefix_size = requested_addr - block_begin;
+
+    // mallocWithAddress may allocate both prefix block and requested block,
+    // and free prefix block later. This adds a fake malloc/free pair for prefix
+    // block. A metadata is added for better memory visualization.
+    const auto original_user_metadata = getUserMetadata();
+    const auto malloc_with_address_metadata = original_user_metadata.empty()
+        ? std::string("mallocWithAddress")
+        : original_user_metadata + "\nmallocWithAddress";
+    setUserMetadata(malloc_with_address_metadata);
+    auto restore_user_metadata =
+        c10::make_scope_exit([this, original_user_metadata]() {
+          setUserMetadata(original_user_metadata);
+        });
+
+    Block* prefix_block = nullptr;
+    Block* requested_source = containing_block;
+    if (prefix_size > 0) {
+      AllocParams prefix_params(
+          device_id,
+          prefix_size,
+          stream,
+          &pool,
+          get_allocation_size(prefix_size),
+          is_expandable_segments_active);
+      prefix_params.stat_types = stat_types;
+      prefix_params.block = containing_block;
+      prefix_block = alloc_found_block(
+          prefix_params,
+          prefix_size,
+          context,
+          true /* always split for prefix */);
+      requested_source = prefix_block->next;
+      // alloc_found_block re-inserts the split remainder into the pool. We have
+      // to manually erase the requested_source.
+      pool.erase_from_blocks(requested_source);
+    }
+
+    AllocParams requested_params(
+        device_id,
+        size,
+        stream,
+        &pool,
+        get_allocation_size(size),
+        is_expandable_segments_active);
+    requested_params.stat_types = stat_types;
+    requested_params.block = requested_source;
+    bool split_remainder =
+        should_split(requested_source, size, is_expandable_segments_active);
+    Block* requested_block = alloc_found_block(
+        requested_params, orig_size, std::move(context), split_remainder);
+    if (prefix_block) {
+      free_locked(prefix_block, nullptr);
+    }
+    return requested_block;
   }
 
   bool try_mempool_fallback(
@@ -1676,11 +1868,7 @@ class DeviceCachingAllocator {
     }
   }
 
-  void free(Block* block) {
-    std::shared_ptr<GatheredContext> context =
-        maybeGatherContext(RecordContext::ALL);
-    std::lock_guard<std::recursive_mutex> lock(mutex);
-
+  void free_locked(Block* block, std::shared_ptr<GatheredContext> context) {
     block->allocated = false;
 
     // following logic might modifying underlaying Block, causing the size
@@ -1738,6 +1926,13 @@ class DeviceCachingAllocator {
         stats.allocated_bytes[static_cast<size_t>(StatType::AGGREGATE)].current,
         stats.reserved_bytes[static_cast<size_t>(StatType::AGGREGATE)].current,
         c10::Device(at::musa::kMUSA, block->device));
+  }
+
+  void free(Block* block) {
+    std::shared_ptr<GatheredContext> context =
+        maybeGatherContext(RecordContext::ALL);
+    std::lock_guard<std::recursive_mutex> lock(mutex);
+    free_locked(block, std::move(context));
   }
 
   void* getBaseAllocation(Block* block, size_t* outSize) {
@@ -2013,7 +2208,7 @@ class DeviceCachingAllocator {
           &pool,
           block_state.size,
           curr_block->expandable_segment_ != nullptr);
-      pool.blocks.erase(curr_block);
+      pool.erase_from_blocks(curr_block);
       params.block = curr_block;
       params.stat_types = get_stat_types_for_pool(pool);
 
@@ -2651,7 +2846,7 @@ class DeviceCachingAllocator {
       }
       candidate = new_candidate;
     }
-    pool->blocks.erase(candidate);
+    pool->erase_from_blocks(candidate);
     return candidate;
   }
 
@@ -2760,7 +2955,7 @@ class DeviceCachingAllocator {
     dst->size += subsumed_size;
     // NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores)
     auto erased =
-        src->mapped ? pool.blocks.erase(src) : pool.unmapped.erase(src);
+        src->mapped ? pool.erase_from_blocks(src) : pool.unmapped.erase(src);
     TORCH_INTERNAL_ASSERT_DEBUG_ONLY(erased == 1);
     delete src;
 
@@ -2885,7 +3080,7 @@ class DeviceCachingAllocator {
          p.size() + AcceleratorAllocatorConfig::max_non_split_rounding_size()))
       return false;
     p.block = *it;
-    pool.blocks.erase(it);
+    pool.erase_from_blocks(*it);
     return true;
   }
 
@@ -3224,7 +3419,7 @@ class DeviceCachingAllocator {
 
     if (block->size >= AcceleratorAllocatorConfig::max_split_size())
       stats.oversize_segments.decrease(1);
-    pool->blocks.erase(block);
+    pool->erase_from_blocks(block);
     delete block;
   }
 
@@ -3236,7 +3431,7 @@ class DeviceCachingAllocator {
     if (unmapped.size == 0) {
       return;
     }
-    block->pool->blocks.erase(block);
+    block->pool->erase_from_blocks(block);
 
     ptrdiff_t before_size =
         static_cast<char*>(unmapped.ptr) - static_cast<char*>(block->ptr);
@@ -3651,6 +3846,32 @@ class NativeCachingAllocator : public MUSAAllocator {
     }
   }
 
+  void mallocWithAddress(
+      void** devPtr,
+      c10::DeviceIndex device,
+      size_t size,
+      musaStream_t stream,
+      void* addr) {
+    TORCH_INTERNAL_ASSERT(
+        0 <= device && static_cast<size_t>(device) < device_allocator.size(),
+        "Allocator not initialized for device ",
+        device,
+        ": did you call init?");
+    Block* block =
+        device_allocator[device]->mallocWithAddress(size, stream, addr);
+    TORCH_CHECK(
+        block != nullptr,
+        "Could not allocate MUSA storage at exact address ",
+        addr);
+    add_allocated_block(block);
+    *devPtr = block->ptr;
+    const c10::impl::PyInterpreter* interp = c10::impl::GPUTrace::get_trace();
+    if (C10_UNLIKELY(interp)) {
+      (*interp)->trace_gpu_memory_allocation(
+          at::musa::kMUSA, reinterpret_cast<uintptr_t>(*devPtr));
+    }
+  }
+
   void free(void* ptr) {
     if (!ptr) {
       return;
@@ -3963,6 +4184,24 @@ class NativeCachingAllocator : public MUSAAllocator {
 
     return {devPtr, devPtr, deleteFunc, Device(at::musa::kMUSA, device)};
   }
+
+  DataPtr allocateWithAddress(size_t size, void* addr) override {
+    c10::DeviceIndex device = 0;
+    C10_MUSA_CHECK(c10::musa::GetDevice(&device));
+    TORCH_CHECK(
+        !forceUncachedAllocator() && isEnabled(),
+        "Exact-address allocation is only supported by the native MUSA caching allocator");
+    void* devPtr = nullptr;
+    MUSAStream stream = musa::getCurrentMUSAStream(device);
+    if (size != 0) {
+      mallocWithAddress(&devPtr, device, size, stream, addr);
+    }
+    if (size && TORCH_SDT_IS_ENABLED(malloc)) {
+      TORCH_SDT_WITH_SEMAPHORE(malloc, devPtr, device, size, stream.id());
+    }
+    return {devPtr, devPtr, &local_raw_delete, Device(at::musa::kMUSA, device)};
+  }
+
   DeleterFnPtr raw_deleter() const override {
     if (forceUncachedAllocator() || !isEnabled()) {
       return &uncached_delete;
@@ -4154,9 +4393,10 @@ class NativeCachingAllocator : public MUSAAllocator {
           expandable_segment_(nullptr),
           musa_ipc_ptr_(nullptr) {
       int type = SHAREABLE_MUSA_MALLOC;
+      int version = 0;
       std::istringstream ss(handle);
       if (handle.size() != MUSA_IPC_HANDLE_SIZE) {
-        auto version = ss.get();
+        version = ss.get();
         TORCH_CHECK(
             version <= SHAREABLE_HANDLE_VERSION,
             "received sharable handle from a future version of torch that this version does not know how to handle")
@@ -4169,6 +4409,10 @@ class NativeCachingAllocator : public MUSAAllocator {
         C10_MUSA_CHECK(musaIpcOpenMemHandle(
             &musa_ipc_ptr_, musa_handle, musaIpcMemLazyEnablePeerAccess));
       } else if (type == SHAREABLE_MUSA_EXPANDABLE_SEGMENT) {
+        TORCH_CHECK(
+            version == SHAREABLE_HANDLE_VERSION,
+            "MUSA expandable_segments IPC requires handle version 3; ",
+            "producer and consumer must use the same updated Torch-MUSA build");
         expandable_segment_ =
             ExpandableSegment::fromShared(device, allocator.peers(), ss)
                 .release();

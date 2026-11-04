@@ -2,11 +2,11 @@
 #define TORCH_MUSA_CSRC_ATEN_MUSA_MUSAGRAPH_H_
 
 #include <ATen/Tensor.h>
+#include <ATen/core/GraphImplInterface.h>
 #include <c10/util/flat_hash_map.h>
+#include "torch_musa/csrc/aten/musa/Exceptions.h"
 #include "torch_musa/csrc/aten/musa/MUSAGeneratorImpl.h"
 #include "torch_musa/csrc/core/MUSAGraphsC10Utils.h"
-
-#include "torch_musa/csrc/aten/musa/Exceptions.h"
 
 namespace at {
 namespace musa {
@@ -93,6 +93,28 @@ struct C10_EXPORT MUSAGraph {
   c10::DeviceIndex capture_dev_{UNDEFINED_DEVICE};
 
   bool keep_graph_;
+};
+
+struct C10_EXPORT MUSAGraphImpl : public at::GraphImplInterface {
+  // Adapts at::accelerator::Graph (torch.accelerator.Graph) onto the existing
+  // MUSAGraph. graph_ is mutable because MUSAGraph::pool() is non-const while
+  // the interface requires pool() const.
+  MUSAGraphImpl(const at::GraphImplArgs& args = {});
+
+  void capture_begin(
+      MempoolId_t pool = {0, 0},
+      at::GraphCaptureMode capture_mode =
+          at::GraphCaptureMode::Default) override;
+  void capture_end() override;
+  void instantiate() override;
+  void replay() override;
+  void reset() override;
+  MempoolId_t pool() const override;
+  void enable_debug_mode() override;
+  void debug_dump(const std::string& path) override;
+
+ private:
+  mutable MUSAGraph graph_;
 };
 
 } // namespace musa

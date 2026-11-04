@@ -1,3 +1,4 @@
+#include <ATen/Context.h>
 #include <ATen/ExpandUtils.h>
 
 #ifndef AT_PER_OPERATOR_HEADERS
@@ -340,6 +341,27 @@ std::tuple<Tensor, Tensor, Tensor> MuDNNMathSDPAFwd(
     bool is_causal,
     std::optional<double> scale) {
   const c10::musa::MUSAGuard device_guard(_query.device());
+  // upcast qkv to fp32 for correct reference result.
+  const auto origin_dtype = _query.scalar_type();
+  if ((origin_dtype == at::kHalf || origin_dtype == at::kBFloat16) &&
+      !at::globalContext().allowFP16BF16ReductionMathSDP()) {
+    auto mask_acc = attn_mask;
+    if (mask_acc.has_value() && at::isFloatingType(mask_acc->scalar_type())) {
+      mask_acc = mask_acc->to(at::kFloat);
+    }
+    auto [output, attn_weights, dropout_mask] = MuDNNMathSDPAFwd(
+        _query.to(at::kFloat),
+        _key.to(at::kFloat),
+        _value.to(at::kFloat),
+        mask_acc,
+        dropout_p,
+        is_causal,
+        std::move(scale));
+    return std::make_tuple(
+        output.to(origin_dtype),
+        std::move(attn_weights),
+        std::move(dropout_mask));
+  }
 
   MathCheckTensorShapes(_query, _key, _value);
   const auto no_batch = (_query.dim() == 3);
@@ -456,6 +478,31 @@ std::tuple<Tensor, Tensor, Tensor, Tensor> MuDNNMathSDPABwd(
     const std::optional<Tensor>& attn_mask,
     std::optional<double> scale) {
   const c10::musa::MUSAGuard device_guard(_query.device());
+
+  const auto origin_dtype = _query.scalar_type();
+  if ((origin_dtype == at::kHalf || origin_dtype == at::kBFloat16) &&
+      _attn_weights.scalar_type() == at::kFloat) {
+    auto [grad_q, grad_k, grad_v, grad_mask] = MuDNNMathSDPABwd(
+        _grad_output.to(at::kFloat),
+        _query.to(at::kFloat),
+        _key.to(at::kFloat),
+        _value.to(at::kFloat),
+        _output.to(at::kFloat),
+        _attn_weights,
+        _dropout_mask,
+        is_causal,
+        attn_mask,
+        scale);
+    if (grad_mask.defined() &&
+        grad_mask.scalar_type() != attn_mask->scalar_type()) {
+      grad_mask = grad_mask.to(attn_mask->scalar_type());
+    }
+    return std::make_tuple(
+        grad_q.to(origin_dtype),
+        grad_k.to(origin_dtype),
+        grad_v.to(origin_dtype),
+        std::move(grad_mask));
+  }
 
   const auto no_batch = (_query.dim() == 3);
   Proxy batch_q = AffineBatch(_query, no_batch);

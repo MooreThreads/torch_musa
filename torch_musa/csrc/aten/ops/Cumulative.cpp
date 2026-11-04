@@ -1,6 +1,5 @@
 #include <ATen/Config.h>
 #include <ATen/Dispatch.h>
-#include <ATen/core/NamedTensor.h>
 #include <ATen/native/ReduceOpsUtils.h>
 
 #include <optional>
@@ -87,7 +86,6 @@ void CumulativeKernel(
 
 template <CUM_MODE mode>
 void CumulativeImpl(const Tensor& self, int64_t dim, const Tensor& result) {
-  NoNamesGuard guard;
   if (self.dim() == 0) {
     result.fill_(self);
   } else if (self.numel() == 0) {

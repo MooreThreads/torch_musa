@@ -1,12 +1,18 @@
 #include <torch/csrc/distributed/c10d/symm_mem/SymmetricMemory.hpp>
 
 #include <cstdint>
+#include <cstdlib>
+#include <limits>
 #include <memory>
+#include <string>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include "c10/core/DeviceType.h"
 #include "c10/core/TensorOptions.h"
 #include "c10/util/Exception.h"
+#include "c10/util/hash.h"
 
 #include "c10/util/intrusive_ptr.h"
 #include "torch/csrc/distributed/c10d/symm_mem/SymmetricMemory.hpp"
@@ -27,6 +33,7 @@ using namespace c10d::symmetric_memory;
 struct ACECollCommunicator {
   enum collAlgo {
     ALL_GATHER_PULL_MODE = 0,
+    ALL_GATHER_V_PULL_MODE,
     REDUCE_SCATTER_PULL_MODE,
     REDUCE_SCATTER_PUSH_MODE,
     ALL_REDUCE,
@@ -68,18 +75,28 @@ struct ACECollCommunicator {
   c10::intrusive_ptr<SymmetricMemory> signal_symm_mem_;
 
   struct ACEGraphInfo all_gather_pull_mode_info_;
+  struct ACEGraphInfo all_gather_v_pull_mode_info_;
   struct ACEGraphInfo reduce_scatter_pull_mode_info_;
   struct ACEGraphInfo reduce_scatter_push_mode_info_;
   struct ACEGraphInfo all_reduce_info_;
 };
 
-void pullModeAllGatherInit(ACECollCommunicator* communicator) {
+void pullModeAllGatherInit(
+    ACECollCommunicator* communicator,
+    ACECollCommunicator::collAlgo algorithm) {
   TORCH_CHECK(communicator != nullptr, "nullptr communicator was passed");
+  TORCH_CHECK(
+      algorithm == ACECollCommunicator::ALL_GATHER_PULL_MODE ||
+          algorithm == ACECollCommunicator::ALL_GATHER_V_PULL_MODE,
+      "invalid all-gather algorithm");
 
   int rank = communicator->rank_;
   int world_size = communicator->world_size_;
   auto signal_ptrs = communicator->signal_symm_mem_->get_buffer_ptrs();
-  auto& graph_all_gather_info = communicator->all_gather_pull_mode_info_;
+  auto& graph_all_gather_info =
+      algorithm == ACECollCommunicator::ALL_GATHER_PULL_MODE
+      ? communicator->all_gather_pull_mode_info_
+      : communicator->all_gather_v_pull_mode_info_;
   auto* driver_api = c10::musa::DriverAPI::get();
   C10_MUSA_DRIVER_CHECK(
       driver_api->muCtxGetCurrent_(&(graph_all_gather_info.ctx)));
@@ -100,8 +117,7 @@ void pullModeAllGatherInit(ACECollCommunicator* communicator) {
   auto& nodes = graph_all_gather_info.nodes;
 
   const int signal_offset =
-      ACECollCommunicator::collAlgo::ALL_GATHER_PULL_MODE *
-      ACECollCommunicator::signal_numel_per_coll;
+      algorithm * ACECollCommunicator::signal_numel_per_coll;
   uint64_t* local_ready_ptrs =
       static_cast<uint64_t*>(signal_ptrs[rank]) + signal_offset;
   uint64_t* local_complete_ptrs = local_ready_ptrs + max_musa_p2p_domain_size;
@@ -195,17 +211,27 @@ void reduceScatterInit(ACECollCommunicator* communicator, bool pull_mode) {
       static_cast<uint64_t*>(signal_ptrs[rank]) + signal_offset;
   uint64_t* local_complete_ptrs = local_ready_ptrs + max_musa_p2p_domain_size;
 
-  const int nsubnodes = 5;
+  const int nsubnodes = 6;
   for (int i = 0; i < world_size; i++) {
     nodes[i].resize(nsubnodes);
   }
+  graph_reduce_scatter_info.copyParams.resize(1);
+  // Seed the local result before publishing readiness to the other ranks.
+  // The copy node is disabled for the zero-initialized and inplace paths.
+  MUSA_MEM_TRANSFER_NODE_PARAMS copy_param{
+      (MUdeviceptr)local_ready_ptrs,
+      (MUdeviceptr)local_ready_ptrs,
+      sizeof(uint64_t)};
+  C10_MUSA_DRIVER_CHECK(driver_api->muGraphAddMemTransferNode_(
+      &nodes[rank][5], graph, nullptr, 0, &copy_param, ctx));
+  graph_reduce_scatter_info.copyParams[0] = copy_param;
   // root barrier param
   MUSA_MEM_ATOMIC_VALUE_NODE_PARAMS barrier_param{
       (MUdeviceptr)(local_ready_ptrs + rank),
       1,
       MU_ATOMIC_VALUE_TYPE_ATOMIC_ADD64};
   C10_MUSA_DRIVER_CHECK(driver_api->muGraphAddMemAtomicValueNode_(
-      &nodes[rank][0], graph, nullptr, 0, &barrier_param, ctx));
+      &nodes[rank][0], graph, &nodes[rank][5], 1, &barrier_param, ctx));
   for (int peer = 0; peer < world_size; peer++) {
     uint64_t* peer_ready_ptrs =
         static_cast<uint64_t*>(signal_ptrs[peer]) + signal_offset;
@@ -441,15 +467,83 @@ void pullModeGraphAllGatherUpdateParams(
   }
 }
 
+void pullModeGraphAllGatherVUpdateParams(
+    ACECollCommunicator* communicator,
+    const std::vector<void*>& src,
+    void* dst,
+    const std::vector<int64_t>& byte_counts,
+    const std::vector<int64_t>& byte_offsets,
+    const size_t src_base_offset,
+    bool src_offset_by_peer) {
+  TORCH_CHECK(communicator != nullptr, "invalid communicator");
+  TORCH_CHECK(dst != nullptr, "invalid dst ptr");
+
+  int rank = communicator->rank_;
+  int world_size = communicator->world_size_;
+  TORCH_CHECK(
+      src.size() == static_cast<size_t>(world_size),
+      "source pointer count must match world size");
+  TORCH_CHECK(
+      byte_counts.size() == static_cast<size_t>(world_size),
+      "recv byte count must match world size");
+  TORCH_CHECK(
+      byte_offsets.size() == static_cast<size_t>(world_size),
+      "recv byte offset count must match world size");
+
+  auto& graph_all_gather_info = communicator->all_gather_v_pull_mode_info_;
+  auto* driver_api = c10::musa::DriverAPI::get();
+
+  graph_all_gather_info.seqNum++;
+  for (int i = 0; i < world_size; i++) {
+    int peer = (rank + i) % world_size;
+    TORCH_CHECK(src[peer] != nullptr, "invalid src ptr");
+    auto& ready_param = graph_all_gather_info.waitParams[peer * 2];
+    ready_param.value = graph_all_gather_info.seqNum;
+
+    C10_MUSA_DRIVER_CHECK(driver_api->muGraphExecMemWaitWriteNodeSetParams_(
+        graph_all_gather_info.graphExec,
+        graph_all_gather_info.nodes[peer][1],
+        &ready_param,
+        graph_all_gather_info.ctx));
+
+    const auto peer_byte_offset = static_cast<size_t>(byte_offsets[peer]);
+    graph_all_gather_info.copyParams[peer].dst =
+        (MUdeviceptr)((char*)dst + peer_byte_offset);
+    const size_t src_offset =
+        src_base_offset + (src_offset_by_peer ? peer_byte_offset : 0);
+    graph_all_gather_info.copyParams[peer].src =
+        (MUdeviceptr)((char*)(src[peer]) + src_offset);
+    graph_all_gather_info.copyParams[peer].ByteCount =
+        static_cast<size_t>(byte_counts[peer]);
+    C10_MUSA_DRIVER_CHECK(driver_api->muGraphExecMemTransferNodeSetParams_(
+        graph_all_gather_info.graphExec,
+        graph_all_gather_info.nodes[peer][2],
+        &graph_all_gather_info.copyParams[peer],
+        graph_all_gather_info.ctx));
+
+    auto& finish_param = graph_all_gather_info.waitParams[peer * 2 + 1];
+    finish_param.value = graph_all_gather_info.seqNum;
+    C10_MUSA_DRIVER_CHECK(driver_api->muGraphExecMemWaitWriteNodeSetParams_(
+        graph_all_gather_info.graphExec,
+        graph_all_gather_info.nodes[peer][4],
+        &finish_param,
+        graph_all_gather_info.ctx));
+  }
+}
+
 void graphReduceScatterUpdateParams(
     ACECollCommunicator* communicator,
     void** src,
     void** dst,
+    void* local_src,
+    void* local_dst,
     const size_t element_count,
     const size_t element_size,
     MUatomicType atomic_type,
     const size_t offset_in_bytes,
-    bool pull_mode) {
+    bool pull_mode,
+    bool use_zero_init,
+    bool inplace) {
   TORCH_CHECK(communicator != nullptr, "invalid communicator");
   const size_t chunk_size_in_bytes = element_count * element_size;
   int rank = communicator->rank_;
@@ -459,6 +553,23 @@ void graphReduceScatterUpdateParams(
       : communicator->reduce_scatter_push_mode_info_;
   auto* driver_api = c10::musa::DriverAPI::get();
   graph_reduce_scatter_info.seqNum++;
+
+  const bool copy_local = !use_zero_init && !inplace;
+  C10_MUSA_DRIVER_CHECK(driver_api->muGraphNodeSetEnabled_(
+      graph_reduce_scatter_info.graphExec,
+      graph_reduce_scatter_info.nodes[rank][5],
+      copy_local));
+  if (copy_local) {
+    auto& copy_param = graph_reduce_scatter_info.copyParams[0];
+    copy_param.src = (MUdeviceptr)local_src;
+    copy_param.dst = (MUdeviceptr)local_dst;
+    copy_param.ByteCount = chunk_size_in_bytes;
+    C10_MUSA_DRIVER_CHECK(driver_api->muGraphExecMemTransferNodeSetParams_(
+        graph_reduce_scatter_info.graphExec,
+        graph_reduce_scatter_info.nodes[rank][5],
+        &copy_param,
+        graph_reduce_scatter_info.ctx));
+  }
 
   for (int i = 0; i < world_size; i++) {
     auto& ready_param = graph_reduce_scatter_info.waitParams[i * 2];
@@ -483,11 +594,19 @@ void graphReduceScatterUpdateParams(
     }
     reduce_param.elementCount = element_count;
     reduce_param.operation = atomic_type;
-    C10_MUSA_DRIVER_CHECK(driver_api->muGraphExecMemAtomicNodeSetParams_(
-        graph_reduce_scatter_info.graphExec,
-        graph_reduce_scatter_info.nodes[i][2],
-        &reduce_param,
-        graph_reduce_scatter_info.ctx));
+    if (i == rank) {
+      C10_MUSA_DRIVER_CHECK(driver_api->muGraphNodeSetEnabled_(
+          graph_reduce_scatter_info.graphExec,
+          graph_reduce_scatter_info.nodes[i][2],
+          use_zero_init));
+    }
+    if (i != rank || use_zero_init) {
+      C10_MUSA_DRIVER_CHECK(driver_api->muGraphExecMemAtomicNodeSetParams_(
+          graph_reduce_scatter_info.graphExec,
+          graph_reduce_scatter_info.nodes[i][2],
+          &reduce_param,
+          graph_reduce_scatter_info.ctx));
+    }
 
     auto& complete_param = graph_reduce_scatter_info.waitParams[i * 2 + 1];
     complete_param.value = graph_reduce_scatter_info.seqNum;
@@ -574,7 +693,10 @@ void graphAllReduceUpdateParams(
 }
 
 void graphCollectiveInit(ACECollCommunicator* communicator) {
-  pullModeAllGatherInit(communicator);
+  pullModeAllGatherInit(
+      communicator, ACECollCommunicator::ALL_GATHER_PULL_MODE);
+  pullModeAllGatherInit(
+      communicator, ACECollCommunicator::ALL_GATHER_V_PULL_MODE);
   // Although the push‑mode reduce‑scatter has lower performance than the
   // pull‑mode implementation, I implemented it as well because it imposes fewer
   // constraints on SymmetricMemory. This variant should still be beneficial for
@@ -584,13 +706,19 @@ void graphCollectiveInit(ACECollCommunicator* communicator) {
   allReduceInit(communicator);
 }
 
-static std::unordered_map<std::string, std::unique_ptr<ACECollCommunicator>>
+using CommunicatorKey = std::pair<std::string, c10::DeviceIndex>;
+
+static std::unordered_map<
+    CommunicatorKey,
+    std::unique_ptr<ACECollCommunicator>,
+    c10::hash<CommunicatorKey>>
     group_to_communicator;
 
 void lowContentionAllGather(
     at::Tensor& output_tensor,
     at::Tensor& input_tensor,
     const std::string& group_name) {
+  const c10::musa::MUSAGuard device_guard(input_tensor.device());
   c10::intrusive_ptr<c10d::symmetric_memory::SymmetricMemory> input_hdl =
       c10d::symmetric_memory::rendezvous(input_tensor, group_name);
 
@@ -598,7 +726,8 @@ void lowContentionAllGather(
   TORCH_CHECK(
       input_is_symm_mem, "input tensor must be allocated from SymmetricMemory");
 
-  auto it = group_to_communicator.find(group_name);
+  const CommunicatorKey communicator_key{group_name, input_tensor.get_device()};
+  auto it = group_to_communicator.find(communicator_key);
   auto stream = at::musa::getCurrentMUSAStream();
   size_t input_bytes_ = input_tensor.numel() * input_tensor.element_size();
 
@@ -633,7 +762,7 @@ void lowContentionAllGather(
         "only support intra node communication");
     it = group_to_communicator
              .emplace(
-                 group_name,
+                 communicator_key,
                  std::make_unique<ACECollCommunicator>(
                      rank, world_size, input_tensor.get_device(), group_name))
              .first;
@@ -650,6 +779,130 @@ void lowContentionAllGather(
       standard_inplace);
   C10_MUSA_CHECK(musaGraphLaunch(
       communicator->all_gather_pull_mode_info_.graphExec, stream));
+}
+
+void lowContentionAllGatherVSingle(
+    at::Tensor& output_tensor,
+    at::Tensor& input_tensor,
+    c10::ArrayRef<int64_t> recv_counts,
+    const std::string& group_name) {
+  TORCH_CHECK(
+      input_tensor.is_contiguous() && output_tensor.is_contiguous(),
+      "low_contention_all_gather_v_single expects contiguous input and output tensors");
+  TORCH_CHECK(
+      input_tensor.device() == output_tensor.device(),
+      "low_contention_all_gather_v_single expects input and output on the same device");
+  const c10::musa::MUSAGuard device_guard(input_tensor.device());
+
+  auto input_hdl = c10d::symmetric_memory::rendezvous(input_tensor, group_name);
+  TORCH_CHECK(
+      input_hdl != nullptr,
+      "input tensor must be allocated from SymmetricMemory");
+
+  const auto rank = input_hdl->get_rank();
+  const auto world_size = input_hdl->get_world_size();
+  TORCH_CHECK(
+      recv_counts.size() == static_cast<size_t>(world_size),
+      "recv_counts must contain one entry per rank, but got ",
+      recv_counts.size(),
+      " entries for world size ",
+      world_size);
+
+  TORCH_CHECK(
+      input_tensor.scalar_type() == output_tensor.scalar_type(),
+      "low_contention_all_gather_v_single expects input and output tensors to have "
+      "the same dtype");
+  const auto element_size = input_tensor.element_size();
+  const auto element_size_i64 = static_cast<int64_t>(element_size);
+  const auto max_numel = std::numeric_limits<int64_t>::max() / element_size_i64;
+
+  int64_t total_numel = 0;
+  std::vector<int64_t> byte_counts(world_size);
+  std::vector<int64_t> byte_offsets(world_size);
+  for (int peer = 0; peer < world_size; ++peer) {
+    const int64_t peer_numel = recv_counts[peer];
+    TORCH_CHECK(
+        peer_numel > 0,
+        "low_contention_all_gather_v_single currently requires every recv count "
+        "to be positive, but rank ",
+        peer,
+        " has ",
+        peer_numel,
+        " elements");
+    TORCH_CHECK(
+        peer_numel <= max_numel - total_numel,
+        "recv_counts byte size sum overflows int64_t");
+    byte_offsets[peer] = total_numel * element_size_i64;
+    byte_counts[peer] = peer_numel * element_size_i64;
+    total_numel += peer_numel;
+  }
+
+  TORCH_CHECK(
+      input_tensor.numel() == recv_counts[rank],
+      "local input has ",
+      input_tensor.numel(),
+      " elements, but recv_counts[",
+      rank,
+      "] is ",
+      recv_counts[rank]);
+  TORCH_CHECK(
+      output_tensor.numel() == total_numel,
+      "output has ",
+      output_tensor.numel(),
+      " elements, but recv_counts sum to ",
+      total_numel);
+
+  const size_t input_nbytes =
+      input_tensor.numel() * input_tensor.element_size();
+  const size_t output_nbytes =
+      output_tensor.numel() * output_tensor.element_size();
+
+  const size_t input_offset = input_hdl->get_offset() +
+      input_tensor.storage_offset() * input_tensor.element_size();
+  const auto input_iptr = reinterpret_cast<uintptr_t>(input_tensor.data_ptr());
+  const auto output_iptr =
+      reinterpret_cast<uintptr_t>(output_tensor.data_ptr());
+  const bool has_overlap = input_iptr < output_iptr + output_nbytes &&
+      output_iptr < input_iptr + input_nbytes;
+  const auto rank_byte_offset = static_cast<size_t>(byte_offsets[rank]);
+  const bool standard_inplace = input_iptr == output_iptr + rank_byte_offset;
+  TORCH_CHECK(
+      !has_overlap || standard_inplace,
+      "low_contention_all_gather_v_single only supports inplace all-gather when the "
+      "local input starts at the rank's prefix offset in output");
+  TORCH_CHECK(
+      !standard_inplace || input_offset >= rank_byte_offset,
+      "invalid inplace input offset");
+  const size_t src_base_offset =
+      standard_inplace ? input_offset - rank_byte_offset : input_offset;
+
+  const CommunicatorKey communicator_key{group_name, input_tensor.get_device()};
+  auto it = group_to_communicator.find(communicator_key);
+  if (it == group_to_communicator.end()) {
+    TORCH_CHECK(
+        input_hdl->world_within_direct_access(),
+        "only support intra node communication");
+    it = group_to_communicator
+             .emplace(
+                 communicator_key,
+                 std::make_unique<ACECollCommunicator>(
+                     rank, world_size, input_tensor.get_device(), group_name))
+             .first;
+    graphCollectiveInit((it->second).get());
+  }
+
+  auto* communicator = (it->second).get();
+  pullModeGraphAllGatherVUpdateParams(
+      communicator,
+      input_hdl->get_buffer_ptrs(),
+      output_tensor.data_ptr(),
+      byte_counts,
+      byte_offsets,
+      src_base_offset,
+      standard_inplace);
+  auto stream = at::musa::getCurrentMUSAStream();
+  C10_MUSA_CHECK(musaGraphLaunch(
+      communicator->all_gather_v_pull_mode_info_.graphExec, stream));
 }
 
 MUatomicType getMUAtomicType(at::ScalarType datatype) {
@@ -672,6 +925,7 @@ void lowContentionReduceScatter(
     at::Tensor& input_tensor,
     const std::string& reduce_op,
     const std::string& group_name) {
+  const c10::musa::MUSAGuard device_guard(output_tensor.device());
   TORCH_CHECK(
       reduce_op == "sum" || reduce_op == "avg",
       "Only sum and avg reduce are supported, but got: ",
@@ -689,7 +943,9 @@ void lowContentionReduceScatter(
       "Tensors not within any SymmetricMemory allocation, ",
       "is the tensor allocated from SymmetricMemory?");
 
-  auto it = group_to_communicator.find(group_name);
+  const CommunicatorKey communicator_key{
+      group_name, output_tensor.get_device()};
+  auto it = group_to_communicator.find(communicator_key);
   auto stream = at::musa::getCurrentMUSAStream();
 
   const size_t output_size = output_tensor.numel();
@@ -708,10 +964,20 @@ void lowContentionReduceScatter(
   TORCH_CHECK(input_tensor.is_contiguous() && output_tensor.is_contiguous());
   auto input_iptr = reinterpret_cast<uintptr_t>(input_tensor.data_ptr());
   auto output_iptr = reinterpret_cast<uintptr_t>(output_tensor.data_ptr());
+  const bool inplace =
+      output_iptr == input_iptr + output_bytes * static_cast<size_t>(rank);
+  const bool has_overlap = input_iptr < output_iptr + output_bytes &&
+      output_iptr < input_iptr + input_bytes;
   TORCH_CHECK(
-      !(output_iptr >= input_iptr &&
-        ((output_iptr - input_iptr) < input_bytes)),
-      "inplace reduce_scatter is not supported");
+      !has_overlap || inplace,
+      "low_contention_reduce_scatter only supports standard inplace "
+      "overlap: output must be input.chunk(world_size)[rank]");
+
+  const char* prezeroed_env =
+      std::getenv("TORCH_MUSA_SYMM_MEM_RS_OUTPUT_PREZEROED");
+  const bool output_prezeroed = prezeroed_env != nullptr &&
+      prezeroed_env[0] == '1' && prezeroed_env[1] == '\0';
+  const bool use_zero_init = output_prezeroed && !inplace;
 
   if (it == group_to_communicator.end()) {
     TORCH_CHECK(
@@ -720,7 +986,7 @@ void lowContentionReduceScatter(
         "only support intra node communication");
     it = group_to_communicator
              .emplace(
-                 group_name,
+                 communicator_key,
                  std::make_unique<ACECollCommunicator>(
                      rank, world_size, output_tensor.get_device(), group_name))
              .first;
@@ -739,17 +1005,19 @@ void lowContentionReduceScatter(
                                                : output_hdl->get_offset() +
           output_tensor.storage_offset() * output_tensor.element_size();
 
-  C10_MUSA_CHECK(
-      musaMemsetAsync(output_tensor.data_ptr(), 0, output_bytes, stream));
   graphReduceScatterUpdateParams(
       communicator,
       src_ptrs.data(),
       dst_ptrs.data(),
+      static_cast<char*>(input_tensor.data_ptr()) + output_bytes * rank,
+      output_tensor.data_ptr(),
       output_size,
       element_size,
       getMUAtomicType(input_tensor.scalar_type()),
       symm_mem_offset,
-      use_pull_mode);
+      use_pull_mode,
+      use_zero_init,
+      inplace);
   if (use_pull_mode) {
     C10_MUSA_CHECK(musaGraphLaunch(
         communicator->reduce_scatter_pull_mode_info_.graphExec, stream));
@@ -770,6 +1038,7 @@ void lowContentionAllReduce(
     at::Tensor& input_tensor,
     const std::string& reduce_op,
     const std::string& group_name) {
+  const c10::musa::MUSAGuard device_guard(input_tensor.device());
   TORCH_CHECK(
       reduce_op == "sum" || reduce_op == "avg",
       "Only sum and avg reduce are supported, but got: ",
@@ -793,14 +1062,15 @@ void lowContentionAllReduce(
     return;
   }
 
-  auto it = group_to_communicator.find(group_name);
+  const CommunicatorKey communicator_key{group_name, input_tensor.get_device()};
+  auto it = group_to_communicator.find(communicator_key);
   if (it == group_to_communicator.end()) {
     TORCH_CHECK(
         input_hdl->world_within_direct_access(),
         "only support intra node communication");
     it = group_to_communicator
              .emplace(
-                 group_name,
+                 communicator_key,
                  std::make_unique<ACECollCommunicator>(
                      rank, world_size, input_tensor.get_device(), group_name))
              .first;
@@ -841,15 +1111,18 @@ TORCH_LIBRARY_FRAGMENT(symm_mem, m) {
   // implementation is different from PyTorch, to distinguish from it, we define
   // another schema here.
   m.def(
-      "low_contention_all_gather(Tensor output_tensor, Tensor input_tensor, str group_name) -> ()");
+      "low_contention_all_gather(Tensor(a!) output_tensor, Tensor input_tensor, str group_name) -> ()");
   m.def(
-      "low_contention_reduce_scatter(Tensor output_tensor, Tensor input_tensor, str reduce_op, str group_name) -> ()");
+      "low_contention_all_gather_v_single(Tensor(a!) output_tensor, Tensor input_tensor, int[] recv_counts, str group_name) -> ()");
+  m.def(
+      "low_contention_reduce_scatter(Tensor(a!) output_tensor, Tensor input_tensor, str reduce_op, str group_name) -> ()");
   m.def(
       "low_contention_allreduce(Tensor(a!) input_tensor, str reduce_op, str group_name) -> ()");
 }
 
 TORCH_LIBRARY_IMPL(symm_mem, PrivateUse1, m) {
   m.impl("low_contention_all_gather", lowContentionAllGather);
+  m.impl("low_contention_all_gather_v_single", lowContentionAllGatherVSingle);
   m.impl("low_contention_reduce_scatter", lowContentionReduceScatter);
   m.impl("low_contention_allreduce", lowContentionAllReduce);
 }

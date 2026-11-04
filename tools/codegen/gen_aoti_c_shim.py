@@ -32,8 +32,7 @@ def gen_static_dispatch_backend_call(
     f: NativeFunction,
     backend_index: BackendIndex,
 ) -> str:
-    sig = DispatcherSignature.from_schema(f.func)
-    cpp_sig = gen_static_dispatch_backend_call_signature(sig, f)
+    cpp_sig = gen_static_dispatch_backend_call_signature(f)
     if backend_index.dispatch_key.lower() == "privateuse1":
         return f"at::musa::{cpp_sig.name()}"
     return f"at::{backend_index.dispatch_key.lower()}::{cpp_sig.name()}"

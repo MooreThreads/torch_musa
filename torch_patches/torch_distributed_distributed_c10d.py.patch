@@ -1,5 +1,5 @@
 diff --git a/torch/distributed/distributed_c10d.py b/torch/distributed/distributed_c10d.py
-index f14a24db8c1..251f37caad1 100644
+index 6249b22..15aaa97 100644
 --- a/torch/distributed/distributed_c10d.py
 +++ b/torch/distributed/distributed_c10d.py
 @@ -92,6 +92,7 @@ __all__ = [
@@ -10,24 +10,25 @@ index f14a24db8c1..251f37caad1 100644
      "is_torchelastic_launched",
      "is_ucc_available",
      "is_xccl_available",
-@@ -141,6 +142,7 @@ _NCCL_AVAILABLE = True
+@@ -144,7 +145,7 @@ _NCCL_AVAILABLE = True
  _GLOO_AVAILABLE = True
  _UCC_AVAILABLE = True
  _XCCL_AVAILABLE = True
+-
 +_MCCL_AVAILABLE = True
-
  try:
-     # pyrefly: ignore [import-error, missing-import]
-@@ -367,6 +368,8 @@ class Backend(str):  # noqa: SLOT000
+     try:
+         # pyrefly: ignore [missing-import]
+@@ -376,6 +377,8 @@ class Backend(str):  # noqa: SLOT000
              Backend.backend_list.append(name.lower())
-
+ 
          if devices is not None:
 +            if isinstance(devices, str):
 +                devices = [devices]
              for device in devices:
-                 if device not in Backend.default_device_backend_map:
-                     Backend.default_device_backend_map[device] = name.lower()
-@@ -1278,6 +1280,11 @@ def is_nccl_available() -> bool:
+                 current = Backend.default_device_backend_map.get(device)
+                 # Allow remapping from fake backend to actual backend (e.g., HPU from fake to HCCL)
+@@ -1339,6 +1342,11 @@ def is_nccl_available() -> bool:
      return _NCCL_AVAILABLE
  
  
@@ -39,7 +40,7 @@ index f14a24db8c1..251f37caad1 100644
  def is_gloo_available() -> bool:
      """Check if the Gloo backend is available."""
      return _GLOO_AVAILABLE
-@@ -2248,7 +2255,7 @@ def _new_process_group_helper(
+@@ -2330,7 +2338,7 @@ def _new_process_group_helper(
      pg._set_group_name(group_name)
      pg._set_group_desc(group_desc)
  
@@ -48,8 +49,8 @@ index f14a24db8c1..251f37caad1 100644
          eager_backend = pg._get_backend(device_id)
          eager_backend.eager_connect_single_device(device_id)
  
-@@ -2954,6 +2961,9 @@ def broadcast(
-     """
+@@ -3125,6 +3133,9 @@ def broadcast(
+ 
      group = _group_or_default_group(group)
      group_src = _canonicalize_group_rank(group, src, group_src, return_global=False)
 +    if tensor is None or tensor.numel() == 0:

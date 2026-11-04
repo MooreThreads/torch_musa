@@ -12,6 +12,7 @@ from torch_musa.distributed.hybrid_checkpoint import (
     HybridCheckpointConfig,
     apply_hybrid_checkpoint,
 )
+from torch_musa.testing.common_utils import spawn_isolated_test
 
 
 class _ToyBlock(torch.nn.Module):
@@ -148,6 +149,7 @@ def test_container_api_cpu_parity():
         torch.testing.assert_close(checkpoint_param.grad, eager_param.grad)
 
 
+@spawn_isolated_test
 @pytest.mark.skipif(not torch.musa.is_available(), reason="MUSA is not available")
 def test_musa_offload_parity_and_reuse():
     """Check MUSA parity and pinned bucket reuse across training steps."""

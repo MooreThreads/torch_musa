@@ -331,9 +331,6 @@ const Tensor& ResizeMUSA_(
     const Tensor& self,
     IntArrayRef size,
     c10::optional<c10::MemoryFormat> optional_memory_format) {
-  if (self.has_names()) {
-    return at::native::resize_named_tensor_(self, size, optional_memory_format);
-  }
   auto* contiguous_self = self.unsafeGetTensorImpl();
   resize_impl_musa_(contiguous_self, size, /*strides=*/c10::nullopt);
   if (optional_memory_format.has_value()) {

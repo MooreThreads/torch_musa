@@ -1,0 +1,56 @@
+diff --git a/torch/csrc/utils/tensor_numpy.cpp b/torch/csrc/utils/tensor_numpy.cpp
+index 1813d62..466f992 100644
+--- a/torch/csrc/utils/tensor_numpy.cpp
++++ b/torch/csrc/utils/tensor_numpy.cpp
+@@ -491,25 +491,26 @@ at::Tensor tensor_from_cuda_array_interface(
+     }
+   }
+ 
++  c10::DeviceType device_type = device_opt->type();
+   const auto target_device = [&]() -> std::optional<Device> {
+-    // note(crcrpar): zero-size arrays come with nullptr.
+-    // ref:
+-    // https://numba.readthedocs.io/en/stable/cuda/cuda_array_interface.html#cuda-array-interface-version-3
+-    if (data_ptr != nullptr) {
+-      if (device_opt.has_value() && device_opt->has_index()) {
+-        // if device_opt is provided with explicit device index, use it
+-        return device_opt;
+-      } else {
+-        // otherwise infer from cudaPointerGetAttributes later in from_blob
+-        return std::nullopt;
+-      }
++  // note(crcrpar): zero-size arrays come with nullptr.
++  // ref: https://numba.readthedocs.io/en/stable/cuda/cuda_array_interface.html#cuda-array-interface-version-3
++  if (data_ptr != nullptr) {
++    if (device_opt.has_value() && device_opt->has_index()) {
++      // if device_opt is provided with explicit device index, use it
++      return device_opt;
+     } else {
+-      const auto current_device = at::detail::getCUDAHooks().getCurrentDevice();
+-      return Device(
+-          kCUDA,
+-          static_cast<DeviceIndex>(current_device > -1 ? current_device : 0));
++      // otherwise infer from cudaPointerGetAttributes later in from_blob
++      return std::nullopt;
+     }
+-  }();
++  } else {
++    auto& hooks = at::globalContext().getAcceleratorHooksInterface(device_type);
++    DeviceIndex current_device = hooks.getCurrentDevice();
++    return Device(
++        device_type,
++        static_cast<DeviceIndex>(current_device > -1 ? current_device : 0));
++  }
++}();
+ 
+   Py_INCREF(obj);
+   return at::from_blob(
+@@ -520,7 +521,7 @@ at::Tensor tensor_from_cuda_array_interface(
+         pybind11::gil_scoped_acquire gil;
+         Py_DECREF(obj);
+       },
+-      at::device(kCUDA).dtype(dtype),
++      at::device(device_type).dtype(dtype),
+       target_device);
+ }
+ 

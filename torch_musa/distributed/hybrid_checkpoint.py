@@ -1,3 +1,4 @@
+# pylint: disable=C0116,W0613
 """Experimental hybrid checkpointing support.
 
 .. warning::
@@ -33,7 +34,7 @@ from torch.utils.checkpoint import (
     SAC_IGNORED_OPS,
     SelectiveCheckpointContext,
     _is_compiling,
-    _maybe_detach,
+    _detach_helper,
     _VersionWrapper,
 )
 from torch.utils.checkpoint import checkpoint as torch_utils_checkpoint
@@ -771,11 +772,6 @@ class _HybridCachingTorchDispatchMode(TorchDispatchMode):
 
         out = func(*args, **kwargs)
 
-        any_ret_has_alias_info = any(
-            ret.alias_info is not None for ret in func._schema.returns
-        )
-        # any_ret_has_alias_info = False
-
         if (
             policy
             in (
@@ -793,9 +789,7 @@ class _HybridCachingTorchDispatchMode(TorchDispatchMode):
             saved_out = (
                 tree_map(
                     lambda x: (
-                        _maybe_detach(x, any_ret_has_alias_info).clone()
-                        if isinstance(x, torch.Tensor)
-                        else x
+                        _detach_helper(x).clone() if isinstance(x, torch.Tensor) else x
                     ),
                     out,
                 )
@@ -813,7 +807,7 @@ class _HybridCachingTorchDispatchMode(TorchDispatchMode):
 
             self.storage[func].append(
                 tree_map(
-                    lambda x: _VersionWrapper(_maybe_detach(x, any_ret_has_alias_info)),
+                    lambda x: _VersionWrapper(_detach_helper(x)),
                     saved_out,
                 )
             )

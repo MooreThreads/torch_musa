@@ -54,9 +54,6 @@ void TernaryCall(
 inline bool BinaryMulFallThroughCPU(MusaTensorIterator& iter) {
   const auto l_dtype = iter.dtype(1);
   const auto r_dtype = iter.dtype(2);
-  if (l_dtype == ScalarType::Bool || r_dtype == ScalarType::Bool) {
-    return true;
-  }
   if (l_dtype == ScalarType::Double && r_dtype == ScalarType::Double) {
     return true;
   }

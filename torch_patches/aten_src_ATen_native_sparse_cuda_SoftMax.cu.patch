@@ -1,0 +1,13 @@
+diff --git a/aten/src/ATen/native/sparse/cuda/SoftMax.cu b/aten/src/ATen/native/sparse/cuda/SoftMax.cu
+index 1323896..2f8500f 100644
+--- a/aten/src/ATen/native/sparse/cuda/SoftMax.cu
++++ b/aten/src/ATen/native/sparse/cuda/SoftMax.cu
+@@ -42,7 +42,7 @@
+ #include <cuda_runtime_api.h>
+ #include <cusparse.h>
+ #include <bitset>
+-
++#include <cuda/std/iterator>
+ #include <c10/cuda/CUDAMathCompat.h>
+ #include <ATen/cuda/detail/IndexUtils.cuh>
+ #include <ATen/cuda/detail/OffsetCalculator.cuh>

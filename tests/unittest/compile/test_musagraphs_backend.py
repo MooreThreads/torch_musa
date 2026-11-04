@@ -64,3 +64,37 @@ def test_musagraphs_backend():
             assert torch.allclose(
                 no_compile_model_output, compile_model_output, atol=1e-3, rtol=1e-3
             ), "compile vs eager mismatch"
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+def test_musagraphs_reset_trees():
+    """torch._dynamo.reset clears musagraph trees managers."""
+    set_seed()
+
+    class TinyModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear = torch.nn.Linear(8, 8)
+
+        def forward(self, x):
+            return self.linear(x)
+
+    x = torch.randn(4, 8, device=DEVICE)
+    model = TinyModel().eval().to(DEVICE)
+    compiled = torch.compile(model, backend="musagraphs")
+
+    with torch.inference_mode():
+        for _ in range(3):
+            musagraph_trees.mark_step_begin()
+            compiled(x)
+
+    device_index = x.device.index
+    assert (
+        musagraph_trees.get_manager(device_index, create_if_none_exists=False)
+        is not None
+    )
+
+    torch._dynamo.reset()
+    assert (
+        musagraph_trees.get_manager(device_index, create_if_none_exists=False) is None
+    )

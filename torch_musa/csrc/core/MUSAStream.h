@@ -78,6 +78,16 @@ class MUSAStream {
     stream_synchronize(stream());
   }
 
+  // Mirrors CUDAStream::is_capturing: any status other than None counts,
+  // including Invalidated. This is deliberately wider than
+  // isStreamCapturingMayInitCtx, which is true only while capture is Active.
+  bool is_capturing() const {
+    DeviceGuard guard{stream_.device()};
+    musaStreamCaptureStatus status{musaStreamCaptureStatusNone};
+    C10_MUSA_CHECK(musaStreamIsCapturing(stream(), &status));
+    return status != musaStreamCaptureStatusNone;
+  }
+
   int priority() const {
     DeviceGuard guard{stream_.device()};
     int priority = 0;

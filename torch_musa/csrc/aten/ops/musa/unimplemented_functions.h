@@ -145,11 +145,6 @@ using musparseSpSVDescr = std::remove_pointer_t<musparseSpSVDescr_t>;
 namespace c10 {
 namespace musa {
 
-__host__ musaError_t musaStreamGetCaptureInfo(
-    musaStream_t stream,
-    enum musaStreamCaptureStatus* captureStatus_out,
-    unsigned long long* id_out);
-
 #if defined(REAL_MUSA_VERSION) && (REAL_MUSA_VERSION < 4020)
 __host__ musaError_t
 musaGraphDebugDotPrint(musaGraph_t graph, const char* path, unsigned int flags);
@@ -180,6 +175,10 @@ __host__ musaError_t musaMemPoolSetAttribute(
     enum musaMemPoolAttr attr,
     void* value);
 
+__host__ musaError_t musaStreamGetCaptureInfo(
+    musaStream_t stream,
+    enum musaStreamCaptureStatus* captureStatus_out,
+    unsigned long long* id_out);
 #endif
 } // namespace musa
 } // namespace c10

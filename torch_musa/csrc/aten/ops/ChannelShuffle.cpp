@@ -1,5 +1,4 @@
 #define TORCH_ASSERT_ONLY_METHOD_OPERATORS
-#include <ATen/NamedTensorUtils.h>
 #include <c10/util/Exception.h>
 
 #include <ATen/native/cpu/ChannelShuffleKernel.h>
@@ -42,8 +41,7 @@ Tensor MathChannelShuffle(const Tensor& self, int64_t groups) {
       input_reshaped.permute({0 /* b */, 2 /* oc */, 1 /* groups */, 3})
           .contiguous()
           .reshape(self.sizes());
-  return namedinference::propagate_names_if_nonempty(
-      output_tensor, self.has_names() ? self.names() : at::ArrayRef<Dimname>{});
+  return output_tensor;
 }
 
 } // namespace musa

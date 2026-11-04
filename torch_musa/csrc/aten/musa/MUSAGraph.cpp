@@ -338,5 +338,71 @@ MUSAGraph::~MUSAGraph() {
   reset();
 }
 
+MUSAGraphImpl::MUSAGraphImpl(const at::GraphImplArgs& args)
+    : graph_(args.keep_graph) {}
+
+namespace {
+
+// GraphCaptureMode and musaStreamCaptureMode share names but not values
+// (musaStreamCaptureMode is Global=0, ThreadLocal=1, Relaxed=2), so map them
+// explicitly. MUSA supports all three modes. Default uses Global, which is the
+// driver default and what MUSAGraph captured with before this adapter existed.
+musaStreamCaptureMode to_musa_capture_mode(at::GraphCaptureMode mode) {
+  switch (mode) {
+    case at::GraphCaptureMode::Default:
+    case at::GraphCaptureMode::Global:
+      return musaStreamCaptureModeGlobal;
+    case at::GraphCaptureMode::ThreadLocal:
+      return musaStreamCaptureModeThreadLocal;
+    case at::GraphCaptureMode::Relaxed:
+      return musaStreamCaptureModeRelaxed;
+    default:
+      TORCH_CHECK(
+          false,
+          "Unsupported MUSA graph capture mode: ",
+          static_cast<int>(mode));
+  }
+}
+
+} // namespace
+
+void MUSAGraphImpl::capture_begin(
+    MempoolId_t pool,
+    at::GraphCaptureMode capture_mode) {
+  graph_.capture_begin(pool, to_musa_capture_mode(capture_mode));
+}
+
+void MUSAGraphImpl::capture_end() {
+  graph_.capture_end();
+}
+
+void MUSAGraphImpl::instantiate() {
+  graph_.instantiate();
+}
+
+void MUSAGraphImpl::replay() {
+  graph_.replay();
+}
+
+void MUSAGraphImpl::reset() {
+  graph_.reset();
+}
+
+MempoolId_t MUSAGraphImpl::pool() const {
+  return graph_.pool();
+}
+
+void MUSAGraphImpl::enable_debug_mode() {
+  graph_.enable_debug_mode();
+}
+
+void MUSAGraphImpl::debug_dump(const std::string& path) {
+  graph_.debug_dump(path);
+}
+
+// DeviceTypeName(PrivateUse1, lower_case=false) returns the registered backend
+// name uppercased, so the registry key is "MUSA".
+REGISTER_GRAPH_IMPL(MUSA, MUSAGraphImpl)
+
 } // namespace musa
 } // namespace at

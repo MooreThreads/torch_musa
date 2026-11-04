@@ -1,6 +1,6 @@
 """Custom FSDP2 overlap settings"""
 
-# pylint: disable=C0301,C0415,W0602,C0103,R1710
+# pylint: disable=C0301,C0415,W0602,W0613,C0103,R1710
 import logging
 import os
 import warnings
@@ -34,7 +34,6 @@ from torch.distributed.fsdp._fully_shard._fsdp_api import (
 import torch.distributed._symmetric_memory as symm_mem
 from torch.profiler import record_function
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -53,11 +52,6 @@ class IntraNodeLowContentionCommAllocMixin:
             IntraNodeLowContentionCommAllocMixin._mem_pool = torch.musa.MemPool(
                 allocator
             )
-
-        self._group = group
-        from torch.distributed._symmetric_memory import enable_symm_mem_for_group
-
-        enable_symm_mem_for_group(dist._get_process_group_name(group))
 
     def allocate(
         self,
@@ -161,7 +155,6 @@ class ProcessGroupMCCLSymmMemAllocMixin:
     _mem_pool: torch.musa.MemPool = None
 
     def __init__(self, group: dist.ProcessGroup, *args: Any, **kwargs: Any):
-        self._group = group
         super().__init__(*args, **kwargs)
         if ProcessGroupMCCLSymmMemAllocMixin._mem_pool is None:
             dist.barrier(group)  # ensure communicator is initialized
@@ -234,6 +227,13 @@ class ProcessGroupMCCLSymmMemReduceScatter(
 _TORCH_MUSA_FSDP2_COMM_TYPE_ENV = "TORCH_MUSA_FSDP2_COMM_TYPE"
 
 
+# for internal testing
+def _resolved_comm_type() -> int:
+    if _TORCH_MUSA_FSDP2_COMM_TYPE_ENV in os.environ:
+        return int(os.environ[_TORCH_MUSA_FSDP2_COMM_TYPE_ENV])
+    return 0
+
+
 def _maybe_set_custom_comm(fsdp_module: FSDPModule | list[FSDPModule]) -> None:
     """Install MUSA-specific FSDP2 collective implementations when requested.
 
@@ -289,7 +289,11 @@ def _maybe_set_custom_comm(fsdp_module: FSDPModule | list[FSDPModule]) -> None:
         raise RuntimeError(f"Invalid option: {custom_comm_type}")
 
 
-__all__ = ["_apply_custom_overlap_patch", "FSDP2OverlapLevel", "_FSDP2_OVERLAP_LEVEL"]
+__all__ = [
+    "_apply_custom_overlap_patch",
+    "_get_fsdp2_overlap_level",
+    "FSDP2OverlapLevel",
+]
 
 
 # The FSDP2 of PyTorch's implementation has the overlappings below:
@@ -344,15 +348,20 @@ def _get_fsdp2_overlap_level() -> FSDP2OverlapLevel:
     """Resolve the FSDP2 computation/communication overlap policy.
 
     ``TORCH_MUSA_FSDP2_OVERLAP_LEVEL`` has the highest priority and maps
-    directly to ``FSDP2OverlapLevel`` values 0 through 4. Most users do not
+    directly to ``FSDP2OverlapLevel`` values 0 through 3. Most users do not
     need to set it unless explicitly selecting or debugging an overlap mode.
     If it is unset, keep overlap disabled by default, except for the deprecated
     ``TORCH_MUSA_FSDP2_DISABLE_OVERLAP=0`` opt-in or when custom FSDP2
-    communication is enabled on MUSA arch >= mp_31.
+    communication is enabled on MUSA arch >= mp_31. Overlap level 4 is disabled
+    because its communication overlap may hang.
     """
     if "TORCH_MUSA_FSDP2_OVERLAP_LEVEL" in os.environ:
         overlap_level = int(os.environ["TORCH_MUSA_FSDP2_OVERLAP_LEVEL"])
-        assert overlap_level < FSDP2OverlapLevel.END.value
+        if not 0 <= overlap_level < FSDP2OverlapLevel.OVERLAP_HSDP_COMM.value:
+            raise ValueError(
+                "TORCH_MUSA_FSDP2_OVERLAP_LEVEL must be one of 0, 1, 2, or 3; "
+                "overlap level 4 is disabled"
+            )
         if overlap_level == 0:
             return FSDP2OverlapLevel.NO_OVERLAP
         if overlap_level == 1:
@@ -365,13 +374,12 @@ def _get_fsdp2_overlap_level() -> FSDP2OverlapLevel:
             return FSDP2OverlapLevel.OVERLAP_FSDP_COMM_COPY_IN_WITH_COPY_OUT
         if overlap_level == 3:
             return FSDP2OverlapLevel.OVERLAP_FSDP_COMM_COPY_IN_WITH_COMM
-        return FSDP2OverlapLevel.OVERLAP_HSDP_COMM
 
     if os.environ.get("TORCH_MUSA_FSDP2_DISABLE_OVERLAP", "1") == "0":
-        warnings.warn(
-            "TORCH_MUSA_FSDP2_DISABLE_OVERLAP env will be deprecated in the future, use TORCH_MUSA_FSDP2_OVERLAP_LEVEL instead"
+        raise RuntimeError(
+            "TORCH_MUSA_FSDP2_DISABLE_OVERLAP=0 selects overlap level 4, which "
+            "is disabled; use TORCH_MUSA_FSDP2_OVERLAP_LEVEL=0, 1, 2, or 3"
         )
-        return FSDP2OverlapLevel.OVERLAP_HSDP_COMM
 
     if (
         os.environ.get(_TORCH_MUSA_FSDP2_COMM_TYPE_ENV, "0") != "0"
@@ -383,31 +391,26 @@ def _get_fsdp2_overlap_level() -> FSDP2OverlapLevel:
     return FSDP2OverlapLevel.NO_OVERLAP
 
 
-_FSDP2_OVERLAP_LEVEL = _get_fsdp2_overlap_level()
-
-
 def comm_context_lazy_init(self, device: torch.device):
     """setup streams will be used for communication and computation according
     to the different FSDP2 overlap strategy
     """
     self.device_handle = _get_device_handle(device.type)
 
-    # pylint: disable=W0602
-    global _FSDP2_OVERLAP_LEVEL
-
     current_stream = torch.musa.current_stream()
+    overlap_level = _get_fsdp2_overlap_level()
 
     # Setting the all-gather/reduce-scatter streams to be higher priority
     # can help avoid some issues where their copies in/out are delayed and
     # block computation (this is different from high-pri MCCL streams)
     high_priority = -1
 
-    if _FSDP2_OVERLAP_LEVEL == FSDP2OverlapLevel.NO_OVERLAP:
+    if overlap_level == FSDP2OverlapLevel.NO_OVERLAP:
         self.all_gather_copy_in_stream = current_stream
         self.all_gather_stream = current_stream
         self.reduce_scatter_stream = current_stream
         self.all_reduce_stream = current_stream
-    elif _FSDP2_OVERLAP_LEVEL == FSDP2OverlapLevel.OVERLAP_FSDP_COMM_ONLY:
+    elif overlap_level == FSDP2OverlapLevel.OVERLAP_FSDP_COMM_ONLY:
         self.all_gather_copy_in_stream = current_stream
         self.all_gather_stream = torch.musa.Stream(priority=high_priority)
 
@@ -416,33 +419,34 @@ def comm_context_lazy_init(self, device: torch.device):
         # runs synchronous.
         self.reduce_scatter_stream = self.all_gather_stream
         self.all_reduce_stream = current_stream
-    elif (
-        _FSDP2_OVERLAP_LEVEL
-        == FSDP2OverlapLevel.OVERLAP_FSDP_COMM_COPY_IN_WITH_COPY_OUT
-    ):
+    elif overlap_level == FSDP2OverlapLevel.OVERLAP_FSDP_COMM_COPY_IN_WITH_COPY_OUT:
         self.all_gather_copy_in_stream = torch.musa.Stream(priority=high_priority)
         self.all_gather_stream = self.all_gather_copy_in_stream
         self.reduce_scatter_stream = self.all_gather_stream
         self.all_reduce_stream = current_stream
-    elif _FSDP2_OVERLAP_LEVEL == FSDP2OverlapLevel.OVERLAP_FSDP_COMM_COPY_IN_WITH_COMM:
+    elif overlap_level == FSDP2OverlapLevel.OVERLAP_FSDP_COMM_COPY_IN_WITH_COMM:
         self.all_gather_copy_in_stream = torch.musa.Stream(priority=high_priority)
         self.all_gather_stream = torch.musa.Stream(priority=high_priority)
         self.reduce_scatter_stream = self.all_gather_stream
         self.all_reduce_stream = current_stream
-    elif _FSDP2_OVERLAP_LEVEL == FSDP2OverlapLevel.OVERLAP_HSDP_COMM:
-        # This is the default settings of PyTorch FSDP2
+    elif overlap_level == FSDP2OverlapLevel.OVERLAP_HSDP_COMM:
+        # This is the default settings of PyTorch FSDP2, Level 4 is currently
+        # disabled in _get_fsdp2_overlap_level() since communication overlap
+        # in this mode may hang.
         self.all_gather_copy_in_stream = torch.musa.Stream(priority=high_priority)
         self.all_gather_stream = torch.musa.Stream(priority=high_priority)
         self.reduce_scatter_stream = torch.musa.Stream(priority=high_priority)
         self.all_reduce_stream = torch.musa.Stream()
     else:
-        raise RuntimeError(f"Unexcepted fsdp2_overlap_level: {_FSDP2_OVERLAP_LEVEL}")
+        raise RuntimeError(f"Unexcepted fsdp2_overlap_level: {overlap_level}")
 
     # All-gather/reduce-scatter states keep references to collective
     # tensors produced in one stream and used in another and accompanying
     # MUSA events for synchronization
     self.all_gather_state: Optional[AllGatherState] = None
-    self.reduce_scatter_state: Optional[ReduceScatterState] = None
+    self._last_post_reduce_events: dict[torch.musa.Stream, torch.musa.Event] = {}
+    self.reduce_scatter_states: list[ReduceScatterState] = []
+    self.reduce_scatter_max_input_buffers: int = 1
     # Post-forward order for explicit backward prefetching
     self.post_forward_order: List[FSDPParamGroup] = []  # will cause ref cycles
 

@@ -29,6 +29,7 @@ _torch_musa_non_c_binding_in_graph_functions = dict.fromkeys(
         "torch.musa.get_device_name",
         "torch.musa.get_device_properties",
         "torch.musa.get_gencode_flags",
+        "torch.musa._is_compiled",
         "torch.musa.is_available",
         "torch.musa.is_bf16_supported",
         "torch.musa.is_initialized",

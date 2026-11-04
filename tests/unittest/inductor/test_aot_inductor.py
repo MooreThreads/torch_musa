@@ -6,6 +6,7 @@ import itertools
 import os
 import sys
 import tempfile
+import zipfile
 import pytest
 import types
 import unittest
@@ -71,15 +72,13 @@ def check_model(
     example_inputs,
     options=None,
     dynamic_shapes=None,
-    disable_constraint_solver=False,
     atol=None,
     rtol=None,
 ):
     with torch.no_grad(), config.patch(
         {
-            # "abi_compatible": self.abi_compatible,
-            # "allow_stack_allocation": self.allow_stack_allocation,
-            # "use_minimal_arrayref_interface": self.use_minimal_arrayref_interface,
+            "aot_inductor.allow_stack_allocation": self.allow_stack_allocation,
+            "aot_inductor.use_minimal_arrayref_interface": self.use_minimal_arrayref_interface,
         }
     ):
         torch.manual_seed(0)
@@ -96,7 +95,6 @@ def check_model(
             example_inputs,
             options,
             dynamic_shapes,
-            disable_constraint_solver,
         )
 
     self.assertEqual(actual, expected, atol=atol, rtol=rtol)
@@ -111,8 +109,8 @@ def check_model_with_multiple_inputs(
 ):
     with torch.no_grad(), config.patch(
         {
-            # "abi_compatible": self.abi_compatible,
-            # "allow_stack_allocation": self.allow_stack_allocation,
+            "aot_inductor.allow_stack_allocation": self.allow_stack_allocation,
+            "aot_inductor.use_minimal_arrayref_interface": self.use_minimal_arrayref_interface,
         }
     ):
         torch.manual_seed(0)
@@ -136,14 +134,28 @@ def code_check_count(
     target_str: str,
     target_count: int,
 ):
-    so_path = torch._export.aot_compile(model, example_inputs)
-    with open(os.path.splitext(so_path)[0] + ".cpp") as cpp:
-        src_code = cpp.read()
-        FileCheck().check_count(
-            target_str,
-            target_count,
-            exactly=True,
-        ).run(src_code)
+    ep = torch.export.export(model, example_inputs, strict=False)
+    with tempfile.NamedTemporaryFile(suffix=".pt2") as package_file:
+        package_path = torch._inductor.aoti_compile_and_package(
+            ep, package_path=package_file.name
+        )
+        with zipfile.ZipFile(package_path) as package:
+            wrapper_cpp = next(
+                name for name in package.namelist() if name.endswith(".wrapper.cpp")
+            )
+            src_code = package.read(wrapper_cpp).decode()
+    FileCheck().check_count(
+        target_str,
+        target_count,
+        exactly=True,
+    ).run(src_code)
+
+
+class TestAOTIRunnerUtil(TestCase):
+    def test_musa_bench_default(self):
+        from torch._inductor.runtime import benchmarking
+
+        self.assertEqual(benchmarking._get_default_gpu_device_type(), "musa")
 
 
 class AOTInductorTestsTemplate:
@@ -204,19 +216,18 @@ class AOTInductorTestsTemplate:
             with config.patch({}):
                 self.check_model(Model(self.device), example_inputs)
 
-    # TODO: current triton has issue with layernorm
-    # @pytest.mark.skipif(not _HAS_TRITON, reason="Triton not enabled")
-    # def test_seq(self):
-    #     layernorm = torch.nn.LayerNorm(16)
-    #     net = torch.nn.Sequential(
-    #         layernorm,
-    #         torch.nn.ReLU(),
-    #         layernorm,
-    #         torch.nn.ReLU(),
-    #     )
+    @pytest.mark.skipif(not _HAS_TRITON, reason="Triton not enabled")
+    def test_seq(self):
+        layernorm = torch.nn.LayerNorm(16)
+        net = torch.nn.Sequential(
+            layernorm,
+            torch.nn.ReLU(),
+            layernorm,
+            torch.nn.ReLU(),
+        )
 
-    #     example_inputs = (torch.randn(16, device=self.device),)
-    #     self.check_model(net.eval(), example_inputs, atol=1e-3, rtol=1e-3)
+        example_inputs = (torch.randn(16, device=self.device),)
+        self.check_model(net.eval(), example_inputs, atol=1e-3, rtol=1e-3)
 
     @pytest.mark.skipif(not _HAS_TRITON, reason="Triton not enabled")
     def test_addmm(self):
@@ -238,43 +249,43 @@ class AOTInductorTestsTemplate:
         example_inputs = (a,)
         self.check_model(model, example_inputs)
 
-    # @pytest.mark.skipif(not _HAS_TRITON, reason="Triton not enabled")
-    # def test_addmm_multiple_dynamic(self):
-    #     class Model(torch.nn.Module):
-    #         def __init__(self, n, k, device):
-    #             super().__init__()
-    #             self.weight = torch.randn(n, k, device=device)
-    #             self.bias = torch.randn(n, device=device)
+    @pytest.mark.skipif(not _HAS_TRITON, reason="Triton not enabled")
+    def test_addmm_multiple_dynamic(self):
+        class Model(torch.nn.Module):
+            def __init__(self, n, k, device):
+                super().__init__()
+                self.weight = torch.randn(n, k, device=device)
+                self.bias = torch.randn(n, device=device)
 
-    #         def forward(self, a):
-    #             return torch.nn.functional.linear(a, self.weight, self.bias)
+            def forward(self, a):
+                return torch.nn.functional.linear(a, self.weight, self.bias)
 
-    #     M = 8
-    #     N = 6
-    #     K = 16
-    #     model = Model(N, K, self.device)
-    #     batch = 2
-    #     a = torch.randn(batch, M, K, device=self.device)
-    #     dim0_a = Dim("dim0_a", min=1, max=2048)
-    #     dynamic_shapes = {"a": {0: dim0_a}}
-    #     list_example_inputs = [(a,)]
-    #     batch = 2048
-    #     list_example_inputs.append(
-    #         (torch.randn(batch, M, K, device=self.device),),
-    #     )
-    #     batch = 128
-    #     list_example_inputs.append(
-    #         (torch.randn(batch, M, K, device=self.device),),
-    #     )
-    #     self.check_model_with_multiple_inputs(
-    #         model,
-    #         list_example_inputs,
-    #         dynamic_shapes=dynamic_shapes,
-    #         options={
-    #             "max_autotune": True,
-    #             "max_autotune_gemm_backends": "TRITON",
-    #         },
-    #     )
+        M = 8
+        N = 6
+        K = 16
+        model = Model(N, K, self.device)
+        batch = 2
+        a = torch.randn(batch, M, K, device=self.device)
+        dim0_a = Dim("dim0_a", min=1, max=2048)
+        dynamic_shapes = {"a": {0: dim0_a}}
+        list_example_inputs = [(a,)]
+        batch = 2048
+        list_example_inputs.append(
+            (torch.randn(batch, M, K, device=self.device),),
+        )
+        batch = 128
+        list_example_inputs.append(
+            (torch.randn(batch, M, K, device=self.device),),
+        )
+        self.check_model_with_multiple_inputs(
+            model,
+            list_example_inputs,
+            dynamic_shapes=dynamic_shapes,
+            options={
+                "max_autotune": True,
+                "max_autotune_gemm_backends": "TRITON",
+            },
+        )
 
     @skipIfNoFBGEMM
     def test_quanatized_int8_linear(self):
@@ -369,109 +380,110 @@ class AOTInductorTestsTemplate:
                 model, example_inputs, "triton_poi_fused_sin_0 = loadKernel(", 1
             )
 
-    # @pytest.mark.skipif(not _HAS_TRITON, reason="Triton not enabled")
-    # def test_consecutive_compiles(self):
-    #     """Test that compilation behaves correctly with cache hits"""
+    @pytest.mark.skipif(not _HAS_TRITON, reason="Triton not enabled")
+    def test_consecutive_compiles(self):
+        """Test that compilation behaves correctly with cache hits"""
 
-    #     class TestModule(torch.nn.Module):
-    #         def __init__(self) -> None:
-    #             super().__init__()
+        class TestModule(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
 
-    #         def forward(self, x):
-    #             return x + 1
+            def forward(self, x):
+                return x + 1
 
-    #     mod = TestModule()
-    #     inp = torch.rand(1)
-    #     mod(inp)
-    #     mod2 = torch.fx.symbolic_trace(mod, concrete_args=[inp])
-    #     so = torch._export.aot_compile(mod2, (inp,))
-    #     assert so is not None
-    #     # compile the 2nd time with cache hit
-    #     so = torch._export.aot_compile(mod2, (inp,))
-    #     assert so is not None
+        mod = TestModule()
+        inp = torch.rand(1, device=self.device)
+        package_path = AOTIRunnerUtil.compile(mod, (inp,))
+        assert package_path is not None
+        # compile the 2nd time with cache hit
+        package_path = AOTIRunnerUtil.compile(mod, (inp,))
+        assert package_path is not None
 
-    # @pytest.mark.skipif(not _HAS_TRITON, reason="Triton not enabled")
-    # def test_empty_graph(self):
-    #     class Model(torch.nn.Module):
-    #         def __init__(self) -> None:
-    #             super().__init__()
+    @pytest.mark.skipif(not _HAS_TRITON, reason="Triton not enabled")
+    def test_empty_graph(self):
+        class Model(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
 
-    #         def forward(self, x):
-    #             return x
+            def forward(self, x):
+                return x
 
-    #     example_inputs = (torch.randn(8, 4, 4, device=self.device),)
-    #     self.check_model(Model(), example_inputs)
+        example_inputs = (torch.randn(8, 4, 4, device=self.device),)
+        self.check_model(Model(), example_inputs)
 
-    # @pytest.mark.skipif(not _HAS_TRITON, reason="Triton not enabled")
-    # def test_convolution(self):
-    #     class Model(torch.nn.Module):
-    #         def __init__(self) -> None:
-    #             super().__init__()
+    @pytest.mark.skipif(not _HAS_TRITON, reason="Triton not enabled")
+    def test_convolution(self):
+        class Model(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
 
-    #         def forward(self, x, w, b):
-    #             return torch.ops.aten.convolution(x, w, b, [4], [0], [1], True, [0], 1)
+            def forward(self, x, w, b):
+                return torch.ops.aten.convolution(x, w, b, [4], [0], [1], True, [0], 1)
 
-    #     example_inputs = (
-    #         torch.randn([2, 32, 90], device=self.device),
-    #         torch.randn([32, 16, 8], device=self.device),
-    #         torch.randn([16], device=self.device),
-    #     )
-    #     with config.patch(
-    #         {
-    #             "max_autotune": True,
-    #             "max_autotune_gemm_backends": "Triton",
-    #         }
-    #     ):
-    #         self.check_model(Model(), example_inputs)
+        example_inputs = (
+            torch.randn([2, 32, 90], device=self.device),
+            torch.randn([32, 16, 8], device=self.device),
+            torch.randn([16], device=self.device),
+        )
+        with config.patch(
+            {
+                "max_autotune": True,
+                "max_autotune_gemm_backends": "Triton",
+            }
+        ):
+            self.check_model(Model(), example_inputs)
 
-    # @pytest.mark.skipif(not _HAS_TRITON, reason="Triton not enabled")
-    # def test_fqn(self):
-    #     class NestedChild(torch.nn.Module):
-    #         def __init__(self) -> None:
-    #             super().__init__()
-    #             self.nestedchild3buffer = torch.nn.Buffer(torch.ones(2, 3) * 3)
+    @pytest.mark.skipif(not _HAS_TRITON, reason="Triton not enabled")
+    def test_fqn(self):
+        class NestedChild(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.nestedchild3buffer = torch.nn.Buffer(torch.ones(2, 3) * 3)
 
-    #         def forward(self, x):
-    #             return x / self.nestedchild3buffer
+            def forward(self, x):
+                return x / self.nestedchild3buffer
 
-    #     class Child1(torch.nn.Module):
-    #         def __init__(self) -> None:
-    #             super().__init__()
-    #             self.nested = NestedChild()
-    #             self.register_parameter(
-    #                 "child1param", torch.nn.Parameter(torch.ones(2, 3))
-    #             )
+        class Child1(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.nested = NestedChild()
+                self.register_parameter(
+                    "child1param", torch.nn.Parameter(torch.ones(2, 3))
+                )
 
-    #         def forward(self, x):
-    #             x = self.nested(x)
-    #             return x + self.child1param
+            def forward(self, x):
+                x = self.nested(x)
+                return x + self.child1param
 
-    #     class Child2(torch.nn.Module):
-    #         def __init__(self) -> None:
-    #             super().__init__()
-    #             self.child2buffer = torch.nn.Buffer(torch.ones(2, 3) * 2)
+        class Child2(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.child2buffer = torch.nn.Buffer(torch.ones(2, 3) * 2)
 
-    #         def forward(self, x):
-    #             return x - self.child2buffer
+            def forward(self, x):
+                return x - self.child2buffer
 
-    #     class MyModule(torch.nn.Module):
-    #         def __init__(self) -> None:
-    #             super().__init__()
-    #             self.foo = Child1()
-    #             self.bar = Child2()
-    #             self.register_parameter(
-    #                 "rootparam", torch.nn.Parameter(torch.ones(2, 3) * 4)
-    #             )
+        class MyModule(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.foo = Child1()
+                self.bar = Child2()
+                self.register_parameter(
+                    "rootparam", torch.nn.Parameter(torch.ones(2, 3) * 4)
+                )
 
-    #         def forward(self, x):
-    #             x = x * self.rootparam
-    #             x = self.foo(x)
-    #             x = self.bar(x)
-    #             return x
+            def forward(self, x):
+                x = x * self.rootparam
+                x = self.foo(x)
+                x = self.bar(x)
+                return x
 
-    #     orig_eager = MyModule()
-
-    #     self.check_model(MyModule(), (torch.randn(2, 3, device=self.device),), atol=1e-3, rtol=1e-3)
+        self.check_model(
+            MyModule(),
+            (torch.randn(2, 3, device=self.device),),
+            atol=1e-3,
+            rtol=1e-3,
+        )
 
     @pytest.mark.skipif(not _HAS_TRITON, reason="Triton not enabled")
     def test_model_modified_weights(self):
@@ -530,27 +542,9 @@ class AOTInductorTestsTemplate:
 common_utils.instantiate_parametrized_tests(AOTInductorTestsTemplate)
 
 
-class AOTITestCase(TestCase):
-    pass
-
-
 def fail_musa(is_skip=False):
     return TestFailure(
-        ("abi_compatible_musa", "non_abi_compatible_musa"),
-        is_skip=is_skip,
-    )
-
-
-def fail_abi_compatible_musa(is_skip=False):
-    return TestFailure(
         ("abi_compatible_musa",),
-        is_skip=is_skip,
-    )
-
-
-def fail_non_abi_compatible_musa(is_skip=False):
-    return TestFailure(
-        ("non_abi_compatible_musa",),
         is_skip=is_skip,
     )
 
@@ -562,9 +556,8 @@ MUSA_TEST_FAILURES = {
 }
 
 
-class AOTInductorTestABICompatibleMusa(AOTITestCase):
+class AOTInductorTestABICompatibleMusa(TestCase):
     device = "musa"
-    abi_compatible = True
     check_model = check_model
     check_model_with_multiple_inputs = check_model_with_multiple_inputs
     code_check_count = code_check_count
@@ -576,24 +569,6 @@ copy_tests(
     AOTInductorTestsTemplate,
     AOTInductorTestABICompatibleMusa,
     "abi_compatible_musa",
-    MUSA_TEST_FAILURES,
-)
-
-
-class AOTInductorTestNonABICompatibleMusa(AOTITestCase):
-    device = "musa"
-    abi_compatible = False
-    check_model = check_model
-    check_model_with_multiple_inputs = check_model_with_multiple_inputs
-    code_check_count = code_check_count
-    allow_stack_allocation = False
-    use_minimal_arrayref_interface = False
-
-
-copy_tests(
-    AOTInductorTestsTemplate,
-    AOTInductorTestNonABICompatibleMusa,
-    "non_abi_compatible_musa",
     MUSA_TEST_FAILURES,
 )
 
@@ -871,6 +846,92 @@ class AOTInductorDynamicShapeTest(TestCase):
                 torch.testing.assert_close(
                     out.float(), ref.float(), atol=2e-2, rtol=2e-2
                 )
+
+    @pytest.mark.skipif(not _HAS_TRITON, reason="Triton not enabled")
+    def test_aoti_dynamic_symbolic_slice(self):
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return x[: x.shape[0] // 2]
+
+        example = torch.randn(6, 8, device="musa")
+        batch_base = Dim("batch_base", min=1, max=8)
+        batch = 2 * batch_base
+        exported = torch.export.export(
+            Model(),
+            (example,),
+            dynamic_shapes={"x": {0: batch}},
+            strict=False,
+        )
+        runtime_input = torch.randn(10, 8, device="musa")
+        expected = runtime_input[: runtime_input.shape[0] // 2]
+
+        with tempfile.NamedTemporaryFile(suffix=".pt2") as package_file:
+            package_path = torch._inductor.aoti_compile_and_package(
+                exported,
+                package_path=package_file.name,
+            )
+            compiled = torch._inductor.aoti_load_package(package_path)
+            actual = compiled(runtime_input)
+
+        self.assertEqual(actual.shape, expected.shape)
+        torch.testing.assert_close(actual, expected)
+
+
+class AOTInductorMusaRuntimeTest(TestCase):
+    @pytest.mark.skipif(not _HAS_TRITON, reason="Triton not enabled")
+    @testing.skip_if_not_multiple_musa_device
+    def test_aoti_musa_device_copy(self):
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return x, x.to("musa:1")
+
+        x = torch.randn(10, device="musa:0")
+        model = Model()
+        exported = torch.export.export(model, (x,), strict=False)
+
+        with tempfile.NamedTemporaryFile(suffix=".pt2") as package_file:
+            package_path = torch._inductor.aoti_compile_and_package(
+                exported,
+                package_path=package_file.name,
+            )
+            compiled = torch._inductor.aoti_load_package(
+                package_path,
+                device_index=0,
+            )
+            actual = compiled(x)
+
+        expected = model(x)
+        self.assertEqual(actual, expected)
+        self.assertEqual(actual[0].device, torch.device("musa:0"))
+        self.assertEqual(actual[1].device, torch.device("musa:1"))
+
+    @pytest.mark.skipif(not _HAS_TRITON, reason="Triton not enabled")
+    def test_aoti_user_stream(self):
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return x + 1
+
+        x = torch.randn(16, 16, device="musa")
+        expected = x + 1
+        exported = torch.export.export(Model(), (x,), strict=False)
+
+        with tempfile.NamedTemporaryFile(suffix=".pt2") as package_file:
+            package_path = torch._inductor.aoti_compile_and_package(
+                exported,
+                package_path=package_file.name,
+            )
+            compiled = torch._inductor.aoti_load_package(package_path)
+
+            user_stream = torch.musa.Stream()
+            with torch.musa.stream(user_stream):
+                actual = compiled(x)
+                self.assertEqual(
+                    torch.musa.current_stream().musa_stream,
+                    user_stream.musa_stream,
+                )
+            user_stream.synchronize()
+
+        self.assertEqual(actual, expected)
 
 
 if __name__ == "__main__":

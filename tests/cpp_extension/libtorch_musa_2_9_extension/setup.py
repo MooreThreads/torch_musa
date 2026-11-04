@@ -38,6 +38,8 @@ CSRC_PORTING_REPLACEMENTS = (
     ("cudaSuccess", "musaSuccess"),
     ("Accessor_cuda", "Accessor_musa"),
     ("mv_tensor_accessor_cuda", "mv_tensor_accessor_musa"),
+    ("cudaStream_t", "musaStream_t"),
+    ("aoti_torch_get_current_cuda_stream", "aoti_torch_get_current_musa_stream"),
 )
 
 
@@ -95,6 +97,7 @@ def get_extension():
             "-O2",
             "-DTORCH_TARGET_VERSION=0x0209000000000000",
             "-DSTABLE_LIB_NAME=libtorch_agn_2_9",
+            "-DUSE_MUSA",
         ],
     }
     if not IS_WINDOWS:

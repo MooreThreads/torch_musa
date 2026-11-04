@@ -1,6 +1,6 @@
 #include <ATen/ExpandUtils.h>
-#include <ATen/NamedTensorUtils.h>
 #include <ATen/native/BinaryOps.h>
+#include <ATen/native/TensorCompare.h>
 #include <torch/library.h>
 
 #ifndef AT_PER_OPERATOR_HEADERS
@@ -63,6 +63,20 @@ void ClampScalarCall(
   }
   const auto t_type = self.scalar_type();
   switch (t_type) {
+    case ScalarType::Double: {
+      auto iter = TensorIterator::unary_op(out, self);
+      if (has_min && has_max) {
+        at::native::clamp_scalar_stub(
+            iter.device_type(), iter, min.value(), max.value());
+      } else if (has_min) {
+        at::native::clamp_min_scalar_stub(
+            iter.device_type(), iter, min.value());
+      } else {
+        at::native::clamp_max_scalar_stub(
+            iter.device_type(), iter, max.value());
+      }
+      break;
+    }
     case ScalarType::Float:
     case ScalarType::Half:
     case ScalarType::BFloat16: {

@@ -1,25 +1,8 @@
 diff --git a/torch/_prims/rng_prims.py b/torch/_prims/rng_prims.py
-index a37f58c6a4e..a42a4e0125f 100644
+index 544e48f..9e25e16 100644
 --- a/torch/_prims/rng_prims.py
 +++ b/torch/_prims/rng_prims.py
-@@ -140,6 +140,7 @@ def get_device(args, kwargs):
-             device = torch.device(device)
-         return device.type
- 
-+    custom_backend_name = torch._C._get_privateuse1_backend_name()
-     devices = {arg.device.type for arg in args if isinstance(arg, torch.Tensor)}
-     if any(dev == "cuda" for dev in devices):
-         return "cuda"
-@@ -149,6 +150,8 @@ def get_device(args, kwargs):
-         return "hpu"
-     elif any(dev == "cpu" for dev in devices):
-         return "cpu"
-+    elif any(dev == custom_backend_name for dev in devices):
-+        return custom_backend_name
-     return None
- 
- 
-@@ -185,6 +188,11 @@ def register_run_and_save_rng_state_op():
+@@ -178,6 +178,11 @@ def register_run_and_save_rng_state_op():
      def impl_xpu(op, *args, **kwargs):
          return torch.xpu.get_rng_state(), op(*args, **kwargs)
  
@@ -31,7 +14,7 @@ index a37f58c6a4e..a42a4e0125f 100644
      @run_and_save_rng_state.py_impl(DispatchKey.BackendSelect)
      def impl_backend_select(op, *args, **kwargs):
          impl_map = {
-@@ -192,6 +200,7 @@ def register_run_and_save_rng_state_op():
+@@ -185,6 +190,7 @@ def register_run_and_save_rng_state_op():
              "cpu": impl_cpu,
              "hpu": impl_hpu,
              "xpu": impl_xpu,
@@ -39,7 +22,7 @@ index a37f58c6a4e..a42a4e0125f 100644
          }
          device = get_device(args, kwargs)
          if device not in impl_map:
-@@ -267,6 +276,15 @@ def register_run_with_rng_state_op():
+@@ -259,6 +265,15 @@ def register_run_with_rng_state_op():
          torch.xpu.set_rng_state(current_state)
          return out
  
@@ -55,7 +38,7 @@ index a37f58c6a4e..a42a4e0125f 100644
      @run_with_rng_state.py_impl(ProxyTorchDispatchMode)
      def impl_proxy_dispatch_mode(mode, rng_state, op, *args, **kwargs):
          # TODO: you don't need to do this, the dispatch here already disabled
-@@ -287,6 +305,7 @@ def register_run_with_rng_state_op():
+@@ -279,6 +294,7 @@ def register_run_with_rng_state_op():
              "cpu": impl_cpu,
              "hpu": impl_hpu,
              "xpu": impl_xpu,

@@ -12,9 +12,10 @@ from torch.distributed.fsdp._fully_shard._fsdp_collectives import (
     foreach_reduce,
 )
 from torch.distributed.fsdp._fully_shard._fsdp_common import (
-    compiled_autograd_enabled,
+    DDPMeshInfo,
+    FSDPMeshInfo,
     TrainingState,
-    _get_dim0_padded_size
+    _get_dim0_padded_size,
 )
 from torch.distributed.fsdp._fully_shard._fsdp_param import FSDPParam
 from torch.distributed.fsdp._fully_shard._fsdp_param_group import (
@@ -31,10 +32,13 @@ logger = logging.getLogger("torch.distributed.fsdp.fully_shard")
 
 
 def post_backward(self, *unused: Any):
-    # This method should be idempotent and safe to call even when this
-    # FSDP parameter group was not used in backward (should be a no-op)
-    if not compiled_autograd_enabled():
-        logger.debug("%s", self._with_fqn("FSDP::post_backward"))
+    # This follows the PyTorch 2.13 post-backward lifecycle for every FSDP
+    # parameter group. Lazy HSDP only changes whether the HSDP all-reduce is
+    # issued here or deferred to the root callback.
+    is_partial_group_backward = (
+        len(self.modules) > 1
+        and self._training_state == TrainingState.FORWARD
+    )
     self._training_state = TrainingState.POST_BACKWARD
     with record_function(self._with_fqn("FSDP::post_backward_accumulate")):
         for fsdp_param in self.fsdp_params:
@@ -63,31 +67,53 @@ def post_backward(self, *unused: Any):
                 fsdp_params_with_grad.append(fsdp_param)
                 unsharded_grads.append(fsdp_param.unsharded_grad_data)
                 fsdp_param.unsharded_param.grad = None
+            elif (
+                self.reduce_scatter_unused_params
+                and fsdp_param.unsharded_param.requires_grad
+            ):
+                fsdp_params_with_grad.append(fsdp_param)
+                unsharded_grads.append(fsdp_param.unsharded_zero_grad_data)
         if self.reshard_after_backward:
             self.reshard()
+
+    max_input_buffers = self.comm_ctx.reduce_scatter_max_input_buffers
+    states = self.comm_ctx.reduce_scatter_states
+    if (
+        self._param_group_index == self._num_param_groups - 1
+        and len(states) >= max_input_buffers
+    ):
+        with record_function(f"FSDP::post_backward_rs_wait ({self._module_fqn})"):
+            while len(states) >= max_input_buffers:
+                oldest = states.pop(0)
+                if oldest.event is not None:
+                    self.device_handle.current_stream().wait_event(oldest.event)
+                del oldest
     if len(fsdp_params_with_grad) == 0:
         return
+
     with record_function(self._with_fqn("FSDP::post_backward_reduce")):
-        if (
-            self.comm_ctx.reduce_scatter_state is not None
-            and self.comm_ctx.reduce_scatter_state.event is not None
-        ):
-            self.device_handle.current_stream().wait_event(
-                self.comm_ctx.reduce_scatter_state.event
-            )
-        self.comm_ctx.reduce_scatter_state = None
-        all_reduce_pg = self._all_reduce_process_group if self._is_hsdp else None
-        all_reduce_stream: torch.cuda.Stream
+        all_reduce_pg = (
+            self._all_reduce_process_group
+            if isinstance(self.mesh_info, DDPMeshInfo)
+            else None
+        )
+        all_reduce_stream: torch.musa.Stream
         if all_reduce_pg is None and self._all_reduce_hook_stream is not None:
             # this means the native HSDP is not enabled,
             # but user may want to have a custom HSDP setup
-            assert self._all_reduce_hook is not None, (
-                "all reduce hook stream is specified but hook itself is missing."
-            )
+            if self._all_reduce_hook is None:
+                raise AssertionError(
+                    "all reduce hook stream is specified but hook itself is missing."
+                )
             all_reduce_stream = self._all_reduce_hook_stream
         else:
             all_reduce_stream = self.comm_ctx.all_reduce_stream
-        if getattr(self, 'lazy_hsdp_allreduce', False):
+        lazy_hsdp_allreduce = (
+            getattr(self, 'lazy_hsdp_allreduce', False)
+            and all_reduce_pg is not None
+            and self.all_reduce_grads
+        )
+        if lazy_hsdp_allreduce:
             logger.debug("Setting up lazy HSDP all-reduce in post_backward")
             self.all_reduce_stream = all_reduce_stream
             self.fsdp_params_with_grad = fsdp_params_with_grad
@@ -103,6 +129,7 @@ def post_backward(self, *unused: Any):
         (
             reduce_scatter_input,
             reduce_scatter_event,
+            post_reduce_stream,
             self._post_reduce_event,
             all_reduce_input,
             all_reduce_event,
@@ -110,26 +137,38 @@ def post_backward(self, *unused: Any):
         ) = foreach_reduce(
             fsdp_params_with_grad,
             unsharded_grads,
-            self._reduce_scatter_process_group,
+            (
+                self._reduce_scatter_process_group
+                if isinstance(self.mesh_info, FSDPMeshInfo)
+                else None
+            ),
             self.comm_ctx.reduce_scatter_stream,
             self._reduce_scatter_comm,
             self._orig_dtype,
             self._reduce_dtype,
             self.device,
             self.gradient_divide_factor,
-            self._all_reduce_process_group if self._is_hsdp else None,
+            all_reduce_pg,
             all_reduce_stream,
             all_reduce_grads,
             self._partial_reduce_output,
             self._all_reduce_hook,
             self.force_sum_reduction_for_comms,
         )
-        self.comm_ctx.reduce_scatter_state = ReduceScatterState(
-            reduce_scatter_input, reduce_scatter_event
+        self.comm_ctx._last_post_reduce_events[post_reduce_stream] = (
+            self._post_reduce_event
         )
+        self.comm_ctx.reduce_scatter_states.append(
+            ReduceScatterState(reduce_scatter_input, reduce_scatter_event)
+        )
+        if is_partial_group_backward:
+            self.device_handle.current_stream().wait_event(self._post_reduce_event)
         if all_reduce_input is not None and not getattr(self, 'lazy_hsdp_allreduce', False):
             if self.device.type != "cpu":
-                assert all_reduce_event is not None
+                if all_reduce_event is None:
+                    raise AssertionError(
+                        "Expected all_reduce_event to be set for non-CPU device"
+                    )
             self._all_reduce_state = AllReduceState(
                 all_reduce_input, all_reduce_event
             )
@@ -188,7 +227,7 @@ def post_backward_final_lazy_hsdp_update_grads(self):
     """
     self._partial_reduce_output = None
 
-    lazy_hsdp_update_grads(
+    post_reduce_event = lazy_hsdp_update_grads(
         self.fsdp_params_with_grad,
         self._reduce_scatter_process_group,
         self.comm_ctx.reduce_scatter_stream,
@@ -200,6 +239,11 @@ def post_backward_final_lazy_hsdp_update_grads(self):
         self._all_reduce_hook,
         self.padded_unsharded_sizes,
     )
+    self._post_reduce_event = post_reduce_event
+    if post_reduce_event is not None:
+        self.comm_ctx._last_post_reduce_events[self.all_reduce_stream] = (
+            post_reduce_event
+        )
 
 
 def _apply_fsdp_param_group_patch():

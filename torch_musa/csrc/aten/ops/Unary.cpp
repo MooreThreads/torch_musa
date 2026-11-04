@@ -128,19 +128,19 @@ GEN_IMPL(, UnaryAtan, AtanMeta, AtanImpl)
 
 #define GEN_FUNCTION(OP, FUNC)                          \
   Tensor OP(const Tensor& self) {                       \
-    FunctionalTensorIterator iter;                      \
+    MusaTensorIterator iter;                            \
     FUNC(iter, Tensor(), self, __func__);               \
     return iter.output();                               \
   }                                                     \
                                                         \
   Tensor& OP##_(Tensor& self) {                         \
-    InplaceTensorIterator iter;                         \
+    MusaTensorIterator iter;                            \
     FUNC(iter, self, self, __func__);                   \
     return self;                                        \
   }                                                     \
                                                         \
   Tensor& OP##Out(const Tensor& self, Tensor& output) { \
-    OutTensorIterator iter;                             \
+    MusaTensorIterator iter;                            \
     FUNC(iter, output, self, __func__);                 \
     return output;                                      \
   }

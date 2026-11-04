@@ -39,7 +39,9 @@ std::tuple<Tensor, Tensor, Tensor, Tensor, Tensor> _FlashAttnForward(
     std::optional<int64_t> window_size_left,
     std::optional<int64_t> window_size_right,
     const std::optional<Tensor>& _seqused_k,
-    const std::optional<Tensor>& _alibi_slopes) {
+    const std::optional<Tensor>& _alibi_slopes,
+    const std::optional<Tensor>& _block_table,
+    std::optional<int64_t> num_splits) {
 #if defined(MUDNN_VERSION) && (MUDNN_VERSION >= 3000)
   const auto softmax_scale = sdp::calculate_scale(query, scale).expect_float();
 
@@ -56,6 +58,12 @@ std::tuple<Tensor, Tensor, Tensor, Tensor, Tensor> _FlashAttnForward(
       cumulative_sequence_length_q.has_value() ==
           cumulative_sequence_length_k.has_value(),
       "cumulative_sequence_length_q and cumulative_sequence_length_k must be both set or both not set");
+  TORCH_CHECK(
+      !_block_table.has_value(),
+      "_flash_attention_forward doesn't support block_table for MUSA backend");
+  TORCH_CHECK(
+      !num_splits.has_value(),
+      "_flash_attention_forward doesn't support num_splits for MUSA backend");
 
   Tensor output, logsumexp, rng_state, debug_attn_mask;
   if (cumulative_sequence_length_q.has_value()) {

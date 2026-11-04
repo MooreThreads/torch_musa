@@ -1,8 +1,8 @@
 diff --git a/torch/_inductor/graph.py b/torch/_inductor/graph.py
-index d10dc7a..11b6da1 100644
+index b6ee1f4..502efbf 100644
 --- a/torch/_inductor/graph.py
 +++ b/torch/_inductor/graph.py
-@@ -1335,10 +1335,10 @@ class GraphLowering(torch.fx.Interpreter):
+@@ -1568,10 +1568,10 @@ class GraphLowering(torch.fx.Interpreter):
              return self.add_tensor_constant(value, target)
  
          with no_dispatch():
@@ -15,14 +15,14 @@ index d10dc7a..11b6da1 100644
 +            #         value=value.item(), dtype=value.dtype, device=value.device
 +            #     )
              if self.can_inline_constant(value):
-                 log.debug("Inlining constant: %s ", str(target))
+                 log.debug("Inlining constant: %s ", target)
                  # tensor lowering has constant inlining logic
-@@ -2134,7 +2134,7 @@ class GraphLowering(torch.fx.Interpreter):
+@@ -2462,7 +2462,7 @@ class GraphLowering(torch.fx.Interpreter):
+         autotune block (see `DeferredCpuTritonCallWrapper` in
+         `cpp_wrapper_cpu.py`).
          """
-         For GPU, Triton kernels are autotuned and stored as cubin files
-         """
--        if any(device in self.device_types for device in ["cuda", "xpu"]):
-+        if any(device in self.device_types for device in ["cuda", "xpu", "musa"]):
- 
-             def extract_real_inputs() -> list[Union[int, float, torch.Tensor]]:
-                 def materialize(
+-        has_gpu = any(device in self.device_types for device in ["cuda", "xpu"])
++        has_gpu = any(device in self.device_types for device in ["cuda", "xpu", "musa"])
+         # CPU + user-defined Triton + AOTI + autotune block disabled is the
+         # only CPU configuration that needs the two-pass dance: the autotune
+         # block normally populates CpuTritonKernelCache, but here it doesn't run.

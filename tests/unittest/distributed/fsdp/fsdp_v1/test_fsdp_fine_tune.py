@@ -9,12 +9,14 @@ from typing import (
     Union,
     List,
 )
+import copy
 import itertools
 import pytest
 import torch
 from torch import nn
 
 import torch.distributed as dist
+from torch.distributed._composable import replicate
 from torch.distributed._tensor import DeviceMesh
 from torch.distributed.device_mesh import init_device_mesh
 from torch.distributed.fsdp.wrap import _Policy
@@ -172,28 +174,34 @@ class TestFSDPFineTune(FSDPTest):
     @skip_if_lt_x_gpu(NUM_DEVICES_FOR_TESTING)
     def test_fsdp_full_sharding_training(self):
         for sharding_strategy in supported_full_sharding_strategies():
+            device_mesh = self._device_mesh_plan(
+                hybrid_shard=sharding_strategy in HYBRID_SHARD_STRATEGY
+            )
             for fsdp_config in supported_fsdp_configs():
                 setattr(fsdp_config, "sharding_strategy", sharding_strategy)
-                self._test_fsdp_basic_training(fsdp_config)
+                setattr(fsdp_config, "device_mesh", device_mesh)
+                self._test_fsdp_basic_training(fsdp_config, device_mesh)
 
     @skip_if_lt_x_gpu(NUM_DEVICES_FOR_TESTING)
     def test_fsdp_hybrid_sharding_training(self):
         for sharding_strategy in supported_hybrid_sharding_strategies():
+            device_mesh = self._device_mesh_plan(
+                hybrid_shard=sharding_strategy in HYBRID_SHARD_STRATEGY
+            )
             for fsdp_config in supported_fsdp_configs():
                 setattr(fsdp_config, "sharding_strategy", sharding_strategy)
-                self._test_fsdp_basic_training(fsdp_config)
+                setattr(fsdp_config, "device_mesh", device_mesh)
+                self._test_fsdp_basic_training(fsdp_config, device_mesh)
 
-    def _test_fsdp_basic_training(self, fsdp_config):
-        device_mesh = self._device_mesh_plan(
-            hybrid_shard=fsdp_config.sharding_strategy in HYBRID_SHARD_STRATEGY
-        )
-        setattr(fsdp_config, "device_mesh", device_mesh)
+    def _test_fsdp_basic_training(self, fsdp_config, device_mesh):
         if self.rank == 0:
             print(fsdp_config)
 
         device = torch_musa.current_device()
-
+        torch.manual_seed(42)
         model = self._init_seq_module().to(device)
+        ref_model = copy.deepcopy(model)
+        replicate(ref_model, device_ids=[self.rank])
         fsdp_model = FSDP(
             module=model,
             sharding_strategy=fsdp_config.sharding_strategy,
@@ -209,11 +217,33 @@ class TestFSDPFineTune(FSDPTest):
         )
 
         scaler = ShardedGradScaler(growth_interval=1)
+        ref_optimizer = torch.optim.Adam(ref_model.parameters(), lr=0.001)
         optimizer = torch.optim.Adam(fsdp_model.parameters(), lr=0.001)
+        torch.manual_seed(42 + self.rank + 1)
         inp = torch.randn((2, 6), device=device)
         for _ in range(5):
-            out = fsdp_model(inp)
-            loss = out.sum()
+            ref_optimizer.zero_grad()
+            optimizer.zero_grad()
+            if fsdp_config.mixed_precision is None:
+                ref_loss = ref_model(inp).sum()
+                loss = fsdp_model(inp).sum()
+            else:
+                with torch.autocast(
+                    device_type="musa",
+                    dtype=fsdp_config.mixed_precision.param_dtype,
+                ):
+                    ref_loss = ref_model(inp).sum()
+                    loss = fsdp_model(inp).sum()
+            torch.testing.assert_close(
+                ref_loss,
+                loss,
+                rtol=1e-1,
+                atol=1e-1,
+                check_dtype=False,
+            )
+
+            ref_loss.backward()
+            ref_optimizer.step()
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()

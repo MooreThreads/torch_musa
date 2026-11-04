@@ -1,6 +1,6 @@
 #include <ATen/Config.h>
-#include <ATen/NamedTensorUtils.h>
 #include <ATen/WrapDimUtilsMulti.h>
+#include <ATen/native/ReduceOps.h>
 #include <ATen/native/ReduceOpsUtils.h>
 #include <ATen/native/musa/ScanKernels.h>
 #include <ATen/ops/max.h>
@@ -177,8 +177,6 @@ void ResizeReduction(
   } else {
     check_inplace(self, output_shape, output_opts);
   }
-
-  namedinference::propagate_names_for_reduction(output, self, dims, keepdim);
 }
 
 static c10::MaybeOwned<Tensor> ContiguousOutArg(const Tensor& tensor) {
@@ -253,8 +251,6 @@ Tensor Reduction(
   auto shape = at::meta::get_reduction_shape(self, dims_vec, keepdim);
 
   Tensor output = at::empty(shape, self.options().dtype(out_dtype));
-  namedinference::propagate_names_for_reduction(
-      output, self, dims_vec, keepdim);
 
   if (self.numel() == 0) {
     if (m == ::musa::dnn::Reduce::Mode::AND) {
@@ -352,33 +348,6 @@ Tensor& MeanOut(
     c10::optional<ScalarType> dtype,
     Tensor& output) {
   ReduceCall(output, self, dim.value(), ::musa::dnn::Reduce::Mode::MEAN);
-  return output;
-}
-
-Tensor MeanNamesDim(
-    const Tensor& self,
-    DimnameList dim,
-    bool keepdim,
-    c10::optional<ScalarType> dtype) {
-  return Reduction(
-      self,
-      dimnames_to_positions(self, dim),
-      keepdim,
-      dtype,
-      ::musa::dnn::Reduce::Mode::MEAN);
-}
-
-Tensor& MeanNamesDimOut(
-    const Tensor& self,
-    DimnameList dim,
-    bool keepdim,
-    c10::optional<ScalarType> dtype,
-    Tensor& output) {
-  ReduceCall(
-      output,
-      self,
-      dimnames_to_positions(self, dim),
-      ::musa::dnn::Reduce::Mode::MEAN);
   return output;
 }
 
@@ -536,9 +505,9 @@ void NormDtypeMeta(
     Tensor& out) {
   const auto self_dtype = self.scalar_type();
   TORCH_CHECK(
-      self_dtype == ScalarType::Float || self_dtype == ScalarType::Half ||
-          self_dtype == ScalarType::BFloat16,
-      "Norm only supports Float/Half/BFloat16 input, but now it is ",
+      self_dtype == ScalarType::Float || self_dtype == ScalarType::Double ||
+          self_dtype == ScalarType::Half || self_dtype == ScalarType::BFloat16,
+      "Norm only supports Float/Double/Half/BFloat16 input, but now it is ",
       self_dtype);
 
   const auto out_dtype = musa_get_result_or_self_value_dtype(self, out, dtype);
@@ -549,9 +518,24 @@ void NormDtypeImpl(
     const Tensor& self,
     const std::optional<Scalar>& p,
     IntArrayRef dim,
+    bool keepdim,
     Tensor& out) {
   const auto inp_dtype = self.scalar_type();
   const auto out_dtype = out.scalar_type();
+
+  if (inp_dtype == ScalarType::Double && out_dtype == ScalarType::Double) {
+    auto iter = at::native::make_reduction(
+        "norm",
+        out,
+        self,
+        dim,
+        keepdim,
+        ScalarType::Double,
+        ScalarType::Double);
+    const auto ord = p.value_or(Scalar(2));
+    native::norm_stub(iter.device_type(), iter, ord);
+    return;
+  }
 
   // special case for type promotion in mixed precision, improves computational
   // efficiency.
@@ -580,7 +564,7 @@ Tensor& NormDtypeOut(
     ScalarType dtype,
     Tensor& out) {
   NormDtypeMeta(self, p, dim, keepdim, dtype, out);
-  NormDtypeImpl(self, p, dim, out);
+  NormDtypeImpl(self, p, dim, keepdim, out);
   return out;
 }
 
@@ -592,7 +576,7 @@ Tensor NormScalarOptDimDtype(
     ScalarType dtype) {
   Tensor out;
   NormDtypeMeta(self, p, dim, keepdim, dtype, out);
-  NormDtypeImpl(self, p, dim, out);
+  NormDtypeImpl(self, p, dim, keepdim, out);
   return out;
 }
 
@@ -603,7 +587,7 @@ Tensor& NormOut(
     bool keepdim,
     Tensor& out) {
   NormDtypeMeta(self, p, dim, keepdim, std::nullopt, out);
-  NormDtypeImpl(self, p, dim, out);
+  NormDtypeImpl(self, p, dim, keepdim, out);
   return out;
 }
 
@@ -614,7 +598,7 @@ Tensor Norm(
     bool keepdim) {
   Tensor out;
   NormDtypeMeta(self, p, dim, keepdim, std::nullopt, out);
-  NormDtypeImpl(self, p, dim, out);
+  NormDtypeImpl(self, p, dim, keepdim, out);
   return out;
 }
 
@@ -805,10 +789,6 @@ std::tuple<Tensor, Tensor> ReductionIndices(
   auto out_dtype = self.scalar_type();
   Tensor output = at::empty(shape, self.options().dtype(out_dtype));
   Tensor indices = at::empty(shape, self.options().dtype(kLong));
-  namedinference::propagate_names_for_reduction(
-      output, self, dims_vec, keepdim);
-  namedinference::propagate_names_for_reduction(
-      indices, self, dims_vec, keepdim);
 
   if (C10_UNLIKELY(self.numel() == 0)) {
     TORCH_CHECK(
@@ -889,33 +869,6 @@ std::tuple<Tensor&, Tensor&> MaxDimMax(
     return std::tuple<Tensor&, Tensor&>(output, indices);
   }
   ReduceIndicesCall(output, indices, self, dim, ::musa::dnn::Reduce::Mode::MAX);
-  return std::tuple<Tensor&, Tensor&>(output, indices);
-}
-
-std::tuple<Tensor, Tensor> MaxNamesDim(
-    const Tensor& self,
-    Dimname dim,
-    bool keepdim) {
-  return ReductionIndices(
-      self,
-      dimname_to_position(self, dim),
-      keepdim,
-      ::musa::dnn::Reduce::Mode::MAX);
-}
-
-std::tuple<Tensor&, Tensor&> MaxNamesDimMax(
-    const Tensor& self,
-    Dimname dim,
-    bool keepdim,
-    Tensor& output,
-    Tensor& indices) {
-  UNUSED(keepdim);
-  ReduceIndicesCall(
-      output,
-      indices,
-      self,
-      dimname_to_position(self, dim),
-      ::musa::dnn::Reduce::Mode::MAX);
   return std::tuple<Tensor&, Tensor&>(output, indices);
 }
 
@@ -1071,32 +1024,6 @@ std::tuple<Tensor&, Tensor&> MinDimMin(
     Tensor& indices) {
   UNUSED(keepdim);
   ReduceIndicesCall(output, indices, self, dim, ::musa::dnn::Reduce::Mode::MIN);
-  return std::tuple<Tensor&, Tensor&>(output, indices);
-}
-
-std::tuple<Tensor, Tensor> MinNamesDim(
-    const Tensor& self,
-    Dimname dim,
-    bool keepdim) {
-  return ReductionIndices(
-      self,
-      dimname_to_position(self, dim),
-      keepdim,
-      ::musa::dnn::Reduce::Mode::MIN);
-}
-
-std::tuple<Tensor&, Tensor&> MinNamesDimMin(
-    const Tensor& self,
-    Dimname dim,
-    bool keepdim,
-    Tensor& output,
-    Tensor& indices) {
-  ReduceIndicesCall(
-      output,
-      indices,
-      self,
-      dimname_to_position(self, dim),
-      ::musa::dnn::Reduce::Mode::MIN);
   return std::tuple<Tensor&, Tensor&>(output, indices);
 }
 

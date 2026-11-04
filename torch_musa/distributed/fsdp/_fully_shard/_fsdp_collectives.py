@@ -6,7 +6,6 @@ import torch.distributed as dist
 from torch.distributed.tensor import DTensor
 
 from torch.distributed.fsdp._fully_shard._fsdp_param import FSDPParam
-from torch.distributed.fsdp._fully_shard._fsdp_common import compiled_autograd_enabled
 from torch.distributed.fsdp._fully_shard._fsdp_collectives import (
     _get_device_handle,
     _get_gradient_divide_factors,
@@ -121,14 +120,15 @@ def lazy_hsdp_update_grads(
                     new_sharded_grad
                 )
                 fsdp_param.sharded_param.grad = new_sharded_dtensor_grad
-            if not compiled_autograd_enabled():
-                for hook in (
-                    getattr(fsdp_param.sharded_param, "_post_accumulate_grad_hooks", {})
-                    or {}
-                ).values():
-                    hook(fsdp_param.sharded_param)
+            for hook in (
+                getattr(fsdp_param.sharded_param, "_post_accumulate_grad_hooks", {})
+                or {}
+            ).values():
+                hook(fsdp_param.sharded_param)
             padded_sharded_numel = padded_unsharded_size.numel() // world_size
             flat_grad_offset += padded_sharded_numel
+        post_reduce_event = post_reduce_stream.record_event()
+    return post_reduce_event
 
 
 def _apply_fsdp_collectives_patch():

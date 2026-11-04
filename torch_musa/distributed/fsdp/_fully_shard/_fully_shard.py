@@ -16,7 +16,7 @@ def set_lazy_hsdp_allreduce(self, lazy_hsdp_allreduce: bool, *, recurse: bool = 
     for module in modules:
         if isinstance(module, FSDPModule):
             state = module._get_fsdp_state()
-            if fsdp_param_group := state._fsdp_param_group:
+            for fsdp_param_group in state._fsdp_param_groups:
                 fsdp_param_group.lazy_hsdp_allreduce = lazy_hsdp_allreduce
 
 def _apply_fully_shard_class_patch():

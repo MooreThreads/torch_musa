@@ -1,6 +1,5 @@
 #include <ATen/Config.h>
 #include <ATen/ExpandUtils.h>
-#include <ATen/NamedTensorUtils.h>
 #include <ATen/native/Activation.h>
 #include <ATen/native/BinaryOps.h>
 #ifndef AT_PER_OPERATOR_HEADERS
@@ -299,6 +298,13 @@ void BinaryCall(
   } else {
     other_ = other_tmp;
   }
+
+  if (m == BINARY_MODE::MAX && self_.scalar_type() == ScalarType::Double) {
+    auto iter = TensorIterator::binary_op(output, self_, other_);
+    at::native::maximum_stub(iter.device_type(), iter);
+    return;
+  }
+
   // TODO(kang.chen): mudnn not support int, cast to float temporarily.
   bool is_trans = false;
   ScalarType out_dtype = at::ScalarType::Long;
@@ -392,16 +398,6 @@ Tensor BinarycommonDtype(
     BINARY_MODE m) {
   Device device = is_musa(self) ? self.device() : other.device();
   c10::musa::MUSAGuard device_guard(device);
-  if ((self.scalar_type() == ScalarType::Bool &&
-       other.scalar_type() == ScalarType::Bool) ||
-      (self.scalar_type() == ScalarType::Double &&
-       other.scalar_type() == ScalarType::Double)) {
-    if (m == BINARY_MODE::MUL) {
-      return at::mul(self.cpu(), other.cpu()).to(device);
-    } else if (m == BINARY_MODE::TRUEDIV) {
-      return at::div(self.cpu(), other.cpu()).to(device);
-    }
-  }
   ScalarType common_dtype = at::result_type(self, other);
   at::native::alpha_check(common_dtype, alpha_scalar);
   Tensor common_self =

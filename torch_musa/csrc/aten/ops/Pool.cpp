@@ -1,5 +1,4 @@
 #include <ATen/Config.h>
-#include <ATen/NamedTensorUtils.h>
 #include <ATen/NativeFunctions.h>
 #include <ATen/native/Pool.h>
 
@@ -32,13 +31,42 @@ Tensor AdaptiveAvgPool3DBackwardMUSA(
 
 struct PoolParams {
   // [T, H, W] for 3d and [H, W] for 2d
-  int k[3];
-  int d[3];
-  int pad[3];
-  int dil[3];
-  PoolingMode mode;
+  int k[3] = {};
+  int d[3] = {};
+  int pad[3] = {};
+  int dil[3] = {};
+  PoolingMode mode = PoolingMode::MAXPOOL;
   c10::optional<int64_t> divisor_override;
 };
+
+bool HasSpatialInfo(PoolingMode mode) {
+  return mode == PoolingMode::MAXPOOL ||
+      mode == PoolingMode::AVGPOOL_COUNT_PAD ||
+      mode == PoolingMode::AVGPOOL_COUNT_WITHOUT_PAD;
+}
+
+void ConfigurePooling(::musa::dnn::Pooling& pool, const PoolParams& p) {
+  if (!HasSpatialInfo(p.mode)) {
+    SetPooling(pool, p.mode);
+  } else if (p.divisor_override.has_value()) {
+    SetPooling(
+        pool,
+        p.mode,
+        {p.k[0], p.k[1]},
+        {p.pad[0], p.pad[1]},
+        {p.d[0], p.d[1]},
+        {p.dil[0], p.dil[1]},
+        at::native::safe_downcast<int, int64_t>(p.divisor_override.value()));
+  } else {
+    SetPooling(
+        pool,
+        p.mode,
+        {p.k[0], p.k[1]},
+        {p.pad[0], p.pad[1]},
+        {p.d[0], p.d[1]},
+        {p.dil[0], p.dil[1]});
+  }
+}
 
 void PoolCall(
     const Tensor& input,
@@ -57,24 +85,7 @@ void PoolCall(
   }
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Pooling pool;
-  if (p.divisor_override.has_value()) {
-    SetPooling(
-        pool,
-        p.mode,
-        {p.k[0], p.k[1]},
-        {p.pad[0], p.pad[1]},
-        {p.d[0], p.d[1]},
-        {p.dil[0], p.dil[1]},
-        at::native::safe_downcast<int, int64_t>(p.divisor_override.value()));
-  } else {
-    SetPooling(
-        pool,
-        p.mode,
-        {p.k[0], p.k[1]},
-        {p.pad[0], p.pad[1]},
-        {p.d[0], p.d[1]},
-        {p.dil[0], p.dil[1]});
-  }
+  ConfigurePooling(pool, p);
   CHECK_MUDNN_STATUS(pool.Run(h, out, in, inds), "Run");
 }
 
@@ -99,24 +110,7 @@ void PoolCallBwd(
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Pooling pool;
-  if (p.divisor_override.has_value()) {
-    SetPooling(
-        pool,
-        p.mode,
-        {p.k[0], p.k[1]},
-        {p.pad[0], p.pad[1]},
-        {p.d[0], p.d[1]},
-        {p.dil[0], p.dil[1]},
-        at::native::safe_downcast<int, int64_t>(p.divisor_override.value()));
-  } else {
-    SetPooling(
-        pool,
-        p.mode,
-        {p.k[0], p.k[1]},
-        {p.pad[0], p.pad[1]},
-        {p.d[0], p.d[1]},
-        {p.dil[0], p.dil[1]});
-  }
+  ConfigurePooling(pool, p);
   CHECK_MUDNN_STATUS(pool.RunBwd(h, out, in, inds), "Run");
 }
 
@@ -353,7 +347,6 @@ void MaxPool2dInternal(
   auto options = contiguous_input.options()
                      .dtype(contiguous_input.scalar_type())
                      .memory_format(memory_format);
-  DimnameList maybe_names = input.has_names() ? input.names() : DimnameList{};
   if (nbatch == 0) {
     output = at::empty(
         {nbatch, n_input_plane, output_height, output_width}, options);
@@ -379,12 +372,6 @@ void MaxPool2dInternal(
       *indices = at::empty(
           {nbatch, n_input_plane, output_height, output_width},
           options.dtype(kLong));
-    }
-  }
-  if (!maybe_names.empty()) {
-    namedinference::propagate_names(output, maybe_names);
-    if (indices != nullptr) {
-      namedinference::propagate_names(*indices, maybe_names);
     }
   }
   PoolCall(contiguous_input, p, output, indices);
@@ -417,14 +404,10 @@ void MaxPool2dInternalBwd(
   const auto memory_format = input.suggest_memory_format();
   auto options =
       input.options().dtype(input.scalar_type()).memory_format(memory_format);
-  DimnameList maybe_names = input.has_names() ? input.names() : DimnameList{};
   if (add_batch_dimension) {
     grad_input = at::empty({1, n_input_plane, inH, inW}, options);
   } else {
     grad_input = at::empty({nbatch, n_input_plane, inH, inW}, options);
-  }
-  if (!maybe_names.empty()) {
-    namedinference::propagate_names(grad_input, maybe_names);
   }
   PoolCallBwd(contiguous_grad_output, p, grad_input, &indices);
   if (add_batch_dimension) {

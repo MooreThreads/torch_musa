@@ -28,6 +28,14 @@ class MUSADeviceOpOverrides(DeviceOpOverrides):
     def device_guard(self, device_idx):
         return f"torch.musa._DeviceGuard({device_idx})"
 
+    def current_stream(self):
+        return "torch.musa.current_stream()"
+
+    def stream_handle(self, stream_name: str) -> str:
+        # torch.musa.Stream exposes the raw handle as ``musa_stream``.  The
+        # generic Inductor implementation uses CUDA's ``native_handle``.
+        return f"{stream_name}.musa_stream"
+
     def cpp_device_guard(self) -> str:
         return "c10::musa::MUSAGuard"
 
@@ -75,7 +83,8 @@ class MUSADeviceOpOverrides(DeviceOpOverrides):
                     std::string filePath,
                     const std::string &funcName,
                     uint32_t sharedMemBytes,
-                    const std::optional<std::string> &mubinDir = std::nullopt) {
+                    const std::optional<std::string> &mubinDir = std::nullopt,
+                    std::vector<MUmodule>* loaded_modules = nullptr) {
                 if (mubinDir) {
                     std::filesystem::path p1{*mubinDir};
                     std::filesystem::path p2{filePath};
@@ -85,6 +94,9 @@ class MUSADeviceOpOverrides(DeviceOpOverrides):
                 MUmodule mod;
                 MUfunction func;
                 MUSA_DRIVER_CHECK(muModuleLoad(&mod, filePath.c_str()));
+                if (loaded_modules) {
+                    loaded_modules->push_back(mod);
+                }
                 MUSA_DRIVER_CHECK(muModuleGetFunction(&func, mod, funcName.c_str()));
                 if (sharedMemBytes > 0) {
                     MUSA_DRIVER_CHECK(muFuncSetAttribute(
@@ -96,10 +108,17 @@ class MUSADeviceOpOverrides(DeviceOpOverrides):
                 return func;
             }
 
-            static inline MUfunction loadKernel(const void* start, const std::string &funcName, uint32_t sharedMemBytes) {
+            static inline MUfunction loadKernel(
+                    const void* start,
+                    const std::string &funcName,
+                    uint32_t sharedMemBytes,
+                    std::vector<MUmodule>* loaded_modules = nullptr) {
                 MUmodule mod;
                 MUfunction func;
                 MUSA_DRIVER_CHECK(muModuleLoadData(&mod, start));
+                if (loaded_modules) {
+                    loaded_modules->push_back(mod);
+                }
                 MUSA_DRIVER_CHECK(muModuleGetFunction(&func, mod, funcName.c_str()));
                 if (sharedMemBytes > 0) {
                     MUSA_DRIVER_CHECK(muFuncSetAttribute(
@@ -249,7 +268,10 @@ class MUSADeviceOpOverrides(DeviceOpOverrides):
         prefix = f"{prefix}_" if prefix else ""
         var_name = f"{prefix}scratch_{idx}"
         if workspace.size > 0:
-            size_array = f"int64_t {var_name}_size[] = {{{workspace.size}}};"
+            size_expr = (
+                f"static_cast<int64_t>({workspace.size}) * grid_0 * grid_1 * grid_2"
+            )
+            size_array = f"int64_t {var_name}_size[] = {{{size_expr}}};"
             stride_array = f"int64_t {var_name}_stride[] = {{1}};"
             device_type = "cached_torch_device_type_privateuse1"
             device_idx = "device_idx_"

@@ -1,11 +1,11 @@
 diff --git a/torch/profiler/profiler.py b/torch/profiler/profiler.py
-index e0052c104f2..73cc2e6 100644
+index ea6fbf2..5c5ba71 100644
 --- a/torch/profiler/profiler.py
 +++ b/torch/profiler/profiler.py
-@@ -226,6 +226,13 @@ class _KinetoProfile:
-             )
+@@ -334,6 +334,13 @@ class _KinetoProfile:
+             _mon.prepare_trace_window()
          self.profiler._prepare_trace()
-
+ 
 +        try:
 +            torch.musa.update_musa_graph_with_profile()
 +        except AttributeError:

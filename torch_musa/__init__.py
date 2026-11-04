@@ -22,18 +22,19 @@ def _autoload():
 
 
 import torch
+from torch._functorch._aot_autograd.utils import register_graphsafe_rng_device_type
 
-TORCH_MIN_VERSION = Version("2.11.0")
+TORCH_MIN_VERSION = Version("2.13.0")
 TORCH_VERSION = Version(torch.__version__).base_version
 if Version(TORCH_VERSION) < TORCH_MIN_VERSION:
     raise RuntimeError(
-        "torch version must not be less than v2.11.0 when using torch_musa,",
+        "torch version must not be less than v2.13.0 when using torch_musa,",
         " but now torch version is " + torch.__version__,
     )
 
-if "2.11.0" not in torch.__version__:
+if "2.13.0" not in torch.__version__:
     warnings.warn(
-        "torch version should be v2.11.0 when using torch_musa, but now torch version is "
+        "torch version should be v2.13.0 when using torch_musa, but now torch version is "
         + torch.__version__,
         UserWarning,
     )
@@ -41,6 +42,7 @@ if "2.11.0" not in torch.__version__:
 _tensor_classes: Set[Type] = set()
 
 torch.utils.rename_privateuse1_backend("musa")
+register_graphsafe_rng_device_type(torch._C._get_privateuse1_backend_name())
 
 try:
     import torch_musa._MUSAC
@@ -54,7 +56,7 @@ from .core.random import align_rng_to_nv_gpu  # noqa: E402
 
 align_rng_to_nv_gpu()
 
-torch.__setattr__("musa", sys.modules[__name__])
+torch._register_device_module("musa", sys.modules[__name__])
 
 setattr(
     torch._C._profiler.ProfilerActivity,
@@ -74,6 +76,7 @@ from .core.device import (
     set_device,
     current_device,
     is_available,
+    _is_compiled,
     device_count,
     synchronize,
     get_device_name,
@@ -143,8 +146,8 @@ def __getattr__(name):
     state in the forward pass and replay it in the backward recompute, so a value stuck
     at `False` silently downgrades `preserve_rng_state=True` to CPU-RNG-only: every
     stochastic op inside a checkpointed region redraws, and the gradient is wrong with
-    no error and no warning.  `torch.musa` is this module (see `torch.__setattr__`
-    above), which is why the flag has to be live here and not only in the submodule.
+    no error and no warning.  `torch.musa` is this module (see `torch._register_device_module`),
+    which is why the flag has to be live here and not only in the submodule.
     """
     if name == "_initialized":
         return _lazy_init_mod._initialized

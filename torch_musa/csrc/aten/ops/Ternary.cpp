@@ -1,5 +1,4 @@
 #include <ATen/ExpandUtils.h>
-#include <ATen/NamedTensorUtils.h>
 #include <ATen/native/BinaryOps.h>
 #include <c10/util/ArrayRef.h>
 #include <torch/library.h>
@@ -164,7 +163,7 @@ Tensor& WhereSelfOut(
         proxy_cond->scalar_type());
   }
 
-  OutTensorIterator iter;
+  MusaTensorIterator iter;
   iter.add_output(out);
   iter.add_input(*proxy_cond);
   iter.add_input(*proxy_self);

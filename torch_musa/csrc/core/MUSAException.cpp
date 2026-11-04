@@ -42,9 +42,10 @@ void c10_musa_check_implementation(
         "Device-side assertions were explicitly omitted for this error check; the error probably arose while initializing the DSA handlers.");
   }
 #endif
-
-  TORCH_CHECK(false, check_message);
-  return;
+  throw c10::AcceleratorError(
+      {.function = function_name, .file = filename, .line = line_number},
+      err,
+      std::move(check_message));
 }
 
 } // namespace musa
