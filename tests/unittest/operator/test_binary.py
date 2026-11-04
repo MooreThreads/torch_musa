@@ -85,17 +85,17 @@ def test_binary(input_data, dtype, other_dtype, func):
     function(input_data, dtype, other_dtype, func)
 
 
-compare_funcs = [
-    torch.eq,
-    torch.ne,
-    torch.ge,
-    torch.gt,
-    torch.le,
-    torch.lt
-]
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("input_data", input_datas)
+def test_maximum_double(input_data):
+    function(input_data, torch.float64, torch.float64, torch.maximum)
+
+
+compare_funcs = [torch.eq, torch.ne, torch.ge, torch.gt, torch.le, torch.lt]
 
 truncate_input_data = [-128, -1, 0, 1, 127]
 scalars = [255, 0b11111111, -1, 128, -128, 0b01111111, 127]
+
 
 @pytest.mark.parametrize("input_data", truncate_input_data)
 @pytest.mark.parametrize("scalar", scalars)
@@ -1148,6 +1148,51 @@ def test_boolean_binary_add():
     assert c_x.dtype == torch.bool and c_x.dtype == m_x.dtype
     cmp = testing.BooleanComparator()
     assert cmp(c_x, m_x.cpu())
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("size", [16, 17])
+@pytest.mark.parametrize("scalar", [False, True])
+def test_boolean_binary_mul_scalar(size, scalar):
+    cpu_input = torch.arange(size) % 2 == 0
+    musa_input = cpu_input.musa()
+    cpu_expected = cpu_input & scalar
+
+    musa_output = torch.mul(musa_input, scalar)
+    assert musa_output.dtype == torch.bool
+    assert torch.equal(cpu_expected, musa_output.cpu())
+
+    musa_output = torch.mul(scalar, musa_input)
+    assert torch.equal(cpu_expected, musa_output.cpu())
+
+    musa_output = torch.empty_like(musa_input)
+    torch.mul(musa_input, scalar, out=musa_output)
+    assert torch.equal(cpu_expected, musa_output.cpu())
+
+    musa_input.mul_(scalar)
+    assert torch.equal(cpu_expected, musa_input.cpu())
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("size", [16, 17])
+def test_boolean_binary_mul_tensor(size):
+    cpu_input = torch.arange(size) % 2 == 0
+    cpu_other = torch.arange(size) % 3 == 0
+    musa_input = cpu_input.musa()
+    musa_other = cpu_other.musa()
+
+    cpu_expected = torch.mul(cpu_input, cpu_other)
+    musa_input = cpu_input.musa()
+    musa_output = torch.mul(musa_input, musa_other)
+    assert musa_output.dtype == torch.bool
+    assert torch.equal(cpu_expected, musa_output.cpu())
+
+    musa_output = torch.empty_like(musa_input)
+    torch.mul(musa_input, musa_other, out=musa_output)
+    assert torch.equal(cpu_expected, musa_output.cpu())
+
+    musa_input.mul_(musa_other)
+    assert torch.equal(cpu_expected, musa_input.cpu())
 
 
 @testing.test_on_nonzero_card_if_multiple_musa_device(1)

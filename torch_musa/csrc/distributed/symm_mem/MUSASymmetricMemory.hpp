@@ -3,6 +3,7 @@
 #include <ATen/ATen.h>
 #include <torch/csrc/distributed/c10d/Store.hpp>
 #include <torch/csrc/distributed/c10d/symm_mem/SymmetricMemory.hpp>
+#include <shared_mutex>
 
 #include "torch_musa/csrc/core/MUSAAllocatorConfig.h"
 #include "torch_musa/csrc/core/driver_api.h"

@@ -134,6 +134,11 @@ def is_available() -> bool:
     return torch_musa._MUSAC._musa_getDeviceCount() > 0
 
 
+def _is_compiled() -> bool:
+    r"""Return true if compile with MUSA support."""
+    return hasattr(torch_musa._MUSAC, "_musa_getDeviceCount")
+
+
 def synchronize(device: _device_t = None) -> None:
     """Waits for all kernels in all streams on a MUSA device to complete."""
     _lazy_init()
@@ -165,8 +170,8 @@ def register_musa_hook():
 
 
 def get_arch_list() -> List[str]:
-    """Return list MUSA architectures this library was compiled for."""
-    if not is_available():
+    r"""Return list MUSA architectures this library was compiled for."""
+    if not _is_compiled():
         return []
     arch_flags = torch_musa._MUSAC._musa_getArchFlags()
     if arch_flags is None:

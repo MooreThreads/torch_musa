@@ -1,8 +1,8 @@
 diff --git a/torch/_dynamo/variables/ctx_manager.py b/torch/_dynamo/variables/ctx_manager.py
-index 7ced6bd665b..57797df6963 100644
+index 3405d36..3c87839 100644
 --- a/torch/_dynamo/variables/ctx_manager.py
 +++ b/torch/_dynamo/variables/ctx_manager.py
-@@ -932,10 +932,18 @@ class AutocastModeVariable(ContextWrappingVariable):
+@@ -1071,10 +1071,18 @@ class AutocastModeVariable(ContextWrappingVariable):
          args: Sequence[Any],
          kwargs: dict[str, Any],
      ) -> "AutocastModeVariable":
@@ -13,15 +13,15 @@ index 7ced6bd665b..57797df6963 100644
 +            custom_autocast = getattr(custom_backend_mod.amp, "autocast", None)
 +            if custom_autocast is not None:
 +                custom_autocast_list.append(custom_autocast)
-         assert func in [
+         if func not in [
              torch.amp.autocast_mode.autocast,
              torch.cuda.amp.autocast,
              torch.cpu.amp.autocast,
 +            *custom_autocast_list,
-         ]
+         ]:
+             raise AssertionError(f"unexpected autocast function: {func}")
          # device_type : str,
-         # dtype : Optional[_dtype] = None,
-@@ -950,9 +958,13 @@ class AutocastModeVariable(ContextWrappingVariable):
+@@ -1090,9 +1098,13 @@ class AutocastModeVariable(ContextWrappingVariable):
              if key == "device_type" and func in [
                  torch.cuda.amp.autocast,
                  torch.cpu.amp.autocast,

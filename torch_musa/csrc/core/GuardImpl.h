@@ -84,6 +84,11 @@ struct MUSAGuardImpl final : public c10::impl::DeviceGuardImplInterface {
     return old_stream.unwrap();
   }
 
+  void* getStreamNativeHandle(const Stream s) const override {
+    MUSAStream stream{s};
+    return reinterpret_cast<void*>(stream.stream());
+  }
+
   DeviceIndex deviceCount() const noexcept override {
     return device_count();
   }
@@ -96,6 +101,11 @@ struct MUSAGuardImpl final : public c10::impl::DeviceGuardImplInterface {
   void synchronizeStream(const Stream& stream) const override {
     MUSAStream musa_stream(stream);
     musa_stream.synchronize();
+  }
+
+  bool isStreamCapturing(const Stream& stream) const override {
+    MUSAStream musa_stream(stream);
+    return musa_stream.is_capturing();
   }
 
   void createEvent(musaEvent_t* musa_event, const EventFlag flag) const {
@@ -246,6 +256,45 @@ struct MUSAGuardImpl final : public c10::impl::DeviceGuardImplInterface {
     C10_MUSA_CHECK(musaEventElapsedTime(&time_ms, musa_event1, musa_event2));
     C10_MUSA_CHECK(SetDevice(orig_device));
     return static_cast<double>(time_ms);
+  }
+
+  // torch.accelerator.get_device_capability.
+  // The mask mirrors the dtypes MUSA actually accepts on device, verified
+  // against the torch 2.13 contract (torch.empty plus a dtype round trip).
+  // Quantized, bit-packed, sub-byte integer and the fnuz / e8m0 / float4
+  // types are rejected by the MUSA dtype mapping and stay unset.
+  DeviceCapability getDeviceCapability(Device d) const override {
+    TORCH_INTERNAL_ASSERT(d.type() == kMUSA);
+    DeviceCapability cap;
+    cap.capability_data.capability_bits = 0;
+#define SET_CAP(name) cap.capability_data.supported_scalar_types.has_##name = 1
+    SET_CAP(Byte);
+    SET_CAP(Char);
+    SET_CAP(Short);
+    SET_CAP(Int);
+    SET_CAP(Long);
+    SET_CAP(Half);
+    SET_CAP(Float);
+    SET_CAP(Double);
+    SET_CAP(ComplexHalf);
+    SET_CAP(ComplexFloat);
+    SET_CAP(ComplexDouble);
+    SET_CAP(Bool);
+    // Arch-gated the same way as the MCCL feature gates: BFloat16 is native
+    // from 2.2 and FP8 from 3.1. torch.musa.is_bf16_supported() answers
+    // whether bf16 is native at runtime.
+#if defined(MARCH_TYPE) && (MARCH_TYPE >= 220)
+    SET_CAP(BFloat16);
+#endif
+    SET_CAP(UInt16);
+    SET_CAP(UInt32);
+    SET_CAP(UInt64);
+#if defined(MARCH_TYPE) && (MARCH_TYPE >= 310)
+    SET_CAP(Float8_e5m2);
+    SET_CAP(Float8_e4m3fn);
+#endif
+#undef SET_CAP
+    return cap;
   }
 
   // Note: synchronizeDevice can be safely called from any device

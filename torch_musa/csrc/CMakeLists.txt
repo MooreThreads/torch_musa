@@ -213,6 +213,7 @@ file(
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/StepKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/RenormKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/MaxUnpooling.mu
+  ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/MaxMinElementwiseKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/IndexKernel.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/Indexing.mu
   ${GENERATED_PORTING_DIR}/aten/src/ATen/native/musa/TensorCompare.mu
@@ -255,8 +256,12 @@ append_cxx_flag_if_supported("-Wno-unused-parameter" CMAKE_CXX_FLAGS)
 append_cxx_flag_if_supported("-Wno-unused-variable" CMAKE_CXX_FLAGS)
 append_cxx_flag_if_supported("-Wno-sign-compare" CMAKE_CXX_FLAGS)
 append_cxx_flag_if_supported("-w" CMAKE_CXX_FLAGS)
-append_cxx_flag_if_supported("-std=c++17" CMAKE_CXX_FLAGS)
+append_cxx_flag_if_supported("-std=c++20" CMAKE_CXX_FLAGS)
 string(APPEND MUSA_MCC_FLAGS " -U__CUDA__")
+# MUSA 5.3's CCCL port picks its device backend from CCCL_USING_MUSA and the
+# compiler does not predefine it. Without it thrust falls back to
+# thrust/system/cuda, whose error.h hardcodes cudaSuccess.
+string(APPEND MUSA_MCC_FLAGS " -DCCCL_USING_MUSA")
 string(APPEND MUSA_MCC_FLAGS " -mllvm -mtgpu-enable-const-calc")
 string(APPEND MUSA_MCC_FLAGS " -mllvm -mtgpu-if-convert")
 string(APPEND MUSA_MCC_FLAGS " -mllvm -enable-post-misched")
@@ -298,6 +303,28 @@ musa_add_library(
   ${PORTING_CPP_CSRCS}
   ${ATEN_MUSA_CSRCS}
   ${SYMM_MEM_CPP_SRCS})
+
+# CCCL: select the MUSA thrust backend, and give CUB the arches this build offloads
+set(CUB_MUSA_ARCH_LIST "")
+foreach(TORCH_MUSA_ARCH ${TORCH_MUSA_ARCH_LIST})
+  string(REGEX MATCH "[0-9]+" ARCH_INT ${TORCH_MUSA_ARCH})
+  math(EXPR ARCH_VERSION_INT "${ARCH_INT} * 10")
+  if(CUB_MUSA_ARCH_LIST)
+    string(APPEND CUB_MUSA_ARCH_LIST ",")
+  endif()
+  string(APPEND CUB_MUSA_ARCH_LIST "${ARCH_VERSION_INT}")
+endforeach()
+
+target_compile_definitions(
+  ${MUSA_KERNELS_LIB}
+  PUBLIC CCCL_USING_MUSA THRUST_DEVICE_SYSTEM=THRUST_DEVICE_SYSTEM_MUSA
+         CUB_MUSA_ARCH_LIST=${CUB_MUSA_ARCH_LIST})
+
+if(TARGET MUSA::mublasLt)
+  target_link_libraries(${MUSA_KERNELS_LIB} PUBLIC MUSA::mublas MUSA::mublasLt)
+else()
+  target_link_libraries(${MUSA_KERNELS_LIB} PUBLIC MUSA::mublas)
+endif()
 
 if(NOT MUSA_KERNELS_INSTALL_LIB_DIR)
   set(MUSA_KERNELS_INSTALL_LIB_DIR lib)

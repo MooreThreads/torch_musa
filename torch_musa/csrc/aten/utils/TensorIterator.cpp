@@ -1,6 +1,5 @@
 #include "torch_musa/csrc/aten/utils/TensorIterator.h"
 
-#include <ATen/NamedTensorUtils.h>
 #include <ATen/native/Resize.h>
 #include <c10/util/DimVector.h>
 #include <c10/util/Exception.h>
@@ -124,15 +123,6 @@ void MusaTensorIterator::check_set_device(at::Device device) {
       "musa structured kernels don't support multi-device outputs");
 }
 
-void MusaTensorIterator::check_propagate_names(
-    int64_t output_idx,
-    DimnameList names) {
-  if (!names.empty()) {
-    namedinference::propagate_names(
-        original_output_tensor(operands_[output_idx]), names);
-  }
-}
-
 const Tensor& MusaTensorIterator::maybe_get_output(int64_t output_idx) {
   TORCH_INTERNAL_ASSERT_DEBUG_ONLY(output_idx < num_outputs_);
   return original_output_tensor(operands_[output_idx]);
@@ -157,12 +147,10 @@ void MusaTensorIterator::set_output_raw_strided(
     int64_t output_idx,
     IntArrayRef sizes,
     IntArrayRef strides,
-    TensorOptions options,
-    DimnameList names) {
+    TensorOptions options) {
   TORCH_INTERNAL_ASSERT_DEBUG_ONLY(output_idx < num_outputs_);
   check_set_device(options.device());
   _set_output_raw_strided(output_idx, sizes, strides, options);
-  check_propagate_names(output_idx, names);
 }
 
 StrideVector MusaTensorIterator::compatible_stride() const {
@@ -446,8 +434,7 @@ bool MusaTensorIterator::fast_set_up(const TensorIteratorConfig& config) {
             i,
             shape_,
             {},
-            original_options(op).memory_format(MemoryFormat::Contiguous),
-            names_);
+            original_options(op).memory_format(MemoryFormat::Contiguous));
       }
       break;
     }
@@ -461,8 +448,7 @@ bool MusaTensorIterator::fast_set_up(const TensorIteratorConfig& config) {
             i,
             shape_,
             {},
-            original_options(op).memory_format(MemoryFormat::ChannelsLast),
-            names_);
+            original_options(op).memory_format(MemoryFormat::ChannelsLast));
       }
       break;
     }
@@ -476,8 +462,7 @@ bool MusaTensorIterator::fast_set_up(const TensorIteratorConfig& config) {
             i,
             shape_,
             {},
-            original_options(op).memory_format(MemoryFormat::ChannelsLast3d),
-            names_);
+            original_options(op).memory_format(MemoryFormat::ChannelsLast3d));
       }
       break;
     }
@@ -494,11 +479,7 @@ bool MusaTensorIterator::fast_set_up(const TensorIteratorConfig& config) {
           TORCH_INTERNAL_ASSERT(op.is_type_defined(), "no type for operand", i);
         }
         set_output_raw_strided(
-            i,
-            shape_,
-            tensor_base(i_defined).strides(),
-            original_options(op),
-            names_);
+            i, shape_, tensor_base(i_defined).strides(), original_options(op));
       }
       break;
     }
@@ -571,8 +552,6 @@ void MusaTensorIterator::build(TensorIteratorConfig& config) {
 
   compute_mem_overlaps(config);
 
-  compute_names(config);
-
   compute_shape(config);
 
   mark_resize_outputs(config);
@@ -610,47 +589,6 @@ void MusaTensorIterator::cast_outputs() {
       original_t.copy_(op.tensor());
       op.restore_original_tensor();
     }
-  }
-}
-
-void FunctionalTensorIterator::_set_output_raw_strided(
-    int64_t output_idx,
-    IntArrayRef sizes,
-    IntArrayRef strides,
-    TensorOptions options) {
-  auto& op = operands_[output_idx];
-  TORCH_CHECK(
-      !op.tensor_base().defined(),
-      "musa functional structured kernels don't support defined outputs");
-  create_output_raw_strided_no_check(
-      op, sizes, strides, options, common_dtype_for_functional_output());
-}
-
-void InplaceTensorIterator::_set_output_raw_strided(
-    int64_t output_idx,
-    IntArrayRef sizes,
-    IntArrayRef strides,
-    TensorOptions options) {
-  auto& op = operands_[output_idx];
-  TORCH_CHECK(
-      op.is_read_write,
-      "musa inplace structured kernels don't support not readable/writable outputs");
-}
-
-void InplaceTensorIterator::mark_inplace() {
-  for (const auto i : c10::irange(num_outputs_)) {
-    operands_[i].is_read_write = true;
-  }
-}
-
-void OutTensorIterator::_set_output_raw_strided(
-    int64_t output_idx,
-    IntArrayRef sizes,
-    IntArrayRef strides,
-    TensorOptions options) {
-  auto& op = operands_[output_idx];
-  if (op.will_resize) {
-    resize_output_raw_strided_no_check(op, sizes, strides, options);
   }
 }
 

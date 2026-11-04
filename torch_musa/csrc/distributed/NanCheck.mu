@@ -23,7 +23,20 @@ union BytePack16 {
 };
 
 typedef union BytePack16 BytePack;
-#define __trap() __assert_fail("nan detected", __FILE__, __LINE__, __func__)
+// Keep the assert diagnostics while avoiding __assert_fail(), which is a
+// no-op under NDEBUG in the MUSA runtime wrapper.
+#define __trap()                                                 \
+  do {                                                           \
+    printf(                                                      \
+        "[MUSA_KERNEL_ASSERT] %s:%u: %s: Assertion `%s' failed " \
+        "at thread %d.\n",                                       \
+        __FILE__,                                                \
+        __LINE__,                                                \
+        __func__,                                                \
+        "nan detected",                                          \
+        getThreadID());                                          \
+    __musa_exit();                                               \
+  } while (0)
 
 //// Start of templated functions for checking NaNs inside a BytePack
 

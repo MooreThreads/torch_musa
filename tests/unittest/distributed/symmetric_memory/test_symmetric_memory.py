@@ -1,17 +1,21 @@
 """Test the functionality of SymmetricMemory"""
 
 # pylint: disable=C0103
+import os
+from unittest.mock import patch
+
 import pytest
+
 import torch
 import torch.distributed as dist
 from torch.distributed.distributed_c10d import ReduceOp
 import torch.distributed._symmetric_memory as symmetric_memory
 from torch.distributed._symmetric_memory import (
     empty,
-    enable_symm_mem_for_group,
     rendezvous,
 )
 
+from torch_musa.testing import get_musa_arch
 from torch_musa.testing.common_dist import (
     MultiProcessingTest,
     skip_if_lt_x_gpu,
@@ -20,6 +24,9 @@ from torch_musa.testing.common_dist import (
 NUM_DEVICES_FOR_TESTING_SYMM_MEM = 4
 
 
+@pytest.mark.skipif(
+    get_musa_arch() < 31, reason="Skip TestMUSASymmetricMemory on arch<31"
+)
 @skip_if_lt_x_gpu(NUM_DEVICES_FOR_TESTING_SYMM_MEM)
 class TestMUSASymmetricMemory(MultiProcessingTest):
     """Test the functionality of the MUSA symmetric memory backend"""
@@ -37,7 +44,6 @@ class TestMUSASymmetricMemory(MultiProcessingTest):
         torch.musa.set_device(self.rank)
         device = torch.musa.current_device()
         group_name = self._get_default_group_name()
-        enable_symm_mem_for_group(group_name)
         local_tensor = empty(size, dtype=dtype, device=device)
         symm_mem = rendezvous(local_tensor, group_name)
         return local_tensor, symm_mem
@@ -140,7 +146,6 @@ class TestSymmetricMemoryPool(MultiProcessingTest):
         """Test memory pool by checking if handle offset is correctly set."""
         device = torch.musa.current_device()
         group_name = self._get_default_group_name()
-        enable_symm_mem_for_group(group_name)
 
         allocator = symmetric_memory.get_mempool_allocator(device)
         mempool = torch.musa.MemPool(allocator)
@@ -184,7 +189,6 @@ class TestSymmetricMemoryOps(MultiProcessingTest):
     def _test_low_contention_all_gather(self, dtype):
         device = torch.musa.current_device()
         group_name = self._get_default_group_name()
-        enable_symm_mem_for_group(group_name)
 
         numel = 4096
 
@@ -259,7 +263,6 @@ class TestSymmetricMemoryOps(MultiProcessingTest):
     def _test_low_contention_allreduce(self, dtype, reduce_op):
         device = torch.musa.current_device()
         group_name = self._get_default_group_name()
-        enable_symm_mem_for_group(group_name)
 
         numel = 4096
         local_input = torch.randn(numel, dtype=dtype, device=device) + self.rank
@@ -318,7 +321,6 @@ class TestSymmetricMemoryOps(MultiProcessingTest):
     def _test_low_contention_reduce_scatter(self, dtype, reduce_op):
         device = torch.musa.current_device()
         group_name = self._get_default_group_name()
-        enable_symm_mem_for_group(group_name)
 
         output_numel = 4096
         input_numel = 4096 * self.world_size
@@ -356,6 +358,150 @@ class TestSymmetricMemoryOps(MultiProcessingTest):
         output_tensor_2 = torch.ops._c10d_functional.wait_tensor(output_tensor_2)
         self.assertEqual(output_tensor_2, ref_output_tensor_0)
 
+    def test_low_contention_all_gather_v_single(self):
+        """Test variable element counts, graph reuse, and inplace offsets."""
+        device = torch.musa.current_device()
+        group_name = self._get_default_group_name()
+        dtype = torch.float32
+
+        def rank_payload(rank, numel, payload_device):
+            return (
+                torch.arange(numel, dtype=torch.int64, device=payload_device)
+                .add_(rank * 37)
+                .remainder_(251)
+                .to(dtype)
+            )
+
+        recv_count_cases = (
+            [257, 509, 1021, 2039],
+            [2053, 1033, 521, 269],
+        )
+        input_offset = 73
+        max_input_numel = max(max(counts) for counts in recv_count_cases)
+        input_backing = empty(
+            input_offset + max_input_numel, dtype=dtype, device=device
+        )
+
+        # Reuse the same graph with changing per-rank transfer sizes.
+        for recv_counts in recv_count_cases:
+            local_input = input_backing.narrow(0, input_offset, recv_counts[self.rank])
+            local_input.copy_(rank_payload(self.rank, recv_counts[self.rank], device))
+            output = torch.empty(sum(recv_counts), dtype=dtype, device=device)
+            torch.ops.symm_mem.low_contention_all_gather_v_single(
+                output, local_input, recv_counts, group_name
+            )
+            expected = torch.cat(
+                [
+                    rank_payload(rank, numel, device)
+                    for rank, numel in enumerate(recv_counts)
+                ]
+            )
+            self.assertEqual(output, expected)
+
+        # Inplace input uses the rank-dependent prefix offset. Also cover an
+        # output view with a non-zero offset in its symmetric allocation.
+        recv_counts = [263, 521, 1031, 2053]
+        numel_offsets = [0]
+        for numel in recv_counts[:-1]:
+            numel_offsets.append(numel_offsets[-1] + numel)
+        output_offset = 97
+        output_backing = empty(
+            output_offset + sum(recv_counts),
+            dtype=dtype,
+            device=device,
+        )
+        output = output_backing.narrow(0, output_offset, sum(recv_counts))
+        local_input = output.narrow(0, numel_offsets[self.rank], recv_counts[self.rank])
+        local_input.copy_(rank_payload(self.rank, recv_counts[self.rank], device))
+        torch.ops.symm_mem.low_contention_all_gather_v_single(
+            output, local_input, recv_counts, group_name
+        )
+        expected = torch.cat(
+            [
+                rank_payload(rank, numel, device)
+                for rank, numel in enumerate(recv_counts)
+            ]
+        )
+        self.assertEqual(output, expected)
+
+    def test_low_contention_reduce_scatter_modes(self):
+        self.run_subtests(
+            {
+                "reduce_op": ["sum", "avg"],
+                "mode": ["copy", "prezeroed"],
+                "inplace": [False, True],
+            },
+            self._test_low_contention_reduce_scatter_modes,
+        )
+
+    def _test_low_contention_reduce_scatter_modes(self, reduce_op, mode, inplace):
+        device = torch.musa.current_device()
+        group_name = self._get_default_group_name()
+        output_numel = 4096
+        input_numel = output_numel * self.world_size
+
+        # The prezeroed mode requires the caller to zero the receive buffer.
+        env = {
+            "TORCH_MUSA_SYMM_MEM_RS_OUTPUT_PREZEROED": (
+                "1" if mode == "prezeroed" else "0"
+            )
+        }
+        with patch.dict(os.environ, env):
+            for pull_mode in (True,) if inplace else (False, True):
+                input_tensor = (
+                    empty(input_numel, dtype=torch.float32, device=device)
+                    if pull_mode
+                    else torch.empty(input_numel, dtype=torch.float32, device=device)
+                )
+                input_tensor.copy_(
+                    torch.arange(input_numel, device=device, dtype=torch.float32)
+                    .remainder_(97)
+                    .add_(self.rank)
+                )
+                ref_output = torch.empty(
+                    output_numel, dtype=torch.float32, device=device
+                )
+                torch.distributed.reduce_scatter_tensor(
+                    ref_output,
+                    input_tensor,
+                    op=ReduceOp.AVG if reduce_op == "avg" else ReduceOp.SUM,
+                )
+
+                if inplace:
+                    output_tensor = input_tensor.narrow(
+                        0, self.rank * output_numel, output_numel
+                    )
+                elif pull_mode:
+                    output_tensor = torch.empty(
+                        output_numel, dtype=torch.float32, device=device
+                    )
+                else:
+                    output_tensor = empty(
+                        output_numel, dtype=torch.float32, device=device
+                    )
+
+                if not inplace:
+                    output_tensor.fill_(23.0)
+                    if mode == "prezeroed":
+                        output_tensor.zero_()
+
+                torch.ops.symm_mem.low_contention_reduce_scatter(
+                    output_tensor, input_tensor, reduce_op, group_name
+                )
+                self.assertEqual(output_tensor, ref_output)
+
+                if mode == "prezeroed" and not inplace:
+                    # A nonzero buffer makes an unexpected internal memset
+                    # observable: the preexisting value must survive.
+                    output_tensor.fill_(23.0)
+                    torch.ops.symm_mem.low_contention_reduce_scatter(
+                        output_tensor, input_tensor, reduce_op, group_name
+                    )
+                    expected = ref_output + 23.0 / (
+                        self.world_size if reduce_op == "avg" else 1
+                    )
+                    self.assertEqual(output_tensor, expected)
+
 
 @pytest.mark.skipif(torch.musa.device_count() < 1, reason="requires a MUSA device")
 def test_memory_pool_initialization_uses_current_stream():
@@ -375,3 +521,68 @@ def test_memory_pool_initialization_uses_current_stream():
             output[:numel].copy_(source)
             torch.musa.synchronize()
             assert torch.equal(output[:numel], source), f"copy corrupted: {numel=}"
+
+
+@skip_if_lt_x_gpu(NUM_DEVICES_FOR_TESTING_SYMM_MEM)
+class TestSymmetricMemoryOpsNonCurrentDevice(MultiProcessingTest):
+    """Test low-contention collectives on a non-current device."""
+
+    @property
+    def world_size(self) -> int:
+        return NUM_DEVICES_FOR_TESTING_SYMM_MEM // 2
+
+    def _get_default_group_name(self):
+        group = dist.distributed_c10d._get_default_group()
+        return dist._get_process_group_name(group)
+
+    def test_low_contention_all_gather_v_single_non_current_device(self):
+        """Use two ranks with disjoint current and target device sets."""
+        device = torch.musa.current_device()
+        group_name = self._get_default_group_name()
+        non_current_device = self.rank + self.world_size
+        recv_counts = [271, 523]
+        dtype = torch.float32
+
+        def rank_payload(rank, numel, payload_device):
+            return (
+                torch.arange(numel, dtype=torch.int64, device=payload_device)
+                .add_(rank * 37)
+                .remainder_(251)
+                .to(dtype)
+            )
+
+        with torch.musa.device(non_current_device):
+            input_backing = empty(
+                max(recv_counts),
+                dtype=dtype,
+                device=non_current_device,
+            )
+            local_input = input_backing.narrow(0, 0, recv_counts[self.rank])
+            local_input.copy_(
+                rank_payload(
+                    self.rank,
+                    recv_counts[self.rank],
+                    non_current_device,
+                )
+            )
+            output = torch.empty(
+                sum(recv_counts),
+                dtype=dtype,
+                device=non_current_device,
+            )
+
+        torch.ops.symm_mem.low_contention_all_gather_v_single(
+            output, local_input, recv_counts, group_name
+        )
+        self.assertEqual(torch.musa.current_device(), device)
+        with torch.musa.device(non_current_device):
+            torch.musa.synchronize()
+            expected = torch.cat(
+                [
+                    rank_payload(rank, numel, non_current_device)
+                    for rank, numel in enumerate(recv_counts)
+                ]
+            )
+            self.assertEqual(output, expected)
+        self.assertEqual(torch.musa.current_device(), device)
+        torch.musa.synchronize()

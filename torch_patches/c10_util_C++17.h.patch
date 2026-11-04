@@ -1,13 +1,13 @@
 diff --git a/c10/util/C++17.h b/c10/util/C++17.h
-index 98cdffcbef4..b5b025f5ef1 100644
+index c6073b2..db142f3 100644
 --- a/c10/util/C++17.h
 +++ b/c10/util/C++17.h
-@@ -34,7 +34,7 @@
+@@ -8,7 +8,7 @@
  
  namespace c10::guts {
  
 -#if defined(__HIP__)
 +#if defined(__HIP__) || defined(__MUSACC__)
  
- // Implementation from http://en.cppreference.com/w/cpp/utility/apply (but
- // modified)
+ // std::apply is not available in HIP device code because it lacks
+ // __host__ __device__ annotations in the standard library.

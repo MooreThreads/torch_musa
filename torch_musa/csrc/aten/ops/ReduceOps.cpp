@@ -9,7 +9,6 @@
 #include <ATen/TensorIterator.h>
 #include <ATen/TensorUtils.h>
 #include <ATen/WrapDimUtils.h>
-#include <ATen/core/NamedTensor.h>
 
 #ifndef AT_PER_OPERATOR_HEADERS
 #include <ATen/Functions.h>
@@ -129,7 +128,6 @@ at::Tensor& ReduceOp(
   c10::musa::MUSAGuard device_guard(self.device());
   DimVector dims_vec(dim);
   maybe_wrap_dims(dims_vec, self.dim());
-  namedinference::propagate_names_for_reduction(out, self, dims_vec, keepdim);
 
   at::Tensor input = FormatContiguous(self, MemoryFormat::Contiguous);
   auto in_m = CreateMUTensor(input);
@@ -158,6 +156,14 @@ TORCH_IMPL_FUNC(AMaxOut)
  at::IntArrayRef dim,
  bool keepdim,
  const at::Tensor& out) {
+  if (self.scalar_type() == ScalarType::Double) {
+    auto iter =
+        at::meta::make_reduction(self, out, dim, keepdim, self.scalar_type());
+    if (iter.numel() != 0) {
+      at::native::max_values_stub(iter.device_type(), iter);
+    }
+    return;
+  }
   Mode mode = ::musa::dnn::Reduce::Mode::MAX;
   ReduceOp(self, dim, keepdim, const_cast<Tensor&>(out), mode);
 }
@@ -176,6 +182,19 @@ void CallVarStdMode(
     return;
   }
   const auto correction = correction_opt.value_or(1).toInt();
+
+  if (self.scalar_type() == ScalarType::Double) {
+    auto iter = at::native::make_reduction(
+        mode == Mode::STD ? "std" : "var",
+        out,
+        self,
+        dims_vec,
+        keepdim,
+        out.scalar_type());
+    at::native::std_var_stub(
+        iter.device_type(), iter, correction, mode == Mode::STD);
+    return;
+  }
 
   at::Tensor input = FormatContiguous(self, MemoryFormat::Contiguous);
   auto in_m = CreateMUTensor(input);
@@ -319,8 +338,6 @@ std::tuple<at::Tensor&, at::Tensor&> AMinMaxOut(
     IntArrayRef dims(dim.value());
     DimVector dims_vec(dims);
     maybe_wrap_dims(dims_vec, self.dim());
-    namedinference::propagate_names_for_reduction(min, self, dims_vec, keepdim);
-    namedinference::propagate_names_for_reduction(max, self, dims_vec, keepdim);
     const int dim_m = dims_vec[0];
     SetReduce(r_min, ::musa::dnn::Reduce::Mode::MIN, 1, &dim_m);
     SetReduce(r_max, ::musa::dnn::Reduce::Mode::MAX, 1, &dim_m);

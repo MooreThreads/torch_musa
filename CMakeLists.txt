@@ -36,7 +36,7 @@ if(env_cxx_standard GREATER -1)
             "Please remove -std=c++ settings in your environment.")
 endif()
 
-set(CMAKE_CXX_STANDARD 17
+set(CMAKE_CXX_STANDARD 20
     CACHE STRING
           "The C++ standard whose features are requested to build this target.")
 set(CMAKE_C_STANDARD 11

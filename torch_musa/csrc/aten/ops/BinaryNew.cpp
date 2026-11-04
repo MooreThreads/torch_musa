@@ -262,7 +262,8 @@ void UnaryMul(
 }
 
 void MulImpl(MusaTensorIterator& iter, const std::string& op_name) {
-  if (c10::isComplexType(iter.common_dtype())) {
+  if (c10::isComplexType(iter.common_dtype()) ||
+      iter.common_dtype() == ScalarType::Bool) {
     native::mul_stub(iter.device_type(), iter);
     return;
   }
@@ -483,13 +484,13 @@ void BinaryDivDispatch(
 
 #define GEN_ALPHA_FUNCTION(OP, FUNC)                                        \
   Tensor OP(const Tensor& self, const Tensor& other, const Scalar& alpha) { \
-    FunctionalTensorIterator iter;                                          \
+    MusaTensorIterator iter;                                                \
     FUNC(iter, Tensor(), self, other, alpha, __func__);                     \
     return iter.output();                                                   \
   }                                                                         \
                                                                             \
   Tensor& OP##_(Tensor& self, const Tensor& other, const Scalar& alpha) {   \
-    InplaceTensorIterator iter;                                             \
+    MusaTensorIterator iter;                                                \
     FUNC(iter, self, self, other, alpha, __func__);                         \
     return self;                                                            \
   }                                                                         \
@@ -499,7 +500,7 @@ void BinaryDivDispatch(
       const Tensor& other,                                                  \
       const Scalar& alpha,                                                  \
       Tensor& output) {                                                     \
-    OutTensorIterator iter;                                                 \
+    MusaTensorIterator iter;                                                \
     FUNC(iter, output, self, other, alpha, __func__);                       \
     return output;                                                          \
   }
@@ -511,19 +512,19 @@ GEN_ALPHA_FUNCTION(SubTensor, BinarySub)
 
 #define GEN_FUNCTION(OP, FUNC)                                               \
   Tensor OP(const Tensor& self, const Tensor& other) {                       \
-    FunctionalTensorIterator iter;                                           \
+    MusaTensorIterator iter;                                                 \
     FUNC(iter, Tensor(), self, other, __func__);                             \
     return iter.output();                                                    \
   }                                                                          \
                                                                              \
   Tensor& OP##_(Tensor& self, const Tensor& other) {                         \
-    InplaceTensorIterator iter;                                              \
+    MusaTensorIterator iter;                                                 \
     FUNC(iter, self, self, other, __func__);                                 \
     return self;                                                             \
   }                                                                          \
                                                                              \
   Tensor& OP##Out(const Tensor& self, const Tensor& other, Tensor& output) { \
-    OutTensorIterator iter;                                                  \
+    MusaTensorIterator iter;                                                 \
     FUNC(iter, output, self, other, __func__);                               \
     return output;                                                           \
   }
@@ -541,7 +542,7 @@ Tensor DivTensorMode(
     const Tensor& self,
     const Tensor& other,
     optional<string_view> rounding_mode) {
-  FunctionalTensorIterator iter;
+  MusaTensorIterator iter;
   BinaryDivDispatch(iter, Tensor(), self, other, rounding_mode, __func__);
   return iter.output();
 }
@@ -550,7 +551,7 @@ Tensor& DivTensorMode_(
     Tensor& self,
     const Tensor& other,
     optional<string_view> rounding_mode) {
-  InplaceTensorIterator iter;
+  MusaTensorIterator iter;
   BinaryDivDispatch(iter, self, self, other, rounding_mode, __func__);
   return self;
 }
@@ -560,7 +561,7 @@ Tensor& DivTensorModeOut(
     const Tensor& other,
     optional<string_view> rounding_mode,
     Tensor& output) {
-  OutTensorIterator iter;
+  MusaTensorIterator iter;
   BinaryDivDispatch(iter, output, self, other, rounding_mode, __func__);
   return output;
 }

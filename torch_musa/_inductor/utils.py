@@ -8,13 +8,19 @@ from typing import (
     Union,
 )
 import torch
-from torch._inductor.runtime.benchmarking import TritonBenchmarker
+import torch._inductor.runtime.benchmarking as inductor_benchmarking
+from torch._inductor.runtime.benchmarking import register_benchmarker
 from torch.utils._triton import has_triton_package
 from torch._inductor.runtime.hints import DeviceProperties
 from torch._inductor.utils import log
 from torch._inductor.utils import get_gpu_type
 
 GPU_TYPES = ["musa"]
+
+
+def _musa_bench(self, fn, *, warmup, rep, **kwargs):
+    kwargs.setdefault("device_type", "musa")
+    return self.benchmark_gpu(fn, warmup=warmup, rep=rep, **kwargs)
 
 
 def is_gpu(device: str):
@@ -110,7 +116,13 @@ def is_big_gpu(index_or_device: Union[int, torch.device] = 0) -> bool:
 
 def _apply_util_patches():
     torch._inductor.utils.is_gpu = is_gpu
-    torch._inductor.runtime.benchmarking.benchmarker = TritonBenchmarker()
+    gpu_benchmark_device_types = inductor_benchmarking.GPU_BENCHMARK_DEVICE_TYPES
+    if "musa" not in gpu_benchmark_device_types:
+        inductor_benchmarking.GPU_BENCHMARK_DEVICE_TYPES = (
+            *gpu_benchmark_device_types,
+            "musa",
+        )
+    register_benchmarker("musa", _musa_bench, override=True)
     torch.utils._triton.has_triton = has_triton
     torch._inductor.utils.GPU_TYPES = GPU_TYPES
     torch._inductor.utils.is_big_gpu = is_big_gpu

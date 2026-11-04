@@ -1,19 +1,18 @@
 diff --git a/cmake/Modules/FindARM.cmake b/cmake/Modules/FindARM.cmake
-index 903025c..7d419e2 100644
+index 3c56e50..02734fe 100644
 --- a/cmake/Modules/FindARM.cmake
 +++ b/cmake/Modules/FindARM.cmake
-@@ -131,8 +131,13 @@ IF(CMAKE_SYSTEM_NAME MATCHES "Linux")
-         CHECK_C_SOURCE_COMPILES("${code}" ${lang}_HAS_${type})
-       ENDIF()
+@@ -21,7 +21,12 @@ IF(CMAKE_SYSTEM_NAME MATCHES "Linux")
+     CHECK_CXX_SOURCE_COMPILES("${SVE_BF16_CODE}" CXX_SVE256_FOUND)
+     SET(CMAKE_REQUIRED_FLAGS ${CMAKE_REQUIRED_FLAGS_SAVE})
  
-+      file(READ "/proc/cpuinfo" CPUINFO)
-+      if(CPUINFO MATCHES ".*\\bfflags\\b:.*\\bsve\\b")
-+         set(CPU_HAS_SVE TRUE)
-+      endif()
+-    if(CXX_SVE256_FOUND)
++    file(READ "/proc/cpuinfo" CPUINFO)
++    if(CPUINFO MATCHES ".*\\bfflags\\b:.*\\bsve\\b")
++        set(CPU_HAS_SVE TRUE)
++    endif()
 +
-       # If the compilation test is successful, set appropriate variables indicating support
--      IF(${lang}_HAS_${type})
-+      IF(${lang}_HAS_${type} AND CPU_HAS_SVE)
-         set(${lang}_SVE_FOUND TRUE CACHE BOOL "SVE available on host")
-         SET(${lang}_${type}_FOUND TRUE CACHE BOOL "${lang} ${type} support")
-         SET(${lang}_${type}_FLAGS "${flags}" CACHE STRING "${lang} ${type} flags")
++    if(CXX_SVE256_FOUND AND CPU_HAS_SVE)
+       # Any compiler that supports SVE256 also supports SVE128
+       set(CXX_SVE_FOUND TRUE CACHE BOOL "SVE available on host")
+       message(STATUS "SVE support detected.")

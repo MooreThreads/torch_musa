@@ -1,5 +1,5 @@
-#include <ATen/NamedTensorUtils.h>
 #include <ATen/WrapDimUtils.h>
+#include <ATen/WrapDimUtilsMulti.h>
 #include <ATen/core/DimVector.h>
 #include <ATen/core/Tensor.h>
 #include <ATen/core/op_registration/adaption.h>
@@ -121,8 +121,6 @@ Tensor SqueezeQtensor(const Tensor& self, c10::OptionalIntArrayRef dims) {
       C10_AS_INTARRAYREF_SLOW(sizes),
       C10_AS_INTARRAYREF_SLOW(strides),
       std::move(quantizer));
-  auto maybe_outnames = namedinference::compute_squeeze_outnames(self, mask);
-  namedinference::propagate_names_if_nonempty(result, maybe_outnames);
   return result;
 }
 

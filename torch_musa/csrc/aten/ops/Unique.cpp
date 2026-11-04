@@ -1,6 +1,5 @@
 #include <ATen/Config.h>
 #include <ATen/Dispatch.h>
-#include <ATen/NamedTensorUtils.h>
 #include <ATen/NativeFunctions.h>
 #include <ATen/core/op_registration/adaption.h>
 #include <ATen/native/Pool.h>

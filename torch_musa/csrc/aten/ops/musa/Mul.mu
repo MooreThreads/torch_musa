@@ -55,7 +55,8 @@ void MulKernel(TensorIteratorBase& iter) {
           gpu_kernel(iter, f);
         }
       }),
-      AT_EXPAND(AT_COMPLEX_TYPES));
+      AT_EXPAND(AT_COMPLEX_TYPES),
+      kBool);
 }
 
 } // namespace at::musa

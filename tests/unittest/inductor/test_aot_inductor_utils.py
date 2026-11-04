@@ -2,11 +2,7 @@
 import itertools
 
 import torch
-import torch_musa
 import torch._inductor
-import torch.export._trace
-
-from torch_musa._export import aot_load
 
 # pylint: disable-all
 
@@ -27,46 +23,31 @@ class AOTIRunnerUtil:
         example_inputs,
         options=None,
         dynamic_shapes=None,
-        disable_constraint_solver=False,
     ):
         if not isinstance(model, torch.nn.Module):
             model = WrapperModule(model)
-        # The exact API is subject to change
-        if torch._inductor.config.is_predispatch:
-            ep = torch.export._trace._export(
-                model, example_inputs, dynamic_shapes=dynamic_shapes, pre_dispatch=True
-            )
-            gm = ep.module()
-        else:
-            gm = torch.export._trace._export_to_torch_ir(
-                model,
-                example_inputs,
-                dynamic_shapes=dynamic_shapes,
-                disable_constraint_solver=disable_constraint_solver,
-                # Disabling this flag, because instead we can rely on the mapping
-                # dynamo_flat_name_to_original_fqn which is coming from Dynamo.
-                restore_fqn=False,
-            )
+        ep = torch.export.export(
+            model,
+            example_inputs,
+            dynamic_shapes=dynamic_shapes,
+            strict=False,
+        )
 
         with torch.no_grad():
-            so_path = torch._inductor.aot_compile(gm, example_inputs, options=options)  # type: ignore[arg-type]
-
-        return so_path
-
-    @staticmethod
-    def load_runner(device, so_path):
-        return (
-            torch._C._aoti.AOTIModelContainerRunnerCpu(so_path, 1)
-            if device == "cpu"
-            else torch_musa._MUSAC._aoti.AOTIModelContainerRunnerMusa(
-                so_path, 1, device
+            package_path = torch._inductor.aoti_compile_and_package(
+                ep,
+                inductor_configs=options,
             )
-        )
+
+        return package_path
 
     @staticmethod
     def load(device, so_path):
-        # TODO: unify fbcode and oss behavior to only use torch._export.aot_load
-        return aot_load(so_path, device)
+        device_index = torch.device(device).index
+        return torch._inductor.aoti_load_package(
+            so_path,
+            device_index=-1 if device_index is None else device_index,
+        )
 
     @staticmethod
     def run(
@@ -75,14 +56,12 @@ class AOTIRunnerUtil:
         example_inputs,
         options=None,
         dynamic_shapes=None,
-        disable_constraint_solver=False,
     ):
         so_path = AOTIRunnerUtil.compile(
             model,
             example_inputs,
             options=options,
             dynamic_shapes=dynamic_shapes,
-            disable_constraint_solver=disable_constraint_solver,
         )
         optimized = AOTIRunnerUtil.load(device, so_path)
         return optimized(*example_inputs)
@@ -209,12 +188,13 @@ class CondModels:
             def true_fn(x, y):
                 z1 = x + y
                 z2 = x - y
-                return z1[2:], z2[:, 4:]
+                # cond's output stride should be a simple accumulative multiplication of sizes.
+                return z1[2:], z2[:, 4:].contiguous()
 
             def false_fn(x, y):
                 z1 = x - y
                 z2 = x + y
-                return z1[2:], z2[:, 4:]
+                return z1[2:], z2[:, 4:].contiguous()
 
             return torch.cond(p, true_fn, false_fn, [a[:-1], b[:-1]])
 
@@ -265,6 +245,22 @@ class CondModels:
                 return y.sum(0) * 2.71
 
             return torch.cond(a.size(0) > b.size(0), true_fn, false_fn, [a, b])
+
+    class CpuPredicateOperands(torch.nn.Module):
+        def __init__(self, input_dim=4, hidden_dim=8):
+            super().__init__()
+            self.true_linear = torch.nn.Linear(input_dim, hidden_dim, bias=True)
+            self.false_linear = torch.nn.Linear(input_dim, hidden_dim, bias=True)
+            self.another_linear = torch.nn.Linear(hidden_dim, hidden_dim, bias=True)
+
+        def forward(self, predicate, x):
+            def true_fn(value):
+                return self.true_linear(value) * 2.0
+
+            def false_fn(value):
+                return self.false_linear(value) + 1.0
+
+            return self.another_linear(torch.cond(predicate, true_fn, false_fn, (x,)))
 
 
 class WhileLoopModels:

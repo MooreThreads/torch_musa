@@ -11,8 +11,10 @@ import torch_musa
 from torch_musa.distributed.numa_binding import apply_torchrun_numa_patch
 from torch_musa.distributed.numa_binding import _assemble_binding_command
 from torch_musa.distributed.numa_binding import _get_numa_node_for_accelerator
+from torch_musa.testing.common_utils import spawn_isolated_test
 
 
+@spawn_isolated_test
 def test_patch_is_idempotent():
     """Applying the patch repeatedly must be safe."""
     apply_torchrun_numa_patch()

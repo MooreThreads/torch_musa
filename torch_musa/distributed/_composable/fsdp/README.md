@@ -87,22 +87,25 @@ Most users do not need to set it.
 | `1` | `OVERLAP_FSDP_COMM_ONLY`: move FSDP communication to a high-priority stream. This mode only overlaps effectively when the user sets an explicit FSDP prefetch order. |
 | `2` | `OVERLAP_FSDP_COMM_COPY_IN_WITH_COPY_OUT`: overlap the next all-gather copy-in with the previous copy-out/compute path. This is the automatic choice when custom communication is enabled. |
 | `3` | `OVERLAP_FSDP_COMM_COPY_IN_WITH_COMM`: use separate high-priority streams for all-gather copy-in and all-gather communication. |
-| `4` | `OVERLAP_HSDP_COMM`: use a PyTorch-FSDP2-like overlap policy, including independent streams for all-gather, reduce-scatter, and HSDP all-reduce. |
+
+Overlap level `4` is disabled because communication overlap in this mode may
+hang. Configuring it raises an error.
 
 When `TORCH_MUSA_FSDP2_OVERLAP_LEVEL` is unset, `torch_musa` resolves the
 overlap policy as follows:
 
-1. If `TORCH_MUSA_FSDP2_DISABLE_OVERLAP=0`, use `OVERLAP_HSDP_COMM` (`4`).
-   This compatibility variable is deprecated.
-2. Else, if `TORCH_MUSA_FSDP2_COMM_TYPE` is `1` or `2` and the MUSA arch is
+1. If `TORCH_MUSA_FSDP2_DISABLE_OVERLAP=0`, raise an error because the overlap
+   level `4` selected by this deprecated compatibility variable is disabled.
+2. If `TORCH_MUSA_FSDP2_COMM_TYPE` is `1` or `2` and the MUSA arch is
    `mp_31` or newer, use `OVERLAP_FSDP_COMM_COPY_IN_WITH_COPY_OUT` (`2`).
-3. Else, use `NO_OVERLAP` (`0`).
+3. Otherwise, use `NO_OVERLAP` (`0`).
 
 ### `TORCH_MUSA_FSDP2_DISABLE_OVERLAP`
 
 This is a deprecated compatibility variable. Do not use it in new setups.
 When `TORCH_MUSA_FSDP2_OVERLAP_LEVEL` is unset, setting
-`TORCH_MUSA_FSDP2_DISABLE_OVERLAP=0` enables `OVERLAP_HSDP_COMM` (`4`).
+`TORCH_MUSA_FSDP2_DISABLE_OVERLAP=0` raises an error because its corresponding
+overlap level `4` is disabled.
 
 ## Common Configurations
 
@@ -141,3 +144,4 @@ python train.py
 Only set `TORCH_MUSA_FSDP2_OVERLAP_LEVEL` when you need to compare or debug a
 specific overlap mode. For regular use, prefer selecting the communication path
 with `TORCH_MUSA_FSDP2_COMM_TYPE` and leave the overlap level unset.
+

@@ -3356,14 +3356,6 @@
   dispatch:
     PrivateUse1: MeanOut
 
-- func: mean.names_dim
-  dispatch:
-    PrivateUse1: MeanNamesDim
-
-- func: mean.names_out
-  dispatch:
-    PrivateUse1: MeanNamesDimOut
-
 - func: sum
   device_guard: True
   dispatch:
@@ -3474,14 +3466,6 @@
   dispatch:
     PrivateUse1: MaxDimMax
 
-- func: max.names_dim
-  dispatch:
-    PrivateUse1: MaxNamesDim
-
-- func: max.names_dim_max
-  dispatch:
-    PrivateUse1: MaxNamesDimMax
-
 - func: min
   dispatch:
     PrivateUse1: MinAll
@@ -3499,14 +3483,6 @@
   structured: false
   dispatch:
     PrivateUse1: MinDimMin
-
-- func: min.names_dim
-  dispatch:
-    PrivateUse1: MinNamesDim
-
-- func: min.names_dim_min
-  dispatch:
-    PrivateUse1: MinNamesDimMin
 
 - func: all
   dispatch:
@@ -3662,10 +3638,6 @@
   dispatch:
     PrivateUse1: smooth_l1_loss_backward_out
 
-- func: log_softmax.Dimname
-  dispatch:
-    PrivateUse1: LogSoftmaxDimname
-
 - func: _log_softmax
   dispatch:
     PrivateUse1: LogSoftmax
@@ -3699,10 +3671,6 @@
 - func: log_sigmoid_backward
   dispatch:
     PrivateUse1: LogSigmoidBackward
-
-- func: softmax.Dimname
-  dispatch:
-    PrivateUse1: SoftmaxDimname
 
 - func: _softmax
   device_guard: True

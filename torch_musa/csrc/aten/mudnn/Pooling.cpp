@@ -61,13 +61,15 @@ void SetPoolingImpl(
     std::initializer_list<int> dilation,
     std::optional<int> divisor) {
   CHECK_MUDNN_STATUS(op.SetMode(mode), "SetMode");
-  CHECK_MUDNN_STATUS(
-      op.SetNdInfo(
-          std::move(kernel),
-          std::move(pad),
-          std::move(stride),
-          std::move(dilation)),
-      "SetNdInfo");
+  if (!kernel.empty()) {
+    CHECK_MUDNN_STATUS(
+        op.SetNdInfo(
+            std::move(kernel),
+            std::move(pad),
+            std::move(stride),
+            std::move(dilation)),
+        "SetNdInfo");
+  }
   if (divisor) {
     CHECK_MUDNN_STATUS(op.SetDivisor(divisor.value()), "SetDivisor");
   }

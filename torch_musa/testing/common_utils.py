@@ -8,6 +8,7 @@ import inspect
 import subprocess
 import contextlib
 import functools
+import importlib
 from statistics import mean
 import cloudpickle
 import pytest
@@ -224,9 +225,22 @@ def spawn_isolated_test(fn: Callable[..., Any]) -> Callable[..., None]:
         with tempfile.TemporaryDirectory() as tempdir:
             output_filepath = os.path.join(tempdir, "subprocess_output.tmp")
 
-            # refered from https://github.com/vllm-project/vllm/blob/v0.9.0/vllm/model_executor/models/registry.py#L575
-            # `cloudpickle` allows pickling complex functions directly
-            input_bytes = cloudpickle.dumps((fn, args, kwargs, output_filepath))
+            # Module-level tests can be imported in the clean subprocess. This
+            # avoids serializing runtime globals such as torch.ops namespaces.
+            module_name = getattr(fn, "__module__", None)
+            qualified_name = getattr(fn, "__qualname__", None)
+            if module_name and qualified_name and "<locals>" not in qualified_name:
+                payload = (
+                    module_name,
+                    qualified_name,
+                    args,
+                    kwargs,
+                    output_filepath,
+                )
+            else:
+                # Keep cloudpickle for local functions and closures.
+                payload = (fn, args, kwargs, output_filepath)
+            input_bytes = cloudpickle.dumps(payload)
 
             # set cwd to /tmp to find module under python site-packages,
             # rather than torch_musa project directory.
@@ -251,7 +265,16 @@ def spawn_isolated_test(fn: Callable[..., Any]) -> Callable[..., None]:
 
 
 def _run_subprocess():
-    func, args, kwargs, _ = cloudpickle.loads(sys.stdin.buffer.read())
+    payload = cloudpickle.loads(sys.stdin.buffer.read())
+    if isinstance(payload[0], str):
+        module_name, qualified_name, args, kwargs, _ = payload
+        func = importlib.import_module(module_name)
+        for name in qualified_name.split("."):
+            func = getattr(func, name)
+        while hasattr(func, "__wrapped__"):
+            func = func.__wrapped__
+    else:
+        func, args, kwargs, _ = payload
     func(*args, **kwargs)
 
 

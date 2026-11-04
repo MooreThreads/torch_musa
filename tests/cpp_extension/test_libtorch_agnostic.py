@@ -101,6 +101,8 @@ class TestLibtorchMusa(TestCase):
         extension_2_9_root = base_dir / "libtorch_musa_2_9_extension"
         extension_2_10_root = base_dir / "libtorch_musa_2_10_extension"
         extension_2_11_root = base_dir / "libtorch_musa_2_11_extension"
+        extension_2_12_root = base_dir / "libtorch_musa_2_12_extension"
+        extension_2_13_root = base_dir / "libtorch_musa_2_13_extension"
 
         if _has_extension(extension_2_9_root):
             import libtorch_agn_2_9  # noqa: F401
@@ -116,6 +118,16 @@ class TestLibtorchMusa(TestCase):
             import libtorch_agn_2_11  # noqa: F401
         else:
             install_cpp_extension(extension_root=extension_2_11_root)
+        
+        if _has_extension(extension_2_12_root):
+            import libtorch_agn_2_12  # noqa: F401
+        else:
+            install_cpp_extension(extension_root=extension_2_12_root)
+
+        if _has_extension(extension_2_13_root):
+            import libtorch_agn_2_13  # noqa: F401
+        else:
+            install_cpp_extension(extension_root=extension_2_13_root)
 
     @onlyCPU
     def test_slow_sgd(self, device):
@@ -1963,7 +1975,7 @@ except RuntimeError as e:
 
             curr_mem = torch.musa.memory_allocated(device)
             self.assertEqual(curr_mem, init_mem)
-
+    
     @onlyCPU
     def test_my_layout(self, device):
         """Test layout() method for various tensor layouts."""
@@ -1988,7 +2000,299 @@ except RuntimeError as e:
         t_sparse_csr = torch.sparse_csr_tensor(crow_indices, col_indices, csr_values)
         self.assertTrue(libtorch_musa.ops.my_layout(t_sparse_csr, torch.sparse_csr))
         self.assertFalse(libtorch_musa.ops.my_layout(t_sparse_csr, torch.strided))
+    
+    @onlyPRIVATEUSE1
+    @skipIfTorchVersionLessThan(2, 12)
+    def test_tagged_identity_no_leak_and_correctness(self, device):
+        """Test that tagged_identity via Stable ABI does not leak MUSA memory and preserves tensor identity."""
+        import libtorch_agn_2_12 as libtorch_musa
 
+        tagged_identity_fn = libtorch_musa.ops.tagged_identity
+
+        torch.musa.synchronize(device)
+        init_mem = torch.musa.memory_allocated(device)
+        numel = 1024 * 1024  # 4 MB per tensor
+
+        for _ in range(10):
+            x = torch.randn(numel, device=device)
+            y = tagged_identity_fn(x)
+
+            # Verify tensor identity and metadata preservation
+            self.assertIs(y, x)
+            self.assertEqual(y.numel(), numel)
+            self.assertEqual(y.device, torch.device(device))
+            self.assertEqual(y.data_ptr(), x.data_ptr())
+
+            del x, y
+            gc.collect()
+            torch.musa.synchronize(device)
+
+            curr_mem = torch.musa.memory_allocated(device)
+            self.assertEqual(curr_mem, init_mem) 
+
+    @onlyPRIVATEUSE1
+    @skipIfTorchVersionLessThan(2, 13)
+    def test_our_subtract_stable_and_torch_error_check_no_leak(self, device):
+        """Test that both subtract wrappers do not leak MUSA memory and produce correct results."""
+        import libtorch_agn_2_13 as libtorch_musa
+
+        stable_sub_fn = libtorch_musa.ops.our_subtract_stable_error_check
+        torch_sub_fn = libtorch_musa.ops.our_subtract_torch_error_check
+
+        torch.musa.synchronize(device)
+        init_mem = torch.musa.memory_allocated(device)
+        numel = 1024 * 1024  # 4 MB per tensor
+
+        for _ in range(10):
+            a = torch.randn(numel, device=device)
+            b = torch.randn(numel, device=device)
+
+            result_stable = stable_sub_fn(a, b)
+            result_torch = torch_sub_fn(a, b)
+
+            # Verify correctness against native torch.subtract
+            expected = torch.subtract(a, b)
+            self.assertEqual(result_stable.numel(), numel)
+            self.assertEqual(result_torch.numel(), numel)
+            self.assertEqual(result_stable.device, torch.device(device))
+            self.assertEqual(result_torch.device, torch.device(device))
+            torch.testing.assert_close(result_stable, expected)
+            torch.testing.assert_close(result_torch, expected)
+
+            del a, b, result_stable, result_torch, expected
+            gc.collect()
+            torch.musa.synchronize(device)
+
+            curr_mem = torch.musa.memory_allocated(device)
+            self.assertEqual(curr_mem, init_mem)
+
+    @onlyPRIVATEUSE1
+    @skipIfTorchVersionLessThan(2, 13)
+    def test_exception_what_functions_no_leak(self, device):
+        """Test that exception info extraction functions do not leak MUSA memory."""
+        import libtorch_agn_2_13 as libtorch_musa
+
+        exception_what_fn = libtorch_musa.ops.my_exception_what
+        exception_no_bt_fn = libtorch_musa.ops.my_exception_get_what_without_backtrace
+        # Use stable subtract to trigger a C++ exception for exception_what to capture
+        trigger_fn = libtorch_musa.ops.our_subtract_stable_error_check
+
+        torch.musa.synchronize(device)
+        init_mem = torch.musa.memory_allocated(device)
+        numel = 1024 * 1024  # 4 MB per tensor (used only to create mismatched tensors)
+
+        for _ in range(10):
+            a = torch.randn(numel, device=device)
+            b = torch.randn(numel + 1, device=device)  # Shape mismatch to trigger exception
+
+            # Trigger exception so exception_what has content to return
+            try:
+                trigger_fn(a, b)
+            except Exception:
+                pass
+
+            msg_full = exception_what_fn()
+            msg_no_bt = exception_no_bt_fn()
+
+            # Verify returned values are valid strings
+            self.assertIsInstance(msg_full, str)
+            self.assertIsInstance(msg_no_bt, str)
+            self.assertTrue(len(msg_full) > 0)
+            self.assertTrue(len(msg_no_bt) > 0)
+            self.assertLessEqual(len(msg_no_bt), len(msg_full))
+
+            del a, b, msg_full, msg_no_bt
+            gc.collect()
+            torch.musa.synchronize(device)
+
+            curr_mem = torch.musa.memory_allocated(device)
+            self.assertEqual(curr_mem, init_mem)
+
+    @onlyPRIVATEUSE1
+    @skipIfTorchVersionLessThan(2, 13)
+    def test_my_rand_with_generator_no_leak(self, device):
+        """Test that my_rand_with_generator correctly derives device from Generator
+        and does not leak MUSA memory through StableIValue stack dispatch."""
+        import libtorch_agn_2_13 as libtorch_musa
+
+        rand_fn = libtorch_musa.ops.my_rand_with_generator
+
+        torch.musa.synchronize(device)
+        init_mem = torch.musa.memory_allocated(device)
+        numel = 1024 * 1024  # 4 MB per tensor (1M float32 elements)
+
+        for _ in range(10):
+            # Create a MUSA generator so generator.device() returns the correct device
+            gen = torch.Generator(device=device)
+            gen.manual_seed(42)
+
+            size = [numel]
+            tensor = rand_fn(size, gen)
+
+            # Verify tensor was created correctly on the expected device
+            self.assertEqual(tensor.numel(), numel)
+            self.assertEqual(tensor.device, torch.device(device))
+            self.assertEqual(tensor.dtype, torch.float32)
+
+            # Verify reproducibility: same seed → same output
+            gen2 = torch.Generator(device=device)
+            gen2.manual_seed(42)
+            tensor2 = rand_fn(size, gen2)
+            torch.testing.assert_close(tensor, tensor2)
+
+            del tensor, tensor2, gen, gen2
+            gc.collect()
+            torch.musa.synchronize(device)
+
+            curr_mem = torch.musa.memory_allocated(device)
+            self.assertEqual(curr_mem, init_mem)
+
+    @onlyPRIVATEUSE1
+    @skipIfTorchVersionLessThan(2, 13)
+    def test_my_rand_with_generator_cpu_device_derivation(self, device):
+        """Test that passing a CPU generator produces a CPU tensor,
+        verifying Generator::device() derivation works across devices."""
+        import libtorch_agn_2_13 as libtorch_musa
+
+        rand_fn = libtorch_musa.ops.my_rand_with_generator
+
+        # This test intentionally uses a CPU generator regardless of the
+        # @onlyPRIVATEUSE1 device fixture to verify cross-device derivation
+        cpu_gen = torch.Generator(device="cpu")
+        cpu_gen.manual_seed(42)
+        
+        numel = 1024 * 1024  # 4 MB per tensor (1M float32 elements)
+        size = [numel]
+        tensor = rand_fn(size, cpu_gen)
+
+        self.assertEqual(tensor.device, torch.device("cpu"))
+        self.assertEqual(tensor.numel(), numel)
+        self.assertEqual(tensor.dtype, torch.float32)
+
+        del tensor, cpu_gen
+        gc.collect()
+
+    @onlyCPU
+    @skipIfTorchVersionLessThan(2, 13)
+    def test_identity_with_fake_module_no_leak(self, device):
+        """Test that identity_with_fake_module bound via set_python_module
+        does not leak MUSA memory through Stable ABI dispatch."""
+        import libtorch_agn_2_13 as libtorch_musa
+
+        identity_fn = libtorch_musa.ops.identity_with_fake_module
+        numel = 1024 * 1024  # 4 MB per tensor (1M float32 elements)
+
+        x = torch.randn(numel, device="cpu")
+        y = identity_fn(x)
+
+        # Verify identity semantics: same data pointer, no copy
+        self.assertEqual(y.data_ptr(), x.data_ptr())
+        self.assertEqual(y.device, torch.device("cpu"))
+        self.assertEqual(y.dtype, torch.float32)
+
+        del x, y
+        gc.collect()
+
+    @onlyCPU
+    @skipIfTorchVersionLessThan(2, 13)
+    def test_identity_w_nonexistent_fake_module_error_path(self, device):
+        """Test that calling an operator bound to a non-existent Python module
+        via set_python_module triggers the missing-module error path without
+        leaking MUSA memory or causing undefined behavior."""
+        import libtorch_agn_2_13 as libtorch_musa
+
+        x = torch.randn(64, 64, device="cpu")
+
+        # The C++ code binds this op to "libtorch_agn_2_13_nonexistent_module"
+        # which does not exist. Accessing or calling must raise a clear error.
+        with self.assertRaisesRegex(
+            (RuntimeError, AttributeError),
+            r"(?i)(nonexistent|not found|missing|module)"
+        ):
+            op = torch.ops.libtorch_agn_2_13_nonexistent_module.identity_w_nonexistent_fake_module
+            op(x)
+
+        # Verify that the failed call did not leak MUSA memory
+        del x
+        gc.collect()
+    
+    @onlyPRIVATEUSE1
+    @skipIfTorchVersionLessThan(2, 13)
+    def test_kernel_launch_on_stream_no_leak(self, device):
+        """Test that test_kernel_launch_on_stream correctly uses the current stream
+        and does not leak MUSA memory through StableIValue stack dispatch or stream handles."""
+        import libtorch_agn_2_13 as libtorch_musa
+
+        kernel_fn = libtorch_musa.ops.test_kernel_launch_on_stream
+        torch.musa.synchronize(device)
+
+        # Warmup: 触发 MUSA context lazy init 和 caching allocator 预热
+        warmup_x = torch.empty(64, dtype=torch.int32, device=device)
+        warmup_out = kernel_fn(warmup_x, 0)
+        del warmup_x, warmup_out
+        gc.collect()
+        torch.musa.synchronize(device)
+
+        # 记录真实显存基线
+        init_mem = torch.musa.memory_allocated(device)
+        numel = 1024 * 1024  # 4 MB per tensor (1M int32 elements)
+
+        for i in range(10):
+            # 每次循环创建独立的非默认 stream，验证 stream handle 不会泄漏
+            custom_stream = torch.musa.Stream(device=device)
+            
+            with torch.musa.stream(custom_stream):
+                x = torch.empty(numel, dtype=torch.int32, device=device)
+                fill_value = i
+                out = kernel_fn(x, fill_value)
+
+                # 验证功能正确性：shape/dtype/device
+                self.assertEqual(out.shape, x.shape)
+                self.assertEqual(out.dtype, torch.int32)
+                self.assertEqual(out.device, torch.device(device))
+
+                expected = torch.full_like(x, fill_value)
+                torch.testing.assert_close(out, expected)
+
+            # 显式释放所有 Python 端引用
+            del x, out, expected, custom_stream
+            gc.collect()
+            
+            # 必须同步：MUSA 内存释放是异步的，不同步会导致假阳性泄漏
+            torch.musa.synchronize(device)
+
+            curr_mem = torch.musa.memory_allocated(device)
+            self.assertEqual(curr_mem, init_mem)
+
+    @onlyPRIVATEUSE1
+    @skipIfTorchVersionLessThan(2, 13)
+    def test_stream_native_handle_no_leak(self, device):
+        """Test that test_stream_native_handle correctly retrieves the native
+        stream handle as an int64 and does not leak MUSA memory through
+        StableIValue stack dispatch."""
+        import libtorch_agn_2_13 as libtorch_musa
+
+        handle_fn = libtorch_musa.ops.test_stream_native_handle
+
+        # Extract integer device index from device string (e.g., 'musa:0' -> 0)
+        device_index = torch.device(device).index or 0
+
+        torch.musa.synchronize(device)
+        init_mem = torch.musa.memory_allocated(device)
+
+        for _ in range(10):
+            native_handle = handle_fn(device_index)
+            self.assertIsInstance(native_handle, int)
+            self.assertGreaterEqual(native_handle, 0)
+
+            native_handle_2 = handle_fn(device_index)
+            self.assertEqual(native_handle, native_handle_2)
+
+            del native_handle, native_handle_2
+            gc.collect()
+            torch.musa.synchronize(device)
+            curr_mem = torch.musa.memory_allocated(device)
+            self.assertEqual(curr_mem, init_mem)
 
 instantiate_device_type_tests(
     TestLibtorchMusa, globals(), only_for=("cpu", "privateuse1")

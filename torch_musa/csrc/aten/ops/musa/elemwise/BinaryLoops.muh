@@ -149,6 +149,7 @@ inline void dispatch_contig(
     DISPATCH_VLEN(2)
     DISPATCH_VLEN(4)
     DISPATCH_VLEN(8)
+    DISPATCH_VLEN(16)
     default:
       TORCH_INTERNAL_ASSERT(false, "Unexpected vectorization size");
   }

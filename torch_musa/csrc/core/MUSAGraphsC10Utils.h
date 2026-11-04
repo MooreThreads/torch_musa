@@ -70,10 +70,41 @@ inline std::ostream& operator<<(std::ostream& os, CaptureStatus status) {
 
 // Use this version where you're sure a MUSA context exists already.
 inline CaptureStatus currentStreamCaptureStatusMayInitCtx() {
-  musaStreamCaptureStatus is_capturing{musaStreamCaptureStatusNone};
+  musaStreamCaptureStatus status{musaStreamCaptureStatusNone};
   C10_MUSA_CHECK(
-      musaStreamIsCapturing(c10::musa::getCurrentMUSAStream(), &is_capturing));
-  return CaptureStatus(is_capturing);
+      musaStreamIsCapturing(c10::musa::getCurrentMUSAStream(), &status));
+  return CaptureStatus(status);
+}
+
+inline CaptureStatus captureStatusMayInitCtx(musaStream_t stream) {
+  musaStreamCaptureStatus status{musaStreamCaptureStatusNone};
+  C10_MUSA_CHECK(musaStreamIsCapturing(stream, &status));
+  return CaptureStatus(status);
+}
+
+inline bool isStreamCapturingMayInitCtx(musaStream_t stream) {
+  return captureStatusMayInitCtx(stream) == CaptureStatus::Active;
+}
+
+inline std::optional<CaptureId_t> currentStreamCaptureIdMayInitCtx() {
+  musaStreamCaptureStatus status{};
+  CaptureId_t capture_id = 0;
+  C10_MUSA_CHECK(musaStreamGetCaptureInfo(
+      c10::musa::getCurrentMUSAStream(), &status, &capture_id));
+  if (status == musaStreamCaptureStatus::musaStreamCaptureStatusActive) {
+    return capture_id;
+  }
+  return std::nullopt;
+}
+
+inline std::optional<CaptureId_t> captureIdMayInitCtx(musaStream_t stream) {
+  musaStreamCaptureStatus status{};
+  CaptureId_t capture_id = 0;
+  C10_MUSA_CHECK(musaStreamGetCaptureInfo(stream, &status, &capture_id));
+  if (status == musaStreamCaptureStatus::musaStreamCaptureStatusActive) {
+    return capture_id;
+  }
+  return std::nullopt;
 }
 
 } // namespace musa

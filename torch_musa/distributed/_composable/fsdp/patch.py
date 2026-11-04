@@ -7,7 +7,6 @@ from typing import (
     List,
     Any,
 )
-import warnings
 from itertools import chain
 
 # from enum import Enum
@@ -36,6 +35,13 @@ from torch.distributed.fsdp._fully_shard._fsdp_common import (
 
 
 __all__ = ["_apply_fsdp2_patches"]
+
+
+_ORIGINAL_FSDP2_METHODS_OR_CODES = {
+    "foreach_all_gather_code": torch.distributed.fsdp._fully_shard._fsdp_collectives.foreach_all_gather.__code__,
+    "wait_for_unshard": FSDPParamGroup.wait_for_unshard,
+    "post_backward": FSDPParamGroup.post_backward,
+}
 
 
 # _fsdp_param_group.py
@@ -259,46 +265,48 @@ def foreach_all_gather_non_overlap(
 # no patch on foreach_all_gather_copy_out, which running on the default/current_stream
 
 
-def _setup_fsdp2_patches():
-    """lazily apply patches
-
-    Why use lazy patches here ?
-    To avoid the initialization of musa state caused by _get_musa_arch during import torch_musa.
-    """
-
-    from .custom_overlap_patch import (
-        _apply_custom_overlap_patch,
-        FSDP2OverlapLevel,
-        _FSDP2_OVERLAP_LEVEL,
-    )
+def _setup_fsdp2_patches(overlap_level):
+    """Lazily apply FSDP2 patches."""
+    from .custom_overlap_patch import _apply_custom_overlap_patch, FSDP2OverlapLevel
 
     _apply_custom_overlap_patch()
 
-    if torch.musa.core._utils._get_musa_arch() < 31:
-        _FSDP2_OVERLAP_LEVEL = FSDP2OverlapLevel.NO_OVERLAP
-        warnings.warn(
-            "The overlapping of FSDP2 was disabled on musa arch older than mp_31"
-        )
     # TODO(mingyuan.wang): Drop these NO_OVERLAP patches once the overlap path is stable enough.
-    if _FSDP2_OVERLAP_LEVEL == FSDP2OverlapLevel.NO_OVERLAP:
+    if overlap_level == FSDP2OverlapLevel.NO_OVERLAP:
         torch.distributed.fsdp._fully_shard._fsdp_collectives.foreach_all_gather.__code__ = (
             foreach_all_gather_non_overlap.__code__
         )
         FSDPParamGroup.wait_for_unshard = wait_for_unshard_non_overlap
-        FSDPParamGroup.post_backward = post_backward_non_overlap
+        # FSDPParamGroup.post_backward = post_backward_non_overlap #（tianyi.tang）:Avoid overlapping the 2.13 new torch_musa post_backward
+    else:
+        torch.distributed.fsdp._fully_shard._fsdp_collectives.foreach_all_gather.__code__ = _ORIGINAL_FSDP2_METHODS_OR_CODES[
+            "foreach_all_gather_code"
+        ]
+        FSDPParamGroup.wait_for_unshard = _ORIGINAL_FSDP2_METHODS_OR_CODES[
+            "wait_for_unshard"
+        ]
+        # FSDPParamGroup.post_backward = _ORIGINAL_FSDP2_METHODS_OR_CODES["post_backward"]
 
 
 def monkey_patched_fully_shard(fully_shard_func):
     """Returns monkey patched fully_shard function, which will apply our patches on the first invocation"""
     has_patched = False
-    from .custom_overlap_patch import _maybe_set_custom_comm
+    applied_overlap_level = None
+
+    from .custom_overlap_patch import _maybe_set_custom_comm, _get_fsdp2_overlap_level
 
     @wraps(fully_shard_func)
     def wrapper(*args, **kwargs):
-        nonlocal has_patched
-        if not has_patched:
-            _setup_fsdp2_patches()
+        nonlocal has_patched, applied_overlap_level
+
+        overlap_level = _get_fsdp2_overlap_level()
+
+        if not has_patched or overlap_level != applied_overlap_level:
+            # re-apply patches if overlap_level was changed
+            _setup_fsdp2_patches(overlap_level)
             has_patched = True
+            applied_overlap_level = overlap_level
+
         fsdp_module = fully_shard_func(*args, **kwargs)
         _maybe_set_custom_comm(fsdp_module)
         return fsdp_module

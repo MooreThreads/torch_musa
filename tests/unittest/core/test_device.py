@@ -5,6 +5,7 @@ import contextlib
 import ctypes
 import queue
 import threading
+from unittest.mock import patch
 import torch
 from torch.testing._internal.common_utils import TestCase
 import pytest
@@ -26,6 +27,19 @@ def test_get_gencode_flags():
     flags = torch.musa.get_gencode_flags()
     for arch in arch_list:
         assert f"--offload-arch=mp_{arch.removeprefix('mp_')}" in flags
+
+
+def test_get_arch_list_empty_when_not_compiled():
+    if torch.musa._is_compiled():
+        pytest.skip("MUSA is compiled")
+    assert torch.musa.get_arch_list() == []
+
+
+@pytest.mark.skipif(not torch.musa._is_compiled(), reason="MUSA not compiled")
+def test_get_arch_list_does_not_need_available():
+    expected = (torch_musa._MUSAC._musa_getArchFlags() or "").split()
+    with patch("torch.musa.is_available", return_value=False):
+        assert torch.musa.get_arch_list() == expected
 
 
 @testing.skip_if_musa_unavailable

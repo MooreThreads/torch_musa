@@ -28,6 +28,7 @@
   _(muGraphAddMemAtomicValueNode)         \
   _(muGraphAddMemTransferNode)            \
   _(muGraphAddMemWaitWriteNode)           \
+  _(muGraphNodeSetEnabled)                \
   _(muGraphExecMemAtomicNodeSetParams)    \
   _(muGraphExecMemTransferNodeSetParams)  \
   _(muGraphExecMemWaitWriteNodeSetParams) \

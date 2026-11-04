@@ -422,9 +422,17 @@ struct ReduceOp {
     extern __shared__ __align__(alignof(arg_vec_t)) char shared_memory[];
     index_t output_idx = config.output_idx<output_vec_size>();
     index_t input_idx = config.input_idx();
-    auto base_offsets1 = output_calc.get(output_idx)[1];
+    index_t base_offsets1 = 0;
+    if (output_idx < config.num_outputs) {
+      base_offsets1 = output_calc.get(output_idx)[1];
+    }
 
     arg_vec_t value;
+
+#pragma unroll
+    for (int i = 0; i < output_vec_size; i++) {
+      value[i] = ident;
+    }
 
     if (output_idx < config.num_outputs && input_idx < config.num_inputs) {
       const scalar_t* input_slice =
@@ -446,7 +454,11 @@ struct ReduceOp {
 
 #pragma unroll
     for (int i = 0; i < output_vec_size; i++) {
-      base_offsets[i] = output_calc.get(output_idx + i)[0];
+      if (output_idx + i < config.num_outputs) {
+        base_offsets[i] = output_calc.get(output_idx + i)[0];
+      } else {
+        base_offsets[i] = 0;
+      }
       out[i] = (out_scalar_t*)((char*)dst[0] + base_offsets[i]);
     }
 
@@ -833,7 +845,11 @@ struct ReduceOp {
 
 #pragma unroll
     for (int i = 0; i < output_vec_size; i++) {
-      base_offsets[i] = output_calc.get(output_idx + i)[0];
+      if (output_idx + i < config.num_outputs) {
+        base_offsets[i] = output_calc.get(output_idx + i)[0];
+      } else {
+        base_offsets[i] = 0;
+      }
       out[i] = (out_scalar_t*)((char*)dst[0] + base_offsets[i]);
     }
 

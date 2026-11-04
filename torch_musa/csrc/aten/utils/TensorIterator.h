@@ -34,8 +34,12 @@ class MusaTensorIterator : public TensorIteratorBase {
 
   void add_borrowed_input(const TensorBase& input);
 
-  virtual void add_output(const TensorBase& output) {
-    add_borrowed_output(output);
+  void add_output(const TensorBase& output) {
+    if (output.defined()) {
+      add_borrowed_output(output);
+    } else {
+      add_owned_output(output);
+    }
   }
 
   void add_input(const TensorBase& input) {
@@ -55,13 +59,13 @@ class MusaTensorIterator : public TensorIteratorBase {
   const Tensor& original_input(int arg) const;
 
  protected:
-  virtual void _set_output_raw_strided(
+  void _set_output_raw_strided(
       int64_t output_idx,
       IntArrayRef sizes,
       IntArrayRef strides,
       TensorOptions options);
 
-  virtual void mark_inplace();
+  void mark_inplace();
 
   optional<ScalarType> common_dtype_for_functional_output() {
     if (cast_common_dtype_to_outputs_) {
@@ -73,16 +77,13 @@ class MusaTensorIterator : public TensorIteratorBase {
  private:
   void check_set_device(at::Device device);
 
-  void check_propagate_names(int64_t output_idx, DimnameList names);
-
   const Tensor& maybe_get_output(int64_t output_idx) override;
 
   void set_output_raw_strided(
       int64_t output_idx,
       IntArrayRef sizes,
       IntArrayRef strides,
-      TensorOptions options,
-      DimnameList names) override;
+      TensorOptions options) override;
 
   StrideVector compatible_stride() const;
 
@@ -108,42 +109,6 @@ class MusaTensorIterator : public TensorIteratorBase {
   ScalarType promote_common_dtype_ = ScalarType::Undefined;
   std::function<ScalarType(ScalarType)> common_dtype_lifter_;
   c10::musa::OptionalMUSAGuard guard_;
-};
-
-class FunctionalTensorIterator : public MusaTensorIterator {
- public:
-  void add_output(const TensorBase& output) override {
-    add_owned_output(output);
-  }
-
- private:
-  void _set_output_raw_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options) override;
-
-  void mark_inplace() override {}
-};
-
-class InplaceTensorIterator : public MusaTensorIterator {
- private:
-  void _set_output_raw_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options) override;
-
-  void mark_inplace() override;
-};
-
-class OutTensorIterator : public MusaTensorIterator {
- private:
-  void _set_output_raw_strided(
-      int64_t output_idx,
-      IntArrayRef sizes,
-      IntArrayRef strides,
-      TensorOptions options) override;
 };
 
 } // namespace musa
