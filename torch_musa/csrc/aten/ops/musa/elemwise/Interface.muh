@@ -9,6 +9,8 @@ void AddKernel(TensorIteratorBase& iter, const Scalar& alpha);
 
 void FillKernel(TensorIteratorBase& iter, const Scalar& value);
 
+void MaskedFillKernel(TensorIteratorBase& iter, const Scalar& value);
+
 } // namespace at::musa
 
 #endif // TORCH_MUSA_CSRC_ATEN_OPS_MUSA_ELEMWISE_INTERFACE_MUH_
