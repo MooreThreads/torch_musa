@@ -33,57 +33,19 @@ if(NOT DEFINED USE_MCCL)
 endif()
 if(USE_MCCL)
   find_package(MCCL REQUIRED)
-  add_library(mccl SHARED IMPORTED)
-  set_target_properties(mccl PROPERTIES
-    IMPORTED_LOCATION ${MCCL_LIBRARIES}
-    INTERFACE_INCLUDE_DIRECTORIES ${MCCL_INCLUDE_DIRS}
-  )
+  if(NOT TARGET mccl)
+    add_library(mccl SHARED IMPORTED)
+    set_target_properties(mccl PROPERTIES
+      IMPORTED_LOCATION ${MCCL_LIBRARIES}
+      INTERFACE_INCLUDE_DIRECTORIES ${MCCL_INCLUDE_DIRS}
+    )
+  endif()
   list(APPEND DEPENDENT_TARGETS mccl)
 endif()
 
-# python
-find_package(Python COMPONENTS Interpreter Development REQUIRED)
-list(APPEND DEPENDENT_TARGETS Python::Python)
-
 # torch
-execute_process(
-  COMMAND ${Python_EXECUTABLE} -c "
-import os
-os.environ[\"TORCH_DEVICE_BACKEND_AUTOLOAD\"] = \"0\"
-import torch
-print(torch.utils.cmake_prefix_path)
-"
-  OUTPUT_VARIABLE TORCH_PYTHONPATH
-)
-string(REGEX REPLACE "^(.+)\n$" "\\1" TORCH_PYTHONPATH ${TORCH_PYTHONPATH})
-list(APPEND CMAKE_PREFIX_PATH ${TORCH_PYTHONPATH})
 find_package(Torch REQUIRED CONFIG)
-list(POP_BACK CMAKE_PREFIX_PATH)
-
-execute_process(
-  COMMAND ${Python_EXECUTABLE} -c "
-import os
-os.environ[\"TORCH_DEVICE_BACKEND_AUTOLOAD\"] = \"0\"
-from torch.utils.cpp_extension import TORCH_LIB_PATH
-print(TORCH_LIB_PATH)
-"
-  OUTPUT_VARIABLE TORCH_LIBDIR
-)
-string(REGEX REPLACE "^(.+)\n$" "\\1" TORCH_LIBDIR ${TORCH_LIBDIR})
-
-set(TORCH_LIBS)
-foreach (_arg c10 torch torch_cpu torch_python)
-  find_library(${_arg}_LIBRARY ${_arg} PATHS ${TORCH_LIBDIR} REQUIRED)
-  list(APPEND TORCH_LIBS ${${_arg}_LIBRARY})
-endforeach()
-
-add_library(_torch INTERFACE)
-set_target_properties(_torch PROPERTIES
-  INTERFACE_LINK_LIBRARIES "${TORCH_LIBS}"
-  INTERFACE_COMPILE_OPTIONS $<TARGET_PROPERTY:torch,INTERFACE_COMPILE_OPTIONS>
-  INTERFACE_COMPILE_FEATURES "cxx_std_$<TARGET_PROPERTY:torch,CXX_STANDARD>"
-)
-list(APPEND DEPENDENT_TARGETS _torch)
+list(APPEND DEPENDENT_TARGETS torch c10)
 
 # torch_musa
 if(DEFINED ENV{TorchMusa_INSTALL_PREFIX})
@@ -104,16 +66,37 @@ set(TorchMusa_INCLUDE_DIRS
   ${TorchMusa_INSTALL_PREFIX}/share/generated_cuda_compatible/include/torch/csrc/api/include
 )
 
-set(TorchMusa_LIBRARIES)
-find_library(TorchMusa_LIBRARY REQUIRED NAMES musa_python PATHS "${TorchMusa_INSTALL_PREFIX}/lib" REQUIRED)
-list(APPEND TorchMusa_LIBRARIES ${TorchMusa_LIBRARY})
+find_library(TorchMusa_LIBRARY NAMES torch_musa
+             PATHS "${TorchMusa_INSTALL_PREFIX}/lib" REQUIRED)
 
-add_library(torch_musa SHARED IMPORTED)
-set_target_properties(torch_musa PROPERTIES
-  IMPORTED_LOCATION ${TorchMusa_LIBRARIES}
-  INTERFACE_INCLUDE_DIRECTORIES "${TorchMusa_INCLUDE_DIRS}"
-  INTERFACE_LINK_OPTIONS "-Wl,--as-needed"
-)
-target_link_libraries(torch_musa INTERFACE ${DEPENDENT_TARGETS})
+if(NOT TARGET torch_musa_runtime)
+  add_library(torch_musa_runtime SHARED IMPORTED)
+  set_target_properties(torch_musa_runtime PROPERTIES
+    IMPORTED_LOCATION ${TorchMusa_LIBRARY}
+    INTERFACE_INCLUDE_DIRECTORIES "${TorchMusa_INCLUDE_DIRS}"
+    INTERFACE_COMPILE_FEATURES cxx_std_20
+  )
+  target_link_libraries(torch_musa_runtime INTERFACE ${DEPENDENT_TARGETS})
+endif()
+
+# Match torch_cuda_library: retain static registrations even when the consumer
+# only calls ATen APIs and references no MUSA symbols directly.
+if(NOT TARGET torch_musa)
+  caffe2_interface_library(torch_musa_runtime torch_musa)
+  target_compile_features(torch_musa INTERFACE cxx_std_20)
+endif()
+set(TorchMusa_LIBRARIES torch_musa)
+
+# Python bindings are optional for C++ consumers. They are exposed as a
+# separate imported target when the installed package contains the library.
+find_library(TorchMusaPython_LIBRARY NAMES musa_python
+             PATHS "${TorchMusa_INSTALL_PREFIX}/lib")
+if(TorchMusaPython_LIBRARY AND NOT TARGET torch_musa_python)
+  add_library(torch_musa_python SHARED IMPORTED)
+  set_target_properties(torch_musa_python PROPERTIES
+    IMPORTED_LOCATION ${TorchMusaPython_LIBRARY}
+    INTERFACE_INCLUDE_DIRECTORIES "${TorchMusa_INCLUDE_DIRS}")
+  target_link_libraries(torch_musa_python INTERFACE torch_musa)
+endif()
 
 find_package_handle_standard_args(TorchMusa DEFAULT_MSG TorchMusa_LIBRARIES TorchMusa_INCLUDE_DIRS)

@@ -427,8 +427,12 @@ def MUSAExtension(name, sources, *args, **kwargs):
     libraries.append("c10")
     libraries.append("torch")
     libraries.append("torch_cpu")
-    libraries.append("torch_python")
-    libraries.append("musa_python")
+    libraries.append("torch_musa")
+    if not kwargs.get("py_limited_api", False):
+        # Stable-ABI extensions use the core runtime and must not depend on
+        # the Python bindings libraries.
+        libraries.append("torch_python")
+        libraries.append("musa_python")
     kwargs["libraries"] = libraries
 
     include_dirs = kwargs.get("include_dirs", [])
@@ -907,13 +911,12 @@ def _prepare_ldflags(extra_ldflags, with_musa, verbose, is_standalone):
     extra_ldflags.append("-ltorch_cpu")
     if with_musa:
         extra_ldflags.append(f"-L{TORCH_MUSA_LIB_PATH}")
+        extra_ldflags.append("-ltorch_musa")
     extra_ldflags.append("-ltorch")
     if not is_standalone:
         extra_ldflags.append("-ltorch_python")
         extra_ldflags.append("-lmusa_python")
-        extra_ldflags.append(
-            "-lmusa_kernels"
-        )  # TODO: aotinductor cpp impl compiled to musa_kernels.so
+        extra_ldflags.append("-lmusa_kernels")
 
     if is_standalone:
         extra_ldflags.append(f"-Wl,-rpath,{TORCH_LIB_PATH}")

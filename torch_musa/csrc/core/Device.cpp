@@ -1,11 +1,7 @@
 #include "torch_musa/csrc/core/Device.h"
 
-#include <pybind11/embed.h>
-
 #include "torch_musa/csrc/core/MUSAFunctions.h"
 #include "torch_musa/csrc/core/MUSAGuard.h"
-
-namespace py = pybind11;
 
 namespace c10::musa {
 

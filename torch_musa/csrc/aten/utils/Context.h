@@ -4,8 +4,6 @@
 #include <c10/core/ScalarType.h>
 #include <c10/util/CallOnce.h>
 #include <c10/util/env.h>
-#include <torch/csrc/tensor/python_tensor.h>
-
 #include <mudnn.h>
 
 #include "torch_musa/csrc/aten/mudnn/Tensor.h"
@@ -72,8 +70,6 @@ static inline bool HasMUSA() {
 ComputeMode GetComputeModeFromCtx(const at::ScalarType& dtype);
 
 ComputeMode GetMatmulComputeModeFromCtx(const at::ScalarType& dtype);
-
-PyMethodDef* GetContextMethods();
 
 } // namespace musa
 } // namespace at

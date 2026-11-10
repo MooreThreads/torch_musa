@@ -18,20 +18,50 @@ file(
   profiler/*.cpp
   utils/*.cpp)
 
+# Python bindings are kept in a separate target. Keep this list explicit so
+# adding a new binding source to the glob above cannot silently put it into the
+# no-Python runtime library.
+set(MUSA_PYTHON_CSRCS
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/Module.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/Stream.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/Event.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/Graph.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/PythonComm.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/PythonMCCL.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/PythonTensor.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/StorageSharing.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/StreamUtils.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/core/musart.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/aten/utils/ContextPython.cpp)
+list(REMOVE_ITEM _CSRCS ${MUSA_PYTHON_CSRCS})
+
 list(APPEND MUSA_CSRCS ${_CSRCS} ${GENERATED_MUSA_CSRCS})
 list(APPEND MUSA_CSRCS ${GENERATED_PORTING_DIR}/torch/csrc/musa/shim_common.cpp)
 
 if(USE_MCCL)
   file(GLOB _MCCL_CSRCS distributed/*.cpp)
+  # ProcessGroupMCCL and the flight recorder are part of the C++ runtime, as
+  # ProcessGroupNCCL is part of libtorch_cuda. Only the pybind registrations
+  # belong to the Python bindings library.
+  list(REMOVE_ITEM _MCCL_CSRCS
+       ${CMAKE_CURRENT_SOURCE_DIR}/distributed/Register.cpp)
   list(APPEND MUSA_CSRCS ${_MCCL_CSRCS})
+  list(APPEND MUSA_PYTHON_CSRCS
+       ${CMAKE_CURRENT_SOURCE_DIR}/distributed/Register.cpp)
 endif()
 
 file(GLOB_RECURSE AOTI_MUSA_SRCS inductor/aoti_runner/*.cpp
      inductor/aoti_torch/*.cpp)
+list(REMOVE_ITEM AOTI_MUSA_SRCS
+     ${CMAKE_CURRENT_SOURCE_DIR}/inductor/aoti_runner/pybind.cpp)
 list(APPEND MUSA_CSRCS ${AOTI_MUSA_SRCS})
+list(APPEND MUSA_PYTHON_CSRCS
+     ${CMAKE_CURRENT_SOURCE_DIR}/inductor/aoti_runner/pybind.cpp
+     ${GENERATED_PORTING_DIR}/torch/csrc/musa/Stream.cpp)
 
 # Pass to parent
 set(MUSA_CSRCS ${MUSA_CSRCS} PARENT_SCOPE)
+set(MUSA_PYTHON_CSRCS ${MUSA_PYTHON_CSRCS} PARENT_SCOPE)
 
 list(APPEND CMAKE_MODULE_PATH $ENV{MUSA_HOME}/cmake)
 find_package(MUSA REQUIRED)
@@ -70,6 +100,8 @@ file(
   ${GENERATED_PORTING_DIR}/torch/csrc/musa/Stream.cpp
   ${GENERATED_PORTING_DIR}/torch/csrc/musa/Distributions.cpp
   ${GENERATED_PORTING_DIR}/torch/csrc/musa/Loss.cpp)
+list(REMOVE_ITEM PORTING_CPP_CSRCS
+     ${GENERATED_PORTING_DIR}/torch/csrc/musa/Stream.cpp)
 
 # cmake-lint: disable=C0301
 file(
@@ -304,7 +336,8 @@ musa_add_library(
   ${ATEN_MUSA_CSRCS}
   ${SYMM_MEM_CPP_SRCS})
 
-# CCCL: select the MUSA thrust backend, and give CUB the arches this build offloads
+# CCCL: select the MUSA thrust backend, and give CUB the arches this build
+# offloads
 set(CUB_MUSA_ARCH_LIST "")
 foreach(TORCH_MUSA_ARCH ${TORCH_MUSA_ARCH_LIST})
   string(REGEX MATCH "[0-9]+" ARCH_INT ${TORCH_MUSA_ARCH})

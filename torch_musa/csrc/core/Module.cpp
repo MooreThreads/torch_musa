@@ -24,6 +24,7 @@
 
 #include "torch_musa/csrc/aten/musa/MUSAContext.h"
 #include "torch_musa/csrc/aten/musa/MUSAGeneratorImpl.h"
+#include "torch_musa/csrc/aten/utils/ContextPython.h"
 #include "torch_musa/csrc/aten/utils/Utils.h"
 #include "torch_musa/csrc/core/Device.h"
 #include "torch_musa/csrc/core/Event.h"
