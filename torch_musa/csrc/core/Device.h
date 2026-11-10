@@ -2,7 +2,6 @@
 #define TORCH_MUSA_CSRC_CORE_MUSA_DEVICE_H_
 
 #include <c10/core/Device.h>
-#include <pybind11/pybind11.h>
 
 #define MUSA_COMPILE_TIME_MAX_GPUS 16
 

@@ -1,14 +1,9 @@
-#include <pybind11/pybind11.h>
-
+#include <ATen/Context.h>
 #include <c10/core/ScalarType.h>
-#include <torch/csrc/THP.h>
-#include <torch/csrc/utils/pybind.h>
-#include <torch/csrc/utils/pycfunction_helpers.h>
 
 #include "torch_musa/csrc/aten/utils/Context.h"
 
-namespace at {
-namespace musa {
+namespace at::musa {
 
 Context& GlobalContext() {
   static Context global_context_;
@@ -36,7 +31,6 @@ static constexpr const std::array<const char*, 2> mublas_deterministic_configs =
     {":4096:8", ":16:8"};
 
 bool Context::checkMuBLASConfigDeterministic() {
-  // mublas not support determinstic config mubas 12.8
   if (hasMUSART()) {
     const auto workspace_config = c10::utils::get_env(mublas_config_var_name);
     return (
@@ -55,7 +49,6 @@ void Context::alertMuBLASConfigNotDeterministic() const {
     return;
   }
 
-  // mublas not support determinstic config mubas 12.8
   auto msg = c10::str(
       "Deterministic behavior was enabled with either `torch.use_deterministic_algorithms(True)` or ",
       "`at::Context::setDeterministicAlgorithms(true)`, but this operation is not deterministic because ",
@@ -78,55 +71,4 @@ void Context::alertMuBLASConfigNotDeterministic() const {
   }
 }
 
-PyObject* THPModuleSetAllowTF32(PyObject* /*unused*/, PyObject* arg) {
-  TORCH_CHECK(
-      PyBool_Check(arg),
-      "set_allow_tf32 expects a bool, "
-      "but got ",
-      THPUtils_typename(arg));
-  at::musa::GlobalContext().SetAllowTF32(arg == Py_True);
-  Py_RETURN_NONE;
-}
-
-PyObject* THPModuleGetAllowTF32(PyObject* /*_unused*/, PyObject* /*_unused*/) {
-  if (at::musa::GlobalContext().GetAllowTF32())
-    Py_RETURN_TRUE;
-  else
-    Py_RETURN_FALSE;
-}
-
-PyObject* THPModuleSetMublasAllowTF32(PyObject* /*unused*/, PyObject* arg) {
-  TORCH_CHECK(
-      PyBool_Check(arg),
-      "set_mublas_mallow_tf32 expects a bool, "
-      "but got ",
-      THPUtils_typename(arg));
-  at::musa::GlobalContext().SetAllowMublasTF32(arg == Py_True);
-  Py_RETURN_NONE;
-}
-
-PyObject* THPModuleGetMublasAllowTF32(
-    PyObject* /*_unused*/,
-    PyObject* /*_unused*/) {
-  if (at::musa::GlobalContext().GetAllowMublasTF32())
-    Py_RETURN_TRUE;
-  else
-    Py_RETURN_FALSE;
-}
-
-static PyMethodDef ContextMethods[] = { // NOLINT
-    {"_get_allow_tf32", THPModuleGetAllowTF32, METH_NOARGS, nullptr},
-    {"_set_allow_tf32", THPModuleSetAllowTF32, METH_O, nullptr},
-    {"_get_mublas_allow_tf32",
-     THPModuleGetMublasAllowTF32,
-     METH_NOARGS,
-     nullptr},
-    {"_set_mublas_allow_tf32", THPModuleSetMublasAllowTF32, METH_O, nullptr},
-    {nullptr, nullptr, 0, nullptr}};
-
-PyMethodDef* GetContextMethods() {
-  return ContextMethods;
-}
-
-} // namespace musa
-} // namespace at
+} // namespace at::musa

@@ -7,6 +7,9 @@ set -e
 #     specify which MUSA architectures to build for.
 #     ie 'TORCH_MUSA_ARCH_LIST="21;22"'
 #
+#   BUILD_PYTHON
+#     build the Python bindings and musa_python (ON/OFF, default: ON).
+#
 
 CUR_DIR=$(
   cd $(dirname $0)
@@ -17,6 +20,7 @@ PYTORCH_PATH=${PYTORCH_REPO_PATH:-$(realpath ${TORCH_MUSA_HOME}/../pytorch)}
 TORCH_PATCHES_DIR=${TORCH_MUSA_HOME}/torch_patches/
 
 BUILD_WHEEL=0
+BUILD_PYTHON=${BUILD_PYTHON:-ON}
 DEBUG_MODE=0
 ASAN_MODE=0
 BUILD_TORCH=1
@@ -328,6 +332,7 @@ build_torch_musa() {
       ENABLE_COMPILE_FP64=${COMPILE_FP64}  \
       USE_MCCL=${USE_MCCL} \
       USE_KINETO=${USE_KINETO} \
+      BUILD_PYTHON=${BUILD_PYTHON} \
       VERBOSE=${VERBOSE_ENV_VALUE} \
       python -m pip wheel . --wheel-dir ./dist --no-build-isolation "${PIP_VERBOSE_ARGS[@]}"
     status=$?
@@ -341,6 +346,7 @@ build_torch_musa() {
       ENABLE_COMPILE_FP64=${COMPILE_FP64} \
       USE_MCCL=${USE_MCCL} \
       USE_KINETO=${USE_KINETO} \
+      BUILD_PYTHON=${BUILD_PYTHON} \
       VERBOSE=${VERBOSE_ENV_VALUE} \
       python -m pip install --no-build-isolation "${PIP_VERBOSE_ARGS[@]}" -e .
     status=$?

@@ -15,6 +15,10 @@ if(NOT DEFINED BUILD_PYTORCH_REPO_PATH)
                       "set to find some modules in PyTorch repo.")
 endif()
 
+# Resolve the installed package before adding source-tree find modules, which
+# assume they are being run inside PyTorch's own top-level configuration.
+find_package(Torch REQUIRED CONFIG)
+
 # We should include PyTorch customized cmake modules into our search path.
 list(APPEND CMAKE_MODULE_PATH ${BUILD_PYTORCH_REPO_PATH}/cmake/Modules)
 
@@ -60,6 +64,7 @@ option(ENABLE_COMPILE_FP64 "Enable FP64" OFF)
 option(USE_ASAN "Use Address Sanitizer" OFF)
 option(USE_TSAN "Use Thread Sanitizer" OFF)
 option(USE_MCCL "USE MCCL" ON)
+option(BUILD_PYTHON "Build the torch_musa Python bindings" ON)
 option(MUSA_VERBOSE_BUILD "Print Building details of musa compiling unit." OFF)
 include(CMakeDependentOption)
 
@@ -243,6 +248,7 @@ endif()
 
 # =============================================================
 set(PLUGIN_NAME "musa_python")
+set(CORE_PLUGIN_NAME "torch_musa")
 set(MUSA_CSRCS)
 set(MUSA_KERNELS_LIB "musa_kernels")
 
@@ -370,14 +376,14 @@ include_directories(${CODE_GENERATED_DIR})
 # Set PyTorch 3rd party headers dir, included since torch2.9.0
 include_directories(${BUILD_PYTORCH_REPO_PATH}/third_party/nlohmann/include)
 
-# Set Python include dir, python version shoud be ge than 3.10
-find_package(Python3 ${TORCH_MUSA_PYTHON_MINIMUM_VERSION} REQUIRED
-             COMPONENTS Development Interpreter)
-
-if(Python3_FOUND)
-  include_directories(${Python3_INCLUDE_DIRS})
+# Code generation always needs a Python interpreter. Python headers are only
+# needed by the optional bindings target.
+if(BUILD_PYTHON)
+  find_package(Python3 ${TORCH_MUSA_PYTHON_MINIMUM_VERSION} REQUIRED
+               COMPONENTS Development Interpreter)
 else()
-  message(FATAL_ERROR "Cannot find installed Python3 header file directory")
+  find_package(Python3 ${TORCH_MUSA_PYTHON_MINIMUM_VERSION} REQUIRED
+               COMPONENTS Interpreter)
 endif()
 
 set(CODEGEN_TARGET "musa_codegen")
@@ -394,7 +400,7 @@ set(GENERATED_MUSA_CSRCS
 add_custom_command(
   OUTPUT ${GENERATED_MUSA_CSRCS}
   COMMENT "Generating for musa op files ..."
-  COMMAND python tools/codegen/gen_torch_musa.py
+  COMMAND ${Python3_EXECUTABLE} tools/codegen/gen_torch_musa.py
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
   DEPENDS ${PROJECT_SOURCE_DIR}/torch_musa/csrc/aten/ops/musa_functions.yaml
           ${BUILD_PYTORCH_REPO_PATH}/aten/src/ATen/native/native_functions.yaml
@@ -407,10 +413,21 @@ add_custom_target(${CODEGEN_TARGET} DEPENDS ${GENERATED_MUSA_CSRCS})
 
 add_subdirectory(${PROJECT_SOURCE_DIR}/torch_musa/csrc)
 set(CPP_SRCS ${MUSA_CSRCS})
-add_library(${PLUGIN_NAME} SHARED ${CPP_SRCS})
+add_library(${CORE_PLUGIN_NAME} SHARED ${CPP_SRCS})
+if(BUILD_PYTHON)
+  add_library(${PLUGIN_NAME} SHARED ${MUSA_PYTHON_CSRCS})
+  target_include_directories(${PLUGIN_NAME} PRIVATE ${Python3_INCLUDE_DIRS})
+endif()
 
-target_compile_options(
-  ${PLUGIN_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${private_compile_options}>)
+set(MUSA_RUNTIME_TARGETS ${CORE_PLUGIN_NAME})
+if(BUILD_PYTHON)
+  list(APPEND MUSA_RUNTIME_TARGETS ${PLUGIN_NAME})
+endif()
+foreach(_musa_target IN LISTS MUSA_RUNTIME_TARGETS)
+  target_compile_options(
+    ${_musa_target}
+    PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${private_compile_options}>)
+endforeach()
 
 # Add MUTLASS headers dir
 target_include_directories(
@@ -429,14 +446,22 @@ target_compile_definitions(fmt PRIVATE FMT_SHARED=0)
 # Codegen.cmake
 if(USE_PER_OPERATOR_HEADERS)
   target_compile_definitions(${MUSA_KERNELS_LIB} PUBLIC AT_PER_OPERATOR_HEADERS)
-  target_compile_definitions(${PLUGIN_NAME} PUBLIC AT_PER_OPERATOR_HEADERS)
+  target_compile_definitions(${CORE_PLUGIN_NAME} PUBLIC AT_PER_OPERATOR_HEADERS)
+  if(BUILD_PYTHON)
+    target_compile_definitions(${PLUGIN_NAME} PUBLIC AT_PER_OPERATOR_HEADERS)
+  endif()
 endif()
 
 target_compile_definitions(${MUSA_KERNELS_LIB}
                            PUBLIC -DREAL_MUSA_VERSION=${REAL_MUSA_VERSION})
-target_compile_definitions(${PLUGIN_NAME}
+target_compile_definitions(${CORE_PLUGIN_NAME}
                            PUBLIC -DREAL_MUSA_VERSION=${REAL_MUSA_VERSION})
-target_compile_definitions(${PLUGIN_NAME} PUBLIC USE_MUSA)
+target_compile_definitions(${CORE_PLUGIN_NAME} PUBLIC USE_MUSA)
+if(BUILD_PYTHON)
+  target_compile_definitions(${PLUGIN_NAME}
+                             PUBLIC -DREAL_MUSA_VERSION=${REAL_MUSA_VERSION})
+  target_compile_definitions(${PLUGIN_NAME} PUBLIC USE_MUSA)
+endif()
 target_compile_definitions(${MUSA_KERNELS_LIB} PUBLIC -DNO_MUDNN_DESTROY_HANDLE)
 
 if(USE_MUDNN_C_API)
@@ -444,7 +469,11 @@ if(USE_MUDNN_C_API)
                              PUBLIC TORCH_MUSA_USE_MUDNN_C_API)
   # Quantized/mudnn C++ interfaces live in the plugin library target, so they
   # also need the macro to select the C-API wrapper implementations.
-  target_compile_definitions(${PLUGIN_NAME} PUBLIC TORCH_MUSA_USE_MUDNN_C_API)
+  target_compile_definitions(${CORE_PLUGIN_NAME}
+                             PUBLIC TORCH_MUSA_USE_MUDNN_C_API)
+  if(BUILD_PYTHON)
+    target_compile_definitions(${PLUGIN_NAME} PUBLIC TORCH_MUSA_USE_MUDNN_C_API)
+  endif()
 endif()
 
 if(REAL_MUSA_VERSION GREATER_EQUAL "5010")
@@ -462,8 +491,13 @@ target_compile_definitions(
   ${MUSA_KERNELS_LIB} PUBLIC -DMUSA_COMP_VERSION=${MUSA_COMP_VERSION}
                              -DMUSPARSE_VERSION=${MUSPARSE_VERSION})
 target_compile_definitions(
-  ${PLUGIN_NAME} PUBLIC -DMUSA_COMP_VERSION=${MUSA_COMP_VERSION}
-                        -DMUSPARSE_VERSION=${MUSPARSE_VERSION})
+  ${CORE_PLUGIN_NAME} PUBLIC -DMUSA_COMP_VERSION=${MUSA_COMP_VERSION}
+                             -DMUSPARSE_VERSION=${MUSPARSE_VERSION})
+if(BUILD_PYTHON)
+  target_compile_definitions(
+    ${PLUGIN_NAME} PUBLIC -DMUSA_COMP_VERSION=${MUSA_COMP_VERSION}
+                          -DMUSPARSE_VERSION=${MUSPARSE_VERSION})
+endif()
 
 add_dependencies(${MUSA_KERNELS_LIB} ${CODEGEN_TARGET})
 target_link_options(${MUSA_KERNELS_LIB} PUBLIC "-Wl,--as-needed")
@@ -474,20 +508,31 @@ set_source_files_properties(
   PROPERTIES COMPILE_FLAGS
              "-DMUSA_ARCH_FLAGS=\"${PYTORCH_MUSA_ARCH_readable}\"")
 
-target_link_libraries(${PLUGIN_NAME} PUBLIC ${DEPENDENT_LIBRARIES})
-target_link_libraries(${PLUGIN_NAME} PUBLIC ${MUSA_KERNELS_LIB})
-target_link_libraries(${PLUGIN_NAME} PRIVATE fmt)
+target_link_libraries(${CORE_PLUGIN_NAME} PUBLIC ${DEPENDENT_LIBRARIES})
+target_link_libraries(${CORE_PLUGIN_NAME} PUBLIC ${MUSA_KERNELS_LIB})
+target_link_libraries(${CORE_PLUGIN_NAME} PUBLIC c10 torch_cpu_library)
+target_link_libraries(${CORE_PLUGIN_NAME} PRIVATE fmt)
 find_package(Threads REQUIRED)
-target_link_libraries(${PLUGIN_NAME} PRIVATE Threads::Threads)
+target_link_libraries(${CORE_PLUGIN_NAME} PRIVATE Threads::Threads)
 
 if(LINUX)
-  target_link_libraries(${PLUGIN_NAME} PRIVATE dl)
+  target_link_libraries(${CORE_PLUGIN_NAME} PRIVATE dl)
+endif()
+
+if(BUILD_PYTHON)
+  find_library(
+    TORCH_PYTHON_LIBRARY
+    NAMES torch_python
+    PATHS "${TORCH_INSTALL_PREFIX}/lib"
+    NO_DEFAULT_PATH REQUIRED)
+  target_link_libraries(${PLUGIN_NAME} PRIVATE ${CORE_PLUGIN_NAME}
+                                               ${TORCH_PYTHON_LIBRARY})
 endif()
 
 # compile musa_kernel of the extension
 set(EXT_MUSA_KERNEL_LIB "_ext_musa_kernels")
 add_subdirectory(${PROJECT_SOURCE_DIR}/torch_musa/csrc/extension)
-target_link_libraries(${EXT_MUSA_KERNEL_LIB} PUBLIC ${PLUGIN_NAME})
+target_link_libraries(${EXT_MUSA_KERNEL_LIB} PUBLIC ${CORE_PLUGIN_NAME})
 
 set(INSTALL_BIN_DIR "bin")
 set(INSTALL_LIB_DIR "lib64")
@@ -495,21 +540,25 @@ set(INSTALL_INC_DIR "include")
 set(INSTALL_SHARE_DIR "share")
 set(INSTALL_DOC_DIR "docs")
 
-set_target_properties(
-  ${PLUGIN_NAME} PROPERTIES VERSION ${TORCH_MUSA_VERSION}
-                            SOVERSION ${TORCH_MUSA_VERSION_MAJOR})
-set_target_properties(
-  ${PLUGIN_NAME}
-  PROPERTIES OUTPUT_NAME ${PLUGIN_NAME}
-             POSITION_INDEPENDENT_CODE true
-             INSTALL_RPATH_USE_LINK_PATH false
-             RUNTIME_OUTPUT_DIRECTORY ${INSTALL_BIN_DIR}
-             LIBRARY_OUTPUT_DIRECTORY ${INSTALL_LIB_DIR}
-             ARCHIVE_OUTPUT_DIRECTORY ${INSTALL_LIB_DIR})
-set_target_properties(${PLUGIN_NAME} PROPERTIES LINK_FLAGS "-Wl,-rpath,$ORIGIN")
-set_target_properties(${PLUGIN_NAME} PROPERTIES INSTALL_RPATH "$ORIGIN")
+foreach(_musa_target IN LISTS MUSA_RUNTIME_TARGETS)
+  set_target_properties(
+    ${_musa_target}
+    PROPERTIES VERSION ${TORCH_MUSA_VERSION}
+               SOVERSION ${TORCH_MUSA_VERSION_MAJOR}
+               POSITION_INDEPENDENT_CODE true
+               INSTALL_RPATH_USE_LINK_PATH false
+               RUNTIME_OUTPUT_DIRECTORY ${INSTALL_LIB_DIR}
+               LIBRARY_OUTPUT_DIRECTORY ${INSTALL_LIB_DIR}
+               ARCHIVE_OUTPUT_DIRECTORY ${INSTALL_LIB_DIR}
+               INSTALL_RPATH "$ORIGIN")
+  set_target_properties(${_musa_target} PROPERTIES LINK_FLAGS
+                                                   "-Wl,-rpath,$ORIGIN")
+endforeach()
 
-install(TARGETS ${PLUGIN_NAME})
+install(TARGETS ${CORE_PLUGIN_NAME})
+if(BUILD_PYTHON)
+  install(TARGETS ${PLUGIN_NAME})
+endif()
 
 include(${PROJECT_SOURCE_DIR}/cmake/summary.cmake)
 torch_musa_build_configuration_summary()

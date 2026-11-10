@@ -2,7 +2,6 @@
 #include <ATen/NativeFunctions.h>
 #include <ATen/native/Resize.h>
 #include <c10/core/ScalarTypeToTypeMeta.h>
-#include <torch/extension.h>
 #include <torch/library.h>
 
 #ifndef AT_PER_OPERATOR_HEADERS

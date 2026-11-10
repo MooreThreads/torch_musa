@@ -11,9 +11,10 @@ import subprocess
 import distutils.command.clean
 
 from os.path import dirname, join
-from setuptools import setup, find_packages
+from pathlib import Path
+from setuptools import Distribution, setup, find_packages
 import setuptools.command.install
-
+from setuptools.command.bdist_wheel import bdist_wheel as setuptools_bdist_wheel
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if not os.path.exists(os.path.join(BASE_DIR, "tools", "cuda_porting")):
@@ -23,6 +24,9 @@ if BASE_DIR not in sys.path:
 
 CLEAN_MODE = "clean" in sys.argv
 METADATA_MODE = any(arg in {"egg_info", "dist_info"} for arg in sys.argv)
+# Building must not load an already-installed torch_musa backend: the in-tree
+# bindings may be absent (BUILD_PYTHON=OFF) or stale.
+os.environ["TORCH_DEVICE_BACKEND_AUTOLOAD"] = "0"
 if not CLEAN_MODE:
     from torch.utils.cpp_extension import CppExtension  # pylint: disable=C0411
     from torch.utils.cpp_extension import (
@@ -49,10 +53,62 @@ with open("version.txt", "r", encoding="utf-8") as version_file:
 RERUN_CMAKE = False
 
 
+def build_python_enabled():
+    """Return whether the native Python bindings should be built.
+
+    Keep the default aligned with the CMake option in this repository while
+    accepting the common CMake/Python spellings used by an upper-level build.
+    """
+    value = os.getenv("BUILD_PYTHON", "ON").strip().upper()
+    if value in {"ON", "1", "YES", "TRUE", "Y", "T"}:
+        return True
+    if value in {"", "OFF", "0", "NO", "FALSE", "N", "F"}:
+        return False
+    raise ValueError(
+        f"Invalid BUILD_PYTHON={value!r}; use ON/OFF, TRUE/FALSE, 1/0, or T/F"
+    )
+
+
+# Match the upstream libtorch-only wheel: a distinct distribution name so a
+# no-Python install cannot overwrite a Python-enabled torch_musa.
+PACKAGE_NAME = os.getenv(
+    "TORCH_MUSA_PACKAGE_NAME",
+    "torch_musa" if build_python_enabled() else "torch_musa_no_python",
+)
+
+
 class Install(setuptools.command.install.install):
     """
     Install class.
     """
+
+
+class BinaryDistribution(Distribution):
+    # Native libraries are built by CMake even when ext_modules is empty.
+    # Match PyTorch's binary wheel layout and platform tagging.
+    def has_ext_modules(self):
+        return True
+
+
+class bdist_wheel(setuptools_bdist_wheel):  # pylint: disable=invalid-name
+    """Wheel builder that strips Python sources from the no-python wheel."""
+
+    def write_wheelfile(self, *args, **kwargs):
+        super().write_wheelfile(*args, **kwargs)
+        # editable_wheel also calls write_wheelfile to create the wheel
+        # metadata, but it does not populate bdist_dir with a staged package
+        # tree. Stripping sources and creating an empty __init__.py there
+        # would leave the editable install inconsistent.
+        if build_python_enabled() or "editable_wheel" in sys.argv:
+            return
+        # Match the upstream libtorch-only wheel: strip the Python sources,
+        # keep the native libraries, and leave an empty package marker.
+        if self.bdist_dir is None:
+            raise AssertionError("self.bdist_dir must not be None")
+        bdist_dir = Path(self.bdist_dir)
+        for path in bdist_dir.rglob("*.py"):
+            path.unlink()
+        (bdist_dir / "torch_musa" / "__init__.py").touch()
 
 
 class Clean(distutils.command.clean.clean):
@@ -104,7 +160,7 @@ def get_pytorch_install_path():
 
 def build_musa_lib():
     """
-    Build musa python lib.
+    Build the MUSA native libraries.
     """
     tools_dir = os.path.join(BASE_DIR, "tools")
     tools_mod = sys.modules.get("tools")
@@ -139,6 +195,10 @@ def build_musa_lib():
     env["CODE_GENERATED_DIR"] = code_generated_path
     # add `BUILD` prefix to avoid env being filtered.
     env["BUILD_PYTORCH_REPO_PATH"] = env["PYTORCH_REPO_PATH"]
+    # Find Torch through its installed CMake package, including editable builds.
+    env["CMAKE_PREFIX_PATH"] = ";".join(
+        filter(None, [get_pytorch_install_path(), env.get("CMAKE_PREFIX_PATH")])
+    )
     build_test = not check_negative_env_flag("BUILD_TEST")
     cmake_python_library = (
         f"{sysconfig.get_config_var('LIBDIR')}/{sysconfig.get_config_var('INSTSONAME')}"
@@ -146,7 +206,12 @@ def build_musa_lib():
     # NOTE: `version` passed to cmake.generate won't take effect.
     # Because CMakeLists.txt will read the `version.txt` itself.
     cmake.generate(
-        version, cmake_python_library, True, build_test, env.copy(), RERUN_CMAKE
+        version,
+        cmake_python_library,
+        build_python_enabled(),
+        build_test,
+        env.copy(),
+        RERUN_CMAKE,
     )
     cmake.build(env)
 
@@ -161,6 +226,11 @@ def configure_extension_build():
     """
     if CLEAN_MODE:
         return None
+    if not build_python_enabled():
+        # BUILD_PYTHON=OFF builds the native libraries only, mirroring the
+        # libtorch-only build upstream. Do not emit _MUSAC/_ext, which would
+        # link against the Python bindings that this configuration omits.
+        return []
     extra_link_args = []
     extra_compile_args = [
         "-std=c++17",
@@ -191,11 +261,12 @@ def configure_extension_build():
         extra_compile_args += ["-fsanitize=address"]
         extra_link_args += ["-fsanitize=address"]
 
+    python_libraries = ["musa_python"]
     torch_musa_sources = glob.glob("torch_musa/csrc/stub.cpp")
     cpp_extension = CppExtension(
         name="torch_musa._MUSAC",
         sources=torch_musa_sources,
-        libraries=["musa_python", "musa_kernels"],
+        libraries=python_libraries + ["musa_kernels", "torch_musa"],
         include_dirs=[],
         extra_compile_args=extra_compile_args,
         library_dirs=[os.path.join(BASE_DIR, "torch_musa/lib")],
@@ -204,7 +275,8 @@ def configure_extension_build():
     ext_extension = CppExtension(
         name="torch_musa._ext",
         sources=glob.glob("torch_musa/csrc/extension/C_frontend.cpp"),
-        libraries=["_ext_musa_kernels", "musa_python", "musa_kernels"],
+        libraries=python_libraries
+        + ["_ext_musa_kernels", "musa_kernels", "torch_musa"],
         include_dirs=[],
         extra_compile_args={"cxx": ["-std=c++17"]},
         library_dirs=[os.path.join(BASE_DIR, "torch_musa/lib")],
@@ -245,12 +317,13 @@ def dump_version():
 if __name__ == "__main__":
     dump_version()
 
-    cmdclass = {"clean": Clean, "install": Install}
+    cmdclass = {"clean": Clean, "install": Install, "bdist_wheel": bdist_wheel}
     if not CLEAN_MODE:
         cmdclass["build_ext"] = Build
 
     setup(
-        name="torch_musa",
+        name=PACKAGE_NAME,
+        distclass=BinaryDistribution,
         version=version,
         description="A PyTorch backend extension for Moore Threads MUSA",
         url="https://github.com/MooreThreads/torch_musa",
@@ -260,11 +333,15 @@ if __name__ == "__main__":
         include_package_data=True,
         install_requires=install_requires,
         extras_require={},
-        entry_points={
-            "console_scripts": [
-                "musa-converter = torch_musa.utils.musa_converter:main"
-            ],
-            "torch.backends": ["torch_musa = torch_musa:_autoload"],
-        },
+        entry_points=(
+            {
+                "console_scripts": [
+                    "musa-converter = torch_musa.utils.musa_converter:main"
+                ],
+                "torch.backends": ["torch_musa = torch_musa:_autoload"],
+            }
+            if build_python_enabled()
+            else {}
+        ),
         cmdclass=cmdclass,
     )

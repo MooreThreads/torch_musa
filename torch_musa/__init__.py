@@ -47,7 +47,13 @@ register_graphsafe_rng_device_type(torch._C._get_privateuse1_backend_name())
 try:
     import torch_musa._MUSAC
 except ImportError as err:
-    raise ImportError("Please try running Python from a different directory!") from err
+    raise ImportError(
+        "Failed to load the torch_musa Python bindings. If torch_musa was "
+        "built with BUILD_PYTHON=OFF, the Python API is not available; use "
+        "the C++ API via find_package(TorchMusa) instead. Otherwise check "
+        "that a conflicting 'torch' or 'torch_musa' package is not shadowing "
+        "the installation."
+    ) from err
 
 # Resolve TORCH_RNG_ALIGN to TORCH_ARCH_MP_COUNT/TORCH_ARCH_MAXTHREADS_PER_MP env vars
 # before any C++ code reads device properties.

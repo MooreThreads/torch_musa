@@ -1,6 +1,8 @@
 """CPP Utils"""
 
 # pylint: disable=C0413, C0116
+import inspect
+
 import torch
 import torch._inductor.codegen.cpp_utils
 
@@ -9,20 +11,6 @@ DEVICE_TO_ATEN = {"cpu": "at::kCPU", "cuda": "at::kCUDA", "musa": "at::kPrivateU
 torch._inductor.codegen.cpp_utils.DEVICE_TO_ATEN = DEVICE_TO_ATEN
 
 import torch._inductor.cpp_builder
-
-_th__get_torch_related_args = getattr(
-    torch._inductor.cpp_builder, "_get_torch_related_args"
-)
-
-
-def musa__get_torch_related_args(*args, **kwargs):
-    _, libraries_dirs, libraries = _th__get_torch_related_args(*args, **kwargs)
-    return [], libraries_dirs, libraries
-
-
-setattr(
-    torch._inductor.cpp_builder, "_get_torch_related_args", musa__get_torch_related_args
-)
 
 from torch.utils import cpp_extension
 from torch_musa.utils import musa_extension
@@ -71,7 +59,7 @@ def musa_get_cpp_torch_device_options(device_type, aot_mode, compile_only):
 
     if device_type == torch._C._get_privateuse1_backend_name():
         definitions.append(" USE_MUSA")
-        libraries += ["musa", "musa_python"]
+        libraries += ["musa", "torch_musa"]
 
     return (
         definitions,
@@ -88,4 +76,42 @@ setattr(
     torch._inductor.cpp_builder,
     "get_cpp_torch_device_options",
     musa_get_cpp_torch_device_options,
+)
+
+_th_cpp_torch_device_options_init = getattr(
+    torch._inductor.cpp_builder.CppTorchDeviceOptions, "__init__"
+)
+_th_cpp_torch_device_options_signature = inspect.signature(
+    _th_cpp_torch_device_options_init
+)
+
+
+def musa_cpp_torch_device_options_init(self, *args, **kwargs):
+    _th_cpp_torch_device_options_init(self, *args, **kwargs)
+    bound = _th_cpp_torch_device_options_signature.bind(self, *args, **kwargs)
+    bound.apply_defaults()
+    if not bound.arguments["aot_mode"]:
+        return
+    if bound.arguments["device_type"] != torch._C._get_privateuse1_backend_name():
+        return
+    # The AOTI wrapper is a standalone artifact. The installed torch headers
+    # would shadow the MUSA-ported copies, and Python paths must not leak into
+    # the build.
+    python_include_dirs, python_lib_dirs = (
+        torch._inductor.cpp_builder._get_python_related_args()
+    )
+    excluded_include_dirs = set(_th_include_paths("cpu", True))
+    excluded_include_dirs.update(python_include_dirs)
+    self._include_dirs = [
+        path for path in self._include_dirs if path not in excluded_include_dirs
+    ]
+    self._libraries_dirs = [
+        path for path in self._libraries_dirs if path not in python_lib_dirs
+    ]
+
+
+setattr(
+    torch._inductor.cpp_builder.CppTorchDeviceOptions,
+    "__init__",
+    musa_cpp_torch_device_options_init,
 )

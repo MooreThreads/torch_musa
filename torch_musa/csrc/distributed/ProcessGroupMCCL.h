@@ -1,7 +1,14 @@
 #pragma once
 
 #include <mccl.h>
-#include <pybind11/pybind11.h>
+
+#if defined(__linux__)
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+#endif
+
 #include <torch/csrc/distributed/c10d/Backend.hpp>
 #include <chrono>
 #include <exception>
@@ -1493,4 +1500,3 @@ typedef bool (*gil_checker_t)();
 TORCH_API gil_checker_t& get_gil_checker();
 } // namespace c10d
 
-void registerProcessGroupMCCL(PyObject* mod);
