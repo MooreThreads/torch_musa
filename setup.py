@@ -4,6 +4,7 @@
 
 import os
 import glob
+import shutil
 import sys
 import sysconfig
 import multiprocessing
@@ -119,7 +120,6 @@ class Clean(distutils.command.clean.clean):
     def run(self):
         # pylint: disable=import-outside-toplevel
         import re
-        import shutil
 
         with open(".gitignore", "r", encoding="utf-8") as f:
             ignores = f.read()
@@ -158,6 +158,20 @@ def get_pytorch_install_path():
     return pytorch_install_root
 
 
+def install_header_overrides():
+    """
+    Overlay hand-written MUSA headers onto the generated porting tree.
+    """
+    override_dir = os.path.join(BASE_DIR, "torch_musa", "csrc", "include")
+    target_dir = os.path.join(BASE_DIR, "build", "generated_cuda_compatible", "include")
+    if not os.path.isdir(target_dir):
+        raise RuntimeError(
+            "Packaging error: generated CUDA-compatible tree is missing,"
+            f" expected it under {target_dir}!"
+        )
+    shutil.copytree(override_dir, target_dir, dirs_exist_ok=True)
+
+
 def build_musa_lib():
     """
     Build the MUSA native libraries.
@@ -187,6 +201,8 @@ def build_musa_lib():
     code_generated_path = os.path.join(BASE_DIR, build_dir, code_generated_dir)
     if not os.path.isdir(cuda_compatiable_path):
         port_cuda(pytorch_root, get_pytorch_install_path(), cuda_compatiable_path)
+
+    install_header_overrides()
 
     cmake = CMake(build_dir, install_dir_prefix="torch_musa")
     # use reference to os.environ first, because newly added env vars may be accessed in CMake.

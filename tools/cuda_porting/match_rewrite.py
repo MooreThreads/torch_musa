@@ -1,5 +1,4 @@
-"""This file is mainly from cuda-porting tool 'Musify'
-"""
+"""This file is mainly from cuda-porting tool 'Musify'"""
 
 import os
 import re
@@ -125,6 +124,13 @@ def writer(file_name: str = None) -> None:
         writer.close()
 
 
+# Backend-agnostic ATen interfaces must keep their original names: unported
+# headers such as ATen/Context.h still call at::detail::getCUDAHooks().
+# torch_musa's own MUSAHooksInterface is shipped separately by the
+# public-header overlay.
+NO_RENAME_FILES = {"CUDAHooksInterface.h"}
+
+
 def transform_file(
     path: str,
     automaton: ahocorasick.Automaton,
@@ -174,7 +180,9 @@ def transform_file(
                 write_handle.write(new_line)
                 old_line = line
     file_name = os.path.basename(path)
-    if (
+    if file_name in NO_RENAME_FILES:
+        musa_file_path = path
+    elif (
         "cub/" not in file_name
         and file_name.endswith(".cu")
         or file_name.endswith(".cuh")
