@@ -55,3 +55,26 @@ def test_masked_fill(input_data, data_type):
     data.masked_fill_(mask, value)
     mdata.masked_fill_(mmask, value)
     assert torch.allclose(data, mdata.cpu())
+
+
+def test_masked_fill_large_tensor():
+    """Regression test for issue #146: masked fill past 2**31 elements.
+
+    The MUDNN masked-Fill path overflows there; the iterator fallback must
+    fill correctly across the boundary. int8 keeps the footprint ~4.4 GiB.
+    """
+    n = 2**31 + 1024
+    try:
+        a = torch.zeros(n, dtype=torch.int8, device="musa")
+        mask = torch.zeros(n, dtype=torch.bool, device="musa")
+        mask[::2] = True
+    except Exception as err:  # noqa: BLE001
+        if "out of memory" in str(err).lower():
+            pytest.skip("insufficient device memory for the >2^31 test")
+        raise
+    a.masked_fill_(mask, 7)
+    # Spot-check the start, the 2^31 boundary, and the tail.
+    for lo, hi in ((0, 4), (2**31 - 2, 2**31 + 2), (n - 4, n)):
+        got = a[lo:hi].cpu()
+        want = torch.tensor([7, 0] * ((hi - lo) // 2), dtype=torch.int8)
+        assert torch.equal(got, want)

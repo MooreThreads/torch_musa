@@ -3,6 +3,8 @@
 #include <ATen/native/Fill.h>
 #include <torch/library.h>
 
+#include <limits>
+
 #include "torch_musa/csrc/aten/mudnn/Fill.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
 #include "torch_musa/csrc/aten/ops/musa/elemwise/Interface.muh"
@@ -20,16 +22,25 @@ Tensor& FillOp(
     return self;
   }
   if (self.is_complex()) {
-    MusaTensorIterator iter;
-    iter.add_output(self);
-
+    // The MUDNN fill path never sees complex tensors. With a mask, route
+    // through the iterator kernel too — previously the mask was silently
+    // dropped here, filling every element (correctness bug, nothing raised).
     TensorIteratorConfig config;
-    config.set_check_mem_overlap(false)
+    config.add_output(self)
+        .add_const_input(self)
+        .set_check_mem_overlap(false)
         .check_all_same_dtype(false)
         .resize_outputs(false);
-
+    if (mask.has_value()) {
+      config.add_const_input(mask.value());
+    }
+    MusaTensorIterator iter;
     iter.build(config);
-    FillKernel(iter, value);
+    if (mask.has_value()) {
+      MaskedFillKernel(iter, value);
+    } else {
+      FillKernel(iter, value);
+    }
     return self;
   }
   c10::musa::MUSAGuard device_guard(self.device());
@@ -58,6 +69,22 @@ Tensor& FillOp(
         "masked_fill only supports boolean masks, but got dtype ",
         mask->scalar_type());
     auto mask_mu = at::musa::CreateMUTensor(mask.value());
+    if (self.numel() > std::numeric_limits<int32_t>::max()) {
+      // MUDNN's masked Fill overflows past 2^31 elements (issue #146);
+      // the iterator kernel splits 64-bit indexing into 32-bit sub-ranges
+      // (Loops.muh), so this path is safe at any numel.
+      TensorIteratorConfig config;
+      config.add_output(self)
+          .add_const_input(self)
+          .add_const_input(mask.value())
+          .set_check_mem_overlap(false)
+          .check_all_same_dtype(false)
+          .resize_outputs(false);
+      MusaTensorIterator iter;
+      iter.build(config);
+      MaskedFillKernel(iter, value);
+      return self;
+    }
     CHECK_MUDNN_STATUS(op.Run(h, self_mu, mask_mu), "RunMask");
   } else {
     CHECK_MUDNN_STATUS(op.Run(h, self_mu), "Run");
