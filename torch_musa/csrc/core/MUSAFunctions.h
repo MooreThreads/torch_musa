@@ -12,6 +12,9 @@ namespace c10::musa {
 // returns -1 on failure
 int32_t GetDriverVersion();
 
+// returns -1 on failure
+int32_t GetRuntimeVersion();
+
 bool is_musa_available();
 
 DeviceIndex device_count() noexcept;
