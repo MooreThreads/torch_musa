@@ -43,7 +43,23 @@ struct MUSACachingHostAllocatorImpl
       allocWithMusaHostRegister(ptr, size);
     } else {
       // Use musaHostAlloc for allocating pinned memory (global lock in driver)
-      C10_MUSA_CHECK(musaHostAlloc(ptr, size, musaHostAllocDefault));
+      musaError_t err = musaHostAlloc(ptr, size, musaHostAllocDefault);
+      if (err != musaSuccess) {
+        *ptr = nullptr;
+        if (err == musaErrorMemoryAllocation) {
+          (void)musaGetLastError();
+          TORCH_CHECK(
+              false,
+              "MUSA error: ",
+              musaGetErrorString(err),
+              " while calling musaHostAlloc for ",
+              size,
+              " bytes of pinned host memory (power-of-two rounded size). "
+              "Note: mtgpu limits individual pinned allocations (e.g., <= 4 GiB) "
+              "and total node pinned host memory.");
+        }
+        C10_MUSA_CHECK(err);
+      }
     }
 
     auto end = std::chrono::system_clock::now();
@@ -151,6 +167,11 @@ struct MUSACachingHostAllocatorImpl
     // musaHostRegister with GPU mapping flags to lock the pages, so we
     // can minimize the cost for the musa global lock.
     *ptr = std::malloc(roundSize);
+    TORCH_CHECK(
+        *ptr != nullptr,
+        "Failed to allocate ",
+        roundSize,
+        " bytes of host memory for musaHostRegister.");
 
     // Parallelize the mapping/registering of pages to reduce wall time
     size_t pageSize = (1 << 12); // 4kB pages
@@ -194,7 +215,23 @@ struct MUSACachingHostAllocatorImpl
     }
 
     // Register the mapped pages using musaHostRegister
-    AT_MUSA_CHECK(musaHostRegister(*ptr, roundSize, musaHostRegisterDefault));
+    musaError_t err =
+        musaHostRegister(*ptr, roundSize, musaHostRegisterDefault);
+    if (err != musaSuccess) {
+      std::free(*ptr);
+      *ptr = nullptr;
+      if (err == musaErrorMemoryAllocation) {
+        (void)musaGetLastError();
+        TORCH_CHECK(
+            false,
+            "MUSA error: ",
+            musaGetErrorString(err),
+            " while calling musaHostRegister for ",
+            roundSize,
+            " bytes of pinned host memory (power-of-two rounded size).");
+      }
+      AT_MUSA_CHECK(err);
+    }
   }
 };
 

@@ -1,5 +1,7 @@
 #include "torch_musa/csrc/core/MUSAFunctions.h"
 
+#include <mutex>
+
 #include <c10/core/DeviceGuard.h>
 
 #include "torch_musa/csrc/aten/musa/Exceptions.h"
@@ -14,12 +16,41 @@ int32_t GetDriverVersion() {
   return driver_version;
 }
 
+int32_t GetRuntimeVersion() {
+  int runtime_version = -1;
+  C10_MUSA_IGNORE_ERROR(musaRuntimeGetVersion(&runtime_version));
+  return runtime_version;
+}
+
 namespace {
+
+void warn_if_driver_older_than_runtime() {
+  static std::once_flag driver_runtime_warn_flag;
+  std::call_once(driver_runtime_warn_flag, []() {
+    int32_t driver_version = GetDriverVersion();
+    int32_t runtime_version = GetRuntimeVersion();
+    if (driver_version > 0 && runtime_version > 0 &&
+        driver_version < runtime_version) {
+      TORCH_WARN(
+          "Host MUSA driver version (",
+          driver_version,
+          ") is older than the MUSA runtime version (",
+          runtime_version,
+          ") that torch_musa was compiled against. "
+          "Running a newer MUSA runtime on an older host driver can cause "
+          "numerical discrepancies or multi-node MCCL hangs; please upgrade "
+          "the host driver or use a matching MUSA container.");
+    }
+  });
+}
 
 int device_count_impl(bool fail_if_no_driver) {
   int count = 0;
   auto err = C10_MUSA_ERROR_HANDLED(GetDeviceCount(&count));
   if (err == musaSuccess) {
+    if (count > 0) {
+      warn_if_driver_older_than_runtime();
+    }
     return count;
   }
   musaError_t last_err C10_UNUSED = musaGetLastError();
