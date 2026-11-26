@@ -539,3 +539,77 @@ def test_conv_transpose3d_bwd(common_config, dtype, channels_last):
         [True, True, False],
     ]
     getattr(test, get_test_method(dtype))(inputs=inputs)
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("dtype", get_conv_dtypes())
+def test_conv2d_1x1_preserves_channels_last(dtype):
+    x = (
+        torch.randn(2, 32, 16, 16, device="musa", dtype=dtype)
+        .to(memory_format=torch.channels_last)
+        .requires_grad_(True)
+    )
+    w = (
+        torch.randn(64, 32, 1, 1, device="musa", dtype=dtype)
+        .to(memory_format=torch.channels_last)
+        .requires_grad_(True)
+    )
+    b = torch.randn(64, device="musa", dtype=dtype, requires_grad=True)
+    y = torch.nn.functional.conv2d(x, w, b)
+    assert y.is_contiguous(memory_format=torch.channels_last)
+
+    x_ref = x.detach().contiguous().requires_grad_(True)
+    w_ref = w.detach().contiguous().requires_grad_(True)
+    b_ref = b.detach().contiguous().requires_grad_(True)
+    y_ref = torch.nn.functional.conv2d(x_ref, w_ref, b_ref)
+    abs_diff, rel_diff = get_conv_test_tolerance("FWD")[dtype]
+    torch.testing.assert_close(y.contiguous(), y_ref, atol=abs_diff, rtol=rel_diff)
+
+    g = torch.randn_like(y)
+    y.backward(g)
+    y_ref.backward(g.contiguous())
+    assert x.grad.is_contiguous(memory_format=torch.channels_last)
+    bwd_abs, bwd_rel = get_conv_test_tolerance("BWD")[dtype]
+    torch.testing.assert_close(
+        x.grad.contiguous(), x_ref.grad, atol=bwd_abs, rtol=bwd_rel
+    )
+    torch.testing.assert_close(
+        w.grad.contiguous(), w_ref.grad, atol=bwd_abs, rtol=bwd_rel
+    )
+
+
+@testing.test_on_nonzero_card_if_multiple_musa_device(1)
+@pytest.mark.parametrize("dtype", get_conv_dtypes())
+def test_conv3d_1x1x1_preserves_channels_last_3d(dtype):
+    x = (
+        torch.randn(2, 32, 5, 16, 16, device="musa", dtype=dtype)
+        .to(memory_format=torch.channels_last_3d)
+        .requires_grad_(True)
+    )
+    w = (
+        torch.randn(64, 32, 1, 1, 1, device="musa", dtype=dtype)
+        .to(memory_format=torch.channels_last_3d)
+        .requires_grad_(True)
+    )
+    b = torch.randn(64, device="musa", dtype=dtype, requires_grad=True)
+    y = torch.nn.functional.conv3d(x, w, b)
+    assert y.is_contiguous(memory_format=torch.channels_last_3d)
+
+    x_ref = x.detach().contiguous().requires_grad_(True)
+    w_ref = w.detach().contiguous().requires_grad_(True)
+    b_ref = b.detach().contiguous().requires_grad_(True)
+    y_ref = torch.nn.functional.conv3d(x_ref, w_ref, b_ref)
+    abs_diff, rel_diff = get_conv_test_tolerance("FWD")[dtype]
+    torch.testing.assert_close(y.contiguous(), y_ref, atol=abs_diff, rtol=rel_diff)
+
+    g = torch.randn_like(y)
+    y.backward(g)
+    y_ref.backward(g.contiguous())
+    assert x.grad.is_contiguous(memory_format=torch.channels_last_3d)
+    bwd_abs, bwd_rel = get_conv_test_tolerance("BWD")[dtype]
+    torch.testing.assert_close(
+        x.grad.contiguous(), x_ref.grad, atol=bwd_abs, rtol=bwd_rel
+    )
+    torch.testing.assert_close(
+        w.grad.contiguous(), w_ref.grad, atol=bwd_abs, rtol=bwd_rel
+    )
