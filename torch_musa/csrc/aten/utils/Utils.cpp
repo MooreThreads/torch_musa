@@ -37,9 +37,9 @@ Tensor empty_strided_musa(
 void ConfigFormat(
     const Tensor& t,
     muTensor& mt,
+    at::MemoryFormat memory_format,
     bool permute_if_not_contiguous) {
   const auto t_dim = t.dim();
-  const auto memory_format = t.suggest_memory_format();
   muTensor::Format mudnn_format = muTensor::Format::NCHW;
   Tensor mu_t = t;
 
@@ -69,6 +69,13 @@ void ConfigFormat(
 
   mt.SetFormat(mudnn_format);
   mt.SetNdInfo(mu_t.dim(), mu_t.sizes().data(), mu_t.strides().data());
+}
+
+void ConfigFormat(
+    const Tensor& t,
+    muTensor& mt,
+    bool permute_if_not_contiguous) {
+  ConfigFormat(t, mt, t.suggest_memory_format(), permute_if_not_contiguous);
 }
 
 void SetMUTensorDType(ScalarType dtype, muTensor& m_t) {
@@ -223,15 +230,25 @@ std::pair<muTensor, muTensor> CreateMUTensorsCompression(
   return {std::move(rst1), std::move(rst2)};
 }
 
-muTensor CreateMUTensor(const Tensor& t, bool permute_if_not_contiguous) {
+muTensor CreateMUTensor(
+    const Tensor& t,
+    at::MemoryFormat memory_format,
+    bool permute_if_not_contiguous) {
   if (!t.defined()) {
     return muTensor();
   }
   muTensor rst;
   SetMUTensorDType(t.scalar_type(), rst);
   SetMUTensorAddr(t.data_ptr(), rst);
-  ConfigFormat(t, rst, permute_if_not_contiguous);
+  ConfigFormat(t, rst, memory_format, permute_if_not_contiguous);
   return rst;
+}
+
+muTensor CreateMUTensor(const Tensor& t, bool permute_if_not_contiguous) {
+  if (!t.defined()) {
+    return muTensor();
+  }
+  return CreateMUTensor(t, t.suggest_memory_format(), permute_if_not_contiguous);
 }
 
 void InternalMemFree(void* ptr) {

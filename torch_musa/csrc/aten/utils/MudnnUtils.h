@@ -11,6 +11,11 @@ namespace at::musa {
 
 muTensor CreateMUTensor(const Tensor& t, bool permute_if_not_contiguous = true);
 
+muTensor CreateMUTensor(
+    const Tensor& t,
+    at::MemoryFormat memory_format,
+    bool permute_if_not_contiguous = true);
+
 std::pair<muTensor, muTensor> CreateMUTensorsCompression(
     const Tensor& t1,
     const Tensor& t2);
@@ -22,6 +27,12 @@ inline muTensor CreateEmptyMUTensor() {
 void ConfigFormat(
     const Tensor& t,
     muTensor& mt,
+    bool permute_if_not_contiguous = true);
+
+void ConfigFormat(
+    const Tensor& t,
+    muTensor& mt,
+    at::MemoryFormat memory_format,
     bool permute_if_not_contiguous = true);
 
 void SetMUTensorDType(ScalarType dtype, muTensor& m_t);

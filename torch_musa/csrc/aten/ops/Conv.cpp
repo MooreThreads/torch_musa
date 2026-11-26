@@ -41,6 +41,7 @@
 #include <ATen/ops/zeros_like.h>
 #endif
 #include <ATen/native/ConvUtils.h>
+#include "torch_musa/csrc/aten/ConvUtils.h"
 #include "torch_musa/csrc/aten/mudnn/Convolution.h"
 #include "torch_musa/csrc/aten/mudnn/Permute.h"
 #include "torch_musa/csrc/aten/ops/TensorFactory.h"
@@ -106,7 +107,7 @@ Tensor ConvNd(
     IntArrayRef dilation,
     int64_t groups) {
   static_assert(N == 2 || N == 3);
-  const auto weight_memory_format = weight.suggest_memory_format();
+  const auto weight_memory_format = musa_conv_memory_format(input, weight);
 
   // There is no need to check shape, see
   // https://github.com/pytorch/pytorch/blob/39901f229520a5256505ec24782f716ee7ddc843/aten/src/ATen/native/Convolution.cpp#L1515
@@ -122,9 +123,9 @@ Tensor ConvNd(
       input_shape, weight_shape, padding, stride, dilation);
   output =
       at::empty(output_size, contiguous_input.options(), weight_memory_format);
-  auto in = CreateMUTensor(contiguous_input);
-  auto out = CreateMUTensor(output);
-  auto ke = CreateMUTensor(contiguous_weight);
+  auto in = CreateMUTensor(contiguous_input, weight_memory_format);
+  auto out = CreateMUTensor(output, weight_memory_format);
+  auto ke = CreateMUTensor(contiguous_weight, weight_memory_format);
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Convolution c;
@@ -378,16 +379,17 @@ Tensor ConvDataBwd(
     IntArrayRef dilation) {
   c10::musa::MUSAGuard device_guard(grad_output.device());
 
-  const auto weight_memory_format = weight.suggest_memory_format();
+  const auto weight_memory_format =
+      musa_conv_memory_format(grad_output, weight);
   Tensor contiguous_weight = FormatContiguous(weight, weight_memory_format);
 
   Tensor contiguous_grad_output =
       FormatContiguous(grad_output, weight_memory_format);
   auto grad_input_t = at::empty(
       input_size, contiguous_grad_output.options(), weight_memory_format);
-  auto w = CreateMUTensor(contiguous_weight);
-  auto gout = CreateMUTensor(contiguous_grad_output);
-  auto gin = CreateMUTensor(grad_input_t);
+  auto w = CreateMUTensor(contiguous_weight, weight_memory_format);
+  auto gout = CreateMUTensor(contiguous_grad_output, weight_memory_format);
+  auto gin = CreateMUTensor(grad_input_t, weight_memory_format);
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Convolution c;
@@ -415,7 +417,8 @@ Tensor ConvDataBwd<3>(
     int64_t groups,
     IntArrayRef dilation) {
   c10::musa::MUSAGuard device_guard(grad_output.device());
-  const auto weight_memory_format = weight.suggest_memory_format();
+  const auto weight_memory_format =
+      musa_conv_memory_format(grad_output, weight);
 
   Tensor contiguous_weight;
   muTensor w;
@@ -436,8 +439,8 @@ Tensor ConvDataBwd<3>(
   auto grad_input_t = at::empty(
       input_size, contiguous_grad_output.options(), weight_memory_format);
 
-  auto gout = CreateMUTensor(contiguous_grad_output);
-  auto gin = CreateMUTensor(grad_input_t);
+  auto gout = CreateMUTensor(contiguous_grad_output, weight_memory_format);
+  auto gin = CreateMUTensor(grad_input_t, weight_memory_format);
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Convolution c;
@@ -460,7 +463,10 @@ Tensor ConvWeightBwd(
     int64_t groups,
     IntArrayRef dilation) {
   c10::musa::MUSAGuard device_guard(grad_output.device());
-  const auto weight_memory_format = weight.suggest_memory_format();
+  const auto weight_memory_format =
+      musa_conv_memory_format(input, weight) != MemoryFormat::Contiguous
+      ? musa_conv_memory_format(input, weight)
+      : musa_conv_memory_format(grad_output, weight);
   Tensor contiguous_input = FormatContiguous(input, weight_memory_format);
   Tensor contiguous_grad_output =
       FormatContiguous(grad_output, weight_memory_format);
@@ -469,9 +475,9 @@ Tensor ConvWeightBwd(
   auto grad_weight_t = at::empty(
       weight_size, contiguous_grad_output.options(), weight_memory_format);
 
-  auto gout = CreateMUTensor(contiguous_grad_output);
-  auto gw = CreateMUTensor(grad_weight_t);
-  auto in = CreateMUTensor(contiguous_input);
+  auto gout = CreateMUTensor(contiguous_grad_output, weight_memory_format);
+  auto gw = CreateMUTensor(grad_weight_t, weight_memory_format);
+  auto in = CreateMUTensor(contiguous_input, weight_memory_format);
 
   muHandle& h = GetMudnnHandle();
   ::musa::dnn::Convolution c;
@@ -501,7 +507,8 @@ template <int ND>
   Tensor grad_output_c = grad_output;
 
   if constexpr (ND == 2) {
-    const auto weight_memory_format = weight.suggest_memory_format();
+    const auto weight_memory_format =
+        musa_conv_memory_format(grad_output, weight);
     grad_output_c = FormatContiguous(grad_output, weight_memory_format);
   }
 
@@ -547,7 +554,8 @@ template <int N>
   static_assert(N == 2 || N == 3);
   Tensor grad_input, grad_weight, grad_bias;
 
-  const auto weight_memory_format = weight.suggest_memory_format();
+  const auto weight_memory_format =
+      musa_conv_memory_format(grad_output, weight);
   Tensor grad_output_c = FormatContiguous(grad_output, weight_memory_format);
 
   if (output_mask[0]) {
