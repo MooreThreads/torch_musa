@@ -849,6 +849,10 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> MuDNNFlashVarlenFwd(
   TORCH_CHECK(query.dim() == 3, "query's layout should be [total_seq_q, H, D]");
   TORCH_CHECK(key.dim() == 3, "key's layout should be [total_seq_q, H, D]");
   TORCH_CHECK(value.dim() == 3, "value's layout should be [total_seq_q, H, D]");
+  TORCH_CHECK(
+      cu_seqlens_q.dtype() == at::kInt, "cu_seqlens_q must have dtype int32");
+  TORCH_CHECK(
+      cu_seqlens_k.dtype() == at::kInt, "cu_seqlens_k must have dtype int32");
 
   CheckScale(query, scale);
   const auto query_opt = query.options();
@@ -945,6 +949,10 @@ MuDNNFlashVarlenBwd(
       at::musa::getMUSAArch() != 220,
       "MUSA Flash Attention Varlen (variable-length / nested tensors) is not "
       "supported on mp22 (arch 2.2). Please run on mp31 (arch 3.1) or newer.");
+  TORCH_CHECK(
+      cu_seqlens_q.dtype() == at::kInt, "cu_seqlens_q must have dtype int32");
+  TORCH_CHECK(
+      cu_seqlens_k.dtype() == at::kInt, "cu_seqlens_k must have dtype int32");
 
   at::musa::muTensor musa_q = at::musa::CreateMUTensor(query);
   at::musa::muTensor musa_k = at::musa::CreateMUTensor(key);
