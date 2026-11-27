@@ -43,15 +43,6 @@ index aa6bdcb..83d9e3d 100644
  
          picked_vec_isa = pick_vec_isa()
          vec_isa_cmd_gen = CppBuilder(
-@@ -2682,7 +2689,7 @@ class AotCodeCompiler:
- 
-             # Intel compiler failed to compile this manually constructed assembly file.
-             # Switch XPU to use consts cpp build.
--            if device_type == "xpu":
-+            if device_type in ("xpu", "musa"):
-                 use_asm_build = False
- 
-             is_large_consts = len(consts) > 1024
 @@ -2899,7 +2906,7 @@ end
                  else str(wrapper_path_operator.with_suffix(".so"))
              )
